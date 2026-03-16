@@ -209,6 +209,3 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
     );
 }
  
-
-
-//ESTO ES PARA PRUEBA 
