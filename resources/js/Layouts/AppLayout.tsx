@@ -208,3 +208,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
         </ColorPaletteProvider>
     );
 }
+ 
+
+
+//ESTO ES PARA PRUEBA 
