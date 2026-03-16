@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" fill="none">
+  <rect x="0" y="4" width="40" height="40" rx="10" fill="white" fill-opacity="0.15"/>
+  <rect x="0" y="4" width="40" height="40" rx="10" stroke="white" stroke-opacity="0.3" stroke-width="1"/>
+  <rect x="6" y="12" width="28" height="22" rx="4" stroke="white" stroke-width="1.5" fill="white" fill-opacity="0.12"/>
+  <rect x="10" y="17" width="20" height="2.5" rx="1.25" fill="white" fill-opacity="0.85"/>
+  <rect x="10" y="22" width="13" height="1.8" rx="0.9" fill="white" fill-opacity="0.5"/>
+  <circle cx="30" cy="30" r="7" fill="#00C48C"/>
+  <path d="M27 30L29.2 32.2L33 28" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="50" y="30" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="22" font-weight="700" letter-spacing="-0.5" fill="white">ventory<tspan fill="#00C48C">POS</tspan></text>
+</svg>

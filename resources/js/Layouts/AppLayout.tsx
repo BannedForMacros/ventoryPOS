@@ -78,17 +78,23 @@ function Sidebar({ modules, collapsed }: { modules: ModuloMenu[]; collapsed: boo
         >
             {/* Logo */}
             <div
-                className="flex items-center gap-2 px-3 py-4 border-b flex-shrink-0"
+                className="flex items-center justify-center px-3 py-4 border-b flex-shrink-0"
                 style={{ borderColor: 'var(--sidebar-border)' }}
             >
-                <div
-                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded font-bold text-white text-sm"
-                    style={{ backgroundColor: 'var(--sidebar-accent)' }}
-                >
-                    M
-                </div>
-                {!collapsed && (
-                    <span className="font-semibold text-white truncate">MacSoft</span>
+                {collapsed ? (
+                    <div className="h-12 w-12 overflow-hidden flex-shrink-0">
+                        <img
+                            src="/logo-full-white.svg"
+                            alt="ventoryPOS"
+                            style={{ height: '48px', width: 'auto', maxWidth: 'none' }}
+                        />
+                    </div>
+                ) : (
+                    <img
+                        src="/logo-full-white.svg"
+                        alt="ventoryPOS"
+                        className="h-12 w-auto"
+                    />
                 )}
             </div>
 
