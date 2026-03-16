@@ -11,6 +11,7 @@ interface AppLayoutProps {
     children: React.ReactNode;
     title?: string;
 }
+//hola soy el commit escondio 
 
 function SidebarItem({ item, collapsed }: { item: ModuloMenu; collapsed: boolean }) {
     const { url } = usePage();
