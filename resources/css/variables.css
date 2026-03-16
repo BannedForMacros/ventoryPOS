@@ -1,0 +1,41 @@
+:root {
+  /* ── VENTORYPOS — Paleta base ── */
+  --vp-navy:        #0F4C81;
+  --vp-sky:         #1A73C8;
+  --vp-sky-light:   #E8F1FB;
+  --vp-mint:        #00C48C;
+  --vp-mint-light:  #E0F8F1;
+  --vp-coral:       #FF6B35;
+  --vp-amber:       #FFB800;
+  --vp-midnight:    #0F1923;
+  --vp-surface:     #172130;
+  --vp-cloud:       #F4F6FA;
+
+  /* ── Sidebar ── */
+  --sidebar-bg:          var(--vp-navy);
+  --sidebar-text:        rgba(255,255,255,0.75);
+  --sidebar-text-active: #ffffff;
+  --sidebar-item-active: rgba(255,255,255,0.12);
+  --sidebar-item-hover:  rgba(255,255,255,0.07);
+  --sidebar-accent:      var(--vp-mint);
+  --sidebar-border:      rgba(255,255,255,0.08);
+
+  /* ── Semánticas ── */
+  --color-primary:        var(--vp-sky);
+  --color-primary-hover:  var(--vp-navy);
+  --color-secondary:      #6b7280;
+  --color-secondary-hover:#4b5563;
+  --color-success:        var(--vp-mint);
+  --color-success-hover:  #00a876;
+  --color-danger:         var(--vp-coral);
+  --color-danger-hover:   #e5572a;
+  --color-warning:        var(--vp-amber);
+  --color-warning-hover:  #e0a200;
+
+  /* ── Layout ── */
+  --color-bg:         var(--vp-cloud);
+  --color-surface:    #ffffff;
+  --color-border:     #e2e8f0;
+  --color-text:       #0f172a;
+  --color-text-muted: #64748b;
+}
