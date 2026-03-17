@@ -39,4 +39,19 @@ class Empresa extends Model
     {
         return $this->hasMany(User::class);
     }
+
+    public function categorias(): HasMany
+    {
+        return $this->hasMany(Categoria::class);
+    }
+
+    public function unidadesMedida(): HasMany
+    {
+        return $this->hasMany(UnidadMedida::class);
+    }
+
+    public function productos(): HasMany
+    {
+        return $this->hasMany(Producto::class);
+    }
 }
