@@ -83,6 +83,61 @@ export interface User extends Record<string, unknown> {
     updated_at: string;
 }
 
+export interface Categoria extends Record<string, unknown> {
+    id: number;
+    empresa_id: number;
+    nombre: string;
+    descripcion: string | null;
+    activo: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface UnidadMedida extends Record<string, unknown> {
+    id: number;
+    empresa_id: number;
+    nombre: string;
+    abreviatura: string;
+    activo: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface ProductoUnidad extends Record<string, unknown> {
+    id: number;
+    producto_id: number;
+    unidad_medida_id: number;
+    es_base: boolean;
+    factor_conversion: string;
+    tipo_precio: 'fijo' | 'referencial';
+    precio_venta: string;
+    precio_costo: string;
+    activo: boolean;
+    unidad_medida?: UnidadMedida;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface Producto extends Record<string, unknown> {
+    id: number;
+    empresa_id: number;
+    categoria_id: number | null;
+    codigo: string | null;
+    nombre: string;
+    descripcion: string | null;
+    tipo: 'producto' | 'servicio';
+    tipo_precio: 'fijo' | 'referencial';
+    precio_venta: string;
+    precio_costo: string;
+    imagen: string | null;
+    activo: boolean;
+    categoria?: Categoria | null;
+    unidades?: ProductoUnidad[];
+    unidad_base?: ProductoUnidad | null;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface Flash {
     success?: string | null;
     error?: string | null;
