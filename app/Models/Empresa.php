@@ -16,6 +16,7 @@ class Empresa extends Model
         'email',
         'logo',
         'activo',
+        'modo_almacen',
     ];
 
     protected function casts(): array
@@ -53,5 +54,30 @@ class Empresa extends Model
     public function productos(): HasMany
     {
         return $this->hasMany(Producto::class);
+    }
+
+    public function almacenes(): HasMany
+    {
+        return $this->hasMany(Almacen::class);
+    }
+
+    public function entradas(): HasMany
+    {
+        return $this->hasMany(Entrada::class);
+    }
+
+    public function transferencias(): HasMany
+    {
+        return $this->hasMany(Transferencia::class);
+    }
+
+    public function usaModoSimple(): bool
+    {
+        return $this->modo_almacen === 'simple';
+    }
+
+    public function usaCentralYLocal(): bool
+    {
+        return $this->modo_almacen === 'central_y_local';
     }
 }

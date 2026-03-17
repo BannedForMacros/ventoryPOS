@@ -19,7 +19,6 @@ interface ProductoUnidadData {
     factor_conversion: string;
     tipo_precio: 'fijo' | 'referencial';
     precio_venta: string;
-    precio_costo: string;
     activo: boolean;
 }
 
@@ -32,7 +31,6 @@ interface ProductoData {
     tipo: 'producto' | 'servicio';
     tipo_precio: 'fijo' | 'referencial';
     precio_venta: string;
-    precio_costo: string;
     activo: boolean;
     unidades: ProductoUnidadData[];
 }
@@ -45,7 +43,6 @@ interface FormData {
     tipo: 'producto' | 'servicio';
     tipo_precio: 'fijo' | 'referencial';
     precio_venta: string;
-    precio_costo: string;
     activo: boolean;
     unidades: ProductoUnidadData[];
 }
@@ -58,7 +55,7 @@ interface Props extends PageProps {
 
 const emptyUnidad = (): ProductoUnidadData => ({
     unidad_medida_id: '', es_base: false, factor_conversion: '1',
-    tipo_precio: 'fijo', precio_venta: '', precio_costo: '', activo: true,
+    tipo_precio: 'fijo', precio_venta: '', activo: true,
 });
 
 export default function Edit({ producto, categorias, unidades }: Props) {
@@ -70,7 +67,6 @@ export default function Edit({ producto, categorias, unidades }: Props) {
         tipo:          producto.tipo,
         tipo_precio:   producto.tipo_precio,
         precio_venta:  producto.precio_venta,
-        precio_costo:  producto.precio_costo,
         activo:        producto.activo,
         unidades:      producto.unidades.map(u => ({
             id:                u.id,
@@ -79,7 +75,6 @@ export default function Edit({ producto, categorias, unidades }: Props) {
             factor_conversion: String(u.factor_conversion),
             tipo_precio:       u.tipo_precio,
             precio_venta:      String(u.precio_venta),
-            precio_costo:      String(u.precio_costo),
             activo:            u.activo,
         })),
     });
@@ -155,47 +150,59 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                             onBlur={e => e.currentTarget.style.borderColor = 'var(--color-border)'} />
                     </div>
 
-                    <div>
-                        <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
-                            Tipo de precio <span style={{ color: 'var(--color-danger)' }}>*</span>
-                        </p>
-                        <div className="flex flex-col gap-2">
-                            {([
-                                { value: 'fijo',        label: 'Fijo',        hint: 'El cajero no puede modificar este precio en la venta' },
-                                { value: 'referencial', label: 'Referencial', hint: 'El cajero puede modificar el precio o aplicar descuento' },
-                            ] as const).map(opt => (
-                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
-                                    <input type="radio" name="tipo_precio" value={opt.value}
-                                        checked={data.tipo_precio === opt.value}
-                                        onChange={() => setData('tipo_precio', opt.value)}
-                                        className="mt-0.5 accent-[var(--color-primary)]" />
-                                    <span>
-                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
-                                        <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
-                                    </span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
+                    {/* Precio: solo para servicios. Los productos manejan precio por unidad */}
+                    {data.tipo === 'servicio' && (
+                        <>
+                            <div>
+                                <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
+                                    Tipo de precio <span style={{ color: 'var(--color-danger)' }}>*</span>
+                                </p>
+                                <div className="flex flex-col gap-2">
+                                    {([
+                                        { value: 'fijo',        label: 'Fijo',        hint: 'El cajero no puede modificar este precio en la venta' },
+                                        { value: 'referencial', label: 'Referencial', hint: 'El cajero puede modificar el precio o aplicar descuento' },
+                                    ] as const).map(opt => (
+                                        <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                            <input type="radio" name="tipo_precio" value={opt.value}
+                                                checked={data.tipo_precio === opt.value}
+                                                onChange={() => setData('tipo_precio', opt.value)}
+                                                className="mt-0.5 accent-[var(--color-primary)]" />
+                                            <span>
+                                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                                <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <Input label="Precio de venta" required type="number" min="0" step="0.01" placeholder="0.00"
-                            value={data.precio_venta} onChange={e => setData('precio_venta', e.target.value)} error={errors.precio_venta} />
-                        <Input label="Precio de costo" type="number" min="0" step="0.01" placeholder="0.00"
-                            value={data.precio_costo} onChange={e => setData('precio_costo', e.target.value)} error={errors.precio_costo} />
-                    </div>
+                            <Input
+                                label="Precio de venta"
+                                required
+                                type="number" min="0" step="0.01" placeholder="0.00"
+                                value={data.precio_venta}
+                                onChange={e => setData('precio_venta', e.target.value)}
+                                error={errors.precio_venta}
+                            />
+                        </>
+                    )}
 
                     <Switch label="Activo" checked={data.activo} onChange={v => setData('activo', v)} />
                 </section>
 
-                {/* ── Sección 2: Unidades de medida ── */}
+                {/* ── Sección 2: Unidades de medida (solo productos físicos) ── */}
                 {data.tipo === 'producto' && (
                     <section className="rounded-2xl border p-6 space-y-4"
                         style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
                         <div className="flex items-center justify-between">
-                            <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                                Unidades de medida
-                            </h2>
+                            <div>
+                                <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                                    Unidades de medida
+                                </h2>
+                                <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Define las unidades disponibles y su precio de venta
+                                </p>
+                            </div>
                             <Button type="button" variant="ghost" onClick={addUnidad}>
                                 <Plus size={14} className="mr-1" />Agregar unidad
                             </Button>
@@ -216,58 +223,88 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                         )}
 
                         {data.unidades.map((u, i) => (
-                            <div key={i} className="rounded-xl border p-4 space-y-3"
+                            <div key={i} className="rounded-xl border p-4 space-y-4"
                                 style={{
                                     borderColor: u.es_base ? 'var(--color-primary)' : 'var(--color-border)',
                                     backgroundColor: u.es_base ? 'color-mix(in srgb, var(--color-primary) 4%, transparent)' : 'var(--color-bg)',
                                 }}>
+                                {/* Cabecera: tipo de unidad + eliminar */}
                                 <div className="flex items-center justify-between">
-                                    <label className="flex items-center gap-2 cursor-pointer text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                                        <input type="radio" name="unidad_base" checked={u.es_base}
-                                            onChange={() => setUnidad(i, 'es_base', true)}
-                                            className="accent-[var(--color-primary)]" />
-                                        {u.es_base ? 'Unidad base' : 'Unidad secundaria'}
-                                    </label>
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                                            Tipo de unidad
+                                        </p>
+                                        <div className="flex gap-5">
+                                            {([
+                                                { val: true,  label: 'Base',    hint: 'Factor = 1, es la unidad principal' },
+                                                { val: false, label: 'Derivada', hint: 'Se convierte desde la unidad base' },
+                                            ]).map(opt => (
+                                                <label key={String(opt.val)} className="flex items-start gap-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name={`tipo_unidad_${i}`}
+                                                        checked={u.es_base === opt.val}
+                                                        onChange={() => setUnidad(i, 'es_base', opt.val)}
+                                                        className="mt-0.5 accent-[var(--color-primary)]"
+                                                    />
+                                                    <span>
+                                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                                        <span className="block text-xs" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                                    </span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
                                     {data.unidades.length > 1 && (
                                         <button type="button" onClick={() => removeUnidad(i)}
-                                            className="rounded-lg p-1 transition-colors" style={{ color: 'var(--color-danger)' }}>
+                                            className="rounded-lg p-1.5 transition-colors self-start" style={{ color: 'var(--color-danger)' }}>
                                             <Trash2 size={15} />
                                         </button>
                                     )}
                                 </div>
 
+                                {/* Unidad de medida + Factor de conversión */}
                                 <div className="grid grid-cols-2 gap-3">
                                     <Select label="Unidad de medida" required value={u.unidad_medida_id}
                                         onChange={v => setUnidad(i, 'unidad_medida_id', Number(v))}
                                         options={unidades.map(um => ({ value: um.id, label: `${um.nombre} (${um.abreviatura})` }))}
                                         error={(errors as Record<string, string>)[`unidades.${i}.unidad_medida_id`]} />
-                                    <Input label="Factor de conversión" type="number" min="0.0001" step="0.0001"
+                                    <Input
+                                        label="Factor de conversión"
+                                        type="number" min="0.0001" step="0.0001"
                                         value={u.factor_conversion}
                                         onChange={e => setUnidad(i, 'factor_conversion', e.target.value)}
                                         disabled={u.es_base}
-                                        hint={u.es_base ? 'La unidad base siempre es 1' : 'Cuántas unidades base equivale'}
+                                        hint={u.es_base ? 'La unidad base siempre tiene factor 1' : 'Cuántas unidades base equivale 1 de esta'}
                                         error={(errors as Record<string, string>)[`unidades.${i}.factor_conversion`]} />
                                 </div>
 
+                                {/* Precio de venta + Tipo de precio */}
                                 <div className="grid grid-cols-2 gap-3">
-                                    <Input label="Precio de venta" required type="number" min="0" step="0.01" placeholder="0.00"
-                                        value={u.precio_venta} onChange={e => setUnidad(i, 'precio_venta', e.target.value)}
+                                    <Input
+                                        label="Precio de venta"
+                                        required
+                                        type="number" min="0" step="0.01" placeholder="0.00"
+                                        value={u.precio_venta}
+                                        onChange={e => setUnidad(i, 'precio_venta', e.target.value)}
                                         error={(errors as Record<string, string>)[`unidades.${i}.precio_venta`]} />
-                                    <Input label="Precio de costo" type="number" min="0" step="0.01" placeholder="0.00"
-                                        value={u.precio_costo} onChange={e => setUnidad(i, 'precio_costo', e.target.value)} />
-                                </div>
-
-                                <div>
-                                    <p className="text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>Tipo de precio</p>
-                                    <div className="flex gap-4">
-                                        {([{ value: 'fijo', label: 'Fijo' }, { value: 'referencial', label: 'Referencial' }] as const).map(opt => (
-                                            <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm" style={{ color: 'var(--color-text)' }}>
-                                                <input type="radio" checked={u.tipo_precio === opt.value}
-                                                    onChange={() => setUnidad(i, 'tipo_precio', opt.value)}
-                                                    className="accent-[var(--color-primary)]" />
-                                                {opt.label}
-                                            </label>
-                                        ))}
+                                    <div>
+                                        <p className="text-sm font-medium mb-1.5" style={{ color: 'var(--color-text)' }}>Tipo de precio</p>
+                                        <div className="flex gap-4 pt-1">
+                                            {([
+                                                { value: 'fijo',        label: 'Fijo' },
+                                                { value: 'referencial', label: 'Referencial' },
+                                            ] as const).map(opt => (
+                                                <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-sm" style={{ color: 'var(--color-text)' }}>
+                                                    <input type="radio"
+                                                        name={`tipo_precio_${i}`}
+                                                        checked={u.tipo_precio === opt.value}
+                                                        onChange={() => setUnidad(i, 'tipo_precio', opt.value)}
+                                                        className="accent-[var(--color-primary)]" />
+                                                    {opt.label}
+                                                </label>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>

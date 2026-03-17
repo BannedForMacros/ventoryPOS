@@ -55,6 +55,8 @@ class ProductoController extends Controller
         $data = $request->validated();
 
         DB::transaction(function () use ($data, $request) {
+            $esProducto = $data['tipo'] === 'producto';
+
             $producto = Producto::create([
                 'empresa_id'   => $request->user()->empresa_id,
                 'categoria_id' => $data['categoria_id'] ?? null,
@@ -62,9 +64,10 @@ class ProductoController extends Controller
                 'nombre'       => $data['nombre'],
                 'descripcion'  => $data['descripcion'] ?? null,
                 'tipo'         => $data['tipo'],
-                'tipo_precio'  => $data['tipo_precio'],
-                'precio_venta' => $data['precio_venta'],
-                'precio_costo' => $data['precio_costo'] ?? 0,
+                // Para productos físicos el precio real está en cada unidad; guardamos 0 como placeholder.
+                'tipo_precio'  => $esProducto ? 'fijo' : $data['tipo_precio'],
+                'precio_venta' => $esProducto ? 0 : $data['precio_venta'],
+                'precio_costo' => 0,
                 'activo'       => $data['activo'] ?? true,
             ]);
 
@@ -76,7 +79,7 @@ class ProductoController extends Controller
                         'factor_conversion' => $u['es_base'] ? 1 : $u['factor_conversion'],
                         'tipo_precio'       => $u['tipo_precio'],
                         'precio_venta'      => $u['precio_venta'],
-                        'precio_costo'      => $u['precio_costo'] ?? 0,
+                        'precio_costo'      => 0,
                         'activo'            => $u['activo'] ?? true,
                     ]);
                 }
@@ -103,15 +106,17 @@ class ProductoController extends Controller
         $data = $request->validated();
 
         DB::transaction(function () use ($data, $producto) {
+            $esProducto = $data['tipo'] === 'producto';
+
             $producto->update([
                 'categoria_id' => $data['categoria_id'] ?? null,
                 'codigo'       => $data['codigo'] ?? null,
                 'nombre'       => $data['nombre'],
                 'descripcion'  => $data['descripcion'] ?? null,
                 'tipo'         => $data['tipo'],
-                'tipo_precio'  => $data['tipo_precio'],
-                'precio_venta' => $data['precio_venta'],
-                'precio_costo' => $data['precio_costo'] ?? 0,
+                'tipo_precio'  => $esProducto ? 'fijo' : $data['tipo_precio'],
+                'precio_venta' => $esProducto ? 0 : $data['precio_venta'],
+                'precio_costo' => 0,
                 'activo'       => $data['activo'] ?? true,
             ]);
 
@@ -132,7 +137,7 @@ class ProductoController extends Controller
                             'factor_conversion' => $u['es_base'] ? 1 : $u['factor_conversion'],
                             'tipo_precio'       => $u['tipo_precio'],
                             'precio_venta'      => $u['precio_venta'],
-                            'precio_costo'      => $u['precio_costo'] ?? 0,
+                            'precio_costo'      => 0,
                             'activo'            => $u['activo'] ?? true,
                         ]
                     );

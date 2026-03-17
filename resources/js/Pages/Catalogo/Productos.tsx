@@ -74,16 +74,30 @@ export default function Productos({ productos, categorias }: Props) {
         {
             key: 'tipo', label: 'Tipo', sortable: true,
             render: (p) => (
-                <Badge variant={p.tipo === 'servicio' ? 'warning' : 'info'}>
+                <Badge variant={p.tipo === 'servicio' ? 'warning' : 'primary'}>
                     {p.tipo === 'servicio' ? 'Servicio' : 'Producto'}
                 </Badge>
             ),
         },
         {
-            key: 'precio_venta', label: 'Precio ref.', sortable: true,
-            render: (p) => (
-                <span className="font-mono text-sm">S/ {Number(p.precio_venta).toFixed(2)}</span>
-            ),
+            key: 'precio_venta', label: 'Precio venta', sortable: true,
+            render: (p) => {
+                if (p.tipo === 'servicio') {
+                    return <span className="font-mono text-sm">S/ {Number(p.precio_venta).toFixed(2)}</span>;
+                }
+                // Producto físico: mostrar precio de la unidad base
+                if (p.unidad_base) {
+                    return (
+                        <span className="font-mono text-sm">
+                            S/ {Number(p.unidad_base.precio_venta).toFixed(2)}
+                            <span className="ml-1 text-xs font-sans" style={{ color: 'var(--color-text-muted)' }}>
+                                /{p.unidad_base.unidad_medida?.abreviatura}
+                            </span>
+                        </span>
+                    );
+                }
+                return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
+            },
         },
         {
             key: 'activo', label: 'Estado', sortable: true,

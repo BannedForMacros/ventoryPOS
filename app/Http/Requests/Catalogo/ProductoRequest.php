@@ -31,9 +31,10 @@ class ProductoRequest extends FormRequest
             'nombre'       => 'required|string|max:150',
             'descripcion'  => 'nullable|string',
             'tipo'         => 'required|in:producto,servicio',
-            'tipo_precio'  => 'required|in:fijo,referencial',
-            'precio_venta' => 'required|numeric|min:0',
-            'precio_costo' => 'nullable|numeric|min:0',
+            // tipo_precio y precio_venta solo son requeridos para servicios;
+            // los productos los gestionan por unidad.
+            'tipo_precio'  => 'required_if:tipo,servicio|in:fijo,referencial',
+            'precio_venta' => 'required_if:tipo,servicio|nullable|numeric|min:0',
             'activo'       => 'boolean',
         ];
 
@@ -47,7 +48,6 @@ class ProductoRequest extends FormRequest
             $rules['unidades.*.factor_conversion'] = 'required|numeric|min:0.0001';
             $rules['unidades.*.tipo_precio']       = 'required|in:fijo,referencial';
             $rules['unidades.*.precio_venta']      = 'required|numeric|min:0';
-            $rules['unidades.*.precio_costo']      = 'nullable|numeric|min:0';
             $rules['unidades.*.activo']            = 'boolean';
         }
 

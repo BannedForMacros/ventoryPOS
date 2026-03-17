@@ -36,4 +36,9 @@ class Local extends Model
     {
         return $this->hasMany(User::class);
     }
+
+    public function almacenes(): HasMany
+    {
+        return $this->hasMany(Almacen::class);
+    }
 }
