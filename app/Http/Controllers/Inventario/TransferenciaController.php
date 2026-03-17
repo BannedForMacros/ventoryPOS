@@ -38,7 +38,7 @@ class TransferenciaController extends Controller
 
         return Inertia::render('Inventario/Transferencias/Index', [
             'transferencias'  => $transferencias,
-            'almacenes'       => $this->scope->almacenesVisibles($user),
+            'almacenes'       => $this->scope->todosLosAlmacenes($user),
             'filters'         => $request->only(['estado', 'fecha_desde', 'fecha_hasta']),
         ]);
     }
@@ -50,9 +50,13 @@ class TransferenciaController extends Controller
         $user      = $request->user();
         $empresaId = $user->empresa_id;
 
+        // Si el usuario tiene local asignado, el origen queda fijo en su almacén local
+        $origenFijo = $user->local_id ? $this->scope->almacenParaVentas($user) : null;
+
         return Inertia::render('Inventario/Transferencias/Create', [
-            'almacenes' => $this->scope->almacenesVisibles($user),
-            'productos' => Producto::deEmpresa($empresaId)
+            'almacenes'   => $this->scope->todosLosAlmacenes($user),
+            'origen_fijo' => $origenFijo?->load('local'),
+            'productos'   => Producto::deEmpresa($empresaId)
                 ->activo()
                 ->productos()
                 ->with(['unidades.unidadMedida'])

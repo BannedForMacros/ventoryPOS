@@ -16,6 +16,7 @@ interface Almacen  { id: number; nombre: string; tipo: string; local?: { nombre:
 interface Props extends PageProps {
     almacenes: Almacen[];
     productos: Producto[];
+    origen_fijo: Almacen | null;
 }
 
 interface DetalleRow {
@@ -25,8 +26,8 @@ interface DetalleRow {
     factor_conversion: string;
 }
 
-export default function TransferenciaCreate({ almacenes, productos }: Props) {
-    const [origenId, setOrigenId]       = useState<number | ''>('');
+export default function TransferenciaCreate({ almacenes, productos, origen_fijo }: Props) {
+    const [origenId, setOrigenId]       = useState<number | ''>(origen_fijo ? origen_fijo.id : '');
     const [destinoId, setDestinoId]     = useState<number | ''>('');
     const [fecha, setFecha]             = useState(new Date().toISOString().split('T')[0]);
     const [observacion, setObservacion] = useState('');
@@ -103,10 +104,24 @@ export default function TransferenciaCreate({ almacenes, productos }: Props) {
                         Datos de la transferencia
                     </h2>
                     <div className="grid grid-cols-2 gap-4">
-                        <Select label="Almacén origen" required value={origenId}
-                            onChange={v => setOrigenId(v === '' ? '' : Number(v))}
-                            options={almacenOptions.filter(a => a.value !== destinoId)}
-                            error={errors.almacen_origen_id} />
+                        {origen_fijo ? (
+                            <div>
+                                <p className="text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                                    Almacén origen
+                                </p>
+                                <div className="rounded-xl border px-3 py-2 text-sm"
+                                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}>
+                                    {origen_fijo.local
+                                        ? `${origen_fijo.nombre} · ${origen_fijo.local.nombre}`
+                                        : origen_fijo.nombre}
+                                </div>
+                            </div>
+                        ) : (
+                            <Select label="Almacén origen" required value={origenId}
+                                onChange={v => setOrigenId(v === '' ? '' : Number(v))}
+                                options={almacenOptions.filter(a => a.value !== destinoId)}
+                                error={errors.almacen_origen_id} />
+                        )}
                         <Select label="Almacén destino" required value={destinoId}
                             onChange={v => setDestinoId(v === '' ? '' : Number(v))}
                             options={almacenOptions.filter(a => a.value !== origenId)}

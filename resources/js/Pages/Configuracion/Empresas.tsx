@@ -23,6 +23,7 @@ type FormData = {
     direccion: string;
     telefono: string;
     email: string;
+    modo_almacen: 'simple' | 'central_y_local';
     activo: boolean;
 };
 
@@ -33,6 +34,7 @@ const emptyForm: FormData = {
     direccion: '',
     telefono: '',
     email: '',
+    modo_almacen: 'simple',
     activo: true,
 };
 
@@ -64,6 +66,7 @@ export default function Empresas({ empresas }: Props) {
             direccion: emp.direccion ?? '',
             telefono: emp.telefono ?? '',
             email: emp.email ?? '',
+            modo_almacen: emp.modo_almacen,
             activo: emp.activo,
         });
         setModalOpen(true);
@@ -175,6 +178,43 @@ export default function Empresas({ empresas }: Props) {
                         <Input label="Dirección" value={data.direccion} onChange={e => setData('direccion', e.target.value)} error={errors.direccion} />
                         <Input label="Teléfono" value={data.telefono} onChange={e => setData('telefono', e.target.value)} error={errors.telefono} />
                     </div>
+                    <div>
+                        <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
+                            Modo de almacén <span style={{ color: 'var(--color-danger)' }}>*</span>
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            {([
+                                {
+                                    value: 'simple' as const,
+                                    label: 'Simple',
+                                    hint: 'Un solo almacén central actúa como bodega y punto de venta. Ideal para negocios con una sola ubicación.',
+                                },
+                                {
+                                    value: 'central_y_local' as const,
+                                    label: 'Central y local',
+                                    hint: 'Almacén central para compras/entradas y almacenes por local para ventas. Requiere transferencias entre almacenes.',
+                                },
+                            ]).map(opt => (
+                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="modo_almacen"
+                                        checked={data.modo_almacen === opt.value}
+                                        onChange={() => setData('modo_almacen', opt.value)}
+                                        className="mt-0.5 accent-[var(--color-primary)]"
+                                    />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        {errors.modo_almacen && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_almacen}</p>
+                        )}
+                    </div>
+
                     <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text)' }}>
                         <Checkbox
                             name="activo"

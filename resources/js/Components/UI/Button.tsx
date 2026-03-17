@@ -165,7 +165,7 @@ export default function Button({
 
             {/* Contenido principal */}
             {children && (
-                <span className={loading ? 'opacity-70' : undefined}>
+                <span className={['inline-flex items-center gap-1', loading ? 'opacity-70' : ''].join(' ').trim()}>
                     {children}
                 </span>
             )}

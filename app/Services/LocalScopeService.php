@@ -69,10 +69,74 @@ class LocalScopeService
     }
 
     /**
+     * Todos los almacenes activos de la empresa, sin filtrar por local del usuario.
+     * Usado en transferencias, donde origen y destino pueden ser cualquier almacén.
+     */
+    public function todosLosAlmacenes(User $user): Collection
+    {
+        return Almacen::deEmpresa($user->empresa_id)
+            ->activo()
+            ->with('local')
+            ->orderBy('tipo')
+            ->orderBy('nombre')
+            ->get();
+    }
+
+    /**
      * IDs de almacenes visibles — útil para filtrar queries directamente.
      */
     public function almacenIdsVisibles(User $user): array
     {
         return $this->almacenesVisibles($user)->pluck('id')->toArray();
+    }
+
+    /**
+     * Retorna el almacén desde el cual se debe descontar stock al registrar una venta.
+     *
+     * modo_simple:
+     *   → Almacén central de la empresa (el único que existe y se usa para todo).
+     *     Las entradas entran aquí y las ventas se descuentan aquí mismo.
+     *
+     * central_y_local:
+     *   → Almacén de tipo 'local' vinculado al local del usuario (cajero).
+     *     Las entradas van al central, las transferencias abastecen los locales,
+     *     y las ventas descuentan del almacén local del cajero.
+     *
+     * Retorna null si no se puede determinar (configuración incompleta).
+     */
+    public function almacenParaVentas(User $user): ?Almacen
+    {
+        $user->loadMissing('empresa');
+        $empresa = $user->empresa;
+
+        if ($empresa->usaModoSimple()) {
+            // Modo simple: usar el almacén central (única bodega de la empresa)
+            return Almacen::deEmpresa($empresa->id)
+                ->activo()
+                ->central()
+                ->first();
+        }
+
+        // Modo central_y_local: usar el almacén del local asignado al usuario
+        if (!$user->local_id) {
+            // Admin global sin local asignado: no puede vender directamente,
+            // debe seleccionar un local explícitamente
+            return null;
+        }
+
+        return Almacen::deEmpresa($empresa->id)
+            ->activo()
+            ->local()
+            ->where('local_id', $user->local_id)
+            ->first();
+    }
+
+    /**
+     * Retorna true si el usuario puede operar ventas (tiene almacén de ventas resuelto).
+     * Útil para mostrar alertas de configuración en el frontend.
+     */
+    public function puedeVender(User $user): bool
+    {
+        return $this->almacenParaVentas($user) !== null;
     }
 }

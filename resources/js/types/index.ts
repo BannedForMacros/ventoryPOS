@@ -7,6 +7,7 @@ export interface Empresa extends Record<string, unknown> {
     telefono: string | null;
     email: string | null;
     logo: string | null;
+    modo_almacen: 'simple' | 'central_y_local';
     activo: boolean;
     created_at: string;
     updated_at: string;

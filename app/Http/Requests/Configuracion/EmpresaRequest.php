@@ -24,6 +24,7 @@ class EmpresaRequest extends FormRequest
             'telefono'         => 'nullable|string|max:20',
             'email'            => 'nullable|email|max:255',
             'activo'           => 'boolean',
+            'modo_almacen'     => 'required|in:simple,central_y_local',
         ];
     }
 }
