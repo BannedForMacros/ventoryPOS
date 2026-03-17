@@ -6,6 +6,7 @@ import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Switch from '@/Components/UI/Switch';
+import Tabs from '@/Components/UI/Tabs';
 import type { PageProps } from '@/types';
 
 interface Categoria    { id: number; nombre: string; }
@@ -78,9 +79,10 @@ export default function Create({ categorias, unidades }: Props) {
             <PageHeader
                 title="Nuevo producto / servicio"
                 subtitle="Completa los datos para agregar al catálogo"
+                backHref={route('catalogo.productos.index')}
             />
 
-            <form onSubmit={submit} className="max-w-3xl space-y-8">
+            <form onSubmit={submit} className="max-w-3xl mx-auto space-y-8">
 
                 {/* ── Sección 1: Datos generales ── */}
                 <section
@@ -92,21 +94,15 @@ export default function Create({ categorias, unidades }: Props) {
                     </h2>
 
                     {/* Tipo */}
-                    <div>
-                        <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
-                            Tipo <span style={{ color: 'var(--color-danger)' }}>*</span>
-                        </p>
-                        <div className="flex gap-4">
-                            {(['producto', 'servicio'] as const).map(t => (
-                                <label key={t} className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--color-text)' }}>
-                                    <input type="radio" name="tipo" value={t} checked={data.tipo === t}
-                                        onChange={() => setData('tipo', t)} className="accent-[var(--color-primary)]" />
-                                    {t === 'producto' ? 'Producto físico' : 'Servicio'}
-                                </label>
-                            ))}
-                        </div>
-                        {errors.tipo && <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.tipo}</p>}
-                    </div>
+                    <Tabs
+                        tabs={[
+                            { value: 'producto', label: 'Producto físico' },
+                            { value: 'servicio', label: 'Servicio' },
+                        ]}
+                        value={data.tipo}
+                        onChange={v => setData('tipo', v)}
+                        error={errors.tipo}
+                    />
 
                     <div className="grid grid-cols-2 gap-4">
                         <Select

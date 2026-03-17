@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import { Toaster } from 'react-hot-toast';
-import { Menu, X, ChevronDown, ChevronRight, LogOut, User } from 'lucide-react';
+import { ChevronDown, ChevronRight, LogOut, User } from 'lucide-react';
 import type { PageProps, ModuloMenu } from '@/types';
 import DynamicIcon from '@/Components/DynamicIcon';
 import { ColorPaletteProvider } from '@/Components/ColorPaletteProvider';
 import ColorPaletteEditor from '@/Components/ColorPaletteEditor';
+import RouterLoadingOverlay from '@/Components/RouterLoadingOverlay';
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -38,13 +39,16 @@ function SidebarItem({ item, collapsed }: { item: ModuloMenu; collapsed: boolean
                         </>
                     )}
                 </button>
-                {!collapsed && expanded && (
+                <div
+                    className="overflow-hidden transition-all duration-300 ease-in-out"
+                    style={{ maxHeight: (!collapsed && expanded) ? '600px' : '0px' }}
+                >
                     <div className="ml-4 mt-0.5 space-y-0.5 border-l pl-3" style={{ borderColor: 'var(--sidebar-border)' }}>
                         {item.hijos!.map(child => (
                             <SidebarItem key={child.id} item={child} collapsed={false} />
                         ))}
                     </div>
-                )}
+                </div>
             </div>
         );
     }
@@ -65,16 +69,20 @@ function SidebarItem({ item, collapsed }: { item: ModuloMenu; collapsed: boolean
     );
 }
 
-function Sidebar({ modules, collapsed }: { modules: ModuloMenu[]; collapsed: boolean }) {
+function Sidebar({ modules }: { modules: ModuloMenu[] }) {
     const { auth } = usePage<PageProps>().props;
+    const [hovered, setHovered] = useState(false);
+    const collapsed = !hovered;
 
     return (
         <aside
             className="fixed top-0 left-0 h-full flex flex-col z-30 transition-all duration-200"
             style={{
-                width: collapsed ? '64px' : '256px',
+                width: hovered ? '256px' : '64px',
                 backgroundColor: 'var(--sidebar-bg)',
             }}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
         >
             {/* Logo */}
             <div
@@ -132,9 +140,8 @@ function Sidebar({ modules, collapsed }: { modules: ModuloMenu[]; collapsed: boo
 }
 
 export default function AppLayout({ children, title }: AppLayoutProps) {
-    const { auth, modules = [] } = usePage<PageProps>().props;
-    const [collapsed, setCollapsed] = useState(false);
-    const sidebarWidth = collapsed ? 64 : 256;
+    const { auth } = usePage<PageProps>().props;
+    const { modules = [] } = usePage<PageProps>().props;
 
     const logout = () => {
         router.post(route('logout'));
@@ -143,12 +150,12 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
     return (
         <ColorPaletteProvider>
             <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg)' }}>
-                <Sidebar modules={modules} collapsed={collapsed} />
+                <Sidebar modules={modules} />
 
-                {/* Main */}
+                {/* Main — margen fijo siempre 64px, el sidebar hace overlay al hover */}
                 <div
-                    className="flex flex-col min-h-screen transition-all duration-200"
-                    style={{ marginLeft: `${sidebarWidth}px` }}
+                    className="flex flex-col min-h-screen"
+                    style={{ marginLeft: '64px' }}
                 >
                     {/* Header */}
                     <header
@@ -158,14 +165,6 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                             borderColor: 'var(--color-border)',
                         }}
                     >
-                        <button
-                            onClick={() => setCollapsed(c => !c)}
-                            className="rounded p-1.5 transition-colors duration-150"
-                            style={{ color: 'var(--color-text-muted)' }}
-                        >
-                            {collapsed ? <Menu size={20} /> : <X size={20} />}
-                        </button>
-
                         {title && (
                             <h1 className="flex-1 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
                                 {title}
@@ -204,6 +203,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
 
                 <ColorPaletteEditor />
                 <Toaster position="top-right" />
+                <RouterLoadingOverlay />
             </div>
         </ColorPaletteProvider>
     );

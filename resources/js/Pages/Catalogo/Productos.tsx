@@ -111,7 +111,7 @@ export default function Productos({ productos, categorias }: Props) {
                 subtitle="Catálogo de ítems disponibles para la venta"
                 actions={
                     <Link href={route('catalogo.productos.create')}>
-                        <Button><Plus size={15} className="mr-1" />Nuevo Producto</Button>
+                        <Button><Plus size={15} className="mr-1 flex-shrink-0" /><span className="whitespace-nowrap">Nuevo Producto/Servicio</span></Button>
                     </Link>
                 }
             />
