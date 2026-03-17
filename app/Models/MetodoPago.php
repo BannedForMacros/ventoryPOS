@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class MetodoPago extends Model
 {
+    protected $table = 'metodos_pago';
+
     protected $fillable = [
         'empresa_id',
         'nombre',

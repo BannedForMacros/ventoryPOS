@@ -3,9 +3,12 @@
 use App\Http\Controllers\Catalogo\CategoriaController;
 use App\Http\Controllers\Catalogo\ProductoController;
 use App\Http\Controllers\Catalogo\UnidadMedidaController;
+use App\Http\Controllers\Clientes\ClienteController;
+use App\Http\Controllers\Clientes\DecolectaController;
 use App\Http\Controllers\Configuracion\AlmacenController;
 use App\Http\Controllers\Configuracion\EmpresaController;
 use App\Http\Controllers\Configuracion\LocalController;
+use App\Http\Controllers\Configuracion\MetodoPagoController;
 use App\Http\Controllers\Configuracion\ModuloController;
 use App\Http\Controllers\Configuracion\PermisoController;
 use App\Http\Controllers\Configuracion\RolController;
@@ -60,6 +63,26 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('transferencias/crear', [TransferenciaController::class, 'create'])->name('transferencias.create');
         Route::post('transferencias/{transferencia}/confirmar', [TransferenciaController::class, 'confirmar'])->name('transferencias.confirmar');
         Route::apiResource('transferencias', TransferenciaController::class)->except(['show', 'edit', 'update']);
+    });
+
+    // Clientes
+    Route::prefix('clientes')->name('clientes.')->group(function () {
+        Route::get('/', [ClienteController::class, 'index'])->name('index');
+        Route::post('/', [ClienteController::class, 'store'])->name('store');
+        Route::get('/{cliente}', [ClienteController::class, 'show'])->name('show');
+        Route::put('/{cliente}', [ClienteController::class, 'update'])->name('update');
+        Route::delete('/{cliente}', [ClienteController::class, 'destroy'])->name('destroy');
+    });
+
+    // Métodos de pago (dentro de configuración)
+    Route::apiResource('configuracion/metodos-pago', MetodoPagoController::class)
+         ->names('configuracion.metodos-pago')
+         ->except(['show']);
+
+    // API interna Decolecta (con throttle)
+    Route::middleware('throttle:30,1')->prefix('api/decolecta')->group(function () {
+        Route::post('dni', [DecolectaController::class, 'consultarDni'])->name('decolecta.dni');
+        Route::post('ruc', [DecolectaController::class, 'consultarRuc'])->name('decolecta.ruc');
     });
 
     Route::prefix('catalogo')->name('catalogo.')->group(function () {

@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class MetodoPagoCuenta extends Model
 {
+    protected $table = 'metodo_pago_cuentas';
+
     protected $fillable = [
         'metodo_pago_id',
         'nombre',
