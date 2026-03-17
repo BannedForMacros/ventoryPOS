@@ -71,6 +71,16 @@ class Empresa extends Model
         return $this->hasMany(Transferencia::class);
     }
 
+    public function clientes(): HasMany
+    {
+        return $this->hasMany(Cliente::class);
+    }
+
+    public function metodosPago(): HasMany
+    {
+        return $this->hasMany(MetodoPago::class);
+    }
+
     public function usaModoSimple(): bool
     {
         return $this->modo_almacen === 'simple';
