@@ -41,4 +41,9 @@ class Local extends Model
     {
         return $this->hasMany(Almacen::class);
     }
+
+    public function cajas(): HasMany
+    {
+        return $this->hasMany(Caja::class);
+    }
 }
