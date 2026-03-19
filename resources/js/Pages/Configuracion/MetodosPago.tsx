@@ -106,13 +106,16 @@ export default function MetodosPago({ metodos, cuentas }: Props) {
 
     function submit() {
         setSaving(true);
-        const url    = editing ? route('configuracion.metodos-pago.update', editing.id) : route('configuracion.metodos-pago.store');
-        const method = editing ? router.put : router.post;
-
-        method(url, form as any, {
+        const opts = {
             onSuccess: () => { setModal(false); setSaving(false); },
-            onError:   (errs) => { setErrors(errs as Record<string, string>); setSaving(false); },
-        });
+            onError:   (errs: any) => { setErrors(errs as Record<string, string>); setSaving(false); },
+        };
+
+        if (editing) {
+            router.put(route('configuracion.metodos-pago.update', editing.id), form as any, opts);
+        } else {
+            router.post(route('configuracion.metodos-pago.store'), form as any, opts);
+        }
     }
 
     function deactivate(id: number) {

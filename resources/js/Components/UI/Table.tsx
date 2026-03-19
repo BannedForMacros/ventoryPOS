@@ -81,23 +81,19 @@ export default function Table<T extends Record<string, unknown>>({
             prev.includes(rowId) ? prev.filter(id => id !== rowId) : [...prev, rowId]
         );
 
-    // 1. Filtrar
+    // 1. Filtrar — busca en TODOS los campos del row (no solo los keys de columnas)
     const filteredData = useMemo(() => {
         if (!search || !items.length) return items;
         const searchLower = search.toLowerCase();
-        const getSearchableString = (obj: unknown): string => {
+        const stringify = (obj: unknown): string => {
+            if (obj === null || obj === undefined || typeof obj === 'boolean') return '';
             if (typeof obj === 'string' || typeof obj === 'number') return String(obj).toLowerCase();
-            if (typeof obj === 'object' && obj !== null) return Object.values(obj).map(getSearchableString).join(' ');
+            if (Array.isArray(obj)) return obj.map(stringify).join(' ');
+            if (typeof obj === 'object') return Object.values(obj as object).map(stringify).join(' ');
             return '';
         };
-        return items.filter(row =>
-            columns.some(column => {
-                const key = column.render && column.searchKey ? column.searchKey : column.key;
-                const value: unknown = row[key];
-                return getSearchableString(value).includes(searchLower);
-            })
-        );
-    }, [items, search, columns]);
+        return items.filter(row => stringify(row).includes(searchLower));
+    }, [items, search]);
 
     // 2. Ordenar
     const sortedData = useMemo(() => {

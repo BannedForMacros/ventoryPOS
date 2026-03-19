@@ -1,18 +1,23 @@
 import { useRef, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Search } from 'lucide-react';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Switch from '@/Components/UI/Switch';
 
 const TIPOS_DOC = [
-    { value: 'DNI',       label: 'DNI' },
-    { value: 'RUC',       label: 'RUC' },
-    { value: 'CE',        label: 'Carné de extranjería' },
-    { value: 'pasaporte', label: 'Pasaporte' },
-    { value: 'otro',      label: 'Otro' },
+    { value: 'DNI', label: 'DNI' },
+    { value: 'RUC', label: 'RUC' },
+    { value: 'CE',  label: 'Carné de extranjería' },
 ];
+
+// Reglas por tipo de documento
+const DOC_CONFIG: Record<string, { maxLength: number; soloNumeros: boolean; placeholder: string }> = {
+    DNI: { maxLength: 8,  soloNumeros: true,  placeholder: '8 dígitos' },
+    RUC: { maxLength: 11, soloNumeros: true,  placeholder: '11 dígitos' },
+    CE:  { maxLength: 12, soloNumeros: false, placeholder: 'Hasta 12 caracteres' },
+};
 
 export interface ClienteForm {
     tipo_documento:   string;
@@ -49,9 +54,11 @@ export const emptyCliente = (): ClienteForm => ({
 
 export default function FormCliente({ form, setForm, errors, disabled }: Props) {
     const [consultando, setConsultando] = useState(false);
+    const [fromApi, setFromApi]         = useState(false);
     const abortRef = useRef<AbortController | null>(null);
 
     function handleTipoChange(tipo: string) {
+        setFromApi(false);
         setForm(f => ({
             ...f,
             tipo_documento:   tipo,
@@ -62,25 +69,54 @@ export default function FormCliente({ form, setForm, errors, disabled }: Props) 
         }));
     }
 
-    async function consultarDocumento(valor: string) {
+    function handleDocumentoChange(valor: string) {
+        // Si el usuario borra el documento, se desbloquean los campos
+        if (!valor) {
+            setFromApi(false);
+            setForm(f => ({
+                ...f,
+                numero_documento: '',
+                nombres:          '',
+                apellidos:        '',
+                razon_social:     '',
+            }));
+            return;
+        }
+
+        const cfg = DOC_CONFIG[form.tipo_documento];
+        // Filtrar solo números si aplica
+        const sanitizado = cfg?.soloNumeros ? valor.replace(/\D/g, '') : valor;
+        setForm(f => ({ ...f, numero_documento: sanitizado }));
+    }
+
+    async function consultarDocumento() {
+        const valor = form.numero_documento;
         const esDni = form.tipo_documento === 'DNI' && valor.length === 8;
         const esRuc = form.tipo_documento === 'RUC' && valor.length === 11;
 
-        if (!esDni && !esRuc) return;
+        if (!esDni && !esRuc) {
+            toast.error(
+                form.tipo_documento === 'DNI'
+                    ? 'El DNI debe tener 8 dígitos'
+                    : 'El RUC debe tener 11 dígitos'
+            );
+            return;
+        }
 
         abortRef.current?.abort();
         abortRef.current = new AbortController();
-
         setConsultando(true);
 
         try {
             if (esDni) {
                 const { data } = await axios.post('/api/decolecta/dni', { dni: valor }, { signal: abortRef.current.signal });
                 setForm(f => ({ ...f, nombres: data.nombres, apellidos: data.apellidos }));
+                setFromApi(true);
                 toast.success('Datos obtenidos de RENIEC');
             } else {
                 const { data } = await axios.post('/api/decolecta/ruc', { ruc: valor }, { signal: abortRef.current.signal });
                 setForm(f => ({ ...f, razon_social: data.razon_social, direccion: data.direccion }));
+                setFromApi(true);
                 toast.success('Datos obtenidos de SUNAT');
             }
         } catch (err: any) {
@@ -92,15 +128,14 @@ export default function FormCliente({ form, setForm, errors, disabled }: Props) 
         }
     }
 
-    function handleDocumentoChange(valor: string) {
-        setForm(f => ({ ...f, numero_documento: valor }));
-        consultarDocumento(valor);
-    }
+    const esRuc      = form.tipo_documento === 'RUC';
+    const usaApi     = form.tipo_documento === 'DNI' || esRuc;
+    const docCfg     = DOC_CONFIG[form.tipo_documento] ?? { maxLength: 20, soloNumeros: false, placeholder: '' };
+    const hoy        = new Date().toISOString().split('T')[0];
 
-    const esRuc   = form.tipo_documento === 'RUC';
-    const usaApi  = form.tipo_documento === 'DNI' || esRuc;
-    const maxDoc  = esRuc ? 11 : form.tipo_documento === 'DNI' ? 8 : 20;
-    const hoy     = new Date().toISOString().split('T')[0];
+    const hintBloqueado = esRuc
+        ? 'Eliminar el RUC para editar'
+        : 'Eliminar el DNI para editar';
 
     return (
         <div className="space-y-4">
@@ -113,20 +148,42 @@ export default function FormCliente({ form, setForm, errors, disabled }: Props) 
                 disabled={disabled}
             />
 
-            <div className="relative">
-                <Input
-                    label="Número de documento"
-                    value={form.numero_documento}
-                    onChange={e => handleDocumentoChange(e.target.value)}
-                    maxLength={maxDoc}
-                    disabled={disabled || consultando}
-                    error={errors.numero_documento}
-                    placeholder={esRuc ? '20xxxxxxxxx' : form.tipo_documento === 'DNI' ? '8 dígitos' : ''}
-                />
-                {consultando && (
-                    <div className="absolute right-3 top-8">
-                        <Loader2 size={16} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
-                    </div>
+            {/* Documento + botón lupa */}
+            <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                    <Input
+                        label="Número de documento"
+                        value={form.numero_documento}
+                        onChange={e => handleDocumentoChange(e.target.value)}
+                        maxLength={docCfg.maxLength}
+                        inputMode={docCfg.soloNumeros ? 'numeric' : 'text'}
+                        disabled={disabled || consultando}
+                        error={errors.numero_documento}
+                        placeholder={esRuc ? '20xxxxxxxxx' : docCfg.placeholder}
+                    />
+                </div>
+
+                {usaApi && (
+                    <button
+                        type="button"
+                        onClick={consultarDocumento}
+                        disabled={disabled || consultando || !form.numero_documento}
+                        className="flex items-center justify-center rounded-xl border-2 px-3 py-2.5 transition-all duration-200
+                            hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                        style={{
+                            borderColor:     'var(--color-primary)',
+                            color:           'var(--color-primary)',
+                            backgroundColor: 'transparent',
+                            // alinea con el input (compensa el label encima)
+                            marginBottom: errors.numero_documento ? '1.25rem' : '0',
+                        }}
+                        title="Consultar en RENIEC / SUNAT"
+                    >
+                        {consultando
+                            ? <Loader2 size={16} className="animate-spin" />
+                            : <Search size={16} />
+                        }
+                    </button>
                 )}
             </div>
 
@@ -137,15 +194,17 @@ export default function FormCliente({ form, setForm, errors, disabled }: Props) 
                         required={form.tipo_documento === 'DNI'}
                         value={form.nombres}
                         onChange={e => setForm(f => ({ ...f, nombres: e.target.value }))}
-                        disabled={disabled || (usaApi && consultando)}
+                        disabled={disabled || (usaApi && fromApi)}
                         error={errors.nombres}
+                        hint={usaApi && fromApi ? hintBloqueado : undefined}
                     />
                     <Input
                         label="Apellidos"
                         value={form.apellidos}
                         onChange={e => setForm(f => ({ ...f, apellidos: e.target.value }))}
-                        disabled={disabled || (usaApi && consultando)}
+                        disabled={disabled || (usaApi && fromApi)}
                         error={errors.apellidos}
+                        hint={usaApi && fromApi ? hintBloqueado : undefined}
                     />
                 </>
             ) : (
@@ -154,8 +213,9 @@ export default function FormCliente({ form, setForm, errors, disabled }: Props) 
                     required
                     value={form.razon_social}
                     onChange={e => setForm(f => ({ ...f, razon_social: e.target.value }))}
-                    disabled={disabled || consultando}
+                    disabled={disabled || (usaApi && fromApi)}
                     error={errors.razon_social}
+                    hint={usaApi && fromApi ? hintBloqueado : undefined}
                 />
             )}
 
@@ -180,7 +240,7 @@ export default function FormCliente({ form, setForm, errors, disabled }: Props) 
                 label="Dirección"
                 value={form.direccion}
                 onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))}
-                disabled={disabled || (esRuc && consultando)}
+                disabled={disabled}
                 error={errors.direccion}
             />
 

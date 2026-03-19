@@ -18,9 +18,9 @@ class ClienteRequest extends FormRequest
         $id        = $this->route('cliente')?->id;
 
         return [
-            'tipo_documento'   => 'required|in:DNI,RUC,CE,pasaporte,otro',
+            'tipo_documento'   => 'required|in:DNI,RUC,CE',
             'numero_documento' => [
-                'nullable', 'string', 'max:20',
+                'nullable', 'string',
                 Rule::unique('clientes', 'numero_documento')
                     ->where('empresa_id', $empresaId)
                     ->ignore($id),
@@ -40,13 +40,28 @@ class ClienteRequest extends FormRequest
     {
         $validator->after(function ($v) {
             $tipo = $this->input('tipo_documento');
+            $num  = $this->input('numero_documento');
 
-            if ($tipo === 'DNI' && empty($this->input('nombres'))) {
-                $v->errors()->add('nombres', 'El nombre es requerido para DNI.');
+            if ($tipo === 'DNI') {
+                if ($num && (!ctype_digit($num) || strlen($num) !== 8)) {
+                    $v->errors()->add('numero_documento', 'El DNI debe tener exactamente 8 dígitos numéricos.');
+                }
+                if (empty($this->input('nombres'))) {
+                    $v->errors()->add('nombres', 'El nombre es requerido para DNI.');
+                }
             }
 
-            if ($tipo === 'RUC' && empty($this->input('razon_social'))) {
-                $v->errors()->add('razon_social', 'La razón social es requerida para RUC.');
+            if ($tipo === 'RUC') {
+                if ($num && (!ctype_digit($num) || strlen($num) !== 11)) {
+                    $v->errors()->add('numero_documento', 'El RUC debe tener exactamente 11 dígitos numéricos.');
+                }
+                if (empty($this->input('razon_social'))) {
+                    $v->errors()->add('razon_social', 'La razón social es requerida para RUC.');
+                }
+            }
+
+            if ($tipo === 'CE' && $num && strlen($num) > 12) {
+                $v->errors()->add('numero_documento', 'El CE no puede superar los 12 caracteres.');
             }
         });
     }

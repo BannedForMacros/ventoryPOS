@@ -72,13 +72,16 @@ export default function ClientesIndex({ clientes, busqueda }: Props) {
 
     function submit() {
         setSaving(true);
-        const url    = editing ? route('clientes.update', editing.id) : route('clientes.store');
-        const method = editing ? router.put : router.post;
-
-        method(url, form as any, {
+        const opts = {
             onSuccess: () => { setModal(false); setSaving(false); },
-            onError:   (errs) => { setErrors(errs as any); setSaving(false); },
-        });
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        };
+
+        if (editing) {
+            router.put(route('clientes.update', editing.id), form as any, opts);
+        } else {
+            router.post(route('clientes.store'), form as any, opts);
+        }
     }
 
     function deactivate(id: number) {

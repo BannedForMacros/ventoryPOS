@@ -78,13 +78,16 @@ export default function Cuentas({ cuentas }: Props) {
 
     function submit() {
         setSaving(true);
-        const url    = editing ? route('configuracion.cuentas.update', editing.id) : route('configuracion.cuentas.store');
-        const method = editing ? router.put : router.post;
-
-        method(url, form as any, {
+        const opts = {
             onSuccess: () => { setModal(false); setSaving(false); },
-            onError:   (errs) => { setErrors(errs as any); setSaving(false); },
-        });
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        };
+
+        if (editing) {
+            router.put(route('configuracion.cuentas.update', editing.id), form as any, opts);
+        } else {
+            router.post(route('configuracion.cuentas.store'), form as any, opts);
+        }
     }
 
     function deactivate(id: number) {
