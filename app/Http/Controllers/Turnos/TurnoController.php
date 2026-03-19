@@ -1,0 +1,122 @@
+<?php
+
+namespace App\Http\Controllers\Turnos;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Turnos\AbrirTurnoRequest;
+use App\Http\Requests\Turnos\CerrarTurnoRequest;
+use App\Models\Caja;
+use App\Models\Turno;
+use App\Models\TurnoArqueo;
+use App\Models\TurnoArqueoMetodo;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+
+class TurnoController extends Controller
+{
+    public function index(Request $request)
+    {
+        $user  = $request->user();
+        $query = Turno::deEmpresa($user->empresa_id)
+            ->with(['caja', 'user', 'userCierre', 'local']);
+
+        if (!$user->rol->es_admin) {
+            $query->where('user_id', $user->id);
+        }
+
+        $turnos = $query->orderByDesc('fecha_apertura')->paginate(20);
+
+        $cajasDisponibles = Caja::deEmpresa($user->empresa_id)
+            ->activo()
+            ->when($user->local_id, fn($q) => $q->where('local_id', $user->local_id))
+            ->with('local')
+            ->get()
+            ->map(fn($c) => [
+                ...$c->toArray(),
+                'tiene_turno_abierto' => $c->tieneTurnoAbierto(),
+            ]);
+
+        return Inertia::render('Turnos/Index', [
+            'turnos'           => $turnos,
+            'cajasDisponibles' => $cajasDisponibles,
+        ]);
+    }
+
+    public function turnoActivo(Request $request)
+    {
+        $turno = Turno::turnoActivoDelUsuario($request->user()->id)
+            ?->load(['caja', 'gastos.tipo', 'gastos.concepto']);
+
+        return response()->json($turno);
+    }
+
+    public function abrir(AbrirTurnoRequest $request)
+    {
+        $user = $request->user();
+        $caja = Caja::findOrFail($request->input('caja_id'));
+
+        $montoCajaChica = $caja->caja_chica_activa
+            ? (float) $request->input('monto_caja_chica', 0)
+            : 0;
+
+        Turno::create([
+            'empresa_id'           => $user->empresa_id,
+            'local_id'             => $caja->local_id,
+            'caja_id'              => $caja->id,
+            'user_id'              => $user->id,
+            'monto_apertura'       => $request->input('monto_apertura'),
+            'monto_caja_chica'     => $montoCajaChica,
+            'estado'               => 'abierto',
+            'fecha_apertura'       => now(),
+            'observacion_apertura' => $request->input('observacion_apertura'),
+        ]);
+
+        return redirect()->back()->with('success', 'Turno abierto correctamente.');
+    }
+
+    public function cerrar(CerrarTurnoRequest $request, Turno $turno)
+    {
+        abort_if($turno->user_id !== $request->user()->id, 403);
+        abort_if($turno->estado !== 'abierto', 422);
+
+        DB::transaction(function () use ($request, $turno) {
+            // Guardar arqueo de efectivo
+            $turno->arqueo()->delete();
+            foreach ($request->input('arqueo', []) as $fila) {
+                TurnoArqueo::create([
+                    'turno_id'     => $turno->id,
+                    'denominacion' => $fila['denominacion'],
+                    'cantidad'     => $fila['cantidad'],
+                ]);
+            }
+
+            // Guardar arqueo de métodos de pago
+            $turno->arqueoMetodos()->delete();
+            foreach ($request->input('arqueo_metodos', []) as $fila) {
+                TurnoArqueoMetodo::create([
+                    'turno_id'        => $turno->id,
+                    'metodo_pago_id'  => $fila['metodo_pago_id'],
+                    'monto_declarado' => $fila['monto_declarado'],
+                ]);
+            }
+
+            $turno->refresh();
+
+            $montoDeclarado = $turno->calcularTotalArqueo();
+            $montoEsperado  = $turno->calcularMontoEsperado();
+
+            $turno->update([
+                'user_cierre_id'         => $request->user()->id,
+                'monto_cierre_declarado' => $montoDeclarado,
+                'monto_cierre_esperado'  => $montoEsperado,
+                'diferencia'             => $montoDeclarado - $montoEsperado,
+                'estado'                 => 'cerrado',
+                'fecha_cierre'           => now(),
+                'observacion_cierre'     => $request->input('observacion_cierre'),
+            ]);
+        });
+
+        return redirect()->back()->with('success', 'Turno cerrado correctamente.');
+    }
+}
