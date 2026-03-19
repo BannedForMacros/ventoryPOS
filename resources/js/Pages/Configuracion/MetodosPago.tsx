@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Banknote, CreditCard, Smartphone, ArrowLeftRight, Wallet, Trash2 } from 'lucide-react';
+import { Plus, Banknote, CreditCard, Smartphone, ArrowLeftRight, Wallet, Check } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -44,42 +44,38 @@ const TIPO_LABEL: Record<string, string> = {
     otro:            'Otro',
 };
 
-interface Cuenta {
-    id?:           number;
+interface CuentaMin {
+    id:            number;
     nombre:        string;
-    numero_cuenta: string;
-    banco:         string;
-    cci:           string;
-    titular:       string;
-    activo:        boolean;
+    numero_cuenta: string | null;
+    banco:         string | null;
 }
 
 interface MetodoPago extends Record<string, unknown> {
-    id:      number;
-    nombre:  string;
-    tipo:    string;
-    activo:  boolean;
-    cuentas: Cuenta[];
+    id:         number;
+    nombre:     string;
+    tipo:       string;
+    activo:     boolean;
+    cuentas:    CuentaMin[];
 }
 
 interface FormState {
-    nombre:  string;
-    tipo:    string;
-    activo:  boolean;
-    cuentas: Cuenta[];
+    nombre:     string;
+    tipo:       string;
+    activo:     boolean;
+    cuenta_ids: number[];
 }
 
-interface Props extends PageProps { metodos: MetodoPago[]; }
-
-const emptyCuenta = (): Cuenta => ({
-    nombre: '', numero_cuenta: '', banco: '', cci: '', titular: '', activo: true,
-});
+interface Props extends PageProps {
+    metodos: MetodoPago[];
+    cuentas: CuentaMin[];
+}
 
 const emptyForm = (): FormState => ({
-    nombre: '', tipo: 'efectivo', activo: true, cuentas: [],
+    nombre: '', tipo: 'efectivo', activo: true, cuenta_ids: [],
 });
 
-export default function MetodosPago({ metodos }: Props) {
+export default function MetodosPago({ metodos, cuentas }: Props) {
     const { flash } = usePage<Props>().props;
     const [modal, setModal]         = useState(false);
     const [editing, setEditing]     = useState<MetodoPago | null>(null);
@@ -99,7 +95,12 @@ export default function MetodosPago({ metodos }: Props) {
 
     function openEdit(m: MetodoPago) {
         setEditing(m);
-        setForm({ nombre: m.nombre, tipo: m.tipo, activo: m.activo, cuentas: m.cuentas.map(c => ({ ...c })) });
+        setForm({
+            nombre:     m.nombre,
+            tipo:       m.tipo,
+            activo:     m.activo,
+            cuenta_ids: (m.cuentas as CuentaMin[]).map(c => c.id),
+        });
         setErrors({}); setModal(true);
     }
 
@@ -119,24 +120,16 @@ export default function MetodosPago({ metodos }: Props) {
         router.delete(route('configuracion.metodos-pago.destroy', id));
     }
 
-    function addCuenta() {
-        setForm(f => ({ ...f, cuentas: [...f.cuentas, emptyCuenta()] }));
-    }
-
-    function removeCuenta(idx: number) {
-        setForm(f => ({ ...f, cuentas: f.cuentas.filter((_, i) => i !== idx) }));
-    }
-
-    function updateCuenta(idx: number, field: keyof Cuenta, value: string | boolean) {
+    function toggleCuenta(id: number) {
         setForm(f => ({
             ...f,
-            cuentas: f.cuentas.map((c, i) => i === idx ? { ...c, [field]: value } : c),
+            cuenta_ids: f.cuenta_ids.includes(id)
+                ? f.cuenta_ids.filter(c => c !== id)
+                : [...f.cuenta_ids, id],
         }));
     }
 
     const mostrarCuentas = form.tipo !== 'efectivo';
-    const mostrarBanco   = ['transferencia', 'tarjeta_debito', 'tarjeta_credito'].includes(form.tipo);
-    const mostrarCci     = form.tipo === 'transferencia';
 
     const columns: Column<MetodoPago>[] = [
         {
@@ -154,12 +147,19 @@ export default function MetodosPago({ metodos }: Props) {
             ),
         },
         {
-            key: 'cuentas', label: 'Cuentas',
+            key: 'cuentas', label: 'Cuentas asignadas',
             render: (m) => {
-                const activas = (m.cuentas as Cuenta[]).filter(c => c.activo).length;
-                return activas > 0
-                    ? <span className="text-sm">{activas} {activas === 1 ? 'cuenta' : 'cuentas'}</span>
-                    : <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Sin cuentas</span>;
+                const cs = m.cuentas as CuentaMin[];
+                if (!cs.length) {
+                    return <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Sin cuentas</span>;
+                }
+                return (
+                    <div className="flex flex-wrap gap-1">
+                        {cs.map(c => (
+                            <Badge key={c.id} variant="secondary">{c.nombre}</Badge>
+                        ))}
+                    </div>
+                );
             },
         },
         {
@@ -213,7 +213,6 @@ export default function MetodosPago({ metodos }: Props) {
                 }
             >
                 <div className="space-y-4">
-                    {/* Sección 1 — Datos del método */}
                     <Input
                         label="Nombre"
                         required
@@ -226,7 +225,7 @@ export default function MetodosPago({ metodos }: Props) {
                         label="Tipo"
                         required
                         value={form.tipo}
-                        onChange={v => setForm(f => ({ ...f, tipo: String(v), cuentas: [] }))}
+                        onChange={v => setForm(f => ({ ...f, tipo: String(v), cuenta_ids: [] }))}
                         options={TIPOS}
                         disabled={saving}
                     />
@@ -237,83 +236,51 @@ export default function MetodosPago({ metodos }: Props) {
                         disabled={saving}
                     />
 
-                    {/* Sección 2 — Cuentas asociadas */}
+                    {/* Cuentas asignadas */}
                     {mostrarCuentas && (
-                        <div className="pt-2 space-y-3">
-                            <div className="flex items-center justify-between">
-                                <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                                    Cuentas asociadas{' '}
-                                    <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(opcional)</span>
-                                </p>
-                                <Button variant="ghost" onClick={addCuenta} disabled={saving}>
-                                    <Plus size={13} className="mr-1" />Agregar cuenta
-                                </Button>
-                            </div>
+                        <div className="pt-1">
+                            <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
+                                Cuentas asignadas{' '}
+                                <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(opcional)</span>
+                            </p>
 
-                            {form.cuentas.length === 0 && (
-                                <p className="text-xs text-center py-3" style={{ color: 'var(--color-text-muted)' }}>
-                                    Sin cuentas. Puedes agregar una o más.
+                            {cuentas.length === 0 ? (
+                                <p className="text-xs py-3 text-center" style={{ color: 'var(--color-text-muted)' }}>
+                                    No hay cuentas disponibles. Crea una en{' '}
+                                    <span className="font-medium">Configuración → Cuentas</span>.
                                 </p>
-                            )}
-
-                            {form.cuentas.map((cuenta, idx) => (
-                                <div
-                                    key={idx}
-                                    className="rounded-lg p-3 space-y-3"
-                                    style={{ backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)' }}
-                                >
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                                            Cuenta {idx + 1}
-                                        </span>
-                                        <button
-                                            onClick={() => removeCuenta(idx)}
-                                            className="p-1 rounded transition-colors hover:bg-red-50"
-                                            style={{ color: 'var(--color-danger)' }}
-                                        >
-                                            <Trash2 size={13} />
-                                        </button>
-                                    </div>
-                                    <Input
-                                        label="Nombre de la cuenta"
-                                        required
-                                        value={cuenta.nombre}
-                                        onChange={e => updateCuenta(idx, 'nombre', e.target.value)}
-                                        error={errors[`cuentas.${idx}.nombre`]}
-                                        placeholder='Ej: "Yape principal", "Cuenta BCP soles"'
-                                        disabled={saving}
-                                    />
-                                    <Input
-                                        label="Número de cuenta / celular"
-                                        value={cuenta.numero_cuenta}
-                                        onChange={e => updateCuenta(idx, 'numero_cuenta', e.target.value)}
-                                        disabled={saving}
-                                    />
-                                    {mostrarBanco && (
-                                        <Input
-                                            label="Banco"
-                                            value={cuenta.banco}
-                                            onChange={e => updateCuenta(idx, 'banco', e.target.value)}
-                                            placeholder='Ej: "BCP", "Interbank"'
-                                            disabled={saving}
-                                        />
-                                    )}
-                                    {mostrarCci && (
-                                        <Input
-                                            label="CCI"
-                                            value={cuenta.cci}
-                                            onChange={e => updateCuenta(idx, 'cci', e.target.value)}
-                                            disabled={saving}
-                                        />
-                                    )}
-                                    <Input
-                                        label="Titular"
-                                        value={cuenta.titular}
-                                        onChange={e => updateCuenta(idx, 'titular', e.target.value)}
-                                        disabled={saving}
-                                    />
+                            ) : (
+                                <div className="rounded-lg divide-y overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                    {cuentas.map(cuenta => {
+                                        const selected = form.cuenta_ids.includes(cuenta.id);
+                                        return (
+                                            <button
+                                                key={cuenta.id}
+                                                type="button"
+                                                onClick={() => toggleCuenta(cuenta.id)}
+                                                disabled={saving}
+                                                className="w-full flex items-center justify-between px-4 py-2.5 text-left transition-colors"
+                                                style={{
+                                                    backgroundColor: selected ? 'rgba(59,130,246,0.06)' : 'transparent',
+                                                    borderColor: 'var(--color-border)',
+                                                }}
+                                            >
+                                                <div>
+                                                    <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                                                        {cuenta.nombre}
+                                                    </p>
+                                                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                                        {[cuenta.banco, cuenta.numero_cuenta].filter(Boolean).join(' · ') || 'Sin detalles'}
+                                                    </p>
+                                                </div>
+                                                {selected && (
+                                                    <Check size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                                                )}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                            ))}
+                            )}
                         </div>
                     )}
                 </div>

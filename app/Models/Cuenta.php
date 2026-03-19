@@ -4,14 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Builder;
 
-class MetodoPagoCuenta extends Model
+class Cuenta extends Model
 {
-    protected $table = 'metodo_pago_cuentas';
-
     protected $fillable = [
-        'metodo_pago_id',
+        'empresa_id',
         'nombre',
         'numero_cuenta',
         'banco',
@@ -27,13 +26,23 @@ class MetodoPagoCuenta extends Model
         ];
     }
 
-    public function metodoPago(): BelongsTo
+    public function empresa(): BelongsTo
     {
-        return $this->belongsTo(MetodoPago::class);
+        return $this->belongsTo(Empresa::class);
+    }
+
+    public function metodosPago(): BelongsToMany
+    {
+        return $this->belongsToMany(MetodoPago::class, 'cuenta_metodo_pago');
     }
 
     public function scopeActivo(Builder $query): Builder
     {
         return $query->where('activo', true);
+    }
+
+    public function scopeDeEmpresa(Builder $query, int $empresaId): Builder
+    {
+        return $query->where('empresa_id', $empresaId);
     }
 }

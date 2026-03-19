@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Builder;
 
 class MetodoPago extends Model
@@ -30,9 +30,9 @@ class MetodoPago extends Model
         return $this->belongsTo(Empresa::class);
     }
 
-    public function cuentas(): HasMany
+    public function cuentas(): BelongsToMany
     {
-        return $this->hasMany(MetodoPagoCuenta::class);
+        return $this->belongsToMany(Cuenta::class, 'cuenta_metodo_pago');
     }
 
     // ── Scopes ──────────────────────────────────────────────────────────────
@@ -61,6 +61,6 @@ class MetodoPago extends Model
 
     public function getTieneCuentasAttribute(): bool
     {
-        return $this->cuentas->where('activo', true)->isNotEmpty();
+        return $this->cuentas->isNotEmpty();
     }
 }

@@ -8,6 +8,7 @@ use App\Http\Controllers\Clientes\DecolectaController;
 use App\Http\Controllers\Configuracion\AlmacenController;
 use App\Http\Controllers\Configuracion\EmpresaController;
 use App\Http\Controllers\Configuracion\LocalController;
+use App\Http\Controllers\Configuracion\CuentaController;
 use App\Http\Controllers\Configuracion\MetodoPagoController;
 use App\Http\Controllers\Configuracion\ModuloController;
 use App\Http\Controllers\Configuracion\PermisoController;
@@ -74,9 +75,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('/{cliente}', [ClienteController::class, 'destroy'])->name('destroy');
     });
 
-    // Métodos de pago (dentro de configuración)
+    // Métodos de pago y Cuentas (dentro de configuración)
     Route::apiResource('configuracion/metodos-pago', MetodoPagoController::class)
          ->names('configuracion.metodos-pago')
+         ->except(['show']);
+
+    Route::apiResource('configuracion/cuentas', CuentaController::class)
+         ->names('configuracion.cuentas')
          ->except(['show']);
 
     // API interna Decolecta (con throttle)

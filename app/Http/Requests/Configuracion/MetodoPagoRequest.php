@@ -24,17 +24,13 @@ class MetodoPagoRequest extends FormRequest
                     ->where('empresa_id', $empresaId)
                     ->ignore($id),
             ],
-            'tipo'   => 'required|in:efectivo,tarjeta_debito,tarjeta_credito,transferencia,yape,plin,otro',
-            'activo' => 'boolean',
-
-            'cuentas'                 => 'nullable|array',
-            'cuentas.*.id'            => 'nullable|integer|exists:metodo_pago_cuentas,id',
-            'cuentas.*.nombre'        => 'required_with:cuentas|string|max:150',
-            'cuentas.*.numero_cuenta' => 'nullable|string|max:100',
-            'cuentas.*.banco'         => 'nullable|string|max:100',
-            'cuentas.*.cci'           => 'nullable|string|max:50',
-            'cuentas.*.titular'       => 'nullable|string|max:150',
-            'cuentas.*.activo'        => 'boolean',
+            'tipo'       => 'required|in:efectivo,tarjeta_debito,tarjeta_credito,transferencia,yape,plin,otro',
+            'activo'     => 'boolean',
+            'cuenta_ids' => 'nullable|array',
+            'cuenta_ids.*' => [
+                'integer',
+                Rule::exists('cuentas', 'id')->where('empresa_id', $empresaId),
+            ],
         ];
     }
 }

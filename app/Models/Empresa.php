@@ -81,6 +81,11 @@ class Empresa extends Model
         return $this->hasMany(MetodoPago::class);
     }
 
+    public function cuentas(): HasMany
+    {
+        return $this->hasMany(Cuenta::class);
+    }
+
     public function usaModoSimple(): bool
     {
         return $this->modo_almacen === 'simple';
