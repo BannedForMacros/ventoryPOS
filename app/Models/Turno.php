@@ -46,8 +46,15 @@ class Turno extends Model
     public function calcularMontoEsperado(): float
     {
         $gastosEfectivo = $this->gastos()->sum('monto');
-        // ventas en efectivo = 0 por ahora (se conecta en Bloque 5)
-        return (float) $this->monto_apertura + 0 - $gastosEfectivo;
+
+        // Ventas en efectivo: pagos con método de tipo 'efectivo' en ventas completadas de este turno
+        $ventasEfectivo = \App\Models\VentaPago::whereHas('venta', fn($q) =>
+            $q->where('turno_id', $this->id)->where('estado', 'completada')
+        )->whereHas('metodoPago', fn($q) =>
+            $q->where('tipo', 'efectivo')
+        )->sum('monto');
+
+        return (float) $this->monto_apertura + (float) $ventasEfectivo - $gastosEfectivo;
     }
 
     public function calcularTotalArqueo(): float

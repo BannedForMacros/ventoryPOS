@@ -126,6 +126,31 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Gastos
     Route::apiResource('gastos', GastoController::class)->except(['show', 'update']);
+
+    // POS
+    Route::get('/pos', [VentaController::class, 'pos'])->name('pos.index');
+
+    // Ventas
+    Route::prefix('ventas')->name('ventas.')->group(function () {
+        Route::get('/', [VentaController::class, 'index'])->name('index');
+        Route::post('/', [VentaController::class, 'store'])->name('store');
+        Route::get('/{venta}', [VentaController::class, 'show'])->name('show');
+        Route::post('/{venta}/anular', [VentaController::class, 'anular'])->name('anular');
+    });
+
+    // Conceptos de descuento (configuración)
+    Route::apiResource('configuracion/descuento-conceptos', DescuentoConceptoController::class)
+        ->names('configuracion.descuento-conceptos')
+        ->except(['show']);
+
+    // Reporte de descuentos
+    Route::get('reportes/descuentos', [DescuentoLogController::class, 'index'])->name('reportes.descuentos');
+
+    // WhatsApp (URLs de notificación)
+    Route::prefix('whatsapp')->name('whatsapp.')->group(function () {
+        Route::post('aprobacion', [WhatsappController::class, 'urlAprobacion'])->name('aprobacion');
+        Route::post('confirmacion/{venta}', [WhatsappController::class, 'urlConfirmacion'])->name('confirmacion');
+    });
 });
 
 require __DIR__.'/auth.php';

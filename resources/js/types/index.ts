@@ -227,6 +227,131 @@ export interface Turno extends Record<string, unknown> {
     updated_at:              string;
 }
 
+// ── Ventas / POS ─────────────────────────────────────────────────────────────
+
+export interface DescuentoConcepto extends Record<string, unknown> {
+    id:                   number;
+    empresa_id:           number;
+    nombre:               string;
+    requiere_aprobacion:  boolean;
+    activo:               boolean;
+    created_at:           string;
+    updated_at:           string;
+}
+
+export interface VentaItem extends Record<string, unknown> {
+    id:                    number;
+    venta_id:              number;
+    producto_id:           number;
+    producto_unidad_id:    number;
+    producto_nombre:       string;
+    unidad_nombre:         string;
+    cantidad:              string;
+    factor_conversion:     string;
+    cantidad_base:         string;
+    precio_unitario:       string;
+    precio_original:       string;
+    descuento_item:        string;
+    descuento_concepto_id: number | null;
+    subtotal:              string;
+    producto?:             Producto;
+    descuento_concepto?:   DescuentoConcepto | null;
+    created_at:            string;
+    updated_at:            string;
+}
+
+export interface Cuenta extends Record<string, unknown> {
+    id:         number;
+    empresa_id: number;
+    nombre:     string;
+    tipo:       string;
+    numero:     string | null;
+    activo:     boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface MetodoPagoConCuentas extends MetodoPago {
+    cuentas?: Cuenta[];
+}
+
+export interface VentaPago extends Record<string, unknown> {
+    id:                     number;
+    venta_id:               number;
+    metodo_pago_id:         number;
+    cuenta_metodo_pago_id:  number | null;
+    monto:                  string;
+    referencia:             string | null;
+    vuelto:                 string;
+    metodo_pago?:           MetodoPago;
+    cuenta_metodo_pago?:    Cuenta | null;
+    created_at:             string;
+    updated_at:             string;
+}
+
+export interface DescuentoLog extends Record<string, unknown> {
+    id:                    number;
+    empresa_id:            number;
+    venta_id:              number | null;
+    venta_item_id:         number | null;
+    descuento_concepto_id: number;
+    user_id:               number;
+    cliente_id:            number | null;
+    aprobado_por:          number | null;
+    monto_descuento:       string;
+    requeria_aprobacion:   boolean;
+    notificacion_enviada:  boolean;
+    concepto?:             DescuentoConcepto;
+    user?:                 User;
+    aprobado_por_user?:    User | null;
+    venta?:                Venta;
+    created_at:            string;
+    updated_at:            string;
+}
+
+export interface Venta extends Record<string, unknown> {
+    id:                    number;
+    empresa_id:            number;
+    local_id:              number;
+    turno_id:              number;
+    caja_id:               number;
+    user_id:               number;
+    cliente_id:            number | null;
+    numero:                string;
+    tipo_comprobante:      'boleta' | 'factura' | 'ninguno';
+    subtotal:              string;
+    descuento_total:       string;
+    descuento_concepto_id: number | null;
+    igv:                   string;
+    total:                 string;
+    estado:                'completada' | 'anulada';
+    observacion:           string | null;
+    fecha_venta:           string;
+    user?:                 User;
+    cliente?:              Cliente;
+    local?:                Local;
+    items?:                VentaItem[];
+    pagos?:                VentaPago[];
+    descuentos_log?:       DescuentoLog[];
+    created_at:            string;
+    updated_at:            string;
+}
+
+export interface Cliente extends Record<string, unknown> {
+    id:           number;
+    empresa_id:   number;
+    tipo_doc:     string;
+    documento:    string;
+    nombre:       string;
+    apellido:     string | null;
+    email:        string | null;
+    telefono:     string | null;
+    direccion:    string | null;
+    activo:       boolean;
+    created_at:   string;
+    updated_at:   string;
+}
+
 export interface Flash {
     success?: string | null;
     error?: string | null;
