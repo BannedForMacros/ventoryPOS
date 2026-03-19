@@ -11,7 +11,7 @@ class PermisosClientesSeeder extends Seeder
 {
     public function run(): void
     {
-        $slugs = ['clientes', 'clientes.index', 'configuracion.metodos-pago'];
+        $slugs = ['clientes', 'configuracion.metodos-pago'];
 
         $modulos = Modulo::whereIn('slug', $slugs)->get();
 

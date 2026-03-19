@@ -6,12 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Gastos\StoreGastoRequest;
 use App\Models\Gasto;
 use App\Models\GastoTipo;
+use App\Models\Local;
 use App\Models\Turno;
+use App\Services\LocalScopeService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class GastoController extends Controller
 {
+    public function __construct(private LocalScopeService $scope) {}
+
     public function index(Request $request)
     {
         $user  = $request->user();
@@ -45,10 +49,13 @@ class GastoController extends Controller
             ->with(['conceptos' => fn($q) => $q->activo()->orderBy('nombre')])
             ->orderBy('nombre')->get();
 
+        $locales = $this->scope->localesVisibles($user);
+
         return Inertia::render('Gastos/Index', [
-            'gastos' => $gastos,
-            'tipos'  => $tipos,
-            'scope'  => $scope,
+            'gastos'  => $gastos,
+            'tipos'   => $tipos,
+            'scope'   => $scope,
+            'locales' => $locales,
         ]);
     }
 

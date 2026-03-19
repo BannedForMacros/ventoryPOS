@@ -139,6 +139,94 @@ export interface Producto extends Record<string, unknown> {
     updated_at: string;
 }
 
+export interface MetodoPago extends Record<string, unknown> {
+    id:     number;
+    nombre: string;
+    tipo:   string;
+    activo: boolean;
+}
+
+export interface Caja extends Record<string, unknown> {
+    id:                          number;
+    empresa_id:                  number;
+    local_id:                    number;
+    nombre:                      string;
+    caja_chica_activa:           boolean;
+    caja_chica_monto_sugerido:   number;
+    caja_chica_en_arqueo:        boolean;
+    activo:                      boolean;
+    local?:                      Local;
+    tiene_turno_abierto?:        boolean;
+    created_at:                  string;
+    updated_at:                  string;
+}
+
+export interface GastoConcepto extends Record<string, unknown> {
+    id:             number;
+    empresa_id:     number;
+    gasto_tipo_id:  number;
+    nombre:         string;
+    activo:         boolean;
+    created_at:     string;
+    updated_at:     string;
+}
+
+export interface GastoTipo extends Record<string, unknown> {
+    id:         number;
+    empresa_id: number;
+    nombre:     string;
+    categoria:  'administrativo' | 'operativo' | 'otro';
+    activo:     boolean;
+    conceptos?: GastoConcepto[];
+    created_at: string;
+    updated_at: string;
+}
+
+export interface Gasto extends Record<string, unknown> {
+    id:                 number;
+    empresa_id:         number;
+    local_id:           number;
+    user_id:            number;
+    turno_id:           number | null;
+    gasto_tipo_id:      number;
+    gasto_concepto_id:  number;
+    monto:              string;
+    fecha:              string;
+    comentario:         string | null;
+    tipo?:              GastoTipo;
+    concepto?:          GastoConcepto;
+    user?:              User;
+    local?:             Local;
+    created_at:         string;
+    updated_at:         string;
+}
+
+export interface Turno extends Record<string, unknown> {
+    id:                      number;
+    empresa_id:              number;
+    local_id:                number;
+    caja_id:                 number;
+    user_id:                 number;
+    user_cierre_id:          number | null;
+    monto_apertura:          string;
+    monto_caja_chica:        string;
+    monto_cierre_declarado:  string | null;
+    monto_cierre_esperado:   string | null;
+    diferencia:              string | null;
+    estado:                  'abierto' | 'cerrado';
+    fecha_apertura:          string;
+    fecha_cierre:            string | null;
+    observacion_apertura:    string | null;
+    observacion_cierre:      string | null;
+    caja?:                   Caja;
+    local?:                  Local;
+    user?:                   User;
+    user_cierre?:            User | null;
+    gastos?:                 Gasto[];
+    created_at:              string;
+    updated_at:              string;
+}
+
 export interface Flash {
     success?: string | null;
     error?: string | null;
@@ -162,6 +250,7 @@ export type PageProps<T extends Record<string, unknown> = Record<string, unknown
             rol: (Rol & { permisos: Permiso[] }) | null;
         };
     };
-    modules: ModuloMenu[];
-    flash: Flash;
+    modules:      ModuloMenu[];
+    flash:        Flash;
+    turno_activo: (Turno & { caja: Caja }) | null;
 };

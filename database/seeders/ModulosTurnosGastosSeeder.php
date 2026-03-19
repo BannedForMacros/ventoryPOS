@@ -9,45 +9,25 @@ class ModulosTurnosGastosSeeder extends Seeder
 {
     public function run(): void
     {
-        // PADRE: Turnos
-        $turnos = Modulo::create([
+        // Módulo directo: Turnos (sin hijos)
+        Modulo::create([
             'padre_id' => null,
             'nombre'   => 'Turnos',
             'slug'     => 'turnos',
             'icono'    => 'Clock',
-            'ruta'     => null,
+            'ruta'     => '/turnos',
             'orden'    => 40,
             'activo'   => true,
         ]);
 
+        // Módulo directo: Gastos (sin hijos)
         Modulo::create([
-            'padre_id' => $turnos->id,
-            'nombre'   => 'Turnos',
-            'slug'     => 'turnos.index',
-            'icono'    => 'Clock',
-            'ruta'     => '/turnos',
-            'orden'    => 1,
-            'activo'   => true,
-        ]);
-
-        // PADRE: Gastos
-        $gastos = Modulo::create([
             'padre_id' => null,
             'nombre'   => 'Gastos',
             'slug'     => 'gastos',
             'icono'    => 'Receipt',
-            'ruta'     => null,
-            'orden'    => 50,
-            'activo'   => true,
-        ]);
-
-        Modulo::create([
-            'padre_id' => $gastos->id,
-            'nombre'   => 'Gastos',
-            'slug'     => 'gastos.index',
-            'icono'    => 'Receipt',
             'ruta'     => '/gastos',
-            'orden'    => 1,
+            'orden'    => 50,
             'activo'   => true,
         ]);
 

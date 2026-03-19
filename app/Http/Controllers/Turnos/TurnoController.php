@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Turnos\AbrirTurnoRequest;
 use App\Http\Requests\Turnos\CerrarTurnoRequest;
 use App\Models\Caja;
+use App\Models\MetodoPago;
 use App\Models\Turno;
 use App\Models\TurnoArqueo;
 use App\Models\TurnoArqueoMetodo;
@@ -37,9 +38,15 @@ class TurnoController extends Controller
                 'tiene_turno_abierto' => $c->tieneTurnoAbierto(),
             ]);
 
+        $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
+            ->activo()
+            ->orderBy('nombre')
+            ->get(['id', 'nombre', 'tipo']);
+
         return Inertia::render('Turnos/Index', [
             'turnos'           => $turnos,
             'cajasDisponibles' => $cajasDisponibles,
+            'metodosPago'      => $metodosPago,
         ]);
     }
 

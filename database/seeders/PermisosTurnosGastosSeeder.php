@@ -12,9 +12,10 @@ class PermisosTurnosGastosSeeder extends Seeder
     public function run(): void
     {
         $slugs = [
-            'turnos', 'turnos.index',
-            'gastos', 'gastos.index',
-            'configuracion.cajas', 'configuracion.gastos-tipos',
+            'turnos',
+            'gastos',
+            'configuracion.cajas',
+            'configuracion.gastos-tipos',
         ];
 
         $modulos = Modulo::whereIn('slug', $slugs)->get();

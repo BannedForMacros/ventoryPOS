@@ -9,24 +9,14 @@ class ModulosClientesSeeder extends Seeder
 {
     public function run(): void
     {
-        // PADRE: Clientes
-        $clientes = Modulo::create([
+        // Módulo directo: Clientes (sin hijos)
+        Modulo::create([
             'padre_id' => null,
             'nombre'   => 'Clientes',
             'slug'     => 'clientes',
             'icono'    => 'Users',
-            'ruta'     => null,
-            'orden'    => 30,
-            'activo'   => true,
-        ]);
-
-        Modulo::create([
-            'padre_id' => $clientes->id,
-            'nombre'   => 'Clientes',
-            'slug'     => 'clientes.index',
-            'icono'    => 'Users',
             'ruta'     => '/clientes',
-            'orden'    => 1,
+            'orden'    => 30,
             'activo'   => true,
         ]);
 
