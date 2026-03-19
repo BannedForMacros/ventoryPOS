@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Modulo;
+use App\Models\Turno;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -29,6 +30,9 @@ class HandleInertiaRequests extends Middleware
                 ]) : null,
             ],
             'modules' => fn () => $user ? $this->buildModulesTree($user) : [],
+            'turno_activo' => fn () => auth()->check()
+                ? Turno::turnoActivoDelUsuario(auth()->id())?->load('caja')
+                : null,
             'flash' => [
                 'success' => session('success'),
                 'error'   => session('error'),

@@ -6,6 +6,7 @@ use App\Http\Controllers\Catalogo\UnidadMedidaController;
 use App\Http\Controllers\Clientes\ClienteController;
 use App\Http\Controllers\Clientes\DecolectaController;
 use App\Http\Controllers\Configuracion\AlmacenController;
+use App\Http\Controllers\Configuracion\CajaController;
 use App\Http\Controllers\Configuracion\EmpresaController;
 use App\Http\Controllers\Configuracion\LocalController;
 use App\Http\Controllers\Configuracion\CuentaController;
@@ -15,6 +16,9 @@ use App\Http\Controllers\Configuracion\PermisoController;
 use App\Http\Controllers\Configuracion\RolController;
 use App\Http\Controllers\Configuracion\UsuarioController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Gastos\GastoController;
+use App\Http\Controllers\Gastos\GastoTipoController;
+use App\Http\Controllers\Turnos\TurnoController;
 use App\Http\Controllers\Inventario\EntradaController;
 use App\Http\Controllers\Inventario\StockController;
 use App\Http\Controllers\Inventario\TransferenciaController;
@@ -97,6 +101,27 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('productos/{producto}/editar', [ProductoController::class, 'edit'])->name('productos.edit');
         Route::apiResource('productos', ProductoController::class)->except(['show']);
     });
+
+    // Cajas
+    Route::apiResource('configuracion/cajas', CajaController::class)
+         ->names('configuracion.cajas')
+         ->except(['show']);
+
+    // Tipos de gasto
+    Route::prefix('configuracion/gastos')->name('configuracion.gastos.')->group(function () {
+        Route::apiResource('tipos', GastoTipoController::class)->except(['show']);
+    });
+
+    // Turnos
+    Route::prefix('turnos')->name('turnos.')->group(function () {
+        Route::get('/', [TurnoController::class, 'index'])->name('index');
+        Route::get('/activo', [TurnoController::class, 'turnoActivo'])->name('activo');
+        Route::post('/abrir', [TurnoController::class, 'abrir'])->name('abrir');
+        Route::post('/{turno}/cerrar', [TurnoController::class, 'cerrar'])->name('cerrar');
+    });
+
+    // Gastos
+    Route::apiResource('gastos', GastoController::class)->except(['show', 'update']);
 });
 
 require __DIR__.'/auth.php';
