@@ -259,7 +259,7 @@ export default function FormCliente({ form, setForm, errors, disabled }: Props) 
             <Switch
                 label="Activo"
                 checked={form.activo}
-                onChange={e => setForm(f => ({ ...f, activo: (e.target as HTMLInputElement).checked }))}
+                onChange={v => setForm(f => ({ ...f, activo: v }))}
                 disabled={disabled}
             />
         </div>

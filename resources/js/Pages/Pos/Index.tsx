@@ -60,6 +60,28 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
 
     const { subtotal, igv, total } = calcularTotales(carrito, descuentoTotal);
 
+    // Auto-agregar pago en efectivo por defecto cuando hay items y no hay pagos
+    const efectivo = metodosPago.find(m => m.tipo === 'efectivo');
+    useEffect(() => {
+        if (carrito.length > 0 && pagos.length === 0 && efectivo) {
+            setPagos([{
+                key:                   uid(),
+                metodo_pago_id:        efectivo.id,
+                cuenta_metodo_pago_id: null,
+                monto:                 parseFloat(total.toFixed(2)),
+                referencia:            '',
+                es_efectivo:           true,
+            }]);
+        }
+    }, [carrito.length]);
+
+    // Auto-actualizar monto del pago si es el único (efectivo por defecto)
+    useEffect(() => {
+        if (pagos.length === 1 && pagos[0].es_efectivo && total > 0) {
+            setPagos(prev => [{ ...prev[0], monto: parseFloat(total.toFixed(2)) }]);
+        }
+    }, [total]);
+
     // Categorías únicas
     const categorias = useMemo(() => {
         const cats = new Set<string>();
@@ -423,7 +445,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
 
                 {/* ── Panel derecho: carrito (desktop) ───────────────── */}
                 <div
-                    className="hidden lg:flex w-80 xl:w-96 flex-col overflow-hidden"
+                    className="hidden lg:flex w-[400px] xl:w-[440px] flex-col overflow-hidden flex-shrink-0"
                     style={{ backgroundColor: 'var(--color-bg)' }}
                 >
                     <CarritoPanel
@@ -456,7 +478,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         />
                         {/* Panel */}
                         <div
-                            className="relative ml-auto w-full max-w-sm flex flex-col animate-slide-in-right"
+                            className="relative ml-auto w-full max-w-md flex flex-col animate-slide-in-right"
                             style={{ backgroundColor: 'var(--color-bg)' }}
                         >
                             {/* Botón cerrar */}

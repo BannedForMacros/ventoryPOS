@@ -126,13 +126,27 @@ class ProductoController extends Controller
                 $incoming    = collect($data['unidades']);
                 $incomingIds = $incoming->pluck('id')->filter();
 
-                $producto->unidades()
-                    ->whereNotIn('id', $incomingIds)
-                    ->delete();
+                // Unidades removidas del formulario: borrar solo si no tienen ventas;
+                // si tienen ventas asociadas, desactivarlas para preservar el historial.
+                $unidadesARemover = $producto->unidades()->whereNotIn('id', $incomingIds)->get();
+                foreach ($unidadesARemover as $unidad) {
+                    $tieneVentas = \App\Models\VentaItem::where('producto_unidad_id', $unidad->id)->exists();
+                    if ($tieneVentas) {
+                        $unidad->update(['activo' => false]);
+                    } else {
+                        $unidad->delete();
+                    }
+                }
 
                 foreach ($incoming as $u) {
+                    // Si viene con ID, buscar por ID; si no, buscar por unidad_medida_id
+                    // (puede existir desactivada) para evitar violación de unicidad.
+                    $match = isset($u['id'])
+                        ? ['id' => $u['id']]
+                        : ['unidad_medida_id' => $u['unidad_medida_id']];
+
                     $producto->unidades()->updateOrCreate(
-                        ['id' => $u['id'] ?? null],
+                        $match,
                         [
                             'unidad_medida_id'  => $u['unidad_medida_id'],
                             'es_base'           => $u['es_base'],

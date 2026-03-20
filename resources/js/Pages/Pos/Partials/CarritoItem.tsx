@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Trash2, Minus, Plus, Percent } from 'lucide-react';
+import { Trash2, Minus, Plus, Percent, X } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
 
 export interface LineaCarrito {
@@ -30,7 +30,6 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
     const [descuentoVal, setDescuentoVal]   = useState(String(item.descuento_item || ''));
     const [conceptoId, setConceptoId]       = useState<number | null>(item.descuento_concepto_id);
 
-    // Sincronizar estado local con props
     useEffect(() => {
         setDescuentoVal(String(item.descuento_item || ''));
         setConceptoId(item.descuento_concepto_id);
@@ -52,33 +51,37 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
                 boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
             }}
         >
-            {/* Fila principal */}
-            <div className="flex items-center gap-3">
-                {/* Info del producto */}
+            {/* Fila 1: Nombre + Subtotal */}
+            <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>
                         {item.producto_nombre}
                     </p>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                             {item.unidad_nombre}
                         </span>
-                        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>·</span>
-                        <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                        <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>·</span>
+                        <span className="text-[11px] font-medium" style={{ color: 'var(--color-text-muted)' }}>
                             S/ {item.precio_unitario.toFixed(2)}
                         </span>
                         {item.descuento_item > 0 && (
                             <>
-                                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>·</span>
-                                <span className="text-xs font-medium" style={{ color: 'var(--color-danger)' }}>
+                                <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>·</span>
+                                <span className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
                                     -{item.descuento_item.toFixed(2)}
                                 </span>
                             </>
                         )}
                     </div>
                 </div>
+                <span className="text-sm font-bold whitespace-nowrap" style={{ color: 'var(--color-primary)' }}>
+                    S/ {item.subtotal.toFixed(2)}
+                </span>
+            </div>
 
-                {/* Controles cantidad */}
+            {/* Fila 2: Cantidad + Acciones */}
+            <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center gap-0.5 rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
                     <button
                         onClick={() => onCantidad(item.key, -1)}
@@ -88,7 +91,7 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
                         <Minus size={13} />
                     </button>
                     <span
-                        className="text-sm font-bold min-w-[32px] text-center py-1"
+                        className="text-sm font-bold min-w-[28px] text-center py-1"
                         style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-bg)' }}
                     >
                         {item.cantidad}
@@ -102,29 +105,35 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
                     </button>
                 </div>
 
-                {/* Subtotal */}
-                <span className="text-sm font-bold min-w-[70px] text-right" style={{ color: 'var(--color-primary)' }}>
-                    S/ {item.subtotal.toFixed(2)}
-                </span>
-
-                {/* Eliminar */}
-                <button
-                    onClick={() => onEliminar(item.key)}
-                    className="p-1.5 rounded-lg transition-colors hover:bg-red-50 group"
-                    style={{ color: 'var(--color-text-muted)' }}
-                >
-                    <Trash2 size={14} className="group-hover:text-red-500 transition-colors" />
-                </button>
+                <div className="flex items-center gap-1">
+                    {!showDescuento && (
+                        <button
+                            onClick={() => setShowDescuento(true)}
+                            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg transition-colors hover:bg-black/5"
+                            style={{ color: 'var(--color-text-muted)' }}
+                        >
+                            <Percent size={10} />
+                            Dcto
+                        </button>
+                    )}
+                    <button
+                        onClick={() => onEliminar(item.key)}
+                        className="p-1.5 rounded-lg transition-colors hover:bg-red-50 group"
+                        style={{ color: 'var(--color-text-muted)' }}
+                    >
+                        <Trash2 size={14} className="group-hover:text-red-500 transition-colors" />
+                    </button>
+                </div>
             </div>
 
-            {/* Descuento por item */}
-            {showDescuento ? (
+            {/* Fila 3: Descuento (expandible) */}
+            {showDescuento && (
                 <div
-                    className="flex items-center gap-2 mt-2 pt-2"
+                    className="flex flex-wrap items-center gap-2 mt-2 pt-2"
                     style={{ borderTop: '1px dashed var(--color-border)' }}
                 >
                     <Percent size={12} style={{ color: 'var(--color-warning)', flexShrink: 0 }} />
-                    <div className="relative w-20">
+                    <div className="relative w-20 flex-shrink-0">
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px]" style={{ color: 'var(--color-text-muted)' }}>S/</span>
                         <input
                             type="number"
@@ -152,7 +161,7 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
                             const val = parseFloat(descuentoVal) || 0;
                             if (val > 0) onDescuento(item.key, val, newCid);
                         }}
-                        className="flex-1 text-xs border rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1"
+                        className="flex-1 min-w-[100px] text-xs border rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1"
                         style={{
                             borderColor: 'var(--color-border)',
                             backgroundColor: 'var(--color-bg)',
@@ -172,21 +181,12 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
                             onDescuento(item.key, 0, null);
                             setShowDescuento(false);
                         }}
-                        className="p-1 rounded hover:bg-black/5 transition-colors"
+                        className="p-1 rounded hover:bg-black/5 transition-colors flex-shrink-0"
                         style={{ color: 'var(--color-text-muted)' }}
                     >
-                        <Trash2 size={12} />
+                        <X size={12} />
                     </button>
                 </div>
-            ) : (
-                <button
-                    onClick={() => setShowDescuento(true)}
-                    className="flex items-center gap-1 text-[11px] mt-1.5 transition-colors hover:opacity-70"
-                    style={{ color: 'var(--color-text-muted)' }}
-                >
-                    <Percent size={10} />
-                    Descuento
-                </button>
             )}
         </div>
     );

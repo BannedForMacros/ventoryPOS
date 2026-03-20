@@ -13,7 +13,7 @@ const variantStyles: Record<Variant, { backgroundColor: string; color: string }>
     success: { backgroundColor: 'rgba(16,185,129,0.1)', color: 'var(--color-success)' },
     danger: { backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--color-danger)' },
     warning: { backgroundColor: 'rgba(245,158,11,0.1)', color: 'var(--color-warning)' },
-    secondary: { backgroundColor: 'rgba(107,114,128,0.1)', color: 'var(--color-secondary)' },
+    secondary: { backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--color-danger)' },
 };
 
 export default function Badge({ variant = 'secondary', children, className = '' }: BadgeProps) {

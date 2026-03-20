@@ -227,7 +227,7 @@ export default function Cuentas({ cuentas }: Props) {
                     <Switch
                         label="Activa"
                         checked={form.activo}
-                        onChange={e => setForm(f => ({ ...f, activo: (e.target as HTMLInputElement).checked }))}
+                        onChange={v => setForm(f => ({ ...f, activo: v }))}
                         disabled={saving}
                     />
                 </div>

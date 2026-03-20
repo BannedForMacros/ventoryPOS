@@ -67,9 +67,9 @@ export default function FormCaja({ form, setForm, errors, locales, editando, dis
                 <Switch
                     label="Activar caja chica en esta caja"
                     checked={form.caja_chica_activa}
-                    onChange={e => setForm(f => ({
+                    onChange={v => setForm(f => ({
                         ...f,
-                        caja_chica_activa: (e.target as HTMLInputElement).checked,
+                        caja_chica_activa: v,
                     }))}
                     disabled={disabled}
                 />
@@ -89,9 +89,9 @@ export default function FormCaja({ form, setForm, errors, locales, editando, dis
                         <Switch
                             label="Mostrar caja chica en el arqueo de cierre (solo informativo)"
                             checked={form.caja_chica_en_arqueo}
-                            onChange={e => setForm(f => ({
+                            onChange={v => setForm(f => ({
                                 ...f,
-                                caja_chica_en_arqueo: (e.target as HTMLInputElement).checked,
+                                caja_chica_en_arqueo: v,
                             }))}
                             disabled={disabled}
                         />
@@ -103,7 +103,7 @@ export default function FormCaja({ form, setForm, errors, locales, editando, dis
                 <Switch
                     label="Activo"
                     checked={form.activo}
-                    onChange={e => setForm(f => ({ ...f, activo: (e.target as HTMLInputElement).checked }))}
+                    onChange={v => setForm(f => ({ ...f, activo: v }))}
                     disabled={disabled}
                 />
             )}
