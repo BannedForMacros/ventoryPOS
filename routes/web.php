@@ -121,6 +121,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/', [TurnoController::class, 'index'])->name('index');
         Route::get('/activo', [TurnoController::class, 'turnoActivo'])->name('activo');
         Route::post('/abrir', [TurnoController::class, 'abrir'])->name('abrir');
+        Route::get('/{turno}/cerrar', [TurnoController::class, 'cerrarPage'])->name('cerrar.page');
         Route::post('/{turno}/cerrar', [TurnoController::class, 'cerrar'])->name('cerrar');
     });
 

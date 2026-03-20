@@ -38,6 +38,7 @@ class Turno extends Model
     public function arqueoMetodos(): HasMany    { return $this->hasMany(TurnoArqueoMetodo::class); }
     public function cierreProductos(): HasMany  { return $this->hasMany(TurnoCierreProducto::class); }
     public function gastos(): HasMany           { return $this->hasMany(Gasto::class); }
+    public function ventas(): HasMany           { return $this->hasMany(\App\Models\Venta::class); }
 
     public function scopeAbierto($q)        { return $q->where('estado', 'abierto'); }
     public function scopeCerrado($q)        { return $q->where('estado', 'cerrado'); }

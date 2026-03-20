@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
-import { usePage } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Clock, Plus, TrendingDown, Wallet, X } from 'lucide-react';
+import { Clock, Plus, ShoppingCart, TrendingDown, Wallet, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import ModalAbrirTurno from './Partials/ModalAbrirTurno';
-import ModalCerrarTurno from './Partials/ModalCerrarTurno';
-import type { Caja, Gasto, MetodoPago, PageProps, Turno } from '@/types';
+import type { Caja, Gasto, MetodoPago, PageProps, Turno, Venta } from '@/types';
 
 interface CajaDisponible extends Caja {
     tiene_turno_abierto: boolean;
@@ -26,22 +25,23 @@ interface Props extends PageProps {
     turnos:           Paginado<Turno>;
     cajasDisponibles: CajaDisponible[];
     metodosPago:      MetodoPago[];
+    turnoActivo:      Turno | null;
 }
 
-export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago }: Props) {
-    const { flash, turno_activo, auth } = usePage<Props>().props;
-    const [modalAbrir, setModalAbrir]   = useState(false);
-    const [modalCerrar, setModalCerrar] = useState(false);
-
-    const esAdmin = auth.user.rol?.es_admin ?? false;
+export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago, turnoActivo }: Props) {
+    const { flash } = usePage<Props>().props;
+    const [modalAbrir, setModalAbrir] = useState(false);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
-    const totalGastosTurno = (turno_activo?.gastos ?? [])
+    const totalGastosTurno = (turnoActivo?.gastos ?? [])
         .reduce((sum: number, g: Gasto) => sum + parseFloat(g.monto), 0);
+
+    const totalVentasTurno = (turnoActivo?.ventas ?? [])
+        .reduce((sum: number, v: Venta) => sum + parseFloat(v.total), 0);
 
     // ── Columnas historial ──
     const columnasTurnos: Column<Turno>[] = [
@@ -93,7 +93,7 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago }: P
     const columnasGastos: Column<Gasto>[] = [
         {
             key: 'fecha', label: 'Fecha',
-            render: (g) => <span className="text-sm">{g.fecha}</span>,
+            render: (g) => <span className="text-sm">{new Date(g.fecha).toLocaleDateString('es-PE')}</span>,
         },
         {
             key: 'tipo', label: 'Tipo',
@@ -115,18 +115,50 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago }: P
         },
     ];
 
+    // ── Columnas ventas del turno activo ──
+    const columnasVentas: Column<Venta>[] = [
+        {
+            key: 'numero', label: 'Número',
+            render: (v) => <span className="text-sm font-medium">{v.numero}</span>,
+        },
+        {
+            key: 'fecha_venta', label: 'Hora',
+            render: (v) => <span className="text-sm">{new Date(v.fecha_venta).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span>,
+        },
+        {
+            key: 'total', label: 'Total',
+            render: (v) => <span className="font-medium">S/ {parseFloat(v.total).toFixed(2)}</span>,
+        },
+        {
+            key: 'estado', label: 'Estado',
+            render: (v) => (
+                <Badge variant={v.estado === 'completada' ? 'success' : 'danger'}>
+                    {v.estado === 'completada' ? 'Completada' : 'Anulada'}
+                </Badge>
+            ),
+        },
+        {
+            key: 'pagos', label: 'Método de pago',
+            render: (v) => (
+                <span className="text-sm">
+                    {(v.pagos ?? []).map(p => p.metodo_pago?.nombre ?? '—').join(', ') || '—'}
+                </span>
+            ),
+        },
+    ];
+
     return (
         <AppLayout title="Turnos">
             <PageHeader
                 title="Turnos"
                 subtitle="Gestión de apertura y cierre de caja"
                 actions={
-                    !turno_activo ? (
+                    !turnoActivo ? (
                         <Button onClick={() => setModalAbrir(true)}>
                             <Plus size={15} className="mr-1 flex-shrink-0" />Abrir turno
                         </Button>
                     ) : (
-                        <Button variant="danger" onClick={() => setModalCerrar(true)}>
+                        <Button variant="danger" onClick={() => router.visit(route('turnos.cerrar.page', turnoActivo.id))}>
                             <X size={15} className="mr-1 flex-shrink-0" />Cerrar turno
                         </Button>
                     )
@@ -134,7 +166,7 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago }: P
             />
 
             {/* ── Turno activo ── */}
-            {turno_activo ? (
+            {turnoActivo ? (
                 <div className="space-y-6 mb-8">
                     {/* Card turno */}
                     <div
@@ -144,12 +176,17 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago }: P
                         <InfoCard
                             icon={<Clock size={18} style={{ color: 'var(--color-primary)' }} />}
                             label="Apertura"
-                            valor={new Date(turno_activo.fecha_apertura).toLocaleString('es-PE')}
+                            valor={new Date(turnoActivo.fecha_apertura).toLocaleString('es-PE')}
                         />
                         <InfoCard
                             icon={<Wallet size={18} style={{ color: 'var(--color-success)' }} />}
                             label="Monto apertura"
-                            valor={`S/ ${parseFloat(turno_activo.monto_apertura).toFixed(2)}`}
+                            valor={`S/ ${parseFloat(turnoActivo.monto_apertura).toFixed(2)}`}
+                        />
+                        <InfoCard
+                            icon={<ShoppingCart size={18} style={{ color: 'var(--color-primary)' }} />}
+                            label={`Ventas (${(turnoActivo.ventas ?? []).length})`}
+                            valor={`S/ ${totalVentasTurno.toFixed(2)}`}
                         />
                         <InfoCard
                             icon={<TrendingDown size={18} style={{ color: 'var(--color-danger)' }} />}
@@ -158,18 +195,31 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago }: P
                         />
 
                         {/* Caja chica — solo si aplica */}
-                        {turno_activo.caja?.caja_chica_activa && (
+                        {turnoActivo.caja?.caja_chica_activa && (
                             <div
                                 className="rounded-xl px-4 py-3 flex flex-col justify-between"
                                 style={{ backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}
                             >
                                 <p className="text-xs font-medium" style={{ color: '#b45309' }}>Caja chica</p>
                                 <p className="text-lg font-bold mt-1" style={{ color: '#b45309' }}>
-                                    S/ {parseFloat(turno_activo.monto_caja_chica).toFixed(2)}
+                                    S/ {parseFloat(turnoActivo.monto_caja_chica).toFixed(2)}
                                 </p>
                                 <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>Independiente del arqueo</p>
                             </div>
                         )}
+                    </div>
+
+                    {/* Ventas del turno */}
+                    <div>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
+                            Ventas del turno
+                        </p>
+                        <Table
+                            data={(turnoActivo.ventas ?? []) as Venta[]}
+                            columns={columnasVentas}
+                            emptyMessage="Sin ventas en este turno"
+                            searchPlaceholder="Buscar venta..."
+                        />
                     </div>
 
                     {/* Gastos del turno */}
@@ -178,7 +228,7 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago }: P
                             Gastos del turno
                         </p>
                         <Table
-                            data={(turno_activo.gastos ?? []) as Gasto[]}
+                            data={(turnoActivo.gastos ?? []) as Gasto[]}
                             columns={columnasGastos}
                             emptyMessage="Sin gastos en este turno"
                             searchPlaceholder="Buscar gasto..."
@@ -222,15 +272,6 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago }: P
                 onClose={() => setModalAbrir(false)}
                 cajasDisponibles={cajasDisponibles}
             />
-
-            {turno_activo && (
-                <ModalCerrarTurno
-                    isOpen={modalCerrar}
-                    onClose={() => setModalCerrar(false)}
-                    turno={turno_activo}
-                    metodosPago={metodosPago}
-                />
-            )}
         </AppLayout>
     );
 }

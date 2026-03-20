@@ -224,6 +224,7 @@ export interface Turno extends Record<string, unknown> {
     user?:                   User;
     user_cierre?:            User | null;
     gastos?:                 Gasto[];
+    ventas?:                 Venta[];
     created_at:              string;
     updated_at:              string;
 }

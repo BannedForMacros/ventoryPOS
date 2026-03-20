@@ -43,10 +43,15 @@ class TurnoController extends Controller
             ->orderBy('nombre')
             ->get(['id', 'nombre', 'tipo']);
 
+        $turnoActivo = Turno::turnoActivoDelUsuario($user->id)
+            ?->load(['caja', 'gastos.tipo', 'gastos.concepto',
+                     'ventas' => fn($q) => $q->where('estado', 'completada')->with('pagos.metodoPago')]);
+
         return Inertia::render('Turnos/Index', [
             'turnos'           => $turnos,
             'cajasDisponibles' => $cajasDisponibles,
             'metodosPago'      => $metodosPago,
+            'turnoActivo'      => $turnoActivo,
         ]);
     }
 
@@ -80,6 +85,44 @@ class TurnoController extends Controller
         ]);
 
         return redirect()->back()->with('success', 'Turno abierto correctamente.');
+    }
+
+    public function cerrarPage(Request $request, Turno $turno)
+    {
+        $user = $request->user();
+        abort_if($turno->user_id !== $user->id, 403);
+        abort_if($turno->estado !== 'abierto', 422);
+
+        $turno->load(['caja', 'gastos.tipo', 'gastos.concepto',
+                       'ventas' => fn($q) => $q->where('estado', 'completada')->with('pagos.metodoPago')]);
+
+        // Resumen ventas por método de pago
+        $ventasPorMetodo = [];
+        $totalVentas = 0;
+        foreach ($turno->ventas as $venta) {
+            $totalVentas += (float) $venta->total;
+            foreach ($venta->pagos as $pago) {
+                $nombre = $pago->metodoPago->nombre ?? 'Otro';
+                $ventasPorMetodo[$nombre] = ($ventasPorMetodo[$nombre] ?? 0) + (float) $pago->monto;
+            }
+        }
+
+        $totalGastos = $turno->gastos->sum(fn($g) => (float) $g->monto);
+        $montoEsperado = $turno->calcularMontoEsperado();
+
+        $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
+            ->activo()
+            ->orderBy('nombre')
+            ->get(['id', 'nombre', 'tipo']);
+
+        return Inertia::render('Turnos/Cerrar', [
+            'turno'            => $turno,
+            'ventasPorMetodo'  => $ventasPorMetodo,
+            'totalVentas'      => $totalVentas,
+            'totalGastos'      => $totalGastos,
+            'montoEsperado'    => $montoEsperado,
+            'metodosPago'      => $metodosPago,
+        ]);
     }
 
     public function cerrar(CerrarTurnoRequest $request, Turno $turno)
@@ -124,6 +167,6 @@ class TurnoController extends Controller
             ]);
         });
 
-        return redirect()->back()->with('success', 'Turno cerrado correctamente.');
+        return redirect()->route('turnos.index')->with('success', 'Turno cerrado correctamente.');
     }
 }

@@ -61,7 +61,7 @@ export default function GastosIndex({ gastos, tipos, scope, locales }: Props) {
     const columns: Column<Gasto>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
-            render: (g) => <span className="text-sm">{g.fecha}</span>,
+            render: (g) => <span className="text-sm">{new Date(g.fecha).toLocaleDateString('es-PE')}</span>,
         },
         {
             key: 'tipo', label: 'Tipo',
