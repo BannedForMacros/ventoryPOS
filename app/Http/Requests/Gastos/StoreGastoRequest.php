@@ -49,9 +49,13 @@ class StoreGastoRequest extends FormRequest
                     $validator->errors()->add('turno_id', 'El turno seleccionado no está abierto.');
                 }
 
-                if ($turno->user_id !== $this->user()->id) {
+                // Non-admin: turno debe pertenecer al usuario
+                if (!$this->user()->rol->es_admin && $turno->user_id !== $this->user()->id) {
                     $validator->errors()->add('turno_id', 'El turno no pertenece a tu usuario.');
                 }
+            } elseif (!$this->user()->rol->es_admin) {
+                // Non-admin requiere turno_id
+                $validator->errors()->add('turno_id', 'Debes tener un turno abierto para registrar gastos.');
             }
         });
     }

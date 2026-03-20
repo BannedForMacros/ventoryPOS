@@ -51,11 +51,24 @@ class GastoController extends Controller
 
         $locales = $this->scope->localesVisibles($user);
 
+        $esAdmin = $user->rol->es_admin;
+
+        // Para admin: cargar turnos abiertos de la empresa para asignar gastos
+        $turnosAbiertos = [];
+        if ($esAdmin) {
+            $turnosAbiertos = Turno::deEmpresa($user->empresa_id)
+                ->abierto()
+                ->with(['caja', 'user'])
+                ->get();
+        }
+
         return Inertia::render('Gastos/Index', [
-            'gastos'  => $gastos,
-            'tipos'   => $tipos,
-            'scope'   => $scope,
-            'locales' => $locales,
+            'gastos'          => $gastos,
+            'tipos'           => $tipos,
+            'scope'           => $scope,
+            'locales'         => $locales,
+            'turnosAbiertos'  => $turnosAbiertos,
+            'esAdmin'         => $esAdmin,
         ]);
     }
 
@@ -68,11 +81,22 @@ class GastoController extends Controller
             abort(403, 'Solo administradores pueden registrar gastos administrativos.');
         }
 
+        // Derivar local_id del turno seleccionado (admin puede elegir turno ajeno)
+        $localId = $user->local_id ?? $request->input('local_id');
+        $turnoId = $request->input('turno_id');
+
+        if ($turnoId) {
+            $turno = Turno::find($turnoId);
+            if ($turno) {
+                $localId = $turno->local_id;
+            }
+        }
+
         Gasto::create([
             'empresa_id'        => $user->empresa_id,
-            'local_id'          => $user->local_id ?? $request->input('local_id'),
+            'local_id'          => $localId,
             'user_id'           => $user->id,
-            'turno_id'          => $request->input('turno_id'),
+            'turno_id'          => $turnoId,
             'gasto_tipo_id'     => $request->input('gasto_tipo_id'),
             'gasto_concepto_id' => $request->input('gasto_concepto_id'),
             'monto'             => $request->input('monto'),

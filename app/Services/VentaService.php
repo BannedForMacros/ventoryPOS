@@ -29,11 +29,10 @@ class VentaService
             $almacen = $this->scope->almacenParaVentas($user)
                 ?? abort(422, 'No se encontró un almacén de ventas configurado.');
 
-            // Si no se indicó cliente, usar el cliente general de la empresa
-            $clienteId = $data['cliente_id'] ?? Cliente::where('empresa_id', $user->empresa_id)
-                ->whereNull('numero_documento')
-                ->where('nombres', 'Cliente')
-                ->value('id');
+            // Si no se indicó cliente, usar el Cliente General (DNI 99999999) de la empresa
+            $clienteId = $data['cliente_id']
+                ?? Cliente::generalDeEmpresa($user->empresa_id)?->id
+                ?? abort(422, 'No se encontró el Cliente General de la empresa.');
 
             // Cabecera de la venta
             $venta = Venta::create([
@@ -96,7 +95,7 @@ class VentaService
                         'venta_item_id'         => $item->id,
                         'descuento_concepto_id' => $itemData['descuento_concepto_id'],
                         'user_id'               => $user->id,
-                        'cliente_id'            => $data['cliente_id'] ?? null,
+                        'cliente_id'            => $clienteId,
                         'monto_descuento'       => $descuentoItem * $cantidad,
                         'requeria_aprobacion'   => false,
                         'notificacion_enviada'  => false,

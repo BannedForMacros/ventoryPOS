@@ -60,6 +60,13 @@ class Cliente extends Model
 
     public function getEsClienteGeneralAttribute(): bool
     {
-        return is_null($this->numero_documento) && $this->nombres === 'Cliente';
+        return $this->numero_documento === '99999999';
+    }
+
+    public static function generalDeEmpresa(int $empresaId): ?self
+    {
+        return static::where('empresa_id', $empresaId)
+            ->where('numero_documento', '99999999')
+            ->first();
     }
 }

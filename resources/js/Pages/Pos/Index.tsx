@@ -40,10 +40,12 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number) {
 }
 
 export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash }: Props) {
+    const clienteGeneral = clientes.find(c => c.numero_documento === '99999999') ?? null;
+
     const [busqueda, setBusqueda]           = useState('');
     const [carrito, setCarrito]             = useState<LineaCarrito[]>([]);
     const [pagos, setPagos]                 = useState<LineaPago[]>([]);
-    const [cliente, setCliente]             = useState<Cliente | null>(null);
+    const [cliente, setCliente]             = useState<Cliente | null>(clienteGeneral);
     const [descuentoTotal, setDescuentoTotal]       = useState(0);
     const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(null);
     const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>('ticket');
@@ -169,7 +171,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     function limpiarCarrito() {
         setCarrito([]);
         setPagos([]);
-        setCliente(null);
+        setCliente(clienteGeneral);
         setDescuentoTotal(0);
         setDescuentoConceptoId(null);
         setTipoComprobante('ticket');

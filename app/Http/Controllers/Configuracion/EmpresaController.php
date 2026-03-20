@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Configuracion;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Configuracion\EmpresaRequest;
+use App\Models\Cliente;
 use App\Models\Empresa;
 use Inertia\Inertia;
 
@@ -18,7 +19,18 @@ class EmpresaController extends Controller
 
     public function store(EmpresaRequest $request)
     {
-        Empresa::create($request->validated());
+        $empresa = Empresa::create($request->validated());
+
+        // Crear cliente general por defecto
+        Cliente::create([
+            'empresa_id'       => $empresa->id,
+            'tipo_documento'   => 'DNI',
+            'numero_documento' => '99999999',
+            'nombres'          => 'Clientes Varios',
+            'apellidos'        => '',
+            'activo'           => true,
+        ]);
+
         return redirect()->back()->with('success', 'Empresa creada correctamente.');
     }
 

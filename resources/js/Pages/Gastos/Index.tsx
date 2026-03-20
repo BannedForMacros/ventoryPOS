@@ -11,7 +11,7 @@ import TableActions from '@/Components/UI/TableActions';
 import Tabs from '@/Components/UI/Tabs';
 import Modal from '@/Components/UI/Modal';
 import ModalGasto from './Partials/ModalGasto';
-import type { Gasto, GastoTipo, Local, PageProps } from '@/types';
+import type { Gasto, GastoTipo, Local, PageProps, Turno } from '@/types';
 
 type Scope = 'turno' | 'administrativo';
 
@@ -21,24 +21,26 @@ interface Paginado<T> {
 }
 
 interface Props extends PageProps {
-    gastos:  Paginado<Gasto>;
-    tipos:   GastoTipo[];
-    scope:   Scope;
-    locales: Local[];
+    gastos:          Paginado<Gasto>;
+    tipos:           GastoTipo[];
+    scope:           Scope;
+    locales:         Local[];
+    turnosAbiertos:  Turno[];
+    esAdmin:         boolean;
 }
 
-const TABS = [
+const ALL_TABS = [
     { value: 'turno' as Scope,          label: 'Gastos del turno' },
     { value: 'administrativo' as Scope, label: 'Gastos administrativos' },
 ];
 
-export default function GastosIndex({ gastos, tipos, scope, locales }: Props) {
-    const { flash, turno_activo, auth } = usePage<Props>().props;
+export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbiertos, esAdmin }: Props) {
+    const { flash, turno_activo } = usePage<Props>().props;
     const [tab, setTab]                 = useState<Scope>(scope);
     const [modalGasto, setModalGasto]   = useState(false);
     const [confirmId, setConfirmId]     = useState<number | null>(null);
 
-    const esAdmin = auth.user.rol?.es_admin ?? false;
+    const TABS = esAdmin ? ALL_TABS : ALL_TABS.filter(t => t.value !== 'administrativo');
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -150,6 +152,7 @@ export default function GastosIndex({ gastos, tipos, scope, locales }: Props) {
                 turnoActivo={tab === 'turno' ? (turno_activo ?? null) : null}
                 locales={locales}
                 esAdmin={esAdmin}
+                turnosAbiertos={turnosAbiertos ?? []}
             />
 
             {/* Confirmar eliminar */}

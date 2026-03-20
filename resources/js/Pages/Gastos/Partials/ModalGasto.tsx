@@ -28,15 +28,16 @@ export const emptyGasto = (turnoId: number | null = null): GastoForm => ({
 });
 
 interface Props {
-    isOpen:       boolean;
-    onClose:      () => void;
-    tipos:        GastoTipo[];
-    turnoActivo:  Turno | null;
-    locales:      Local[];
-    esAdmin:      boolean;
+    isOpen:           boolean;
+    onClose:          () => void;
+    tipos:            GastoTipo[];
+    turnoActivo:      Turno | null;
+    locales:          Local[];
+    esAdmin:          boolean;
+    turnosAbiertos:   Turno[];
 }
 
-export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin }: Props) {
+export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos }: Props) {
     const [form, setForm]     = useState<GastoForm>(emptyGasto(turnoActivo?.id ?? null));
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
@@ -99,7 +100,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                         style={{ backgroundColor: 'rgba(59,130,246,0.06)', color: 'var(--color-primary)', border: '1px solid rgba(59,130,246,0.2)' }}
                     >
                         <Receipt size={13} />
-                        Se registrará en el turno activo
+                        Se registrará en el turno seleccionado
                     </div>
                 ) : (
                     <div
@@ -109,6 +110,23 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                         <Receipt size={13} />
                         Gasto administrativo (sin turno)
                     </div>
+                )}
+
+                {/* Admin: selector de turno abierto */}
+                {esTurnogasto && esAdmin && turnosAbiertos.length > 0 && (
+                    <Select
+                        label="Turno"
+                        required
+                        value={form.turno_id ?? ''}
+                        onChange={v => setForm(f => ({ ...f, turno_id: Number(v) || null }))}
+                        options={turnosAbiertos.map(t => ({
+                            value: t.id,
+                            label: `${t.caja?.nombre ?? 'Caja'} — ${t.user?.name ?? 'Usuario'}`,
+                        }))}
+                        placeholder="Seleccionar turno"
+                        error={errors.turno_id}
+                        disabled={saving}
+                    />
                 )}
 
                 <Select
