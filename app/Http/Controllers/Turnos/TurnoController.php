@@ -55,6 +55,75 @@ class TurnoController extends Controller
         ]);
     }
 
+    public function show(Request $request, Turno $turno)
+    {
+        $user = $request->user();
+        $esAdmin = $user->rol->es_admin;
+
+        // Admin ve todos los turnos de la empresa; cajero solo los suyos
+        abort_if(!$esAdmin && $turno->user_id !== $user->id, 403);
+        abort_if($turno->empresa_id !== $user->empresa_id, 403);
+
+        $turno->load([
+            'caja',
+            'local',
+            'user',
+            'userCierre',
+            'arqueo',
+            'arqueoMetodos.metodoPago',
+            'gastos.tipo',
+            'gastos.concepto',
+            'gastos.user',
+            'ventas' => fn($q) => $q->with(['cliente', 'pagos.metodoPago', 'items']),
+        ]);
+
+        // Ventas completadas por método de pago
+        $ventasPorMetodo = [];
+        $totalVentas = 0;
+        foreach ($turno->ventas->where('estado', 'completada') as $venta) {
+            $totalVentas += (float) $venta->total;
+            foreach ($venta->pagos as $pago) {
+                $nombre = $pago->metodoPago->nombre ?? 'Otro';
+                $ventasPorMetodo[$nombre] = ($ventasPorMetodo[$nombre] ?? 0) + (float) $pago->monto;
+            }
+        }
+
+        $totalGastos = $turno->gastos->sum(fn($g) => (float) $g->monto);
+
+        return Inertia::render('Turnos/Show', [
+            'turno'           => $turno,
+            'ventasPorMetodo' => $ventasPorMetodo,
+            'totalVentas'     => $totalVentas,
+            'totalGastos'     => $totalGastos,
+            'esAdmin'         => $esAdmin,
+        ]);
+    }
+
+    public function reabrir(Request $request, Turno $turno)
+    {
+        abort_if(!$request->user()->rol->es_admin, 403);
+        abort_if($turno->empresa_id !== $request->user()->empresa_id, 403);
+        abort_if($turno->estado !== 'cerrado', 422);
+
+        DB::transaction(function () use ($turno) {
+            $turno->arqueo()->delete();
+            $turno->arqueoMetodos()->delete();
+
+            $turno->update([
+                'estado'                 => 'abierto',
+                'fecha_cierre'           => null,
+                'user_cierre_id'         => null,
+                'monto_cierre_declarado' => null,
+                'monto_cierre_esperado'  => null,
+                'diferencia'             => null,
+                'observacion_cierre'     => null,
+            ]);
+        });
+
+        return redirect()->route('turnos.show', $turno->id)
+            ->with('success', 'Turno reabierto. Ya puede registrar ventas y gastos.');
+    }
+
     public function turnoActivo(Request $request)
     {
         $turno = Turno::turnoActivoDelUsuario($request->user()->id)

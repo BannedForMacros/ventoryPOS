@@ -202,6 +202,21 @@ export interface Gasto extends Record<string, unknown> {
     updated_at:         string;
 }
 
+export interface TurnoArqueo extends Record<string, unknown> {
+    id:           number;
+    turno_id:     number;
+    denominacion: number;
+    cantidad:     number;
+}
+
+export interface TurnoArqueoMetodo extends Record<string, unknown> {
+    id:               number;
+    turno_id:         number;
+    metodo_pago_id:   number;
+    monto_declarado:  string;
+    metodo_pago?:     MetodoPago;
+}
+
 export interface Turno extends Record<string, unknown> {
     id:                      number;
     empresa_id:              number;
@@ -225,6 +240,8 @@ export interface Turno extends Record<string, unknown> {
     user_cierre?:            User | null;
     gastos?:                 Gasto[];
     ventas?:                 Venta[];
+    arqueo?:                 TurnoArqueo[];
+    arqueo_metodos?:         TurnoArqueoMetodo[];
     created_at:              string;
     updated_at:              string;
 }

@@ -67,13 +67,13 @@ class Venta extends Model
         ]);
     }
 
-    public static function generarNumero(int $empresaId): string
+    public static function generarNumero(int $turnoId): string
     {
-        // Bloqueo a nivel de fila para evitar duplicados en concurrencia
-        // PostgreSQL no permite FOR UPDATE con agregados, se usa subquery
+        // Numerar por turno: cada turno arranca en V-0001
+        // lockForUpdate sobre la subquery evita duplicados en concurrencia
         $sub = DB::table('ventas')
             ->select(DB::raw("CAST(SUBSTRING(numero FROM 3) AS INTEGER) as n"))
-            ->where('empresa_id', $empresaId)
+            ->where('turno_id', $turnoId)
             ->lockForUpdate();
 
         $max = DB::table(DB::raw("({$sub->toSql()}) as sub"))

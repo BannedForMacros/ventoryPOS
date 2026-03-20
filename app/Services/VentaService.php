@@ -42,7 +42,7 @@ class VentaService
                 'caja_id'               => $turno->caja_id,
                 'user_id'               => $user->id,
                 'cliente_id'            => $clienteId,
-                'numero'                => Venta::generarNumero($user->empresa_id),
+                'numero'                => Venta::generarNumero($turno->id),
                 'tipo_comprobante'      => $data['tipo_comprobante'],
                 'subtotal'              => 0,
                 'descuento_total'       => $data['descuento_total'] ?? 0,

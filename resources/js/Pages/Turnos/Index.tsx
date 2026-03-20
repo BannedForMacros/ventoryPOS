@@ -44,6 +44,10 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago, tur
         .reduce((sum: number, v: Venta) => sum + parseFloat(v.total), 0);
 
     // ── Columnas historial ──
+    function verDetalle(turno: Turno) {
+        router.visit(route('turnos.show', turno.id));
+    }
+
     const columnasTurnos: Column<Turno>[] = [
         {
             key: 'fecha_apertura', label: 'Apertura', sortable: true,
@@ -85,6 +89,18 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago, tur
                 <Badge variant={t.estado === 'abierto' ? 'success' : 'secondary'}>
                     {t.estado === 'abierto' ? 'Abierto' : 'Cerrado'}
                 </Badge>
+            ),
+        },
+        {
+            key: 'acciones', label: '',
+            render: (t) => (
+                <button
+                    onClick={() => verDetalle(t)}
+                    className="text-xs px-2.5 py-1 rounded-lg font-medium transition-colors"
+                    style={{ color: 'var(--color-primary)', border: '1px solid var(--color-primary)' }}
+                >
+                    Ver detalle
+                </button>
             ),
         },
     ];
