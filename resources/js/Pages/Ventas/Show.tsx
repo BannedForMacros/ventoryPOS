@@ -76,7 +76,7 @@ export default function VentasShow({ venta, flash }: Props) {
                         <InfoRow label="Comprobante" value={<span className="capitalize">{venta.tipo_comprobante}</span>} />
                         <InfoRow label="Cliente" value={
                             venta.cliente
-                                ? `${(venta.cliente as any).nombre} ${(venta.cliente as any).apellido ?? ''}`
+                                ? ((venta.cliente as any).razon_social ?? `${(venta.cliente as any).nombres} ${(venta.cliente as any).apellidos ?? ''}`.trim())
                                 : 'Cliente general'
                         } />
                         <InfoRow label="Vendedor" value={(venta.user as any)?.name ?? '—'} />

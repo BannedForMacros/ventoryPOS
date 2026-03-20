@@ -17,9 +17,10 @@ export default function ModalClienteRapido({ isOpen, onClose, clientes, selected
     const filtrados = clientes.filter(c => {
         const q = busqueda.toLowerCase();
         return (
-            c.nombre.toLowerCase().includes(q) ||
-            (c.apellido ?? '').toLowerCase().includes(q) ||
-            c.documento.includes(busqueda) ||
+            c.nombres.toLowerCase().includes(q) ||
+            (c.apellidos ?? '').toLowerCase().includes(q) ||
+            (c.razon_social ?? '').toLowerCase().includes(q) ||
+            (c.numero_documento ?? '').includes(busqueda) ||
             (c.telefono ?? '').includes(busqueda)
         );
     });
@@ -66,9 +67,11 @@ export default function ModalClienteRapido({ isOpen, onClose, clientes, selected
                                 backgroundColor: selected?.id === c.id ? 'color-mix(in srgb, var(--color-primary) 10%, transparent)' : undefined,
                             }}
                         >
-                            <p className="font-medium">{c.nombre} {c.apellido}</p>
+                            <p className="font-medium">
+                                {c.razon_social ?? `${c.nombres} ${c.apellidos ?? ''}`.trim()}
+                            </p>
                             <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                {c.tipo_doc} {c.documento}
+                                {c.tipo_documento} {c.numero_documento}
                                 {c.telefono && ` · ${c.telefono}`}
                             </p>
                         </button>

@@ -209,7 +209,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                     >
                         <User size={15} />
                         <span className="max-w-[140px] truncate">
-                            {cliente ? `${cliente.nombre} ${cliente.apellido ?? ''}` : 'Cliente general'}
+                            {cliente
+                                ? (cliente.razon_social ?? `${cliente.nombres} ${cliente.apellidos ?? ''}`.trim())
+                                : 'Cliente general'}
                         </span>
                     </button>
                 </div>

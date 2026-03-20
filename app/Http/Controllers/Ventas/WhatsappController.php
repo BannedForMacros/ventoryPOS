@@ -31,7 +31,7 @@ class WhatsappController extends Controller
         $url = $this->whatsapp->generarUrlAprobacion(
             telefonoSupervisor: $request->telefono_supervisor,
             vendedorNombre:     $log->user->name ?? 'Vendedor',
-            clienteNombre:      $log->cliente?->nombre ?? 'Cliente general',
+            clienteNombre:      $log->cliente?->razon_social ?? trim(($log->cliente?->nombres ?? '') . ' ' . ($log->cliente?->apellidos ?? '')) ?: 'Cliente general',
             conceptoNombre:     $log->concepto?->nombre ?? $request->descuento_log_id,
             montoDescuento:     (float) $log->monto_descuento,
             ventaNumero:        $log->venta?->numero ?? '—',

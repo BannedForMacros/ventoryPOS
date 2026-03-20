@@ -48,7 +48,9 @@ export default function ModalConfirmacionVenta({
                 <div>
                     <span className="text-xs font-semibold uppercase" style={{ color: 'var(--color-text-muted)' }}>Cliente</span>
                     <p className="mt-0.5" style={{ color: 'var(--color-text)' }}>
-                        {cliente ? `${cliente.nombre} ${cliente.apellido ?? ''} (${cliente.documento})` : 'Cliente general'}
+                        {cliente
+                            ? `${cliente.razon_social ?? `${cliente.nombres} ${cliente.apellidos ?? ''}`.trim()} (${cliente.numero_documento ?? '—'})`
+                            : 'Cliente general'}
                     </p>
                 </div>
 

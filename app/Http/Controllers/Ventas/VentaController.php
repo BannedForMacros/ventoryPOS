@@ -42,8 +42,8 @@ class VentaController extends Controller
 
         $clientes = Cliente::where('empresa_id', $user->empresa_id)
             ->activo()
-            ->orderBy('nombre')
-            ->get(['id', 'nombre', 'apellido', 'documento', 'telefono']);
+            ->orderBy('nombres')
+            ->get(['id', 'nombres', 'apellidos', 'razon_social', 'tipo_documento', 'numero_documento', 'telefono']);
 
         $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
             ->activo()

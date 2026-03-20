@@ -116,7 +116,7 @@ export default function ReportesDescuentos({ logs, conceptos, filters, flash }: 
                 />
             </div>
 
-            <Table data={logs.data} columns={columns} rowKey="id" />
+            <Table data={logs.data} columns={columns} />
         </AppLayout>
     );
 }

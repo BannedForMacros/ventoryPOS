@@ -338,18 +338,20 @@ export interface Venta extends Record<string, unknown> {
 }
 
 export interface Cliente extends Record<string, unknown> {
-    id:           number;
-    empresa_id:   number;
-    tipo_doc:     string;
-    documento:    string;
-    nombre:       string;
-    apellido:     string | null;
-    email:        string | null;
-    telefono:     string | null;
-    direccion:    string | null;
-    activo:       boolean;
-    created_at:   string;
-    updated_at:   string;
+    id:                number;
+    empresa_id:        number;
+    tipo_documento:    string;
+    numero_documento:  string | null;
+    nombres:           string;
+    apellidos:         string | null;
+    razon_social:      string | null;
+    email:             string | null;
+    telefono:          string | null;
+    direccion:         string | null;
+    activo:            boolean;
+    nombre_completo?:  string;
+    created_at:        string;
+    updated_at:        string;
 }
 
 export interface Flash {

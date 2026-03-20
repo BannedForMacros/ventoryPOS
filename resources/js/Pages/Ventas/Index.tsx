@@ -40,7 +40,7 @@ export default function VentasIndex({ ventas, locales, filters, flash }: Props) 
     const columns: Column<Venta>[] = [
         { key: 'numero',        label: 'N°',        render: v => <span className="font-mono font-semibold">{v.numero}</span> },
         { key: 'fecha_venta',   label: 'Fecha',      render: v => new Date(v.fecha_venta).toLocaleString('es-PE') },
-        { key: 'cliente',       label: 'Cliente',    render: v => v.cliente ? `${(v.cliente as any).nombre} ${(v.cliente as any).apellido ?? ''}` : 'General' },
+        { key: 'cliente',       label: 'Cliente',    render: v => v.cliente ? ((v.cliente as any).razon_social ?? `${(v.cliente as any).nombres} ${(v.cliente as any).apellidos ?? ''}`.trim()) : 'General' },
         { key: 'tipo_comprobante', label: 'Comprobante', render: v => <span className="capitalize">{v.tipo_comprobante}</span> },
         {
             key: 'estado',
@@ -125,7 +125,7 @@ export default function VentasIndex({ ventas, locales, filters, flash }: Props) 
                 )}
             </div>
 
-            <Table data={ventas.data} columns={columns} rowKey="id" />
+            <Table data={ventas.data} columns={columns} />
         </AppLayout>
     );
 }
