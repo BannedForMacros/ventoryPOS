@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, CreditCard, Banknote, Wallet } from 'lucide-react';
 import type { Cuenta, MetodoPago } from '@/types';
 
 export interface LineaPago {
@@ -23,6 +23,13 @@ interface Props {
 }
 
 function uid() { return Math.random().toString(36).slice(2); }
+
+function MetodoIcon({ tipo }: { tipo: string }) {
+    const size = 14;
+    if (tipo === 'efectivo') return <Banknote size={size} />;
+    if (['tarjeta_credito', 'tarjeta_debito'].includes(tipo)) return <CreditCard size={size} />;
+    return <Wallet size={size} />;
+}
 
 export default function PanelPago({ pagos, metodosPago, total, onChange }: Props) {
     const totalPagado  = pagos.reduce((s, p) => s + p.monto, 0);
@@ -72,36 +79,58 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
                 return (
                     <div
                         key={pago.key}
-                        className="rounded-lg p-3 flex flex-col gap-2"
-                        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+                        className="rounded-xl p-3 space-y-2"
+                        style={{
+                            backgroundColor: 'var(--color-surface)',
+                            border: '1px solid var(--color-border)',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                        }}
                     >
                         <div className="flex gap-2 items-center">
-                            <select
-                                value={pago.metodo_pago_id}
-                                onChange={e => handleMetodoChange(pago.key, Number(e.target.value))}
-                                className="flex-1 text-sm border rounded px-2 py-1.5"
-                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
-                            >
-                                {metodosPago.map(m => (
-                                    <option key={m.id} value={m.id}>{m.nombre}</option>
-                                ))}
-                            </select>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={pago.monto || ''}
-                                onChange={e => updatePago(pago.key, { monto: parseFloat(e.target.value) || 0 })}
-                                placeholder="Monto"
-                                className="w-28 text-sm border rounded px-2 py-1.5"
-                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
-                            />
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <span className="flex-shrink-0" style={{ color: 'var(--color-primary)' }}>
+                                    <MetodoIcon tipo={metodo?.tipo ?? ''} />
+                                </span>
+                                <select
+                                    value={pago.metodo_pago_id}
+                                    onChange={e => handleMetodoChange(pago.key, Number(e.target.value))}
+                                    className="flex-1 text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 min-w-0"
+                                    style={{
+                                        borderColor: 'var(--color-border)',
+                                        backgroundColor: 'var(--color-bg)',
+                                        color: 'var(--color-text)',
+                                        '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
+                                    } as React.CSSProperties}
+                                >
+                                    {metodosPago.map(m => (
+                                        <option key={m.id} value={m.id}>{m.nombre}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="relative w-28 flex-shrink-0">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>S/</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={pago.monto || ''}
+                                    onChange={e => updatePago(pago.key, { monto: parseFloat(e.target.value) || 0 })}
+                                    placeholder="0.00"
+                                    className="w-full pl-7 pr-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 font-semibold"
+                                    style={{
+                                        borderColor: 'var(--color-border)',
+                                        backgroundColor: 'var(--color-bg)',
+                                        color: 'var(--color-text)',
+                                        '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
+                                    } as React.CSSProperties}
+                                />
+                            </div>
                             <button
                                 onClick={() => removePago(pago.key)}
-                                className="p-1 rounded hover:text-red-500 transition-colors"
+                                className="p-1.5 rounded-lg hover:bg-red-50 transition-colors group flex-shrink-0"
                                 style={{ color: 'var(--color-text-muted)' }}
                             >
-                                <Trash2 size={14} />
+                                <Trash2 size={14} className="group-hover:text-red-500 transition-colors" />
                             </button>
                         </div>
 
@@ -109,8 +138,13 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
                             <select
                                 value={pago.cuenta_metodo_pago_id ?? ''}
                                 onChange={e => updatePago(pago.key, { cuenta_metodo_pago_id: e.target.value ? Number(e.target.value) : null })}
-                                className="text-sm border rounded px-2 py-1.5"
-                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                                className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2"
+                                style={{
+                                    borderColor: 'var(--color-border)',
+                                    backgroundColor: 'var(--color-bg)',
+                                    color: 'var(--color-text)',
+                                    '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
+                                } as React.CSSProperties}
                             >
                                 <option value="">— Cuenta (opcional)</option>
                                 {cuentas.map(c => (
@@ -125,8 +159,13 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
                                 value={pago.referencia}
                                 onChange={e => updatePago(pago.key, { referencia: e.target.value })}
                                 placeholder="N° de operación / referencia"
-                                className="text-sm border rounded px-2 py-1.5"
-                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                                className="w-full text-sm border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2"
+                                style={{
+                                    borderColor: 'var(--color-border)',
+                                    backgroundColor: 'var(--color-bg)',
+                                    color: 'var(--color-text)',
+                                    '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
+                                } as React.CSSProperties}
                             />
                         )}
                     </div>
@@ -135,40 +174,49 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
 
             <button
                 onClick={addPago}
-                className="flex items-center gap-1 text-sm"
-                style={{ color: 'var(--color-primary)' }}
+                className="flex items-center justify-center gap-1.5 text-sm font-medium py-2 px-3 rounded-xl transition-all hover:opacity-80 w-full"
+                style={{
+                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)',
+                    color: 'var(--color-primary)',
+                    border: '1px dashed color-mix(in srgb, var(--color-primary) 35%, transparent)',
+                }}
             >
-                <Plus size={14} /> Agregar método de pago
+                <Plus size={14} /> Agregar pago
             </button>
 
-            {/* Resumen */}
-            <div
-                className="rounded-lg p-3 mt-1 space-y-1"
-                style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
-            >
-                <div className="flex justify-between text-sm">
-                    <span style={{ color: 'var(--color-text-muted)' }}>Total a pagar</span>
-                    <span className="font-semibold" style={{ color: 'var(--color-text)' }}>S/ {total.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                    <span style={{ color: 'var(--color-text-muted)' }}>Total pagado</span>
-                    <span className="font-semibold" style={{ color: totalPagado >= total ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                        S/ {totalPagado.toFixed(2)}
-                    </span>
-                </div>
-                {pendiente > 0.009 && (
-                    <div className="flex justify-between text-sm">
-                        <span style={{ color: 'var(--color-danger)' }}>Pendiente</span>
-                        <span className="font-bold" style={{ color: 'var(--color-danger)' }}>S/ {pendiente.toFixed(2)}</span>
+            {/* Resumen de pagos */}
+            {pagos.length > 0 && (
+                <div
+                    className="rounded-xl p-3 space-y-1.5"
+                    style={{
+                        backgroundColor: 'var(--color-bg)',
+                        border: '1px solid var(--color-border)',
+                    }}
+                >
+                    <div className="flex justify-between text-xs">
+                        <span style={{ color: 'var(--color-text-muted)' }}>Total a pagar</span>
+                        <span className="font-semibold" style={{ color: 'var(--color-text)' }}>S/ {total.toFixed(2)}</span>
                     </div>
-                )}
-                {vuelto > 0.009 && (
-                    <div className="flex justify-between text-sm">
-                        <span style={{ color: 'var(--color-success)' }}>Vuelto</span>
-                        <span className="font-bold" style={{ color: 'var(--color-success)' }}>S/ {vuelto.toFixed(2)}</span>
+                    <div className="flex justify-between text-xs">
+                        <span style={{ color: 'var(--color-text-muted)' }}>Pagado</span>
+                        <span className="font-bold" style={{ color: totalPagado >= total ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                            S/ {totalPagado.toFixed(2)}
+                        </span>
                     </div>
-                )}
-            </div>
+                    {pendiente > 0.009 && (
+                        <div className="flex justify-between text-xs font-bold" style={{ color: 'var(--color-danger)' }}>
+                            <span>Pendiente</span>
+                            <span>S/ {pendiente.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {vuelto > 0.009 && (
+                        <div className="flex justify-between text-xs font-bold" style={{ color: 'var(--color-success)' }}>
+                            <span>Vuelto</span>
+                            <span>S/ {vuelto.toFixed(2)}</span>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

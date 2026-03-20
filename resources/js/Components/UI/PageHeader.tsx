@@ -3,7 +3,7 @@ import { Link } from '@inertiajs/react';
 import { ArrowLeft } from 'lucide-react';
 
 interface PageHeaderProps {
-    title: string;
+    title: React.ReactNode;
     subtitle?: string;
     actions?: React.ReactNode;
     backHref?: string;

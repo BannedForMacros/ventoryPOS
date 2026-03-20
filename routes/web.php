@@ -57,7 +57,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('usuarios', UsuarioController::class)->except(['show', 'create', 'edit']);
         Route::get('permisos', [PermisoController::class, 'index'])->name('permisos.index');
         Route::post('permisos/{rol}', [PermisoController::class, 'store'])->name('permisos.store');
-        Route::resource('almacenes', AlmacenController::class)->except(['show', 'create', 'edit']);
+        Route::resource('almacenes', AlmacenController::class)->except(['show', 'create', 'edit'])->parameters(['almacenes' => 'almacen']);
     });
 
     Route::prefix('inventario')->name('inventario.')->group(function () {
