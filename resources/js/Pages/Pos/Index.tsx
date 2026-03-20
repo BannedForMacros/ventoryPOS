@@ -25,15 +25,17 @@ interface Props extends PageProps {
     conceptosDescuento: DescuentoConcepto[];
 }
 
-type TipoComprobante = 'ninguno' | 'boleta' | 'factura';
+type TipoComprobante = 'ticket' | 'boleta' | 'factura';
 
 function uid() { return Math.random().toString(36).slice(2); }
 
 function calcularTotales(items: LineaCarrito[], descuentoTotal: number) {
-    const subtotal = items.reduce((s, i) => s + i.subtotal, 0);
-    const base     = Math.max(0, subtotal - descuentoTotal);
-    const igv      = Math.round(base * 0.18 * 100) / 100;
-    const total    = Math.round((base + igv) * 100) / 100;
+    const subtotal  = items.reduce((s, i) => s + i.subtotal, 0);
+    const baseItems = items.reduce((s, i) =>
+        s + (i.incluye_igv ? i.subtotal / 1.18 : i.subtotal), 0);
+    const base  = Math.max(0, baseItems - descuentoTotal);
+    const igv   = Math.round(base * 0.18 * 100) / 100;
+    const total = Math.round((base + igv) * 100) / 100;
     return { subtotal, igv, total };
 }
 
@@ -44,7 +46,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [cliente, setCliente]             = useState<Cliente | null>(null);
     const [descuentoTotal, setDescuentoTotal]       = useState(0);
     const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(null);
-    const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>('ninguno');
+    const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>('ticket');
     const [modalCliente, setModalCliente]   = useState(false);
     const [modalConfirm, setModalConfirm]   = useState(false);
     const [loading, setLoading]             = useState(false);
@@ -108,6 +110,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 descuento_item:       0,
                 descuento_concepto_id: null,
                 subtotal:             precio,
+                incluye_igv:          producto.incluye_igv,
             };
             setCarrito(prev => [...prev, item]);
         }
@@ -147,7 +150,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         setCliente(null);
         setDescuentoTotal(0);
         setDescuentoConceptoId(null);
-        setTipoComprobante('ninguno');
+        setTipoComprobante('ticket');
     }
 
     function confirmarVenta() {
@@ -173,6 +176,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 precio_unitario:       i.precio_unitario,
                 descuento_item:        i.descuento_item,
                 descuento_concepto_id: i.descuento_concepto_id,
+                incluye_igv:           i.incluye_igv,
             })),
             pagos: pagos.map(p => ({
                 metodo_pago_id:        p.metodo_pago_id,
@@ -237,7 +241,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                             onChange={e => setTipoComprobante(e.target.value as TipoComprobante)}
                             className="text-xs bg-white/15 border-0 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-white/30"
                         >
-                            <option value="ninguno" className="text-gray-900">Sin comprobante</option>
+                            <option value="ticket" className="text-gray-900">Sin comprobante</option>
                             <option value="boleta" className="text-gray-900">Boleta</option>
                             <option value="factura" className="text-gray-900">Factura</option>
                         </select>
@@ -370,7 +374,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                                 {producto.categoria?.nombre ?? 'General'}
                                             </span>
                                             <span className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>
-                                                S/ {parseFloat(producto.precio_venta).toFixed(2)}
+                                                S/ {parseFloat(
+                                                    producto.unidad_base?.precio_venta ?? producto.precio_venta
+                                                ).toFixed(2)}
                                             </span>
                                         </div>
                                     </button>
@@ -404,7 +410,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 className="flex-1 text-xs border rounded-lg px-2 py-1.5"
                                 style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
                             >
-                                <option value="ninguno">Sin comprobante</option>
+                                <option value="ticket">Sin comprobante</option>
                                 <option value="boleta">Boleta</option>
                                 <option value="factura">Factura</option>
                             </select>

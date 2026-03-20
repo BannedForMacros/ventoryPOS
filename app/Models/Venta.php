@@ -45,10 +45,19 @@ class Venta extends Model
 
     public function calcularTotales(): void
     {
+        // subtotal = suma de precios tal como se ingresaron (pueden incluir IGV o no)
         $subtotal = $this->items->sum(fn ($i) =>
             ($i->precio_unitario - $i->descuento_item) * $i->cantidad
         );
-        $base = max(0, $subtotal - (float) $this->descuento_total);
+
+        // base para IGV: extraer precio neto de items que ya incluyen IGV
+        $baseItems = $this->items->sum(fn ($i) =>
+            $i->incluye_igv
+                ? (($i->precio_unitario - $i->descuento_item) * $i->cantidad) / 1.18
+                : ($i->precio_unitario - $i->descuento_item) * $i->cantidad
+        );
+
+        $base = max(0, $baseItems - (float) $this->descuento_total);
         $igv  = round($base * 0.18, 2);
 
         $this->update([
@@ -61,10 +70,15 @@ class Venta extends Model
     public static function generarNumero(int $empresaId): string
     {
         // Bloqueo a nivel de fila para evitar duplicados en concurrencia
-        $max = DB::table('ventas')
+        // PostgreSQL no permite FOR UPDATE con agregados, se usa subquery
+        $sub = DB::table('ventas')
+            ->select(DB::raw("CAST(SUBSTRING(numero FROM 3) AS INTEGER) as n"))
             ->where('empresa_id', $empresaId)
-            ->lockForUpdate()
-            ->max(DB::raw("CAST(SUBSTRING(numero FROM 3) AS INTEGER)"));
+            ->lockForUpdate();
+
+        $max = DB::table(DB::raw("({$sub->toSql()}) as sub"))
+            ->mergeBindings($sub)
+            ->max('n');
 
         $siguiente = ($max ?? 0) + 1;
 

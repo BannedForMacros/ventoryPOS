@@ -14,6 +14,7 @@ export interface LineaCarrito {
     descuento_item:       number;
     descuento_concepto_id: number | null;
     subtotal:             number;
+    incluye_igv:          boolean;
 }
 
 interface Props {

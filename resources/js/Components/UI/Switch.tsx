@@ -1,8 +1,10 @@
 import React, { InputHTMLAttributes, useId } from 'react';
 
-interface SwitchProps extends InputHTMLAttributes<HTMLInputElement> {
+interface SwitchProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'checked'> {
     label?: string;
     description?: string;
+    checked?: boolean;
+    onChange?: (checked: boolean) => void;
 }
 
 export default function Switch({
@@ -10,6 +12,8 @@ export default function Switch({
     description,
     className = '',
     id,
+    checked,
+    onChange,
     ...props
 }: SwitchProps) {
     // ID único para enlazar el label y el input oculto
@@ -19,8 +23,8 @@ export default function Switch({
     return (
         <div className={`flex items-start gap-3 ${className}`}>
             {/* Contenedor del Switch interactivo */}
-            <label 
-                htmlFor={switchId} 
+            <label
+                htmlFor={switchId}
                 className="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-0.5 group"
             >
                 {/* Input nativo oculto. Usamos 'peer' para que sus estados (checked, focus) afecten a los divs hermanos */}
@@ -28,6 +32,8 @@ export default function Switch({
                     type="checkbox"
                     id={switchId}
                     className="sr-only peer"
+                    checked={checked}
+                    onChange={e => onChange?.(e.target.checked)}
                     {...props}
                 />
                 

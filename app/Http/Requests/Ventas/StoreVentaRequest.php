@@ -16,7 +16,7 @@ class StoreVentaRequest extends FormRequest
 
         return [
             'cliente_id'             => ['nullable', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $empresaId)],
-            'tipo_comprobante'       => ['required', Rule::in(['boleta', 'factura', 'ninguno'])],
+            'tipo_comprobante'       => ['required', Rule::in(['ticket', 'boleta', 'factura'])],
             'observacion'            => ['nullable', 'string', 'max:500'],
             'descuento_total'        => ['nullable', 'numeric', 'min:0'],
             'descuento_concepto_id'  => [
@@ -62,16 +62,18 @@ class StoreVentaRequest extends FormRequest
             }
 
             // Validar que el total de pagos cubre el total de la venta
-            $subtotalItems = 0;
+            $baseItems = 0;
             foreach ($this->input('items', []) as $item) {
-                $precio    = (float) ($item['precio_unitario'] ?? 0);
-                $descuento = (float) ($item['descuento_item'] ?? 0);
-                $cantidad  = (float) ($item['cantidad'] ?? 0);
-                $subtotalItems += ($precio - $descuento) * $cantidad;
+                $precio      = (float) ($item['precio_unitario'] ?? 0);
+                $descuento   = (float) ($item['descuento_item'] ?? 0);
+                $cantidad    = (float) ($item['cantidad'] ?? 0);
+                $incluyeIgv  = !empty($item['incluye_igv']);
+                $importe     = ($precio - $descuento) * $cantidad;
+                $baseItems  += $incluyeIgv ? $importe / 1.18 : $importe;
             }
 
             $descuentoTotal = (float) ($this->input('descuento_total') ?? 0);
-            $base  = max(0, $subtotalItems - $descuentoTotal);
+            $base  = max(0, $baseItems - $descuentoTotal);
             $total = round($base * 1.18, 2);
 
             $totalPagado = collect($this->input('pagos', []))->sum(fn($p) => (float) ($p['monto'] ?? 0));

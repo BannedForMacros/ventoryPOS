@@ -132,6 +132,7 @@ export interface Producto extends Record<string, unknown> {
     precio_costo: string;
     imagen: string | null;
     activo: boolean;
+    incluye_igv: boolean;
     categoria?: Categoria | null;
     unidades?: ProductoUnidad[];
     unidad_base?: ProductoUnidad | null;
@@ -318,7 +319,7 @@ export interface Venta extends Record<string, unknown> {
     user_id:               number;
     cliente_id:            number | null;
     numero:                string;
-    tipo_comprobante:      'boleta' | 'factura' | 'ninguno';
+    tipo_comprobante:      'ticket' | 'boleta' | 'factura';
     subtotal:              string;
     descuento_total:       string;
     descuento_concepto_id: number | null;

@@ -51,8 +51,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::prefix('configuracion')->name('configuracion.')->group(function () {
         Route::resource('empresas', EmpresaController::class)->except(['show', 'create', 'edit']);
-        Route::resource('locales', LocalController::class)->except(['show', 'create', 'edit']);
-        Route::resource('roles', RolController::class)->except(['show', 'create', 'edit']);
+        Route::resource('locales', LocalController::class)->except(['show', 'create', 'edit'])->parameters(['locales' => 'local']);
+        Route::resource('roles', RolController::class)->except(['show', 'create', 'edit'])->parameters(['roles' => 'rol']);
         Route::resource('modulos', ModuloController::class)->except(['show', 'create', 'edit']);
         Route::resource('usuarios', UsuarioController::class)->except(['show', 'create', 'edit']);
         Route::get('permisos', [PermisoController::class, 'index'])->name('permisos.index');

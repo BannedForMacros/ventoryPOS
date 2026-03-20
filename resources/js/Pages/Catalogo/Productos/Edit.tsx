@@ -32,6 +32,7 @@ interface ProductoData {
     tipo_precio: 'fijo' | 'referencial';
     precio_venta: string;
     activo: boolean;
+    incluye_igv: boolean;
     unidades: ProductoUnidadData[];
 }
 
@@ -44,6 +45,7 @@ interface FormData {
     tipo_precio: 'fijo' | 'referencial';
     precio_venta: string;
     activo: boolean;
+    incluye_igv: boolean;
     unidades: ProductoUnidadData[];
 }
 
@@ -68,6 +70,7 @@ export default function Edit({ producto, categorias, unidades }: Props) {
         tipo_precio:   producto.tipo_precio,
         precio_venta:  producto.precio_venta,
         activo:        producto.activo,
+        incluye_igv:   producto.incluye_igv,
         unidades:      producto.unidades.map(u => ({
             id:                u.id,
             unidad_medida_id:  u.unidad_medida_id,
@@ -187,6 +190,12 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                         </>
                     )}
 
+                    <Switch
+                        label="Incluye IGV"
+                        description="El precio de venta ya incluye el IGV (18%). No se sumará IGV adicional en la venta."
+                        checked={data.incluye_igv}
+                        onChange={v => setData('incluye_igv', v)}
+                    />
                     <Switch label="Activo" checked={data.activo} onChange={v => setData('activo', v)} />
                 </section>
 

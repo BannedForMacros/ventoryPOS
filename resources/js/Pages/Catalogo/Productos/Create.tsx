@@ -30,6 +30,7 @@ interface FormData {
     tipo_precio: 'fijo' | 'referencial';
     precio_venta: string;
     activo: boolean;
+    incluye_igv: boolean;
     unidades: UnidadRow[];
 }
 
@@ -47,7 +48,7 @@ export default function Create({ categorias, unidades }: Props) {
     const { data, setData, post, processing, errors } = useForm<FormData>({
         categoria_id: '', codigo: '', nombre: '', descripcion: '',
         tipo: 'producto', tipo_precio: 'fijo',
-        precio_venta: '', activo: true,
+        precio_venta: '', activo: true, incluye_igv: false,
         unidades: [{ ...emptyUnidad(), es_base: true }],
     });
 
@@ -173,6 +174,12 @@ export default function Create({ categorias, unidades }: Props) {
                         </>
                     )}
 
+                    <Switch
+                        label="Incluye IGV"
+                        description="El precio de venta ya incluye el IGV (18%). No se sumará IGV adicional en la venta."
+                        checked={data.incluye_igv}
+                        onChange={v => setData('incluye_igv', v)}
+                    />
                     <Switch label="Activo" checked={data.activo} onChange={v => setData('activo', v)} />
                 </section>
 

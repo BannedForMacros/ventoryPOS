@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Cliente;
 use App\Models\DescuentoLog;
 use App\Services\LocalScopeService;
 use App\Models\Producto;
@@ -28,6 +29,12 @@ class VentaService
             $almacen = $this->scope->almacenParaVentas($user)
                 ?? abort(422, 'No se encontró un almacén de ventas configurado.');
 
+            // Si no se indicó cliente, usar el cliente general de la empresa
+            $clienteId = $data['cliente_id'] ?? Cliente::where('empresa_id', $user->empresa_id)
+                ->whereNull('numero_documento')
+                ->where('nombres', 'Cliente')
+                ->value('id');
+
             // Cabecera de la venta
             $venta = Venta::create([
                 'empresa_id'            => $user->empresa_id,
@@ -35,7 +42,7 @@ class VentaService
                 'turno_id'              => $turno->id,
                 'caja_id'               => $turno->caja_id,
                 'user_id'               => $user->id,
-                'cliente_id'            => $data['cliente_id'] ?? null,
+                'cliente_id'            => $clienteId,
                 'numero'                => Venta::generarNumero($user->empresa_id),
                 'tipo_comprobante'      => $data['tipo_comprobante'],
                 'subtotal'              => 0,
@@ -73,6 +80,7 @@ class VentaService
                     'descuento_item'       => $descuentoItem,
                     'descuento_concepto_id'=> $itemData['descuento_concepto_id'] ?? null,
                     'subtotal'             => $subtotal,
+                    'incluye_igv'          => $producto->incluye_igv,
                 ]);
 
                 // Ajustar stock solo para productos físicos

@@ -22,6 +22,7 @@ class Producto extends Model
         'precio_costo',
         'imagen',
         'activo',
+        'incluye_igv',
     ];
 
     protected function casts(): array
@@ -30,6 +31,7 @@ class Producto extends Model
             'precio_venta' => 'decimal:2',
             'precio_costo' => 'decimal:2',
             'activo'       => 'boolean',
+            'incluye_igv'  => 'boolean',
         ];
     }
 

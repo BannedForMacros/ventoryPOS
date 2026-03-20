@@ -15,7 +15,7 @@ class VentaItem extends Model
         'cantidad', 'factor_conversion', 'cantidad_base',
         'precio_unitario', 'precio_original',
         'descuento_item', 'descuento_concepto_id',
-        'subtotal',
+        'subtotal', 'incluye_igv',
     ];
 
     protected function casts(): array
@@ -28,6 +28,7 @@ class VentaItem extends Model
             'precio_original'   => 'decimal:2',
             'descuento_item'    => 'decimal:2',
             'subtotal'          => 'decimal:2',
+            'incluye_igv'       => 'boolean',
         ];
     }
 

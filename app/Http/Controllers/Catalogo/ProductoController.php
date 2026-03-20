@@ -69,6 +69,7 @@ class ProductoController extends Controller
                 'precio_venta' => $esProducto ? 0 : $data['precio_venta'],
                 'precio_costo' => 0,
                 'activo'       => $data['activo'] ?? true,
+                'incluye_igv'  => $data['incluye_igv'] ?? false,
             ]);
 
             if ($producto->esProductoFisico()) {
@@ -118,6 +119,7 @@ class ProductoController extends Controller
                 'precio_venta' => $esProducto ? 0 : $data['precio_venta'],
                 'precio_costo' => 0,
                 'activo'       => $data['activo'] ?? true,
+                'incluye_igv'  => $data['incluye_igv'] ?? false,
             ]);
 
             if ($producto->esProductoFisico()) {
