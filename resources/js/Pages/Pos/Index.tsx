@@ -289,17 +289,33 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             <div className="flex flex-1 overflow-hidden relative">
                 {/* ── Panel izquierdo: productos ──────────────────────── */}
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    {/* Buscador + filtro categoría */}
-                    <div className="px-3 sm:px-4 py-3 flex flex-col gap-2 flex-shrink-0" style={{ backgroundColor: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }}>
+                    {/* Header de productos + buscador + categorías */}
+                    <div className="px-3 sm:px-4 py-3 flex flex-col gap-2.5 flex-shrink-0" style={{ backgroundColor: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }}>
+                        <div className="flex items-center gap-2">
+                            <Package size={16} style={{ color: 'var(--color-primary)' }} />
+                            <span className="font-bold text-sm" style={{ color: 'var(--color-text)' }}>
+                                Productos
+                            </span>
+                            <span
+                                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                style={{
+                                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
+                                    color: 'var(--color-primary)',
+                                }}
+                            >
+                                {productosFiltrados.length}
+                            </span>
+                        </div>
+
                         <div className="relative">
                             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
                             <input
                                 type="text"
                                 value={busqueda}
                                 onChange={e => setBusqueda(e.target.value)}
-                                placeholder="Buscar producto por nombre o código..."
+                                placeholder="Buscar por nombre o código..."
                                 autoFocus
-                                className="w-full pl-10 pr-3 py-2.5 text-sm border rounded-xl focus:outline-none focus:ring-2"
+                                className="w-full pl-10 pr-3 py-2 text-sm border rounded-xl focus:outline-none focus:ring-2"
                                 style={{
                                     borderColor: 'var(--color-border)',
                                     backgroundColor: 'var(--color-bg)',
@@ -319,7 +335,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         </div>
 
                         {/* Chips de categorías */}
-                        {categorias.length > 1 && (
+                        {categorias.length > 0 && (
                             <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide">
                                 <button
                                     onClick={() => setCategoriaActiva(null)}
@@ -353,7 +369,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
 
                     {/* Grid de productos */}
                     <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-3">
                             {productosFiltrados.map(producto => {
                                 const enCarrito = carrito.find(i => i.producto_id === producto.id);
                                 return (
@@ -397,7 +413,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                             </span>
                                             <span className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>
                                                 S/ {parseFloat(
-                                                    producto.unidad_base?.precio_venta ?? producto.precio_venta
+                                                    producto.unidad_base?.precio_venta
+                                                    ?? producto.unidades?.find(u => u.es_base)?.precio_venta
+                                                    ?? producto.precio_venta
                                                 ).toFixed(2)}
                                             </span>
                                         </div>

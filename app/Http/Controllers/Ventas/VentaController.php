@@ -36,7 +36,7 @@ class VentaController extends Controller
 
         $productos = Producto::deEmpresa($user->empresa_id)
             ->activo()
-            ->with(['unidades.unidadMedida', 'categoria'])
+            ->with(['unidades.unidadMedida', 'unidadBase', 'categoria'])
             ->orderBy('nombre')
             ->get();
 
