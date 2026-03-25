@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { AlertTriangle, ArrowLeft, Clock, RotateCcw, ShoppingCart, TrendingDown, Wallet } from 'lucide-react';
+import {
+    AlertTriangle, ArrowLeft, ArrowRight, Clock,
+    RotateCcw, ShoppingCart, TrendingDown, Wallet,
+} from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
-import Table, { Column } from '@/Components/UI/Table';
 import Modal from '@/Components/UI/Modal';
-import type { Gasto, PageProps, Turno, Venta } from '@/types';
+import type { PageProps, Turno } from '@/types';
 
 interface Props extends PageProps {
     turno:            Turno;
@@ -18,7 +20,7 @@ interface Props extends PageProps {
     esAdmin:          boolean;
 }
 
-export default function TurnoShow({ turno, ventasPorMetodo, totalVentas, totalGastos, esAdmin }: Props) {
+export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalReabrir, setModalReabrir] = useState(false);
     const [reabriendo, setReabriendo]     = useState(false);
@@ -37,89 +39,38 @@ export default function TurnoShow({ turno, ventasPorMetodo, totalVentas, totalGa
         });
     }
 
-    // ── Columnas ventas ──
-    const columnasVentas: Column<Venta>[] = [
-        {
-            key: 'numero', label: 'N°',
-            render: (v) => <span className="font-medium text-sm">{v.numero}</span>,
-        },
-        {
-            key: 'fecha_venta', label: 'Hora',
-            render: (v) => <span className="text-sm">{new Date(v.fecha_venta).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span>,
-        },
-        {
-            key: 'cliente', label: 'Cliente',
-            render: (v) => {
-                const c = v.cliente;
-                if (!c) return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
-                const nombre = c.razon_social ?? `${c.nombres} ${c.apellidos ?? ''}`.trim();
-                return <span className="text-sm">{nombre}</span>;
-            },
-        },
-        {
-            key: 'items', label: 'Ítems',
-            render: (v) => <span className="text-sm">{(v.items ?? []).length}</span>,
-        },
-        {
-            key: 'total', label: 'Total',
-            render: (v) => <span className="font-medium">S/ {parseFloat(v.total).toFixed(2)}</span>,
-        },
-        {
-            key: 'pagos', label: 'Métodos',
-            render: (v) => (
-                <span className="text-sm">
-                    {(v.pagos ?? []).map(p => p.metodo_pago?.nombre ?? '—').join(', ') || '—'}
-                </span>
-            ),
-        },
-        {
-            key: 'estado', label: 'Estado',
-            render: (v) => (
-                <Badge variant={v.estado === 'completada' ? 'success' : 'danger'}>
-                    {v.estado === 'completada' ? 'Completada' : 'Anulada'}
-                </Badge>
-            ),
-        },
-    ];
+    // ── Agregar productos vendidos de ventas completadas ──
+    const productosVendidos = useMemo(() => {
+        const mapa: Record<string, { nombre: string; cantidad: number; total: number }> = {};
+        (turno.ventas ?? [])
+            .filter(v => v.estado === 'completada')
+            .forEach(v => {
+                (v.items ?? []).forEach(item => {
+                    const key = item.producto_nombre as string;
+                    if (!mapa[key]) mapa[key] = { nombre: key, cantidad: 0, total: 0 };
+                    mapa[key].cantidad += parseFloat(item.cantidad as string);
+                    mapa[key].total    += parseFloat(item.subtotal as string);
+                });
+            });
+        return Object.values(mapa).sort((a, b) => b.total - a.total);
+    }, [turno.ventas]);
 
-    // ── Columnas gastos ──
-    const columnasGastos: Column<Gasto>[] = [
-        {
-            key: 'fecha', label: 'Fecha',
-            render: (g) => <span className="text-sm">{new Date(g.fecha).toLocaleDateString('es-PE')}</span>,
-        },
-        {
-            key: 'tipo', label: 'Tipo',
-            render: (g) => <span>{g.tipo?.nombre ?? '—'}</span>,
-        },
-        {
-            key: 'concepto', label: 'Concepto',
-            render: (g) => <span>{g.concepto?.nombre ?? '—'}</span>,
-        },
-        {
-            key: 'monto', label: 'Monto',
-            render: (g) => <span className="font-medium">S/ {parseFloat(g.monto).toFixed(2)}</span>,
-        },
-        {
-            key: 'user', label: 'Registrado por',
-            render: (g) => <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{g.user?.name ?? '—'}</span>,
-        },
-        {
-            key: 'comentario', label: 'Comentario',
-            render: (g) => g.comentario
-                ? <span className="text-sm">{g.comentario as string}</span>
-                : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
-        },
-    ];
+    const totalEfectivoArqueo = useMemo(() =>
+        (turno.arqueo ?? []).reduce((s, r) => s + r.denominacion * r.cantidad, 0),
+    [turno.arqueo]);
 
-    const ventasCompletadas = (turno.ventas ?? []).filter(v => v.estado === 'completada');
-    const ventasAnuladas    = (turno.ventas ?? []).filter(v => v.estado === 'anulada');
+    const ventasCompletadas = (turno.ventas ?? []).filter(v => v.estado === 'completada').length;
+    const ventasAnuladas    = (turno.ventas ?? []).filter(v => v.estado === 'anulada').length;
 
     return (
         <AppLayout title={`Turno #${turno.id}`}>
             <PageHeader
                 title={`Turno — ${turno.caja?.nombre ?? '—'}`}
-                subtitle={`${turno.user?.name ?? '—'} · ${new Date(turno.fecha_apertura).toLocaleString('es-PE')}${turno.fecha_cierre ? ` → ${new Date(turno.fecha_cierre).toLocaleString('es-PE')}` : ''}`}
+                subtitle={
+                    `${turno.user?.name ?? '—'} · ` +
+                    `${new Date(turno.fecha_apertura).toLocaleString('es-PE')}` +
+                    (turno.fecha_cierre ? ` → ${new Date(turno.fecha_cierre).toLocaleString('es-PE')}` : '')
+                }
                 actions={
                     <div className="flex gap-2">
                         {esAdmin && esCerrado && (
@@ -134,7 +85,7 @@ export default function TurnoShow({ turno, ventasPorMetodo, totalVentas, totalGa
                 }
             />
 
-            {/* ── Resumen general ── */}
+            {/* ── Cards resumen ── */}
             <div
                 className="rounded-2xl p-5 grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6"
                 style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}
@@ -151,62 +102,233 @@ export default function TurnoShow({ turno, ventasPorMetodo, totalVentas, totalGa
                 />
                 <InfoCard
                     icon={<ShoppingCart size={16} style={{ color: 'var(--color-primary)' }} />}
-                    label={`Ventas (${ventasCompletadas.length})`}
-                    valor={`S/ ${totalVentas.toFixed(2)}`}
+                    label={`Ventas completadas`}
+                    valor={`${ventasCompletadas}${ventasAnuladas > 0 ? ` (${ventasAnuladas} anuladas)` : ''}`}
+                    subvalor={`S/ ${totalVentas.toFixed(2)}`}
                 />
                 <InfoCard
                     icon={<TrendingDown size={16} style={{ color: 'var(--color-danger)' }} />}
                     label={`Gastos (${(turno.gastos ?? []).length})`}
                     valor={`S/ ${totalGastos.toFixed(2)}`}
                 />
+
+                {/* Estado */}
+                <div
+                    className="col-span-2 sm:col-span-4 flex items-center justify-between rounded-xl px-4 py-3"
+                    style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
+                >
+                    <div className="flex items-center gap-3">
+                        <Badge variant={esCerrado ? 'secondary' : 'success'}>
+                            {esCerrado ? 'Cerrado' : 'Abierto'}
+                        </Badge>
+                        {esCerrado && turno.userCierre && (
+                            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                Cerrado por <strong style={{ color: 'var(--color-text)' }}>{turno.userCierre.name as string}</strong>
+                            </span>
+                        )}
+                        {turno.caja?.caja_chica_activa && (
+                            <span className="text-sm ml-2" style={{ color: '#b45309' }}>
+                                Caja chica: <strong>S/ {parseFloat(turno.monto_caja_chica).toFixed(2)}</strong>
+                            </span>
+                        )}
+                    </div>
+                    {esCerrado && (
+                        <div className="flex items-center gap-6">
+                            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                Declarado: <strong style={{ color: 'var(--color-text)' }}>S/ {parseFloat(turno.monto_cierre_declarado ?? '0').toFixed(2)}</strong>
+                            </span>
+                            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                Esperado: <strong style={{ color: 'var(--color-text)' }}>S/ {parseFloat(turno.monto_cierre_esperado ?? '0').toFixed(2)}</strong>
+                            </span>
+                            <DiferenciaBadge diferencia={parseFloat(turno.diferencia ?? '0')} />
+                        </div>
+                    )}
+                </div>
             </div>
 
+            {/* ── Productos vendidos + Gastos ── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                {/* Ventas por método */}
-                <Section title="Resumen de ventas por método">
-                    {Object.keys(ventasPorMetodo).length === 0 ? (
-                        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Sin ventas en este turno.</p>
+
+                {/* Productos vendidos */}
+                <Section
+                    title="Productos vendidos"
+                    action={
+                        <button
+                            onClick={() => router.visit(route('ventas.index'))}
+                            className="flex items-center gap-1 text-xs"
+                            style={{ color: 'var(--color-primary)' }}
+                        >
+                            Ver ventas <ArrowRight size={12} />
+                        </button>
+                    }
+                >
+                    {productosVendidos.length === 0 ? (
+                        <p className="text-sm py-4 text-center" style={{ color: 'var(--color-text-muted)' }}>
+                            Sin ventas en este turno.
+                        </p>
                     ) : (
-                        <div className="space-y-2">
-                            {Object.entries(ventasPorMetodo).map(([metodo, monto]) => (
-                                <div key={metodo} className="flex justify-between text-sm">
-                                    <span style={{ color: 'var(--color-text)' }}>{metodo}</span>
-                                    <span className="font-medium" style={{ color: 'var(--color-text)' }}>
-                                        S/ {monto.toFixed(2)}
-                                    </span>
-                                </div>
-                            ))}
-                            <div
-                                className="flex justify-between text-sm font-semibold pt-2 mt-1"
-                                style={{ borderTop: '1px solid var(--color-border)', color: 'var(--color-primary)' }}
-                            >
-                                <span>Total</span>
-                                <span>S/ {totalVentas.toFixed(2)}</span>
-                            </div>
+                        <div
+                            className="rounded-xl overflow-hidden"
+                            style={{ border: '1px solid var(--color-border)' }}
+                        >
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr style={{ backgroundColor: 'var(--color-bg)' }}>
+                                        <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Producto</th>
+                                        <th className="text-center px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Cant.</th>
+                                        <th className="text-right px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                                    {productosVendidos.map(p => (
+                                        <tr key={p.nombre}>
+                                            <td className="px-3 py-2" style={{ color: 'var(--color-text)' }}>{p.nombre}</td>
+                                            <td className="px-3 py-2 text-center" style={{ color: 'var(--color-text-muted)' }}>
+                                                {Number.isInteger(p.cantidad) ? p.cantidad : p.cantidad.toFixed(2)}
+                                            </td>
+                                            <td className="px-3 py-2 text-right font-medium" style={{ color: 'var(--color-text)' }}>
+                                                S/ {p.total.toFixed(2)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr style={{ backgroundColor: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}>
+                                        <td colSpan={2} className="px-3 py-2 font-semibold text-sm" style={{ color: 'var(--color-text)' }}>
+                                            Total ventas
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-bold text-sm" style={{ color: 'var(--color-primary)' }}>
+                                            S/ {totalVentas.toFixed(2)}
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
                         </div>
                     )}
                 </Section>
 
-                {/* Arqueo de cierre (solo si está cerrado) */}
-                {esCerrado && (
-                    <Section title="Arqueo de cierre">
-                        <div className="space-y-2">
-                            <FilaResumen label="Total declarado" valor={parseFloat(turno.monto_cierre_declarado ?? '0')} />
-                            <FilaResumen label="Total esperado" valor={parseFloat(turno.monto_cierre_esperado ?? '0')} />
-                            <FilaDiferencia diferencia={parseFloat(turno.diferencia ?? '0')} />
-                            {turno.observacion_cierre && (
-                                <p className="text-xs pt-2" style={{ color: 'var(--color-text-muted)' }}>
-                                    Obs: {turno.observacion_cierre as string}
-                                </p>
-                            )}
+                {/* Resumen gastos */}
+                <Section
+                    title="Gastos del turno"
+                    action={
+                        <button
+                            onClick={() => router.visit(route('gastos.index'))}
+                            className="flex items-center gap-1 text-xs"
+                            style={{ color: 'var(--color-primary)' }}
+                        >
+                            Ver gastos <ArrowRight size={12} />
+                        </button>
+                    }
+                >
+                    {(turno.gastos ?? []).length === 0 ? (
+                        <p className="text-sm py-4 text-center" style={{ color: 'var(--color-text-muted)' }}>
+                            Sin gastos en este turno.
+                        </p>
+                    ) : (
+                        <div
+                            className="rounded-xl overflow-hidden"
+                            style={{ border: '1px solid var(--color-border)' }}
+                        >
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr style={{ backgroundColor: 'var(--color-bg)' }}>
+                                        <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Tipo</th>
+                                        <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Concepto</th>
+                                        <th className="text-right px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Monto</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                                    {(turno.gastos ?? []).map(g => (
+                                        <tr key={g.id as number}>
+                                            <td className="px-3 py-2" style={{ color: 'var(--color-text-muted)' }}>
+                                                {g.tipo?.nombre ?? '—'}
+                                            </td>
+                                            <td className="px-3 py-2" style={{ color: 'var(--color-text)' }}>
+                                                {g.concepto?.nombre ?? '—'}
+                                            </td>
+                                            <td className="px-3 py-2 text-right font-medium" style={{ color: 'var(--color-danger)' }}>
+                                                S/ {parseFloat(g.monto).toFixed(2)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr style={{ backgroundColor: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}>
+                                        <td colSpan={2} className="px-3 py-2 font-semibold text-sm" style={{ color: 'var(--color-text)' }}>
+                                            Total gastos
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-bold text-sm" style={{ color: 'var(--color-danger)' }}>
+                                            S/ {totalGastos.toFixed(2)}
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
                         </div>
+                    )}
+                </Section>
+            </div>
 
-                        {/* Denominaciones */}
-                        {(turno.arqueo ?? []).length > 0 && (
-                            <div className="mt-4">
-                                <p className="text-xs font-medium mb-2" style={{ color: 'var(--color-text-muted)' }}>
-                                    Denominaciones declaradas
-                                </p>
+            {/* ── Arqueo de cierre (solo si cerrado) ── */}
+            {esCerrado && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+                    {/* Denominaciones */}
+                    <Section title="Arqueo — denominaciones declaradas">
+                        {(turno.arqueo ?? []).filter(r => r.cantidad > 0).length === 0 ? (
+                            <p className="text-sm py-2 text-center" style={{ color: 'var(--color-text-muted)' }}>
+                                Sin arqueo registrado.
+                            </p>
+                        ) : (
+                            <div
+                                className="rounded-xl overflow-hidden"
+                                style={{ border: '1px solid var(--color-border)' }}
+                            >
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr style={{ backgroundColor: 'var(--color-bg)' }}>
+                                            <th className="text-left px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Denominación</th>
+                                            <th className="text-center px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Cantidad</th>
+                                            <th className="text-right px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Subtotal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                                        {(turno.arqueo ?? [])
+                                            .filter(r => r.cantidad > 0)
+                                            .map(row => (
+                                                <tr key={row.id}>
+                                                    <td className="px-4 py-2.5 font-medium" style={{ color: 'var(--color-text)' }}>
+                                                        S/ {Number(row.denominacion).toFixed(2)}
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-center" style={{ color: 'var(--color-text-muted)' }}>
+                                                        × {row.cantidad}
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right font-medium" style={{ color: 'var(--color-text)' }}>
+                                                        S/ {(row.denominacion * row.cantidad).toFixed(2)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr style={{ backgroundColor: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}>
+                                            <td colSpan={2} className="px-4 py-2.5 font-semibold" style={{ color: 'var(--color-text)' }}>
+                                                Total efectivo
+                                            </td>
+                                            <td className="px-4 py-2.5 text-right font-bold" style={{ color: 'var(--color-primary)' }}>
+                                                S/ {totalEfectivoArqueo.toFixed(2)}
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        )}
+                    </Section>
+
+                    {/* Resumen de cierre + otros métodos */}
+                    <div className="space-y-4">
+
+                        {/* Otros métodos declarados */}
+                        {(turno.arqueo_metodos ?? []).length > 0 && (
+                            <Section title="Otros métodos declarados">
                                 <div
                                     className="rounded-xl overflow-hidden"
                                     style={{ border: '1px solid var(--color-border)' }}
@@ -214,93 +336,62 @@ export default function TurnoShow({ turno, ventasPorMetodo, totalVentas, totalGa
                                     <table className="w-full text-sm">
                                         <thead>
                                             <tr style={{ backgroundColor: 'var(--color-bg)' }}>
-                                                <th className="text-left px-3 py-1.5 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Denominación</th>
-                                                <th className="text-center px-3 py-1.5 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Cantidad</th>
-                                                <th className="text-right px-3 py-1.5 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Subtotal</th>
+                                                <th className="text-left px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Método</th>
+                                                <th className="text-right px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Monto declarado</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-                                            {(turno.arqueo ?? []).filter(r => r.cantidad > 0).map(row => (
-                                                <tr key={row.id}>
-                                                    <td className="px-3 py-1.5" style={{ color: 'var(--color-text)' }}>S/ {Number(row.denominacion).toFixed(2)}</td>
-                                                    <td className="px-3 py-1.5 text-center" style={{ color: 'var(--color-text)' }}>{row.cantidad}</td>
-                                                    <td className="px-3 py-1.5 text-right" style={{ color: 'var(--color-text)' }}>
-                                                        S/ {(row.denominacion * row.cantidad).toFixed(2)}
+                                            {(turno.arqueo_metodos ?? []).map(m => (
+                                                <tr key={m.id}>
+                                                    <td className="px-4 py-2.5 font-medium" style={{ color: 'var(--color-text)' }}>
+                                                        {m.metodo_pago?.nombre ?? '—'}
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right" style={{ color: 'var(--color-text)' }}>
+                                                        S/ {parseFloat(m.monto_declarado).toFixed(2)}
                                                     </td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
                                 </div>
-                            </div>
+                            </Section>
                         )}
 
-                        {/* Arqueo otros métodos */}
-                        {(turno.arqueo_metodos ?? []).length > 0 && (
-                            <div className="mt-3 space-y-1">
-                                <p className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-muted)' }}>
-                                    Otros métodos declarados
-                                </p>
-                                {(turno.arqueo_metodos ?? []).map(m => (
-                                    <div key={m.id} className="flex justify-between text-sm">
-                                        <span style={{ color: 'var(--color-text)' }}>{m.metodo_pago?.nombre ?? '—'}</span>
-                                        <span style={{ color: 'var(--color-text)' }}>S/ {parseFloat(m.monto_declarado).toFixed(2)}</span>
-                                    </div>
-                                ))}
+                        {/* Resultado del cierre */}
+                        <Section title="Resultado del cierre">
+                            <div
+                                className="rounded-xl overflow-hidden"
+                                style={{ border: '1px solid var(--color-border)' }}
+                            >
+                                <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                                    <FilaCierre
+                                        label="Efectivo declarado (arqueo)"
+                                        valor={totalEfectivoArqueo}
+                                        color="var(--color-text)"
+                                    />
+                                    <FilaCierre
+                                        label="Monto esperado (sistema)"
+                                        valor={parseFloat(turno.monto_cierre_esperado ?? '0')}
+                                        color="var(--color-text)"
+                                    />
+                                    <FilaCierreResultado
+                                        diferencia={parseFloat(turno.diferencia ?? '0')}
+                                    />
+                                </div>
                             </div>
-                        )}
-                    </Section>
-                )}
-
-                {/* Caja chica */}
-                {turno.caja?.caja_chica_activa && (
-                    <div
-                        className="rounded-xl px-4 py-3 flex items-center justify-between"
-                        style={{ backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}
-                    >
-                        <div>
-                            <p className="text-sm font-medium" style={{ color: '#b45309' }}>Caja chica</p>
-                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>No incluida en el arqueo</p>
-                        </div>
-                        <span className="font-bold" style={{ color: '#b45309' }}>
-                            S/ {parseFloat(turno.monto_caja_chica).toFixed(2)}
-                        </span>
+                            {turno.observacion_cierre && (
+                                <div
+                                    className="mt-3 rounded-xl px-4 py-3 text-sm"
+                                    style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}
+                                >
+                                    <span className="font-medium" style={{ color: 'var(--color-text)' }}>Observación: </span>
+                                    {turno.observacion_cierre as string}
+                                </div>
+                            )}
+                        </Section>
                     </div>
-                )}
-            </div>
-
-            {/* ── Ventas del turno ── */}
-            <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-                        Ventas del turno
-                        {ventasAnuladas.length > 0 && (
-                            <span className="ml-2 text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>
-                                ({ventasAnuladas.length} anuladas)
-                            </span>
-                        )}
-                    </p>
                 </div>
-                <Table
-                    data={(turno.ventas ?? []) as Venta[]}
-                    columns={columnasVentas}
-                    emptyMessage="Sin ventas en este turno"
-                    searchPlaceholder="Buscar venta..."
-                />
-            </div>
-
-            {/* ── Gastos del turno ── */}
-            <div className="mb-6">
-                <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
-                    Gastos del turno
-                </p>
-                <Table
-                    data={(turno.gastos ?? []) as Gasto[]}
-                    columns={columnasGastos}
-                    emptyMessage="Sin gastos en este turno"
-                    searchPlaceholder="Buscar gasto..."
-                />
-            </div>
+            )}
 
             {/* Modal confirmar reabrir */}
             <Modal
@@ -324,7 +415,7 @@ export default function TurnoShow({ turno, ventasPorMetodo, totalVentas, totalGa
                     >
                         <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
                         <p style={{ color: 'var(--color-text)' }}>
-                            Se eliminará el arqueo de cierre. El cajero podrá registrar ventas y gastos nuevamente.
+                            Se eliminará el arqueo de cierre. El cajero podrá registrar ventas y gastos nuevamente hasta que se vuelva a cerrar.
                         </p>
                     </div>
                     <p className="text-sm" style={{ color: 'var(--color-text)' }}>
@@ -336,44 +427,62 @@ export default function TurnoShow({ turno, ventasPorMetodo, totalVentas, totalGa
     );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+// ── Componentes auxiliares ──────────────────────────────────────────────────
+
+function Section({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
     return (
         <div
             className="rounded-xl p-4"
             style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}
         >
-            <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>{title}</p>
+            <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{title}</p>
+                {action}
+            </div>
             {children}
         </div>
     );
 }
 
-function InfoCard({ icon, label, valor }: { icon: React.ReactNode; label: string; valor: string }) {
+function InfoCard({ icon, label, valor, subvalor }: { icon: React.ReactNode; label: string; valor: string; subvalor?: string }) {
     return (
         <div
             className="rounded-xl px-4 py-3"
             style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
         >
-            <div className="flex items-center gap-2 mb-1">{icon}<p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p></div>
+            <div className="flex items-center gap-2 mb-1">
+                {icon}
+                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            </div>
             <p className="font-semibold text-sm" style={{ color: 'var(--color-text)' }}>{valor}</p>
+            {subvalor && <p className="text-xs mt-0.5 font-medium" style={{ color: 'var(--color-primary)' }}>{subvalor}</p>}
         </div>
     );
 }
 
-function FilaResumen({ label, valor }: { label: string; valor: number }) {
+function DiferenciaBadge({ diferencia }: { diferencia: number }) {
+    const variant = diferencia === 0 ? 'success' : diferencia > 0 ? 'warning' : 'danger';
+    const label   = diferencia === 0 ? 'Cuadrado' : diferencia > 0 ? `Sobrante S/ ${diferencia.toFixed(2)}` : `Faltante S/ ${Math.abs(diferencia).toFixed(2)}`;
+    return <Badge variant={variant}>{label}</Badge>;
+}
+
+function FilaCierre({ label, valor, color }: { label: string; valor: number; color: string }) {
     return (
-        <div className="flex items-center justify-between py-1">
-            <span className="text-sm" style={{ color: 'var(--color-text)' }}>{label}</span>
-            <span className="font-semibold text-sm" style={{ color: 'var(--color-text)' }}>S/ {valor.toFixed(2)}</span>
+        <div className="flex items-center justify-between px-4 py-3">
+            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{label}</span>
+            <span className="font-semibold text-sm" style={{ color }}> S/ {valor.toFixed(2)}</span>
         </div>
     );
 }
 
-function FilaDiferencia({ diferencia }: { diferencia: number }) {
+function FilaCierreResultado({ diferencia }: { diferencia: number }) {
     const color = diferencia === 0 ? 'var(--color-success)' : diferencia > 0 ? '#b45309' : 'var(--color-danger)';
     const label = diferencia === 0 ? 'Sin diferencia' : diferencia > 0 ? 'Sobrante' : 'Faltante';
     return (
-        <div className="flex items-center justify-between py-1">
+        <div
+            className="flex items-center justify-between px-4 py-3"
+            style={{ backgroundColor: 'var(--color-bg)' }}
+        >
             <span className="text-sm font-semibold" style={{ color }}>Diferencia ({label})</span>
             <span className="font-bold text-sm" style={{ color }}>S/ {Math.abs(diferencia).toFixed(2)}</span>
         </div>
