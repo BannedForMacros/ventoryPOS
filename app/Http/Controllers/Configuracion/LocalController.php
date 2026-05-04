@@ -6,10 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Configuracion\LocalRequest;
 use App\Models\Empresa;
 use App\Models\Local;
+use App\Services\AlmacenSyncService;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use RuntimeException;
 
 class LocalController extends Controller
 {
+    public function __construct(private AlmacenSyncService $almacenSync) {}
+
     public function index()
     {
         return Inertia::render('Configuracion/Locales', [
@@ -20,7 +25,15 @@ class LocalController extends Controller
 
     public function store(LocalRequest $request)
     {
-        Local::create($request->validated());
+        try {
+            DB::transaction(function () use ($request) {
+                $local = Local::create($request->validated());
+                $this->almacenSync->sincronizarTrasCrearLocal($local);
+            });
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['empresa_id' => $e->getMessage()])->withInput();
+        }
+
         return redirect()->back()->with('success', 'Local creado correctamente.');
     }
 

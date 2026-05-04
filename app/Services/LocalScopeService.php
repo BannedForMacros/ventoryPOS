@@ -94,7 +94,7 @@ class LocalScopeService
      * Retorna el almacén desde el cual se debe descontar stock al registrar una venta.
      *
      * modo_simple:
-     *   → Almacén central de la empresa (el único que existe y se usa para todo).
+     *   → Almacén único (tipo='local') ligado al local principal de la empresa.
      *     Las entradas entran aquí y las ventas se descuentan aquí mismo.
      *
      * central_y_local:
@@ -110,11 +110,15 @@ class LocalScopeService
         $empresa = $user->empresa;
 
         if ($empresa->usaModoSimple()) {
-            // Modo simple: usar el almacén central (única bodega de la empresa)
-            return Almacen::deEmpresa($empresa->id)
-                ->activo()
-                ->central()
-                ->first();
+            // Modo simple: el único almacén es tipo='local' del local principal.
+            // Si el usuario tiene local_id asignado, usar ese; si no, caer al único almacén activo.
+            $query = Almacen::deEmpresa($empresa->id)->activo()->local();
+
+            if ($user->local_id) {
+                $query->where('local_id', $user->local_id);
+            }
+
+            return $query->first();
         }
 
         // Modo central_y_local: usar el almacén del local asignado al usuario

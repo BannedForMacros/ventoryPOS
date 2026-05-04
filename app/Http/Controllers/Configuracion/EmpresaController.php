@@ -6,10 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Configuracion\EmpresaRequest;
 use App\Models\Cliente;
 use App\Models\Empresa;
+use App\Services\AlmacenSyncService;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use RuntimeException;
 
 class EmpresaController extends Controller
 {
+    public function __construct(private AlmacenSyncService $almacenSync) {}
+
     public function index()
     {
         return Inertia::render('Configuracion/Empresas', [
@@ -21,7 +26,7 @@ class EmpresaController extends Controller
     {
         $empresa = Empresa::create($request->validated());
 
-        // Crear cliente general por defecto
+        // Cliente general por defecto
         Cliente::create([
             'empresa_id'       => $empresa->id,
             'tipo_documento'   => 'DNI',
@@ -36,7 +41,26 @@ class EmpresaController extends Controller
 
     public function update(EmpresaRequest $request, Empresa $empresa)
     {
-        $empresa->update($request->validated());
+        $modoAnterior = $empresa->modo_almacen;
+        $datos        = $request->validated();
+        $modoNuevo    = $datos['modo_almacen'];
+
+        if ($modoNuevo !== $modoAnterior && !$this->almacenSync->puedeCambiarModo($empresa)) {
+            return back()->withErrors([
+                'modo_almacen' => 'No se puede cambiar el modo de almacén porque la empresa ya tiene movimientos '
+                    . '(entradas, transferencias o ventas).',
+            ])->withInput();
+        }
+
+        try {
+            DB::transaction(function () use ($empresa, $datos, $modoAnterior) {
+                $empresa->update($datos);
+                $this->almacenSync->aplicarCambioModo($empresa->fresh(), $modoAnterior);
+            });
+        } catch (RuntimeException $e) {
+            return back()->withErrors(['modo_almacen' => $e->getMessage()])->withInput();
+        }
+
         return redirect()->back()->with('success', 'Empresa actualizada correctamente.');
     }
 

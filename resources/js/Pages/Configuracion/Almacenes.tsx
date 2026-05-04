@@ -27,6 +27,7 @@ interface Almacen extends Record<string, unknown> {
 interface Props extends PageProps {
     almacenes: Almacen[];
     locales: LocalItem[];
+    modo_almacen: 'simple' | 'central_y_local';
 }
 
 interface FormState {
@@ -38,7 +39,8 @@ interface FormState {
 
 const empty = (): FormState => ({ nombre: '', tipo: 'central', local_id: '', activo: true });
 
-export default function Almacenes({ almacenes, locales }: Props) {
+export default function Almacenes({ almacenes, locales, modo_almacen }: Props) {
+    const esModoSimple = modo_almacen === 'simple';
     const { flash } = usePage<Props>().props;
     const [modal, setModal]       = useState(false);
     const [editing, setEditing]   = useState<Almacen | null>(null);
@@ -116,7 +118,7 @@ export default function Almacenes({ almacenes, locales }: Props) {
             render: (a) => (
                 <TableActions
                     onEdit={() => openEdit(a)}
-                    onDelete={() => setConfirmId(a.id)}
+                    onDelete={esModoSimple ? undefined : () => setConfirmId(a.id)}
                 />
             ),
         },
@@ -126,11 +128,17 @@ export default function Almacenes({ almacenes, locales }: Props) {
         <AppLayout title="Almacenes">
             <PageHeader
                 title="Almacenes"
-                subtitle="Configura los almacenes de tu empresa"
+                subtitle={
+                    esModoSimple
+                        ? 'Modo simple: la empresa tiene un solo almacén ligado a su local.'
+                        : 'Modo central + local: un almacén central de la empresa más un almacén por cada local.'
+                }
                 actions={
-                    <Button onClick={openCreate}>
-                        <Plus size={15} className="mr-1 flex-shrink-0" />Nuevo almacén
-                    </Button>
+                    !esModoSimple && (
+                        <Button onClick={openCreate}>
+                            <Plus size={15} className="mr-1 flex-shrink-0" />Nuevo almacén
+                        </Button>
+                    )
                 }
             />
 
@@ -162,38 +170,42 @@ export default function Almacenes({ almacenes, locales }: Props) {
                         error={errors.nombre}
                     />
 
-                    <div>
-                        <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
-                            Tipo <span style={{ color: 'var(--color-danger)' }}>*</span>
-                        </p>
-                        <div className="flex flex-col gap-2">
-                            {([
-                                { value: 'central', label: 'Central', hint: 'Bodega principal, no pertenece a un local específico' },
-                                { value: 'local',   label: 'Local',   hint: 'Almacén de un local/sucursal, desde aquí se despacha para ventas' },
-                            ] as const).map(opt => (
-                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
-                                    <input type="radio" name="tipo_almacen"
-                                        checked={form.tipo === opt.value}
-                                        onChange={() => setForm(f => ({ ...f, tipo: opt.value, local_id: '' }))}
-                                        className="mt-0.5 accent-[var(--color-primary)]" />
-                                    <span>
-                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
-                                        <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
-                                    </span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
+                    {!esModoSimple && (
+                        <>
+                            <div>
+                                <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
+                                    Tipo <span style={{ color: 'var(--color-danger)' }}>*</span>
+                                </p>
+                                <div className="flex flex-col gap-2">
+                                    {([
+                                        { value: 'central', label: 'Central', hint: 'Bodega principal, no pertenece a un local específico' },
+                                        { value: 'local',   label: 'Local',   hint: 'Almacén de un local/sucursal, desde aquí se despacha para ventas' },
+                                    ] as const).map(opt => (
+                                        <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                            <input type="radio" name="tipo_almacen"
+                                                checked={form.tipo === opt.value}
+                                                onChange={() => setForm(f => ({ ...f, tipo: opt.value, local_id: '' }))}
+                                                className="mt-0.5 accent-[var(--color-primary)]" />
+                                            <span>
+                                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                                <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
 
-                    {form.tipo === 'local' && (
-                        <Select
-                            label="Local asociado"
-                            required
-                            value={form.local_id}
-                            onChange={v => setForm(f => ({ ...f, local_id: v === '' ? '' : Number(v) }))}
-                            options={locales.map(l => ({ value: l.id, label: l.nombre }))}
-                            error={errors.local_id}
-                        />
+                            {form.tipo === 'local' && (
+                                <Select
+                                    label="Local asociado"
+                                    required
+                                    value={form.local_id}
+                                    onChange={v => setForm(f => ({ ...f, local_id: v === '' ? '' : Number(v) }))}
+                                    options={locales.map(l => ({ value: l.id, label: l.nombre }))}
+                                    error={errors.local_id}
+                                />
+                            )}
+                        </>
                     )}
 
                     <Switch
