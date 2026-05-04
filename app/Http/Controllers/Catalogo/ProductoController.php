@@ -58,18 +58,19 @@ class ProductoController extends Controller
             $esProducto = $data['tipo'] === 'producto';
 
             $producto = Producto::create([
-                'empresa_id'   => $request->user()->empresa_id,
-                'categoria_id' => $data['categoria_id'] ?? null,
-                'codigo'       => $data['codigo'] ?? null,
-                'nombre'       => $data['nombre'],
-                'descripcion'  => $data['descripcion'] ?? null,
-                'tipo'         => $data['tipo'],
+                'empresa_id'     => $request->user()->empresa_id,
+                'categoria_id'   => $data['categoria_id'] ?? null,
+                'codigo'         => $data['codigo'] ?? null,
+                'nombre'         => $data['nombre'],
+                'descripcion'    => $data['descripcion'] ?? null,
+                'tipo'           => $data['tipo'],
                 // Para productos físicos el precio real está en cada unidad; guardamos 0 como placeholder.
-                'tipo_precio'  => $esProducto ? 'fijo' : $data['tipo_precio'],
-                'precio_venta' => $esProducto ? 0 : $data['precio_venta'],
-                'precio_costo' => 0,
-                'activo'       => $data['activo'] ?? true,
-                'incluye_igv'  => $data['incluye_igv'] ?? false,
+                'tipo_precio'    => $esProducto ? 'fijo' : $data['tipo_precio'],
+                'precio_venta'   => $esProducto ? 0 : $data['precio_venta'],
+                'precio_costo'   => 0,
+                'activo'         => $data['activo'] ?? true,
+                'incluye_igv'    => $data['incluye_igv'] ?? false,
+                'controla_stock' => $esProducto ? ($data['controla_stock'] ?? null) : false,
             ]);
 
             if ($producto->esProductoFisico()) {
@@ -110,16 +111,17 @@ class ProductoController extends Controller
             $esProducto = $data['tipo'] === 'producto';
 
             $producto->update([
-                'categoria_id' => $data['categoria_id'] ?? null,
-                'codigo'       => $data['codigo'] ?? null,
-                'nombre'       => $data['nombre'],
-                'descripcion'  => $data['descripcion'] ?? null,
-                'tipo'         => $data['tipo'],
-                'tipo_precio'  => $esProducto ? 'fijo' : $data['tipo_precio'],
-                'precio_venta' => $esProducto ? 0 : $data['precio_venta'],
-                'precio_costo' => 0,
-                'activo'       => $data['activo'] ?? true,
-                'incluye_igv'  => $data['incluye_igv'] ?? false,
+                'categoria_id'   => $data['categoria_id'] ?? null,
+                'codigo'         => $data['codigo'] ?? null,
+                'nombre'         => $data['nombre'],
+                'descripcion'    => $data['descripcion'] ?? null,
+                'tipo'           => $data['tipo'],
+                'tipo_precio'    => $esProducto ? 'fijo' : $data['tipo_precio'],
+                'precio_venta'   => $esProducto ? 0 : $data['precio_venta'],
+                'precio_costo'   => 0,
+                'activo'         => $data['activo'] ?? true,
+                'incluye_igv'    => $data['incluye_igv'] ?? false,
+                'controla_stock' => $esProducto ? ($data['controla_stock'] ?? null) : false,
             ]);
 
             if ($producto->esProductoFisico()) {

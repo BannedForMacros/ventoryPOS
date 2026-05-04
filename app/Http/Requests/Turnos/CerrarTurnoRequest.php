@@ -11,15 +11,28 @@ class CerrarTurnoRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
-            'observacion_cierre'               => ['nullable', 'string', 'max:500'],
+        $turno   = $this->route('turno');
+        $local   = $turno?->local()->first();
+        $config  = app(\App\Services\ConfiguracionOperacionService::class);
+        $modo    = $local ? $config->modoCierreCaja($local) : 'con_declaraciones';
+
+        $base = [
+            'observacion_cierre' => ['nullable', 'string', 'max:500'],
+        ];
+
+        if ($modo === 'rapido') {
+            // Sin arqueo ni métodos
+            return $base;
+        }
+
+        return array_merge($base, [
             'arqueo'                           => ['required', 'array'],
             'arqueo.*.denominacion'            => ['required', 'numeric', Rule::in([200, 100, 50, 20, 10, 5, 2, 1, 0.50, 0.20, 0.10])],
             'arqueo.*.cantidad'                => ['required', 'integer', 'min:0'],
             'arqueo_metodos'                   => ['nullable', 'array'],
             'arqueo_metodos.*.metodo_pago_id'  => ['required', 'integer', 'exists:metodos_pago,id'],
             'arqueo_metodos.*.monto_declarado' => ['required', 'numeric', 'min:0'],
-        ];
+        ]);
     }
 
     public function withValidator($validator): void

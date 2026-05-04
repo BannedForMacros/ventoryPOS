@@ -1,0 +1,308 @@
+import { useEffect, useMemo, useState } from 'react';
+import { router, useForm, usePage } from '@inertiajs/react';
+import toast from 'react-hot-toast';
+import axios from 'axios';
+import AppLayout from '@/Layouts/AppLayout';
+import PageHeader from '@/Components/UI/PageHeader';
+import Button from '@/Components/UI/Button';
+import Input from '@/Components/UI/Input';
+import Select from '@/Components/UI/Select';
+import Badge from '@/Components/UI/Badge';
+import type { PageProps } from '@/types';
+
+interface Almacen { id: number; nombre: string; local?: { nombre: string } | null; }
+
+interface ProductoFila {
+    id: number;
+    codigo: string | null;
+    nombre: string;
+    categoria: string | null;
+    categoria_id: number | null;
+    stock_sistema: number;
+}
+
+interface ItemDeclarado {
+    producto_id: number;
+    stock_sistema: number;
+    stock_declarado: string;
+    observacion: string;
+}
+
+interface Props extends PageProps {
+    almacenes: Almacen[];
+    mostrarSelector: boolean;
+}
+
+export default function CierreCreate({ almacenes, mostrarSelector }: Props) {
+    const { flash } = usePage<Props>().props;
+    const [almacenId, setAlmacenId]     = useState<number | ''>(almacenes.length === 1 ? almacenes[0].id : '');
+    const [productos, setProductos]     = useState<ProductoFila[]>([]);
+    const [cargando, setCargando]       = useState(false);
+    const [filtroNombre, setFiltroNombre] = useState('');
+    const [filtroCategoria, setFiltroCategoria] = useState<number | ''>('');
+    const [items, setItems]             = useState<Record<number, ItemDeclarado>>({});
+
+    const { data, setData, post, processing, errors } = useForm({
+        almacen_id: '' as number | '',
+        fecha: new Date().toISOString().slice(0, 10),
+        observacion: '',
+        confirmar: false,
+        items: [] as ItemDeclarado[],
+    });
+
+    useEffect(() => {
+        if (flash?.success) toast.success(flash.success as string);
+        if (flash?.error)   toast.error(flash.error as string);
+    }, [flash]);
+
+    useEffect(() => {
+        setData('almacen_id', almacenId);
+        if (!almacenId) { setProductos([]); return; }
+
+        setCargando(true);
+        axios.get(route('inventario.cierres.productos'), { params: { almacen_id: almacenId } })
+            .then(r => {
+                setProductos(r.data);
+                // Pre-llenar items con stock_sistema y stock_declarado vacío
+                const initial: Record<number, ItemDeclarado> = {};
+                r.data.forEach((p: ProductoFila) => {
+                    initial[p.id] = {
+                        producto_id: p.id,
+                        stock_sistema: p.stock_sistema,
+                        stock_declarado: '',
+                        observacion: '',
+                    };
+                });
+                setItems(initial);
+            })
+            .catch(() => toast.error('Error al cargar productos'))
+            .finally(() => setCargando(false));
+    }, [almacenId]);
+
+    const categorias = useMemo(() => {
+        const map = new Map<number, string>();
+        productos.forEach(p => { if (p.categoria_id && p.categoria) map.set(p.categoria_id, p.categoria); });
+        return Array.from(map.entries()).map(([id, nombre]) => ({ value: String(id), label: nombre }));
+    }, [productos]);
+
+    const productosFiltrados = productos.filter(p => {
+        const matchNombre = !filtroNombre
+            || p.nombre.toLowerCase().includes(filtroNombre.toLowerCase())
+            || (p.codigo ?? '').toLowerCase().includes(filtroNombre.toLowerCase());
+        const matchCat = !filtroCategoria || p.categoria_id === filtroCategoria;
+        return matchNombre && matchCat;
+    });
+
+    function setDeclarado(productoId: number, valor: string) {
+        setItems(prev => ({
+            ...prev,
+            [productoId]: { ...prev[productoId], stock_declarado: valor },
+        }));
+    }
+
+    function setObsItem(productoId: number, valor: string) {
+        setItems(prev => ({
+            ...prev,
+            [productoId]: { ...prev[productoId], observacion: valor },
+        }));
+    }
+
+    function calcularDiferencia(item: ItemDeclarado): number | null {
+        if (item.stock_declarado === '') return null;
+        const declarado = parseFloat(item.stock_declarado);
+        if (isNaN(declarado)) return null;
+        return +(declarado - item.stock_sistema).toFixed(4);
+    }
+
+    function submit(confirmar: boolean) {
+        const itemsArr = Object.values(items).filter(i => i.stock_declarado !== '');
+
+        if (itemsArr.length === 0) {
+            toast.error('Debes declarar al menos un producto.');
+            return;
+        }
+
+        setData(d => ({ ...d, items: itemsArr, confirmar }));
+
+        post(route('inventario.cierres.store'), {
+            data: {
+                almacen_id: almacenId,
+                fecha: data.fecha,
+                observacion: data.observacion,
+                confirmar,
+                items: itemsArr,
+            },
+            forceFormData: false,
+        });
+    }
+
+    const totalConDiferencia = Object.values(items).filter(i => {
+        const d = calcularDiferencia(i);
+        return d !== null && d !== 0;
+    }).length;
+
+    return (
+        <AppLayout title="Nuevo cierre de inventario">
+            <PageHeader
+                title="Nuevo cierre de inventario"
+                subtitle="Declara el stock real contado por producto"
+                backHref={route('inventario.cierres.index')}
+            />
+
+            <div className="space-y-6 max-w-6xl">
+                <section className="rounded-2xl border p-6 space-y-4"
+                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                    <div className="grid grid-cols-3 gap-4">
+                        <Select
+                            label="Almacén"
+                            required
+                            value={almacenId}
+                            onChange={v => setAlmacenId(v === '' ? '' : Number(v))}
+                            options={almacenes.map(a => ({
+                                value: a.id,
+                                label: `${a.nombre}${a.local ? ' · ' + a.local.nombre : ''}`,
+                            }))}
+                            error={errors.almacen_id as string | undefined}
+                            disabled={!mostrarSelector && almacenes.length === 1}
+                        />
+                        <Input
+                            label="Fecha"
+                            type="date"
+                            required
+                            value={data.fecha}
+                            onChange={e => setData('fecha', e.target.value)}
+                            error={errors.fecha}
+                        />
+                        <Input
+                            label="Observación (opcional)"
+                            value={data.observacion}
+                            onChange={e => setData('observacion', e.target.value)}
+                        />
+                    </div>
+                </section>
+
+                {almacenId !== '' && (
+                    <section className="rounded-2xl border p-6 space-y-4"
+                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                        <div className="flex flex-wrap gap-3 items-end">
+                            <div className="flex-1 min-w-[200px]">
+                                <Input
+                                    label="Buscar producto"
+                                    placeholder="Nombre o código"
+                                    value={filtroNombre}
+                                    onChange={e => setFiltroNombre(e.target.value)}
+                                />
+                            </div>
+                            <div className="min-w-[200px]">
+                                <Select
+                                    label="Categoría"
+                                    value={filtroCategoria === '' ? '' : String(filtroCategoria)}
+                                    onChange={v => setFiltroCategoria(v === '' ? '' : Number(v))}
+                                    options={[
+                                        { value: '', label: 'Todas' },
+                                        ...categorias,
+                                    ]}
+                                />
+                            </div>
+                            <Badge variant="primary">
+                                {productosFiltrados.length} productos
+                            </Badge>
+                            {totalConDiferencia > 0 && (
+                                <Badge variant="warning">
+                                    {totalConDiferencia} con diferencia
+                                </Badge>
+                            )}
+                        </div>
+
+                        {cargando && <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Cargando productos...</p>}
+
+                        {!cargando && productosFiltrados.length === 0 && (
+                            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                No hay productos para este filtro.
+                            </p>
+                        )}
+
+                        {!cargando && productosFiltrados.length > 0 && (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead style={{ color: 'var(--color-text-muted)' }}>
+                                        <tr className="border-b" style={{ borderColor: 'var(--color-border)' }}>
+                                            <th className="text-left py-2 px-2 font-medium">Producto</th>
+                                            <th className="text-right py-2 px-2 font-medium">Stock sistema</th>
+                                            <th className="text-right py-2 px-2 font-medium">Stock declarado</th>
+                                            <th className="text-right py-2 px-2 font-medium">Diferencia</th>
+                                            <th className="text-left py-2 px-2 font-medium">Obs.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {productosFiltrados.map(p => {
+                                            const item = items[p.id];
+                                            const diff = item ? calcularDiferencia(item) : null;
+                                            return (
+                                                <tr key={p.id} className="border-b" style={{ borderColor: 'var(--color-border)' }}>
+                                                    <td className="py-2 px-2">
+                                                        <div className="font-medium" style={{ color: 'var(--color-text)' }}>{p.nombre}</div>
+                                                        {p.codigo && (
+                                                            <div className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>{p.codigo}</div>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2 px-2 text-right tabular-nums">
+                                                        {p.stock_sistema.toFixed(2)}
+                                                    </td>
+                                                    <td className="py-2 px-2 w-32">
+                                                        <input
+                                                            type="number"
+                                                            step="0.0001"
+                                                            min="0"
+                                                            value={item?.stock_declarado ?? ''}
+                                                            onChange={e => setDeclarado(p.id, e.target.value)}
+                                                            className="w-full rounded-lg border px-2 py-1 text-sm text-right"
+                                                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                                                        />
+                                                    </td>
+                                                    <td className="py-2 px-2 text-right tabular-nums">
+                                                        {diff === null ? (
+                                                            <span style={{ color: 'var(--color-text-muted)' }}>—</span>
+                                                        ) : diff === 0 ? (
+                                                            <span style={{ color: 'var(--color-success)' }}>0</span>
+                                                        ) : (
+                                                            <span style={{ color: diff < 0 ? 'var(--color-danger)' : 'var(--color-warning)' }}>
+                                                                {diff > 0 ? '+' : ''}{diff.toFixed(2)}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2 px-2 w-40">
+                                                        <input
+                                                            type="text"
+                                                            value={item?.observacion ?? ''}
+                                                            onChange={e => setObsItem(p.id, e.target.value)}
+                                                            placeholder="—"
+                                                            className="w-full rounded-lg border px-2 py-1 text-xs"
+                                                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </section>
+                )}
+
+                <div className="flex gap-3">
+                    <Button variant="ghost" onClick={() => router.visit(route('inventario.cierres.index'))}>
+                        Cancelar
+                    </Button>
+                    <Button variant="ghost" loading={processing} onClick={() => submit(false)}>
+                        Guardar borrador
+                    </Button>
+                    <Button loading={processing} onClick={() => submit(true)}>
+                        Confirmar y ajustar stock
+                    </Button>
+                </div>
+            </div>
+        </AppLayout>
+    );
+}

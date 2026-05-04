@@ -17,7 +17,10 @@ use Illuminate\Support\Facades\DB;
 
 class VentaService
 {
-    public function __construct(private LocalScopeService $scope) {}
+    public function __construct(
+        private LocalScopeService $scope,
+        private ConfiguracionOperacionService $config,
+    ) {}
 
     /**
      * Registra una venta completa dentro de una transacción:
@@ -82,8 +85,8 @@ class VentaService
                     'incluye_igv'          => $producto->incluye_igv,
                 ]);
 
-                // Ajustar stock solo para productos físicos
-                if ($producto->esProductoFisico()) {
+                // Ajustar stock según configuración (producto → local → empresa)
+                if ($this->config->deboDescontarStock($producto, $turno->local)) {
                     Stock::ajustar($almacen->id, $producto->id, -$cantidadBase);
                 }
 
@@ -157,9 +160,11 @@ class VentaService
             $almacen = $this->scope->almacenParaVentas($user)
                 ?? abort(422, 'No se encontró un almacén de ventas configurado.');
 
+            $venta->loadMissing('local');
+
             foreach ($venta->items as $item) {
                 $producto = $item->producto;
-                if ($producto && $producto->esProductoFisico()) {
+                if ($producto && $this->config->deboDescontarStock($producto, $venta->local)) {
                     // Restaurar stock: entrada positiva
                     Stock::ajustar($almacen->id, $producto->id, (float) $item->cantidad_base);
                 }

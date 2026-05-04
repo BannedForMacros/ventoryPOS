@@ -21,6 +21,8 @@ interface UnidadRow {
     activo: boolean;
 }
 
+type ControlaStockSel = 'heredar' | 'si' | 'no';
+
 interface FormData {
     categoria_id: number | '';
     codigo: string;
@@ -31,6 +33,7 @@ interface FormData {
     precio_venta: string;
     activo: boolean;
     incluye_igv: boolean;
+    controla_stock: ControlaStockSel;
     unidades: UnidadRow[];
 }
 
@@ -45,12 +48,18 @@ const emptyUnidad = (): UnidadRow => ({
 });
 
 export default function Create({ categorias, unidades }: Props) {
-    const { data, setData, post, processing, errors } = useForm<FormData>({
+    const { data, setData, transform, post, processing, errors } = useForm<FormData>({
         categoria_id: '', codigo: '', nombre: '', descripcion: '',
         tipo: 'producto', tipo_precio: 'fijo',
         precio_venta: '', activo: true, incluye_igv: false,
+        controla_stock: 'heredar',
         unidades: [{ ...emptyUnidad(), es_base: true }],
     });
+
+    transform(d => ({
+        ...d,
+        controla_stock: d.controla_stock === 'heredar' ? null : d.controla_stock === 'si',
+    }));
 
     function setUnidad(index: number, field: keyof UnidadRow, value: unknown) {
         const updated = data.unidades.map((u, i) => i !== index ? u : { ...u, [field]: value });
@@ -180,6 +189,21 @@ export default function Create({ categorias, unidades }: Props) {
                         checked={data.incluye_igv}
                         onChange={v => setData('incluye_igv', v)}
                     />
+
+                    {data.tipo === 'producto' && (
+                        <Select
+                            label="Control de stock"
+                            value={data.controla_stock}
+                            onChange={v => setData('controla_stock', v as ControlaStockSel)}
+                            options={[
+                                { value: 'heredar', label: 'Heredar de empresa/local' },
+                                { value: 'si',      label: 'Sí — descontar siempre' },
+                                { value: 'no',      label: 'No — nunca descontar' },
+                            ]}
+                            hint="Si se hereda, se aplica la configuración de la empresa o el local. Útil para forzar comportamiento por producto."
+                        />
+                    )}
+
                     <Switch label="Activo" checked={data.activo} onChange={v => setData('activo', v)} />
                 </section>
 

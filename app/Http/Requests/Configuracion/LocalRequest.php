@@ -14,12 +14,14 @@ class LocalRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'empresa_id'  => 'required|exists:empresas,id',
-            'nombre'      => 'required|string|max:255',
-            'direccion'   => 'nullable|string|max:255',
-            'telefono'    => 'nullable|string|max:20',
-            'es_principal'=> 'boolean',
-            'activo'      => 'boolean',
+            'empresa_id'               => 'required|exists:empresas,id',
+            'nombre'                   => 'required|string|max:255',
+            'direccion'                => 'nullable|string|max:255',
+            'telefono'                 => 'nullable|string|max:20',
+            'es_principal'             => 'boolean',
+            'activo'                   => 'boolean',
+            'descuenta_stock_en_venta' => 'nullable|boolean',
+            'modo_cierre_caja'         => 'nullable|in:rapido,con_declaraciones,completo',
         ];
     }
 }

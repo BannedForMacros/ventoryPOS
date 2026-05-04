@@ -33,8 +33,11 @@ interface ProductoData {
     precio_venta: string;
     activo: boolean;
     incluye_igv: boolean;
+    controla_stock: boolean | null;
     unidades: ProductoUnidadData[];
 }
+
+type ControlaStockSel = 'heredar' | 'si' | 'no';
 
 interface FormData {
     categoria_id: number | '';
@@ -46,6 +49,7 @@ interface FormData {
     precio_venta: string;
     activo: boolean;
     incluye_igv: boolean;
+    controla_stock: ControlaStockSel;
     unidades: ProductoUnidadData[];
 }
 
@@ -61,7 +65,7 @@ const emptyUnidad = (): ProductoUnidadData => ({
 });
 
 export default function Edit({ producto, categorias, unidades }: Props) {
-    const { data, setData, put, processing, errors } = useForm<FormData>({
+    const { data, setData, transform, put, processing, errors } = useForm<FormData>({
         categoria_id:  producto.categoria_id ?? '',
         codigo:        producto.codigo ?? '',
         nombre:        producto.nombre,
@@ -71,6 +75,9 @@ export default function Edit({ producto, categorias, unidades }: Props) {
         precio_venta:  producto.precio_venta,
         activo:        producto.activo,
         incluye_igv:   producto.incluye_igv,
+        controla_stock: producto.controla_stock === null || producto.controla_stock === undefined
+            ? 'heredar'
+            : (producto.controla_stock ? 'si' : 'no'),
         unidades:      producto.unidades.map(u => ({
             id:                u.id,
             unidad_medida_id:  u.unidad_medida_id,
@@ -81,6 +88,11 @@ export default function Edit({ producto, categorias, unidades }: Props) {
             activo:            u.activo,
         })),
     });
+
+    transform(d => ({
+        ...d,
+        controla_stock: d.controla_stock === 'heredar' ? null : d.controla_stock === 'si',
+    }));
 
     function setUnidad(index: number, field: keyof ProductoUnidadData, value: unknown) {
         const updated = data.unidades.map((u, i) => i !== index ? u : { ...u, [field]: value });
@@ -196,6 +208,21 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                         checked={data.incluye_igv}
                         onChange={v => setData('incluye_igv', v)}
                     />
+
+                    {data.tipo === 'producto' && (
+                        <Select
+                            label="Control de stock"
+                            value={data.controla_stock}
+                            onChange={v => setData('controla_stock', v as ControlaStockSel)}
+                            options={[
+                                { value: 'heredar', label: 'Heredar de empresa/local' },
+                                { value: 'si',      label: 'Sí — descontar siempre' },
+                                { value: 'no',      label: 'No — nunca descontar' },
+                            ]}
+                            hint="Si se hereda, se aplica la configuración de la empresa o el local."
+                        />
+                    )}
+
                     <Switch label="Activo" checked={data.activo} onChange={v => setData('activo', v)} />
                 </section>
 

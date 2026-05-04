@@ -35,8 +35,9 @@ class ProductoRequest extends FormRequest
             // los productos los gestionan por unidad.
             'tipo_precio'  => 'required_if:tipo,servicio|in:fijo,referencial',
             'precio_venta' => 'required_if:tipo,servicio|nullable|numeric|min:0',
-            'activo'       => 'boolean',
-            'incluye_igv'  => 'boolean',
+            'activo'         => 'boolean',
+            'incluye_igv'    => 'boolean',
+            'controla_stock' => 'nullable|boolean',
         ];
 
         if ($this->input('tipo') === 'producto') {

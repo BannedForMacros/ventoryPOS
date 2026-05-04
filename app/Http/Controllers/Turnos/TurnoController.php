@@ -6,16 +6,20 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Turnos\AbrirTurnoRequest;
 use App\Http\Requests\Turnos\CerrarTurnoRequest;
 use App\Models\Caja;
+use App\Models\CierreInventario;
 use App\Models\MetodoPago;
 use App\Models\Turno;
 use App\Models\TurnoArqueo;
 use App\Models\TurnoArqueoMetodo;
+use App\Services\ConfiguracionOperacionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class TurnoController extends Controller
 {
+    public function __construct(private ConfiguracionOperacionService $config) {}
+
     public function index(Request $request)
     {
         $user  = $request->user();
@@ -184,13 +188,22 @@ class TurnoController extends Controller
             ->orderBy('nombre')
             ->get(['id', 'nombre', 'tipo']);
 
+        $modoCierre = $this->config->modoCierreCaja($turno->local);
+
+        // Cierre de inventario asociado a este turno (si existe)
+        $cierreInventarioTurno = CierreInventario::where('turno_id', $turno->id)
+            ->orderByDesc('id')
+            ->first();
+
         return Inertia::render('Turnos/Cerrar', [
-            'turno'            => $turno,
-            'ventasPorMetodo'  => $ventasPorMetodo,
-            'totalVentas'      => $totalVentas,
-            'totalGastos'      => $totalGastos,
-            'montoEsperado'    => $montoEsperado,
-            'metodosPago'      => $metodosPago,
+            'turno'                  => $turno,
+            'ventasPorMetodo'        => $ventasPorMetodo,
+            'totalVentas'            => $totalVentas,
+            'totalGastos'            => $totalGastos,
+            'montoEsperado'          => $montoEsperado,
+            'metodosPago'            => $metodosPago,
+            'modoCierre'             => $modoCierre,
+            'cierreInventarioTurno'  => $cierreInventarioTurno,
         ]);
     }
 

@@ -11,12 +11,15 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Checkbox from '@/Components/UI/Checkbox';
 import TableActions from '@/Components/UI/TableActions';
-import type { Empresa, Local, PageProps } from '@/types';
+import type { Empresa, Local, ModoCierreCaja, PageProps } from '@/types';
 
 interface Props extends PageProps {
     locales: Local[];
     empresas: Empresa[];
 }
+
+type TriBool = 'heredar' | 'si' | 'no';
+type ModoCierreSel = 'heredar' | ModoCierreCaja;
 
 type FormData = {
     empresa_id: string;
@@ -25,6 +28,8 @@ type FormData = {
     telefono: string;
     tipo: string;
     activo: boolean;
+    descuenta_stock_en_venta: TriBool;
+    modo_cierre_caja: ModoCierreSel;
 };
 
 const emptyForm: FormData = {
@@ -34,6 +39,8 @@ const emptyForm: FormData = {
     telefono: '',
     tipo: '',
     activo: true,
+    descuenta_stock_en_venta: 'heredar',
+    modo_cierre_caja: 'heredar',
 };
 
 const TIPO_OPTIONS = [
@@ -41,13 +48,35 @@ const TIPO_OPTIONS = [
     { value: 'tienda', label: 'Tienda' },
 ];
 
+const MODO_CIERRE_LABELS: Record<ModoCierreCaja, string> = {
+    rapido: 'Rápido',
+    con_declaraciones: 'Con declaraciones',
+    completo: 'Completo',
+};
+
+function triFromBoolean(v: boolean | null): TriBool {
+    if (v === null || v === undefined) return 'heredar';
+    return v ? 'si' : 'no';
+}
+
+function triToPayload(v: TriBool): boolean | null {
+    if (v === 'heredar') return null;
+    return v === 'si';
+}
+
 export default function Locales({ locales, empresas }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalOpen, setModalOpen] = useState(false);
     const [confirmId, setConfirmId] = useState<number | null>(null);
     const [editing, setEditing] = useState<Local | null>(null);
 
-    const { data, setData, post, put, processing, errors, reset } = useForm<FormData>(emptyForm);
+    const { data, setData, transform, post, put, processing, errors, reset } = useForm<FormData>(emptyForm);
+
+    transform(d => ({
+        ...d,
+        descuenta_stock_en_venta: triToPayload(d.descuenta_stock_en_venta),
+        modo_cierre_caja: d.modo_cierre_caja === 'heredar' ? null : d.modo_cierre_caja,
+    }));
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
@@ -69,6 +98,8 @@ export default function Locales({ locales, empresas }: Props) {
             telefono: local.telefono ?? '',
             tipo: local.tipo ?? '',
             activo: local.activo,
+            descuenta_stock_en_venta: triFromBoolean(local.descuenta_stock_en_venta),
+            modo_cierre_caja: local.modo_cierre_caja ?? 'heredar',
         });
         setModalOpen(true);
     }
@@ -96,6 +127,14 @@ export default function Locales({ locales, empresas }: Props) {
         label: e.nombre_comercial ?? e.razon_social,
     }));
 
+    const empresaSeleccionada = empresas.find(e => String(e.id) === data.empresa_id);
+    const hintHerenciaStock = empresaSeleccionada
+        ? `Hoy la empresa: ${empresaSeleccionada.descuenta_stock_en_venta ? 'sí descuenta' : 'no descuenta'}`
+        : 'La empresa decide';
+    const hintHerenciaCierre = empresaSeleccionada
+        ? `Hoy la empresa: ${MODO_CIERRE_LABELS[empresaSeleccionada.modo_cierre_caja]}`
+        : 'La empresa decide';
+
     const columns: Column<Local>[] = [
         {
             key: 'nombre',
@@ -118,12 +157,11 @@ export default function Locales({ locales, empresas }: Props) {
             render: (local) => local.direccion ?? '—',
         },
         {
-            key: 'tipo',
-            label: 'Tipo',
-            sortable: true,
-            render: (local) => local.tipo
-                ? TIPO_OPTIONS.find(t => t.value === local.tipo)?.label ?? local.tipo
-                : '—',
+            key: 'modo_cierre_caja',
+            label: 'Cierre de caja',
+            render: (local) => local.modo_cierre_caja
+                ? <Badge variant="primary">{MODO_CIERRE_LABELS[local.modo_cierre_caja]}</Badge>
+                : <span style={{ color: 'var(--color-text-muted)' }}>Hereda</span>,
         },
         {
             key: 'activo',
@@ -197,7 +235,6 @@ export default function Locales({ locales, empresas }: Props) {
                         />
                         <Select
                             label="Tipo"
-                            required
                             options={TIPO_OPTIONS}
                             value={data.tipo}
                             onChange={(value) => setData('tipo', value as string)}
@@ -219,6 +256,38 @@ export default function Locales({ locales, empresas }: Props) {
                             error={errors.telefono}
                         />
                     </div>
+
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
+                            Operación de este local <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(opcional, sobrescribe configuración de empresa)</span>
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <Select
+                                label="Descontar stock al vender"
+                                options={[
+                                    { value: 'heredar', label: `Heredar (${hintHerenciaStock})` },
+                                    { value: 'si',      label: 'Sí descontar' },
+                                    { value: 'no',      label: 'No descontar' },
+                                ]}
+                                value={data.descuenta_stock_en_venta}
+                                onChange={(v) => setData('descuenta_stock_en_venta', v as TriBool)}
+                            />
+
+                            <Select
+                                label="Modo de cierre de caja"
+                                options={[
+                                    { value: 'heredar',           label: `Heredar (${hintHerenciaCierre})` },
+                                    { value: 'rapido',            label: 'Rápido' },
+                                    { value: 'con_declaraciones', label: 'Con declaraciones' },
+                                    { value: 'completo',          label: 'Completo' },
+                                ]}
+                                value={data.modo_cierre_caja}
+                                onChange={(v) => setData('modo_cierre_caja', v as ModoCierreSel)}
+                            />
+                        </div>
+                    </div>
+
                     <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text)' }}>
                         <Checkbox
                             name="activo"

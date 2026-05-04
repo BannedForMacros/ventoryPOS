@@ -16,6 +16,8 @@ interface Props extends PageProps {
     empresas: Empresa[];
 }
 
+type ModoCierre = 'rapido' | 'con_declaraciones' | 'completo';
+
 type FormData = {
     razon_social: string;
     nombre_comercial: string;
@@ -24,6 +26,8 @@ type FormData = {
     telefono: string;
     email: string;
     modo_almacen: 'simple' | 'central_y_local';
+    descuenta_stock_en_venta: boolean;
+    modo_cierre_caja: ModoCierre;
     activo: boolean;
 };
 
@@ -35,6 +39,8 @@ const emptyForm: FormData = {
     telefono: '',
     email: '',
     modo_almacen: 'simple',
+    descuenta_stock_en_venta: true,
+    modo_cierre_caja: 'con_declaraciones',
     activo: true,
 };
 
@@ -67,6 +73,8 @@ export default function Empresas({ empresas }: Props) {
             telefono: emp.telefono ?? '',
             email: emp.email ?? '',
             modo_almacen: emp.modo_almacen,
+            descuenta_stock_en_venta: emp.descuenta_stock_en_venta ?? true,
+            modo_cierre_caja: (emp.modo_cierre_caja as ModoCierre) ?? 'con_declaraciones',
             activo: emp.activo,
         });
         setModalOpen(true);
@@ -212,6 +220,54 @@ export default function Empresas({ empresas }: Props) {
                         </div>
                         {errors.modo_almacen && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_almacen}</p>
+                        )}
+                    </div>
+
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Operación</p>
+
+                        <label className="flex items-start gap-2 cursor-pointer mb-4">
+                            <Checkbox
+                                checked={data.descuenta_stock_en_venta}
+                                onChange={e => setData('descuenta_stock_en_venta', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Descontar stock al vender</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, cada venta descuenta el stock del producto. Cada local y cada producto puede sobrescribir esta configuración.
+                                </span>
+                            </span>
+                        </label>
+                        {errors.descuenta_stock_en_venta && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.descuenta_stock_en_venta}</p>
+                        )}
+
+                        <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
+                            Modo de cierre de caja <span style={{ color: 'var(--color-danger)' }}>*</span>
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            {([
+                                { value: 'rapido' as const,            label: 'Rápido',            hint: 'Solo cierra el turno. Sin arqueo ni declaraciones. Ideal para emprendedores.' },
+                                { value: 'con_declaraciones' as const, label: 'Con declaraciones', hint: 'Arqueo de efectivo + totales por método de pago. Sin cierre de inventario.' },
+                                { value: 'completo' as const,          label: 'Completo',          hint: 'Arqueo + cierre de inventario obligatorio al cerrar el turno.' },
+                            ]).map(opt => (
+                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="modo_cierre_caja"
+                                        checked={data.modo_cierre_caja === opt.value}
+                                        onChange={() => setData('modo_cierre_caja', opt.value)}
+                                        className="mt-0.5 accent-[var(--color-primary)]"
+                                    />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        {errors.modo_cierre_caja && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_cierre_caja}</p>
                         )}
                     </div>
 

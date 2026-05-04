@@ -23,6 +23,7 @@ use App\Http\Controllers\Ventas\DescuentoConceptoController;
 use App\Http\Controllers\Ventas\DescuentoLogController;
 use App\Http\Controllers\Ventas\VentaController;
 use App\Http\Controllers\Ventas\WhatsappController;
+use App\Http\Controllers\Inventario\CierreInventarioController;
 use App\Http\Controllers\Inventario\EntradaController;
 use App\Http\Controllers\Inventario\StockController;
 use App\Http\Controllers\Inventario\TransferenciaController;
@@ -72,6 +73,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('transferencias/crear', [TransferenciaController::class, 'create'])->name('transferencias.create');
         Route::post('transferencias/{transferencia}/confirmar', [TransferenciaController::class, 'confirmar'])->name('transferencias.confirmar');
         Route::apiResource('transferencias', TransferenciaController::class)->except(['show', 'edit', 'update']);
+
+        // Cierres de inventario
+        Route::get('cierres/crear', [CierreInventarioController::class, 'create'])->name('cierres.create');
+        Route::get('cierres/productos-para-declarar', [CierreInventarioController::class, 'productosParaDeclarar'])->name('cierres.productos');
+        Route::post('cierres/{cierre}/confirmar', [CierreInventarioController::class, 'confirmar'])->name('cierres.confirmar');
+        Route::apiResource('cierres', CierreInventarioController::class)
+            ->parameters(['cierres' => 'cierre'])
+            ->except(['edit', 'update']);
     });
 
     // Clientes
