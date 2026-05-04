@@ -31,11 +31,15 @@ interface ItemDeclarado {
 interface Props extends PageProps {
     almacenes: Almacen[];
     mostrarSelector: boolean;
+    turnoId: number | null;
+    almacenSugerido: number | null;
 }
 
-export default function CierreCreate({ almacenes, mostrarSelector }: Props) {
+export default function CierreCreate({ almacenes, mostrarSelector, turnoId, almacenSugerido }: Props) {
     const { flash } = usePage<Props>().props;
-    const [almacenId, setAlmacenId]     = useState<number | ''>(almacenes.length === 1 ? almacenes[0].id : '');
+    const [almacenId, setAlmacenId]     = useState<number | ''>(
+        almacenSugerido ?? (almacenes.length === 1 ? almacenes[0].id : '')
+    );
     const [productos, setProductos]     = useState<ProductoFila[]>([]);
     const [cargando, setCargando]       = useState(false);
     const [filtroNombre, setFiltroNombre] = useState('');
@@ -127,6 +131,7 @@ export default function CierreCreate({ almacenes, mostrarSelector }: Props) {
         post(route('inventario.cierres.store'), {
             data: {
                 almacen_id: almacenId,
+                turno_id: turnoId,
                 fecha: data.fecha,
                 observacion: data.observacion,
                 confirmar,

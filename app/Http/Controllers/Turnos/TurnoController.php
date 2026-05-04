@@ -212,37 +212,57 @@ class TurnoController extends Controller
         abort_if($turno->user_id !== $request->user()->id, 403);
         abort_if($turno->estado !== 'abierto', 422);
 
-        DB::transaction(function () use ($request, $turno) {
-            // Guardar arqueo de efectivo
-            $turno->arqueo()->delete();
-            foreach ($request->input('arqueo', []) as $fila) {
-                TurnoArqueo::create([
-                    'turno_id'     => $turno->id,
-                    'denominacion' => $fila['denominacion'],
-                    'cantidad'     => $fila['cantidad'],
+        $turno->loadMissing('local');
+        $modo = $this->config->modoCierreCaja($turno->local);
+
+        // Modo completo: requiere cierre de inventario CONFIRMADO atado al turno
+        if ($modo === 'completo') {
+            $cierreOk = CierreInventario::where('turno_id', $turno->id)
+                ->where('estado', 'confirmado')
+                ->exists();
+
+            if (!$cierreOk) {
+                return back()->withErrors([
+                    'cierre_inventario' => 'Este local exige cierre de inventario al cerrar caja. Crea y confirma un cierre de inventario asociado al turno antes de cerrar.',
                 ]);
             }
+        }
 
-            // Guardar arqueo de métodos de pago
+        DB::transaction(function () use ($request, $turno, $modo) {
+            $turno->arqueo()->delete();
             $turno->arqueoMetodos()->delete();
-            foreach ($request->input('arqueo_metodos', []) as $fila) {
-                TurnoArqueoMetodo::create([
-                    'turno_id'        => $turno->id,
-                    'metodo_pago_id'  => $fila['metodo_pago_id'],
-                    'monto_declarado' => $fila['monto_declarado'],
-                ]);
+
+            if ($modo !== 'rapido') {
+                foreach ($request->input('arqueo', []) as $fila) {
+                    TurnoArqueo::create([
+                        'turno_id'     => $turno->id,
+                        'denominacion' => $fila['denominacion'],
+                        'cantidad'     => $fila['cantidad'],
+                    ]);
+                }
+
+                foreach ($request->input('arqueo_metodos', []) as $fila) {
+                    TurnoArqueoMetodo::create([
+                        'turno_id'        => $turno->id,
+                        'metodo_pago_id'  => $fila['metodo_pago_id'],
+                        'monto_declarado' => $fila['monto_declarado'],
+                    ]);
+                }
             }
 
             $turno->refresh();
 
-            $montoDeclarado = $turno->calcularTotalArqueo();
+            $montoDeclarado = $modo === 'rapido' ? null : $turno->calcularTotalArqueo();
             $montoEsperado  = $turno->calcularMontoEsperado();
+            $diferencia     = ($modo === 'rapido' || $montoDeclarado === null)
+                ? null
+                : $montoDeclarado - $montoEsperado;
 
             $turno->update([
                 'user_cierre_id'         => $request->user()->id,
                 'monto_cierre_declarado' => $montoDeclarado,
                 'monto_cierre_esperado'  => $montoEsperado,
-                'diferencia'             => $montoDeclarado - $montoEsperado,
+                'diferencia'             => $diferencia,
                 'estado'                 => 'cerrado',
                 'fecha_cierre'           => now(),
                 'observacion_cierre'     => $request->input('observacion_cierre'),

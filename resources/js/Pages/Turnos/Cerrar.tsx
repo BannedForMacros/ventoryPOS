@@ -1,10 +1,16 @@
 import { useMemo, useState } from 'react';
-import { router } from '@inertiajs/react';
-import { AlertTriangle, ArrowLeft, Clock, Receipt, ShoppingCart, TrendingDown, Wallet } from 'lucide-react';
+import { Link, router } from '@inertiajs/react';
+import { AlertTriangle, ArrowLeft, ClipboardCheck, Clock, ShoppingCart, TrendingDown, Wallet } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
-import type { MetodoPago, Turno } from '@/types';
+import Badge from '@/Components/UI/Badge';
+import type { MetodoPago, ModoCierreCaja, Turno } from '@/types';
+
+interface CierreInventarioRef {
+    id: number;
+    estado: 'borrador' | 'confirmado';
+}
 
 const DENOMINACIONES_PEN = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1];
 
@@ -25,16 +31,20 @@ interface CerrarForm {
 }
 
 interface Props {
-    turno:            Turno;
-    ventasPorMetodo:  Record<string, number>;
-    totalVentas:      number;
-    totalGastos:      number;
-    montoEsperado:    number;
-    metodosPago:      MetodoPago[];
+    turno:                  Turno;
+    ventasPorMetodo:        Record<string, number>;
+    totalVentas:            number;
+    totalGastos:            number;
+    montoEsperado:          number;
+    metodosPago:            MetodoPago[];
+    modoCierre:             ModoCierreCaja;
+    cierreInventarioTurno:  CierreInventarioRef | null;
 }
 
-export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, totalGastos, montoEsperado, metodosPago }: Props) {
+export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, totalGastos, montoEsperado, metodosPago, modoCierre, cierreInventarioTurno }: Props) {
     const caja = turno.caja!;
+    const requiereArqueo  = modoCierre !== 'rapido';
+    const requiereCierreInv = modoCierre === 'completo';
 
     const [form, setForm] = useState<CerrarForm>({
         arqueo: DENOMINACIONES_PEN.map(d => ({ denominacion: d, cantidad: 0 })),
@@ -73,21 +83,35 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
     }
 
     function submit() {
+        if (requiereCierreInv && cierreInventarioTurno?.estado !== 'confirmado') {
+            setErrors({ cierre_inventario: 'Debes confirmar el cierre de inventario asociado al turno antes de cerrar la caja.' });
+            return;
+        }
+
         setSaving(true);
-        const payload = {
-            arqueo: form.arqueo,
-            arqueo_metodos: form.arqueo_metodos.map(m => ({
-                metodo_pago_id:  m.metodo_pago_id,
-                monto_declarado: parseFloat(m.monto_declarado) || 0,
-            })),
+        const payload: Record<string, unknown> = {
             observacion_cierre: form.observacion_cierre,
         };
+
+        if (requiereArqueo) {
+            payload.arqueo = form.arqueo;
+            payload.arqueo_metodos = form.arqueo_metodos.map(m => ({
+                metodo_pago_id:  m.metodo_pago_id,
+                monto_declarado: parseFloat(m.monto_declarado) || 0,
+            }));
+        }
 
         router.post(route('turnos.cerrar', turno.id), payload as any, {
             onSuccess: () => setSaving(false),
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         });
     }
+
+    const modoLabel: Record<ModoCierreCaja, string> = {
+        rapido: 'Rápido',
+        con_declaraciones: 'Con declaraciones',
+        completo: 'Completo',
+    };
 
     return (
         <AppLayout title="Cerrar turno">
@@ -100,6 +124,20 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
                     </Button>
                 }
             />
+
+            <div className="mb-4 flex items-center gap-2">
+                <Badge variant="primary">Modo: {modoLabel[modoCierre]}</Badge>
+                {modoCierre === 'rapido' && (
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        Solo se cerrará el turno. Sin arqueo ni cierre de inventario.
+                    </span>
+                )}
+                {modoCierre === 'completo' && (
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        Requiere arqueo + cierre de inventario confirmado.
+                    </span>
+                )}
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* ── Columna izquierda — Resúmenes ── */}
@@ -213,6 +251,51 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
 
                 {/* ── Columna derecha — Formulario arqueo ── */}
                 <div className="space-y-5">
+                    {requiereCierreInv && (
+                        <Section title="Cierre de inventario (obligatorio)">
+                            {cierreInventarioTurno?.estado === 'confirmado' ? (
+                                <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm"
+                                    style={{ backgroundColor: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)' }}>
+                                    <ClipboardCheck size={15} style={{ color: 'var(--color-success)' }} />
+                                    <span style={{ color: 'var(--color-text)' }}>
+                                        Cierre de inventario #{cierreInventarioTurno.id} confirmado.
+                                    </span>
+                                </div>
+                            ) : cierreInventarioTurno?.estado === 'borrador' ? (
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm"
+                                        style={{ backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}>
+                                        <ClipboardCheck size={15} style={{ color: '#b45309' }} />
+                                        <span style={{ color: 'var(--color-text)' }}>
+                                            Borrador #{cierreInventarioTurno.id} pendiente de confirmar.
+                                        </span>
+                                    </div>
+                                    <Link href={route('inventario.cierres.show', cierreInventarioTurno.id)}>
+                                        <Button variant="ghost">Ir al cierre</Button>
+                                    </Link>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    <div className="flex items-start gap-2 rounded-xl px-3 py-2 text-sm"
+                                        style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                                        <AlertTriangle size={15} className="mt-0.5" style={{ color: 'var(--color-danger)' }} />
+                                        <span style={{ color: 'var(--color-text)' }}>
+                                            Aún no has hecho un cierre de inventario para este turno. Es obligatorio antes de cerrar la caja.
+                                        </span>
+                                    </div>
+                                    <Link href={`${route('inventario.cierres.create')}?turno_id=${turno.id}`}>
+                                        <Button>Crear cierre de inventario</Button>
+                                    </Link>
+                                </div>
+                            )}
+                            {errors.cierre_inventario && (
+                                <p className="text-xs mt-2" style={{ color: 'var(--color-danger)' }}>{errors.cierre_inventario}</p>
+                            )}
+                        </Section>
+                    )}
+
+                    {requiereArqueo && (
+                    <>
                     {/* Arqueo efectivo */}
                     <Section title="Arqueo de caja — efectivo">
                         <div
@@ -316,6 +399,8 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
                             <FilaDiferencia diferencia={diferencia} />
                         </div>
                     </div>
+                    </>
+                    )}
 
                     {/* Advertencia */}
                     <div

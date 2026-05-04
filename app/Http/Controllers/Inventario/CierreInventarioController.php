@@ -7,6 +7,7 @@ use App\Models\Almacen;
 use App\Models\CierreInventario;
 use App\Models\Producto;
 use App\Models\Stock;
+use App\Models\Turno;
 use App\Services\LocalScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -43,9 +44,26 @@ class CierreInventarioController extends Controller
     {
         $user = $request->user();
 
+        // Si viene desde el flujo de cierre de turno, pre-seleccionar el almacén del local
+        $turnoId         = $request->query('turno_id');
+        $almacenSugerido = null;
+
+        if ($turnoId) {
+            $turno = Turno::where('id', $turnoId)
+                ->where('user_id', $user->id)
+                ->where('estado', 'abierto')
+                ->first();
+
+            if ($turno) {
+                $almacenSugerido = $this->scope->almacenParaVentas($user)?->id;
+            }
+        }
+
         return Inertia::render('Inventario/Cierres/Create', [
-            'almacenes' => $this->scope->almacenesVisibles($user),
-            'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
+            'almacenes'        => $this->scope->almacenesVisibles($user),
+            'mostrarSelector'  => $this->scope->mostrarSelectorLocal($user),
+            'turnoId'          => $turnoId ? (int) $turnoId : null,
+            'almacenSugerido'  => $almacenSugerido,
         ]);
     }
 
@@ -90,6 +108,7 @@ class CierreInventarioController extends Controller
 
         $data = $request->validate([
             'almacen_id'  => 'required|exists:almacenes,id',
+            'turno_id'    => 'nullable|exists:turnos,id',
             'fecha'       => 'required|date',
             'observacion' => 'nullable|string',
             'items'       => 'required|array|min:1',
@@ -102,12 +121,28 @@ class CierreInventarioController extends Controller
         $almacen = Almacen::findOrFail($data['almacen_id']);
         abort_unless($this->scope->puedeAccederAlmacen($user, $almacen), 403);
 
-        $cierre = DB::transaction(function () use ($data, $user) {
+        // Si trae turno_id: validar que el turno sea del usuario y esté abierto,
+        // y que el almacén corresponda al local del turno (no se permite asociar el central a un turno).
+        $turnoId = $data['turno_id'] ?? null;
+        if ($turnoId) {
+            $turno = Turno::where('id', $turnoId)
+                ->where('user_id', $user->id)
+                ->where('estado', 'abierto')
+                ->firstOrFail();
+
+            if ($almacen->local_id !== $turno->local_id) {
+                return back()->withErrors([
+                    'almacen_id' => 'El cierre asociado a un turno solo puede aplicar al almacén del local del turno.',
+                ]);
+            }
+        }
+
+        $cierre = DB::transaction(function () use ($data, $user, $turnoId) {
             $cierre = CierreInventario::create([
                 'empresa_id'  => $user->empresa_id,
                 'almacen_id'  => $data['almacen_id'],
                 'user_id'     => $user->id,
-                'turno_id'    => null,
+                'turno_id'    => $turnoId,
                 'fecha'       => $data['fecha'],
                 'estado'      => 'borrador',
                 'observacion' => $data['observacion'] ?? null,
