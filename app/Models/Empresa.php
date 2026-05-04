@@ -17,12 +17,15 @@ class Empresa extends Model
         'logo',
         'activo',
         'modo_almacen',
+        'descuenta_stock_en_venta',
+        'modo_cierre_caja',
     ];
 
     protected function casts(): array
     {
         return [
-            'activo' => 'boolean',
+            'activo'                   => 'boolean',
+            'descuenta_stock_en_venta' => 'boolean',
         ];
     }
 

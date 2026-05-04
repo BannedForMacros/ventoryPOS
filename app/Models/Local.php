@@ -17,13 +17,16 @@ class Local extends Model
         'telefono',
         'es_principal',
         'activo',
+        'descuenta_stock_en_venta',
+        'modo_cierre_caja',
     ];
 
     protected function casts(): array
     {
         return [
-            'es_principal' => 'boolean',
-            'activo'       => 'boolean',
+            'es_principal'             => 'boolean',
+            'activo'                   => 'boolean',
+            'descuenta_stock_en_venta' => 'boolean',
         ];
     }
 

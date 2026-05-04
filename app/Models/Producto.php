@@ -23,15 +23,17 @@ class Producto extends Model
         'imagen',
         'activo',
         'incluye_igv',
+        'controla_stock',
     ];
 
     protected function casts(): array
     {
         return [
-            'precio_venta' => 'decimal:2',
-            'precio_costo' => 'decimal:2',
-            'activo'       => 'boolean',
-            'incluye_igv'  => 'boolean',
+            'precio_venta'   => 'decimal:2',
+            'precio_costo'   => 'decimal:2',
+            'activo'         => 'boolean',
+            'incluye_igv'    => 'boolean',
+            'controla_stock' => 'boolean',
         ];
     }
 
