@@ -5,6 +5,7 @@ use App\Http\Controllers\Catalogo\ProductoController;
 use App\Http\Controllers\Catalogo\UnidadMedidaController;
 use App\Http\Controllers\Clientes\ClienteController;
 use App\Http\Controllers\Clientes\DecolectaController;
+use App\Http\Controllers\Proveedores\ProveedorController;
 use App\Http\Controllers\Configuracion\AlmacenController;
 use App\Http\Controllers\Configuracion\CajaController;
 use App\Http\Controllers\Configuracion\EmpresaController;
@@ -78,8 +79,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::apiResource('entradas', EntradaController::class)->except(['show']);
 
         Route::get('transferencias/crear', [TransferenciaController::class, 'create'])->name('transferencias.create');
-        Route::post('transferencias/{transferencia}/confirmar', [TransferenciaController::class, 'confirmar'])->name('transferencias.confirmar');
-        Route::apiResource('transferencias', TransferenciaController::class)->except(['show', 'edit', 'update']);
+        Route::get('transferencias/{transferencia}/editar', [TransferenciaController::class, 'edit'])->name('transferencias.edit');
+        Route::post('transferencias/{transferencia}/enviar', [TransferenciaController::class, 'enviar'])->name('transferencias.enviar');
+        Route::post('transferencias/{transferencia}/recibir', [TransferenciaController::class, 'recibir'])->name('transferencias.recibir');
+        Route::post('transferencias/{transferencia}/anular', [TransferenciaController::class, 'anular'])->name('transferencias.anular');
+        Route::apiResource('transferencias', TransferenciaController::class);
 
         // Cierres de inventario
         Route::get('cierres/crear', [CierreInventarioController::class, 'create'])->name('cierres.create');
@@ -105,6 +109,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/{cliente}', [ClienteController::class, 'show'])->name('show');
         Route::put('/{cliente}', [ClienteController::class, 'update'])->name('update');
         Route::delete('/{cliente}', [ClienteController::class, 'destroy'])->name('destroy');
+    });
+
+    // Proveedores
+    Route::prefix('proveedores')->name('proveedores.')->group(function () {
+        Route::get('/', [ProveedorController::class, 'index'])->name('index');
+        Route::post('/', [ProveedorController::class, 'store'])->name('store');
+        Route::get('/{proveedor}', [ProveedorController::class, 'show'])->name('show');
+        Route::put('/{proveedor}', [ProveedorController::class, 'update'])->name('update');
+        Route::delete('/{proveedor}', [ProveedorController::class, 'destroy'])->name('destroy');
     });
 
     // Métodos de pago y Cuentas (dentro de configuración)

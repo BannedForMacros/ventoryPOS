@@ -64,14 +64,14 @@ export default function TransferenciaCreate({ almacenesOrigen, almacenesDestino,
         return Math.round((parseFloat(d.cantidad) || 0) * (parseFloat(d.factor_conversion) || 1) * 10000) / 10000;
     }
 
-    function submit(confirmar: boolean) {
+    function submit(enviar: boolean) {
         setProcessing(true);
         router.post(route('inventario.transferencias.store'), {
             almacen_origen_id:  origenId,
             almacen_destino_id: destinoId,
             fecha,
-            observacion,
-            confirmar,
+            observacion_envio: observacion,
+            enviar,
             detalles: detalles.map(d => ({
                 producto_id:       d.producto_id,
                 unidad_medida_id:  d.unidad_medida_id,
@@ -219,7 +219,7 @@ export default function TransferenciaCreate({ almacenesOrigen, almacenesDestino,
                         Guardar borrador
                     </Button>
                     <Button type="button" loading={processing} onClick={() => submit(true)}>
-                        Guardar y confirmar
+                        Guardar y enviar
                     </Button>
                 </div>
             </div>

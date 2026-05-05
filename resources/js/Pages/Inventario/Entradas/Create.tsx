@@ -12,10 +12,12 @@ interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
 interface Producto { id: number; codigo: string | null; nombre: string; unidades: ProductoUnidad[]; }
 interface Almacen  { id: number; nombre: string; tipo: string; }
+interface Proveedor { id: number; razon_social: string | null; nombre_comercial: string | null; numero_documento: string | null; tipo_documento: string; }
 
 interface Props extends PageProps {
     almacenes: Almacen[];
     productos: Producto[];
+    proveedores: Proveedor[];
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
 }
@@ -32,9 +34,9 @@ const emptyDetalle = (): DetalleRow => ({
     producto_id: '', unidad_medida_id: '', cantidad: '', factor_conversion: '1', precio_costo: '',
 });
 
-export default function EntradaCreate({ almacenes, productos, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaCreate({ almacenes, productos, proveedores, mostrarSelector, modoAlmacen }: Props) {
     const [almacenId, setAlmacenId]     = useState<number | ''>(almacenes.length === 1 ? almacenes[0].id : '');
-    const [proveedor, setProveedor]     = useState('');
+    const [proveedorId, setProveedorId] = useState<number | ''>('');
     const [nroDoc, setNroDoc]           = useState('');
     const [tipo, setTipo]               = useState<string>('compra');
     const [fecha, setFecha]             = useState(new Date().toISOString().split('T')[0]);
@@ -87,7 +89,7 @@ export default function EntradaCreate({ almacenes, productos, mostrarSelector, m
         setProcessing(true);
         router.post(route('inventario.entradas.store'), {
             almacen_id:        almacenId,
-            proveedor,
+            proveedor_id:      proveedorId || null,
             numero_documento:  nroDoc,
             tipo,
             fecha,
@@ -162,7 +164,17 @@ export default function EntradaCreate({ almacenes, productos, mostrarSelector, m
                                 { value: 'otro',       label: 'Otro' },
                             ]}
                         />
-                        <Input label="Proveedor" value={proveedor} onChange={e => setProveedor(e.target.value)} placeholder="Nombre del proveedor" />
+                        <Select
+                            label="Proveedor"
+                            placeholder="Sin proveedor"
+                            value={proveedorId}
+                            onChange={v => setProveedorId(v === '' ? '' : Number(v))}
+                            options={proveedores.map(p => ({
+                                value: p.id,
+                                label: `${p.razon_social ?? p.nombre_comercial ?? '—'}${p.numero_documento ? ` · ${p.tipo_documento} ${p.numero_documento}` : ''}`,
+                            }))}
+                            error={errors.proveedor_id}
+                        />
                         <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} placeholder="Ej: F001-0001234" />
                         <Input label="Fecha" required type="date" value={fecha} onChange={e => setFecha(e.target.value)} error={errors.fecha} />
                     </div>

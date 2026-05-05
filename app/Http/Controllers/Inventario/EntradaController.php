@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\Entrada;
 use App\Models\Producto;
+use App\Models\Proveedor;
 use App\Services\LocalScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +24,7 @@ class EntradaController extends Controller
         $almacenIds = $this->scope->almacenIdsVisibles($user);
 
         $entradas = Entrada::whereIn('almacen_id', $almacenIds)
-            ->with(['almacen.local', 'user'])
+            ->with(['almacen.local', 'user', 'proveedorRel'])
             ->when($request->almacen_id, fn ($q, $id) => $q->where('almacen_id', $id))
             ->when($request->estado, fn ($q, $e) => $q->where('estado', $e))
             ->when($request->fecha_desde, fn ($q, $f) => $q->whereDate('fecha', '>=', $f))
@@ -54,6 +55,10 @@ class EntradaController extends Controller
                 ->with(['unidades.unidadMedida'])
                 ->orderBy('nombre')
                 ->get(),
+            'proveedores' => Proveedor::deEmpresa($empresaId)
+                ->activo()
+                ->orderBy('razon_social')
+                ->get(['id', 'razon_social', 'nombre_comercial', 'numero_documento', 'tipo_documento']),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
         ]);
     }
@@ -64,6 +69,7 @@ class EntradaController extends Controller
 
         $data = $request->validate([
             'almacen_id'       => 'required|exists:almacenes,id',
+            'proveedor_id'     => 'nullable|exists:proveedores,id',
             'proveedor'        => 'nullable|string|max:150',
             'numero_documento' => 'nullable|string|max:50',
             'tipo'             => 'required|in:compra,ajuste,devolucion,otro',
@@ -80,6 +86,14 @@ class EntradaController extends Controller
         $almacen = Almacen::find($data['almacen_id']);
         abort_unless($this->scope->puedeAccederAlmacen($user, $almacen), 403);
 
+        // Si vino proveedor_id, validar que sea de la empresa y completar el campo proveedor (denormalizado)
+        if (!empty($data['proveedor_id'])) {
+            $prov = Proveedor::where('id', $data['proveedor_id'])
+                ->where('empresa_id', $user->empresa_id)
+                ->firstOrFail();
+            $data['proveedor'] = $prov->razon_social ?: $prov->nombre_comercial;
+        }
+
         // En modo central_y_local las compras solo pueden ingresar al almacén central
         if ($user->empresa->usaCentralYLocal() && !$almacen->esCentral()) {
             return back()->withErrors([
@@ -94,6 +108,7 @@ class EntradaController extends Controller
                 'empresa_id'       => $user->empresa_id,
                 'almacen_id'       => $data['almacen_id'],
                 'user_id'          => $user->id,
+                'proveedor_id'     => $data['proveedor_id'] ?? null,
                 'proveedor'        => $data['proveedor'] ?? null,
                 'numero_documento' => $data['numero_documento'] ?? null,
                 'tipo'             => $data['tipo'],
@@ -140,7 +155,7 @@ class EntradaController extends Controller
         $empresaId = $user->empresa_id;
 
         return Inertia::render('Inventario/Entradas/Edit', [
-            'entrada'   => $entrada->load(['detalles.producto', 'detalles.unidadMedida']),
+            'entrada'   => $entrada->load(['detalles.producto', 'detalles.unidadMedida', 'proveedorRel']),
             'almacenes' => $this->scope->almacenesParaCompras($user),
             'modoAlmacen' => $user->empresa->modo_almacen,
             'productos' => Producto::deEmpresa($empresaId)
@@ -149,6 +164,10 @@ class EntradaController extends Controller
                 ->with(['unidades.unidadMedida'])
                 ->orderBy('nombre')
                 ->get(),
+            'proveedores' => Proveedor::deEmpresa($empresaId)
+                ->activo()
+                ->orderBy('razon_social')
+                ->get(['id', 'razon_social', 'nombre_comercial', 'numero_documento', 'tipo_documento']),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
         ]);
     }
@@ -162,6 +181,7 @@ class EntradaController extends Controller
 
         $data = $request->validate([
             'almacen_id'       => 'required|exists:almacenes,id',
+            'proveedor_id'     => 'nullable|exists:proveedores,id',
             'proveedor'        => 'nullable|string|max:150',
             'numero_documento' => 'nullable|string|max:50',
             'tipo'             => 'required|in:compra,ajuste,devolucion,otro',
@@ -182,11 +202,19 @@ class EntradaController extends Controller
             ])->withInput();
         }
 
+        if (!empty($data['proveedor_id'])) {
+            $prov = Proveedor::where('id', $data['proveedor_id'])
+                ->where('empresa_id', $user->empresa_id)
+                ->firstOrFail();
+            $data['proveedor'] = $prov->razon_social ?: $prov->nombre_comercial;
+        }
+
         DB::transaction(function () use ($data, $entrada) {
             $total = 0;
 
             $entrada->update([
                 'almacen_id'       => $data['almacen_id'],
+                'proveedor_id'     => $data['proveedor_id'] ?? null,
                 'proveedor'        => $data['proveedor'] ?? null,
                 'numero_documento' => $data['numero_documento'] ?? null,
                 'tipo'             => $data['tipo'],

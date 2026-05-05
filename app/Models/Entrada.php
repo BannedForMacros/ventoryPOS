@@ -13,6 +13,7 @@ class Entrada extends Model
         'empresa_id',
         'almacen_id',
         'user_id',
+        'proveedor_id',
         'numero_documento',
         'proveedor',
         'tipo',
@@ -21,6 +22,11 @@ class Entrada extends Model
         'observacion',
         'total',
     ];
+
+    public function proveedorRel(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Proveedor::class, 'proveedor_id');
+    }
 
     protected function casts(): array
     {

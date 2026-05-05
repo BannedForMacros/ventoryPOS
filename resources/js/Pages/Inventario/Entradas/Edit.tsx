@@ -24,9 +24,12 @@ interface EntradaDetalleData {
     unidad_medida?: UnidadMedida;
 }
 
+interface Proveedor { id: number; razon_social: string | null; nombre_comercial: string | null; numero_documento: string | null; tipo_documento: string; }
+
 interface EntradaData {
     id: number;
     almacen_id: number;
+    proveedor_id: number | null;
     proveedor: string | null;
     numero_documento: string | null;
     tipo: string;
@@ -39,6 +42,7 @@ interface Props extends PageProps {
     entrada: EntradaData;
     almacenes: Almacen[];
     productos: Producto[];
+    proveedores: Proveedor[];
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
 }
@@ -51,9 +55,9 @@ interface DetalleRow {
     precio_costo: string;
 }
 
-export default function EntradaEdit({ entrada, almacenes, productos, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaEdit({ entrada, almacenes, productos, proveedores, mostrarSelector, modoAlmacen }: Props) {
     const [almacenId, setAlmacenId]     = useState<number | ''>(entrada.almacen_id);
-    const [proveedor, setProveedor]     = useState(entrada.proveedor ?? '');
+    const [proveedorId, setProveedorId] = useState<number | ''>(entrada.proveedor_id ?? '');
     const [nroDoc, setNroDoc]           = useState(entrada.numero_documento ?? '');
     const [tipo, setTipo]               = useState(entrada.tipo);
     const [fecha, setFecha]             = useState(entrada.fecha);
@@ -110,7 +114,7 @@ export default function EntradaEdit({ entrada, almacenes, productos, mostrarSele
     function submit() {
         setProcessing(true);
         router.put(route('inventario.entradas.update', entrada.id), {
-            almacen_id: almacenId, proveedor, numero_documento: nroDoc,
+            almacen_id: almacenId, proveedor_id: proveedorId || null, numero_documento: nroDoc,
             tipo, fecha, observacion,
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id, unidad_medida_id: d.unidad_medida_id,
@@ -161,7 +165,17 @@ export default function EntradaEdit({ entrada, almacenes, productos, mostrarSele
                                 { value: 'compra', label: 'Compra' }, { value: 'ajuste', label: 'Ajuste' },
                                 { value: 'devolucion', label: 'Devolución' }, { value: 'otro', label: 'Otro' },
                             ]} />
-                        <Input label="Proveedor" value={proveedor} onChange={e => setProveedor(e.target.value)} />
+                        <Select
+                            label="Proveedor"
+                            placeholder="Sin proveedor"
+                            value={proveedorId}
+                            onChange={v => setProveedorId(v === '' ? '' : Number(v))}
+                            options={proveedores.map(p => ({
+                                value: p.id,
+                                label: `${p.razon_social ?? p.nombre_comercial ?? '—'}${p.numero_documento ? ` · ${p.tipo_documento} ${p.numero_documento}` : ''}`,
+                            }))}
+                            error={errors.proveedor_id}
+                        />
                         <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} />
                         <Input label="Fecha" required type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
                     </div>
