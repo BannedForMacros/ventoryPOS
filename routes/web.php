@@ -14,6 +14,7 @@ use App\Http\Controllers\Configuracion\MetodoPagoController;
 use App\Http\Controllers\Configuracion\ModuloController;
 use App\Http\Controllers\Configuracion\PermisoController;
 use App\Http\Controllers\Configuracion\RolController;
+use App\Http\Controllers\Configuracion\SalidaTipoController;
 use App\Http\Controllers\Configuracion\UsuarioController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Gastos\GastoController;
@@ -25,6 +26,7 @@ use App\Http\Controllers\Ventas\VentaController;
 use App\Http\Controllers\Ventas\WhatsappController;
 use App\Http\Controllers\Inventario\CierreInventarioController;
 use App\Http\Controllers\Inventario\EntradaController;
+use App\Http\Controllers\Inventario\SalidaController;
 use App\Http\Controllers\Inventario\StockController;
 use App\Http\Controllers\Inventario\TransferenciaController;
 use App\Http\Controllers\ProfileController;
@@ -59,6 +61,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('permisos', [PermisoController::class, 'index'])->name('permisos.index');
         Route::post('permisos/{rol}', [PermisoController::class, 'store'])->name('permisos.store');
         Route::resource('almacenes', AlmacenController::class)->except(['show', 'create', 'edit'])->parameters(['almacenes' => 'almacen']);
+
+        // Tipos de salida
+        Route::apiResource('salidas-tipos', SalidaTipoController::class)
+            ->parameters(['salidas-tipos' => 'tipo'])
+            ->except(['show']);
     });
 
     Route::prefix('inventario')->name('inventario.')->group(function () {
@@ -81,6 +88,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::apiResource('cierres', CierreInventarioController::class)
             ->parameters(['cierres' => 'cierre'])
             ->except(['edit', 'update']);
+
+        // Salidas
+        Route::get('salidas/crear', [SalidaController::class, 'create'])->name('salidas.create');
+        Route::get('salidas/{salida}/editar', [SalidaController::class, 'edit'])->name('salidas.edit');
+        Route::post('salidas/{salida}/confirmar', [SalidaController::class, 'confirmar'])->name('salidas.confirmar');
+        Route::apiResource('salidas', SalidaController::class)
+            ->parameters(['salidas' => 'salida'])
+            ->except(['show']);
     });
 
     // Clientes
