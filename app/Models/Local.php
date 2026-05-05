@@ -22,6 +22,10 @@ class Local extends Model
         'modo_cierre_inventario',
         'usa_fondos_iniciales',
         'fondos_iniciales_en_declaracion',
+        'permite_devoluciones',
+        'dias_max_devolucion',
+        'requiere_aprobacion_devolucion',
+        'restock_default',
     ];
 
     protected function casts(): array
@@ -32,6 +36,9 @@ class Local extends Model
             'descuenta_stock_en_venta'        => 'boolean',
             'usa_fondos_iniciales'            => 'boolean',
             'fondos_iniciales_en_declaracion' => 'boolean',
+            'permite_devoluciones'            => 'boolean',
+            'requiere_aprobacion_devolucion'  => 'boolean',
+            'restock_default'                 => 'boolean',
         ];
     }
 

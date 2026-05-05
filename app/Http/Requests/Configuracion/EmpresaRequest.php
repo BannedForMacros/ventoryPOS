@@ -30,6 +30,10 @@ class EmpresaRequest extends FormRequest
             'modo_cierre_inventario'          => 'required|in:por_venta,declarado',
             'usa_fondos_iniciales'            => 'boolean',
             'fondos_iniciales_en_declaracion' => 'boolean',
+            'permite_devoluciones'            => 'boolean',
+            'dias_max_devolucion'             => 'nullable|integer|min:0|max:365',
+            'requiere_aprobacion_devolucion'  => 'boolean',
+            'restock_default'                 => 'boolean',
         ];
     }
 }

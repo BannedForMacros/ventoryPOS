@@ -32,6 +32,10 @@ type FormData = {
     modo_cierre_inventario: ModoInventario;
     usa_fondos_iniciales: boolean;
     fondos_iniciales_en_declaracion: boolean;
+    permite_devoluciones: boolean;
+    dias_max_devolucion: number | '';
+    requiere_aprobacion_devolucion: boolean;
+    restock_default: boolean;
     activo: boolean;
 };
 
@@ -48,6 +52,10 @@ const emptyForm: FormData = {
     modo_cierre_inventario: 'por_venta',
     usa_fondos_iniciales: true,
     fondos_iniciales_en_declaracion: false,
+    permite_devoluciones: true,
+    dias_max_devolucion: 0,
+    requiere_aprobacion_devolucion: false,
+    restock_default: true,
     activo: true,
 };
 
@@ -85,6 +93,10 @@ export default function Empresas({ empresas }: Props) {
             modo_cierre_inventario: (emp.modo_cierre_inventario as ModoInventario) ?? 'por_venta',
             usa_fondos_iniciales: emp.usa_fondos_iniciales ?? true,
             fondos_iniciales_en_declaracion: emp.fondos_iniciales_en_declaracion ?? false,
+            permite_devoluciones: emp.permite_devoluciones ?? true,
+            dias_max_devolucion: emp.dias_max_devolucion ?? 0,
+            requiere_aprobacion_devolucion: emp.requiere_aprobacion_devolucion ?? false,
+            restock_default: emp.restock_default ?? true,
             activo: emp.activo,
         });
         setModalOpen(true);
@@ -311,6 +323,58 @@ export default function Empresas({ empresas }: Props) {
                         </div>
                         {errors.modo_cierre_inventario && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_cierre_inventario}</p>
+                        )}
+                    </div>
+
+                    {/* ── Sección: Devoluciones ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Devoluciones</p>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox checked={data.permite_devoluciones} onChange={e => setData('permite_devoluciones', e.target.checked)} />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Permite devoluciones</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, los cajeros pueden registrar devoluciones de ventas.
+                                </span>
+                            </span>
+                        </label>
+
+                        {data.permite_devoluciones && (
+                            <>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>
+                                            Días máximos para devolver (0 = sin límite)
+                                        </label>
+                                        <input type="number" min="0" max="365"
+                                            value={data.dias_max_devolucion}
+                                            onChange={e => setData('dias_max_devolucion', e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full rounded-xl border px-3 py-2 text-sm"
+                                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                                    </div>
+                                </div>
+
+                                <label className="flex items-start gap-2 cursor-pointer">
+                                    <Checkbox checked={data.requiere_aprobacion_devolucion} onChange={e => setData('requiere_aprobacion_devolucion', e.target.checked)} />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Requiere aprobación de administrador</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                            Si está activo, las devoluciones quedan en estado "pendiente" hasta que un admin las apruebe.
+                                        </span>
+                                    </span>
+                                </label>
+
+                                <label className="flex items-start gap-2 cursor-pointer">
+                                    <Checkbox checked={data.restock_default} onChange={e => setData('restock_default', e.target.checked)} />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Restock automático por defecto</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                            Por defecto, los productos devueltos vuelven al stock. El cajero puede sobrescribir por línea.
+                                        </span>
+                                    </span>
+                                </label>
+                            </>
                         )}
                     </div>
 

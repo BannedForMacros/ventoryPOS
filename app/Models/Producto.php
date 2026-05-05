@@ -24,6 +24,7 @@ class Producto extends Model
         'activo',
         'incluye_igv',
         'controla_stock',
+        'es_retornable',
     ];
 
     protected function casts(): array
@@ -34,6 +35,7 @@ class Producto extends Model
             'activo'         => 'boolean',
             'incluye_igv'    => 'boolean',
             'controla_stock' => 'boolean',
+            'es_retornable'  => 'boolean',
         ];
     }
 

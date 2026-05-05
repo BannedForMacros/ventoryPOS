@@ -16,6 +16,10 @@ export interface Empresa extends Record<string, unknown> {
     modo_cierre_inventario: ModoCierreInventario;
     usa_fondos_iniciales: boolean;
     fondos_iniciales_en_declaracion: boolean;
+    permite_devoluciones: boolean;
+    dias_max_devolucion: number;
+    requiere_aprobacion_devolucion: boolean;
+    restock_default: boolean;
     activo: boolean;
     created_at: string;
     updated_at: string;
@@ -35,6 +39,10 @@ export interface Local extends Record<string, unknown> {
     modo_cierre_inventario: ModoCierreInventario | null;
     usa_fondos_iniciales: boolean | null;
     fondos_iniciales_en_declaracion: boolean | null;
+    permite_devoluciones: boolean | null;
+    dias_max_devolucion: number | null;
+    requiere_aprobacion_devolucion: boolean | null;
+    restock_default: boolean | null;
     empresa?: Empresa;
     created_at: string;
     updated_at: string;
@@ -147,6 +155,7 @@ export interface Producto extends Record<string, unknown> {
     activo: boolean;
     incluye_igv: boolean;
     controla_stock: boolean | null;
+    es_retornable: boolean | null;
     categoria?: Categoria | null;
     unidades?: ProductoUnidad[];
     unidad_base?: ProductoUnidad | null;

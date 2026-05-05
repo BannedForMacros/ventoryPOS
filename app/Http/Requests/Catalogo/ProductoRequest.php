@@ -38,6 +38,7 @@ class ProductoRequest extends FormRequest
             'activo'         => 'boolean',
             'incluye_igv'    => 'boolean',
             'controla_stock' => 'nullable|boolean',
+            'es_retornable'  => 'nullable|boolean',
         ];
 
         if ($this->input('tipo') === 'producto') {

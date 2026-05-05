@@ -71,6 +71,7 @@ class ProductoController extends Controller
                 'activo'         => $data['activo'] ?? true,
                 'incluye_igv'    => $data['incluye_igv'] ?? false,
                 'controla_stock' => $esProducto ? ($data['controla_stock'] ?? null) : false,
+                'es_retornable'  => $esProducto ? ($data['es_retornable'] ?? null) : false,
             ]);
 
             if ($producto->esProductoFisico()) {
@@ -122,6 +123,7 @@ class ProductoController extends Controller
                 'activo'         => $data['activo'] ?? true,
                 'incluye_igv'    => $data['incluye_igv'] ?? false,
                 'controla_stock' => $esProducto ? ($data['controla_stock'] ?? null) : false,
+                'es_retornable'  => $esProducto ? ($data['es_retornable'] ?? null) : false,
             ]);
 
             if ($producto->esProductoFisico()) {

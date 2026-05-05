@@ -25,6 +25,10 @@ class LocalRequest extends FormRequest
             'modo_cierre_inventario'          => 'nullable|in:por_venta,declarado',
             'usa_fondos_iniciales'            => 'nullable|boolean',
             'fondos_iniciales_en_declaracion' => 'nullable|boolean',
+            'permite_devoluciones'            => 'nullable|boolean',
+            'dias_max_devolucion'             => 'nullable|integer|min:0|max:365',
+            'requiere_aprobacion_devolucion'  => 'nullable|boolean',
+            'restock_default'                 => 'nullable|boolean',
         ];
     }
 }

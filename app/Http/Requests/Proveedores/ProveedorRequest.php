@@ -18,7 +18,7 @@ class ProveedorRequest extends FormRequest
         $id        = $this->route('proveedor')?->id;
 
         return [
-            'tipo_documento'   => 'required|in:DNI,RUC,CE,PASS,otro',
+            'tipo_documento'   => 'required|in:DNI,RUC,CE,pasaporte,otro',
             'numero_documento' => [
                 'nullable', 'string', 'max:20',
                 Rule::unique('proveedores', 'numero_documento')
