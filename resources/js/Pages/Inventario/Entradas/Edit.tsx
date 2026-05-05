@@ -40,6 +40,7 @@ interface Props extends PageProps {
     almacenes: Almacen[];
     productos: Producto[];
     mostrarSelector: boolean;
+    modoAlmacen: 'simple' | 'central_y_local';
 }
 
 interface DetalleRow {
@@ -50,7 +51,7 @@ interface DetalleRow {
     precio_costo: string;
 }
 
-export default function EntradaEdit({ entrada, almacenes, productos, mostrarSelector }: Props) {
+export default function EntradaEdit({ entrada, almacenes, productos, mostrarSelector, modoAlmacen }: Props) {
     const [almacenId, setAlmacenId]     = useState<number | ''>(entrada.almacen_id);
     const [proveedor, setProveedor]     = useState(entrada.proveedor ?? '');
     const [nroDoc, setNroDoc]           = useState(entrada.numero_documento ?? '');
@@ -135,13 +136,26 @@ export default function EntradaEdit({ entrada, almacenes, productos, mostrarSele
                     <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
                         Datos de la entrada
                     </h2>
+                    {modoAlmacen === 'central_y_local' && (
+                        <div className="rounded-xl px-4 py-3 text-sm"
+                            style={{ backgroundColor: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', color: 'var(--color-text)' }}>
+                            Las entradas (compras) ingresan al <strong>almacén central</strong>. Para mover stock a un local usa el módulo de <strong>Transferencias</strong>.
+                        </div>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
-                        {(mostrarSelector || almacenes.length > 1) && (
+                        {almacenes.length > 1 ? (
                             <Select label="Almacén destino" required value={almacenId}
                                 onChange={v => setAlmacenId(v === '' ? '' : Number(v))}
                                 options={almacenes.map(a => ({ value: a.id, label: a.nombre }))}
                                 error={errors.almacen_id} />
-                        )}
+                        ) : almacenes.length === 1 ? (
+                            <div>
+                                <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Almacén destino</label>
+                                <div className="rounded-xl border px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                    {almacenes[0].nombre}
+                                </div>
+                            </div>
+                        ) : null}
                         <Select label="Tipo" required value={tipo} onChange={v => setTipo(String(v))}
                             options={[
                                 { value: 'compra', label: 'Compra' }, { value: 'ajuste', label: 'Ajuste' },

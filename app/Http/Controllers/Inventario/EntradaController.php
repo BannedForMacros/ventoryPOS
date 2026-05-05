@@ -18,6 +18,8 @@ class EntradaController extends Controller
     public function index(Request $request)
     {
         $user       = $request->user();
+        // El listado muestra entradas de TODOS los almacenes visibles para histórico,
+        // aunque la creación esté restringida a almacenes para compras.
         $almacenIds = $this->scope->almacenIdsVisibles($user);
 
         $entradas = Entrada::whereIn('almacen_id', $almacenIds)
@@ -44,7 +46,8 @@ class EntradaController extends Controller
         $empresaId = $user->empresa_id;
 
         return Inertia::render('Inventario/Entradas/Create', [
-            'almacenes' => $this->scope->almacenesVisibles($user),
+            'almacenes' => $this->scope->almacenesParaCompras($user),
+            'modoAlmacen' => $user->empresa->modo_almacen,
             'productos' => Producto::deEmpresa($empresaId)
                 ->activo()
                 ->productos()
@@ -74,7 +77,15 @@ class EntradaController extends Controller
             'detalles.*.precio_costo'      => 'required|numeric|min:0',
         ]);
 
-        abort_unless($this->scope->puedeAccederAlmacen($user, Almacen::find($data['almacen_id'])), 403);
+        $almacen = Almacen::find($data['almacen_id']);
+        abort_unless($this->scope->puedeAccederAlmacen($user, $almacen), 403);
+
+        // En modo central_y_local las compras solo pueden ingresar al almacén central
+        if ($user->empresa->usaCentralYLocal() && !$almacen->esCentral()) {
+            return back()->withErrors([
+                'almacen_id' => 'Las entradas (compras) solo pueden ingresar al almacén central. Para mover stock a un local, usa Transferencias.',
+            ])->withInput();
+        }
 
         DB::transaction(function () use ($data, $user) {
             $total = 0;
@@ -130,7 +141,8 @@ class EntradaController extends Controller
 
         return Inertia::render('Inventario/Entradas/Edit', [
             'entrada'   => $entrada->load(['detalles.producto', 'detalles.unidadMedida']),
-            'almacenes' => $this->scope->almacenesVisibles($user),
+            'almacenes' => $this->scope->almacenesParaCompras($user),
+            'modoAlmacen' => $user->empresa->modo_almacen,
             'productos' => Producto::deEmpresa($empresaId)
                 ->activo()
                 ->productos()
@@ -146,6 +158,8 @@ class EntradaController extends Controller
         abort_if($entrada->estado !== 'borrador', 403, 'Solo se pueden editar entradas en borrador.');
         abort_unless($this->scope->puedeAccederAlmacen($request->user(), $entrada->almacen), 403);
 
+        $user = $request->user();
+
         $data = $request->validate([
             'almacen_id'       => 'required|exists:almacenes,id',
             'proveedor'        => 'nullable|string|max:150',
@@ -160,6 +174,13 @@ class EntradaController extends Controller
             'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
             'detalles.*.precio_costo'      => 'required|numeric|min:0',
         ]);
+
+        $almacen = Almacen::find($data['almacen_id']);
+        if ($user->empresa->usaCentralYLocal() && !$almacen->esCentral()) {
+            return back()->withErrors([
+                'almacen_id' => 'Las entradas solo pueden ingresar al almacén central.',
+            ])->withInput();
+        }
 
         DB::transaction(function () use ($data, $entrada) {
             $total = 0;

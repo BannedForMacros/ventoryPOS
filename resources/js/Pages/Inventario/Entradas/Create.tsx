@@ -17,6 +17,7 @@ interface Props extends PageProps {
     almacenes: Almacen[];
     productos: Producto[];
     mostrarSelector: boolean;
+    modoAlmacen: 'simple' | 'central_y_local';
 }
 
 interface DetalleRow {
@@ -31,8 +32,8 @@ const emptyDetalle = (): DetalleRow => ({
     producto_id: '', unidad_medida_id: '', cantidad: '', factor_conversion: '1', precio_costo: '',
 });
 
-export default function EntradaCreate({ almacenes, productos, mostrarSelector }: Props) {
-    const [almacenId, setAlmacenId]     = useState<number | ''>('');
+export default function EntradaCreate({ almacenes, productos, mostrarSelector, modoAlmacen }: Props) {
+    const [almacenId, setAlmacenId]     = useState<number | ''>(almacenes.length === 1 ? almacenes[0].id : '');
     const [proveedor, setProveedor]     = useState('');
     const [nroDoc, setNroDoc]           = useState('');
     const [tipo, setTipo]               = useState<string>('compra');
@@ -124,8 +125,15 @@ export default function EntradaCreate({ almacenes, productos, mostrarSelector }:
                         Datos de la entrada
                     </h2>
 
+                    {modoAlmacen === 'central_y_local' && (
+                        <div className="rounded-xl px-4 py-3 text-sm"
+                            style={{ backgroundColor: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', color: 'var(--color-text)' }}>
+                            Las entradas (compras) ingresan al <strong>almacén central</strong>. Para mover stock a un local usa el módulo de <strong>Transferencias</strong>.
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-4">
-                        {(mostrarSelector || almacenes.length > 1) && (
+                        {almacenes.length > 1 ? (
                             <Select
                                 label="Almacén destino"
                                 required
@@ -134,7 +142,14 @@ export default function EntradaCreate({ almacenes, productos, mostrarSelector }:
                                 options={almacenes.map(a => ({ value: a.id, label: a.nombre }))}
                                 error={errors.almacen_id}
                             />
-                        )}
+                        ) : almacenes.length === 1 ? (
+                            <div>
+                                <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Almacén destino</label>
+                                <div className="rounded-xl border px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                    {almacenes[0].nombre}
+                                </div>
+                            </div>
+                        ) : null}
                         <Select
                             label="Tipo"
                             required

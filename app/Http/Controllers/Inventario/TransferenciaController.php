@@ -50,12 +50,9 @@ class TransferenciaController extends Controller
         $user      = $request->user();
         $empresaId = $user->empresa_id;
 
-        // Si el usuario tiene local asignado, el origen queda fijo en su almacén local
-        $origenFijo = $user->local_id ? $this->scope->almacenParaVentas($user) : null;
-
         return Inertia::render('Inventario/Transferencias/Create', [
-            'almacenes'   => $this->scope->todosLosAlmacenes($user),
-            'origen_fijo' => $origenFijo?->load('local'),
+            'almacenesOrigen'  => $this->scope->almacenesOrigenTransferencia($user),
+            'almacenesDestino' => $this->scope->almacenesDestinoTransferencia($user),
             'productos'   => Producto::deEmpresa($empresaId)
                 ->activo()
                 ->productos()
@@ -88,6 +85,20 @@ class TransferenciaController extends Controller
 
         abort_if($origen->empresa_id !== $user->empresa_id, 403);
         abort_if($destino->empresa_id !== $user->empresa_id, 403);
+
+        // El origen DEBE ser el almacén central, el destino DEBE ser un almacén local.
+        // Esto fuerza el flujo: compra → central → transferencia → local → venta.
+        if (!$origen->esCentral()) {
+            return back()->withErrors([
+                'almacen_origen_id' => 'El origen de una transferencia debe ser el almacén central.',
+            ])->withInput();
+        }
+
+        if (!$destino->esLocal()) {
+            return back()->withErrors([
+                'almacen_destino_id' => 'El destino de una transferencia debe ser un almacén de local.',
+            ])->withInput();
+        }
 
         DB::transaction(function () use ($data, $user) {
             $transferencia = Transferencia::create([

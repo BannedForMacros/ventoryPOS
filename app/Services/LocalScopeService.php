@@ -91,6 +91,64 @@ class LocalScopeService
     }
 
     /**
+     * Almacenes válidos para registrar ENTRADAS (compras a proveedor).
+     *
+     * modo_simple:
+     *   → El único almacén de la empresa (ahí entran las compras).
+     *
+     * central_y_local:
+     *   → SOLO el almacén central. Las compras nunca ingresan directo a locales;
+     *     se reciben en el central y luego se mueven a los locales vía transferencias.
+     *
+     * Los almacenes locales se abastecen exclusivamente por transferencias.
+     */
+    public function almacenesParaCompras(User $user): Collection
+    {
+        $user->loadMissing('empresa');
+        $empresa = $user->empresa;
+
+        if ($empresa->usaModoSimple()) {
+            return $this->almacenesVisibles($user);
+        }
+
+        return Almacen::deEmpresa($empresa->id)
+            ->activo()
+            ->central()
+            ->with('local')
+            ->get();
+    }
+
+    /**
+     * Almacenes que pueden ser ORIGEN de una transferencia (siempre tipo='central').
+     */
+    public function almacenesOrigenTransferencia(User $user): Collection
+    {
+        return Almacen::deEmpresa($user->empresa_id)
+            ->activo()
+            ->central()
+            ->with('local')
+            ->get();
+    }
+
+    /**
+     * Almacenes que pueden ser DESTINO de una transferencia (siempre tipo='local').
+     * Si el usuario tiene local_id, solo ve su propio local.
+     */
+    public function almacenesDestinoTransferencia(User $user): Collection
+    {
+        $query = Almacen::deEmpresa($user->empresa_id)
+            ->activo()
+            ->local()
+            ->with('local');
+
+        if ($user->local_id) {
+            $query->where('local_id', $user->local_id);
+        }
+
+        return $query->get();
+    }
+
+    /**
      * Retorna el almacén desde el cual se debe descontar stock al registrar una venta.
      *
      * modo_simple:
