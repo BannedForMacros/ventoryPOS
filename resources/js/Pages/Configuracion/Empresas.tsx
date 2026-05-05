@@ -233,10 +233,11 @@ export default function Empresas({ empresas }: Props) {
                         )}
                     </div>
 
+                    {/* ── Sección: Stock ── */}
                     <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
-                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Operación</p>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Stock</p>
 
-                        <label className="flex items-start gap-2 cursor-pointer mb-4">
+                        <label className="flex items-start gap-2 cursor-pointer">
                             <Checkbox
                                 checked={data.descuenta_stock_en_venta}
                                 onChange={e => setData('descuenta_stock_en_venta', e.target.checked)}
@@ -251,9 +252,12 @@ export default function Empresas({ empresas }: Props) {
                         {errors.descuenta_stock_en_venta && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.descuenta_stock_en_venta}</p>
                         )}
+                    </div>
 
-                        <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
-                            Modo de cierre de caja <span style={{ color: 'var(--color-danger)' }}>*</span>
+                    {/* ── Sección: Cierre de caja ── */}
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
+                            Cierre de caja <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(por turno)</span>
                         </p>
                         <div className="flex flex-col gap-2">
                             {([
@@ -278,9 +282,12 @@ export default function Empresas({ empresas }: Props) {
                         {errors.modo_cierre_caja && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_cierre_caja}</p>
                         )}
+                    </div>
 
-                        <p className="text-sm font-medium mb-2 mt-4" style={{ color: 'var(--color-text)' }}>
-                            Modo de cierre de inventario <span style={{ color: 'var(--color-danger)' }}>*</span>
+                    {/* ── Sección: Cierre de inventario ── */}
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
+                            Cierre de inventario <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(por turno)</span>
                         </p>
                         <div className="flex flex-col gap-2">
                             {([
@@ -305,38 +312,39 @@ export default function Empresas({ empresas }: Props) {
                         {errors.modo_cierre_inventario && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_cierre_inventario}</p>
                         )}
+                    </div>
 
-                        <div className="border-t pt-4 mt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
-                            <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Fondos iniciales (caja chica)</p>
+                    {/* ── Sección: Fondos iniciales ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Fondos iniciales (caja chica)</p>
 
-                            <label className="flex items-start gap-2 cursor-pointer">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.usa_fondos_iniciales}
+                                onChange={e => setData('usa_fondos_iniciales', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Pedir fondos iniciales al abrir/cerrar turno</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, al abrir el turno se pide el monto que se entrega como caja chica para vueltos. Al cerrar se solicitará devolverlo.
+                                </span>
+                            </span>
+                        </label>
+
+                        {data.usa_fondos_iniciales && (
+                            <label className="flex items-start gap-2 cursor-pointer pl-6">
                                 <Checkbox
-                                    checked={data.usa_fondos_iniciales}
-                                    onChange={e => setData('usa_fondos_iniciales', e.target.checked)}
+                                    checked={data.fondos_iniciales_en_declaracion}
+                                    onChange={e => setData('fondos_iniciales_en_declaracion', e.target.checked)}
                                 />
                                 <span>
-                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Pedir fondos iniciales al abrir/cerrar turno</span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Incluir fondos iniciales en la declaración del cierre</span>
                                     <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                        Si está activo, al abrir el turno se pide el monto que se entrega como caja chica para vueltos. Al cerrar se solicitará devolverlo.
+                                        Si está activo, los fondos iniciales se SUMAN al monto esperado del arqueo (el cajero declara el efectivo total incluyendo los fondos). Si no, los fondos quedan aparte y solo se cuentan las ventas.
                                     </span>
                                 </span>
                             </label>
-
-                            {data.usa_fondos_iniciales && (
-                                <label className="flex items-start gap-2 cursor-pointer pl-6">
-                                    <Checkbox
-                                        checked={data.fondos_iniciales_en_declaracion}
-                                        onChange={e => setData('fondos_iniciales_en_declaracion', e.target.checked)}
-                                    />
-                                    <span>
-                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Incluir fondos iniciales en la declaración del cierre</span>
-                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                            Si está activo, los fondos iniciales se SUMAN al monto esperado del arqueo (el cajero declara el efectivo total incluyendo los fondos). Si no, los fondos quedan aparte y solo se cuentan las ventas.
-                                        </span>
-                                    </span>
-                                </label>
-                            )}
-                        </div>
+                        )}
                     </div>
 
                     <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text)' }}>

@@ -290,45 +290,63 @@ export default function Locales({ locales, empresas }: Props) {
                         />
                     </div>
 
+                    <p className="text-xs italic" style={{ color: 'var(--color-text-muted)' }}>
+                        Las opciones a continuación sobrescriben la configuración de la empresa para este local.
+                    </p>
+
+                    {/* ── Sección: Stock ── */}
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Stock</p>
+                        <Select
+                            label="Descontar stock al vender"
+                            options={[
+                                { value: 'heredar', label: `Heredar (${hintHerenciaStock})` },
+                                { value: 'si',      label: 'Sí descontar' },
+                                { value: 'no',      label: 'No descontar' },
+                            ]}
+                            value={data.descuenta_stock_en_venta}
+                            onChange={(v) => setData('descuenta_stock_en_venta', v as TriBool)}
+                        />
+                    </div>
+
+                    {/* ── Sección: Cierre de caja ── */}
                     <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
                         <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
-                            Operación de este local <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(opcional, sobrescribe configuración de empresa)</span>
+                            Cierre de caja <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(por turno)</span>
                         </p>
+                        <Select
+                            label="Modo"
+                            options={[
+                                { value: 'heredar',           label: `Heredar (${hintHerenciaCierre})` },
+                                { value: 'rapido',            label: 'Rápido — solo cierra' },
+                                { value: 'con_declaraciones', label: 'Con declaraciones — arqueo + métodos' },
+                            ]}
+                            value={data.modo_cierre_caja}
+                            onChange={(v) => setData('modo_cierre_caja', v as ModoCierreSel)}
+                        />
+                    </div>
 
+                    {/* ── Sección: Cierre de inventario ── */}
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
+                            Cierre de inventario <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(por turno)</span>
+                        </p>
+                        <Select
+                            label="Modo"
+                            options={[
+                                { value: 'heredar',   label: `Heredar (${hintHerenciaInv})` },
+                                { value: 'por_venta', label: 'Por venta — descuento automático' },
+                                { value: 'declarado', label: 'Declarado — cierre obligatorio' },
+                            ]}
+                            value={data.modo_cierre_inventario}
+                            onChange={(v) => setData('modo_cierre_inventario', v as ModoInvSel)}
+                        />
+                    </div>
+
+                    {/* ── Sección: Fondos iniciales ── */}
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Fondos iniciales (caja chica)</p>
                         <div className="grid grid-cols-2 gap-4">
-                            <Select
-                                label="Descontar stock al vender"
-                                options={[
-                                    { value: 'heredar', label: `Heredar (${hintHerenciaStock})` },
-                                    { value: 'si',      label: 'Sí descontar' },
-                                    { value: 'no',      label: 'No descontar' },
-                                ]}
-                                value={data.descuenta_stock_en_venta}
-                                onChange={(v) => setData('descuenta_stock_en_venta', v as TriBool)}
-                            />
-
-                            <Select
-                                label="Modo de cierre de caja"
-                                options={[
-                                    { value: 'heredar',           label: `Heredar (${hintHerenciaCierre})` },
-                                    { value: 'rapido',            label: 'Rápido' },
-                                    { value: 'con_declaraciones', label: 'Con declaraciones' },
-                                ]}
-                                value={data.modo_cierre_caja}
-                                onChange={(v) => setData('modo_cierre_caja', v as ModoCierreSel)}
-                            />
-
-                            <Select
-                                label="Modo de cierre de inventario"
-                                options={[
-                                    { value: 'heredar',   label: `Heredar (${hintHerenciaInv})` },
-                                    { value: 'por_venta', label: 'Por venta (descuento automático)' },
-                                    { value: 'declarado', label: 'Declarado (cierre obligatorio)' },
-                                ]}
-                                value={data.modo_cierre_inventario}
-                                onChange={(v) => setData('modo_cierre_inventario', v as ModoInvSel)}
-                            />
-
                             <Select
                                 label="Pide fondos iniciales"
                                 options={[
