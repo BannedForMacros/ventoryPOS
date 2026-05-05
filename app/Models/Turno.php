@@ -98,11 +98,19 @@ class Turno extends Model
     /**
      * Recorre las ventas COMPLETADAS del turno y guarda un snapshot agregado por producto.
      * Idempotente: borra y recrea las filas para este turno.
+     *
+     * Además, captura el `stock_final` del producto en el almacén de ventas del turno
+     * (foto al momento del cierre). Útil para auditoría incluso en modo 'por_venta':
+     * permite reconstruir cuánto stock había al cierre sin depender de la tabla `stock`,
+     * que sigue mutando en turnos posteriores.
      */
     public function poblarSnapshotProductos(): void
     {
         DB::transaction(function () {
             TurnoCierreProducto::where('turno_id', $this->id)->delete();
+
+            // Resolver almacén de ventas del turno (igual que VentaService)
+            $almacenId = $this->resolverAlmacenIdDeVentas();
 
             $ventas = \App\Models\VentaItem::whereHas('venta', fn($q) =>
                 $q->where('turno_id', $this->id)->where('estado', 'completada')
@@ -117,6 +125,13 @@ class Turno extends Model
             ->groupBy('producto_id')
             ->get();
 
+            // Stock actual por producto en el almacén (un solo query)
+            $stocks = $almacenId
+                ? \App\Models\Stock::where('almacen_id', $almacenId)
+                    ->whereIn('producto_id', $ventas->pluck('producto_id'))
+                    ->pluck('cantidad', 'producto_id')
+                : collect();
+
             foreach ($ventas as $row) {
                 TurnoCierreProducto::create([
                     'turno_id'         => $this->id,
@@ -125,9 +140,32 @@ class Turno extends Model
                     'cantidad_vendida' => $row->cantidad_vendida,
                     'precio_unitario'  => round((float) $row->precio_unitario, 2),
                     'total'            => round((float) $row->total, 2),
+                    'stock_final'      => $stocks[$row->producto_id] ?? null,
                 ]);
             }
         });
+    }
+
+    /**
+     * Resuelve el almacén de ventas usado durante este turno.
+     * En modo simple → el único almacén tipo='local'.
+     * En central_y_local → el almacén local ligado al local del turno.
+     */
+    protected function resolverAlmacenIdDeVentas(): ?int
+    {
+        $almacen = \App\Models\Almacen::where('empresa_id', $this->empresa_id)
+            ->where('local_id', $this->local_id)
+            ->where('tipo', 'local')
+            ->where('activo', true)
+            ->first();
+
+        if ($almacen) return $almacen->id;
+
+        // Fallback (modo simple antiguo donde el almacén único era 'central')
+        return \App\Models\Almacen::where('empresa_id', $this->empresa_id)
+            ->where('activo', true)
+            ->orderBy('id')
+            ->value('id');
     }
 
     public static function turnoActivoDelUsuario(int $userId): ?self
