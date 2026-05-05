@@ -25,6 +25,11 @@ class EmpresaRequest extends FormRequest
             'email'            => 'nullable|email|max:255',
             'activo'           => 'boolean',
             'modo_almacen'     => 'required|in:simple,central_y_local',
+            'descuenta_stock_en_venta'        => 'boolean',
+            'modo_cierre_caja'                => 'required|in:rapido,con_declaraciones',
+            'modo_cierre_inventario'          => 'required|in:por_venta,declarado',
+            'usa_fondos_iniciales'            => 'boolean',
+            'fondos_iniciales_en_declaracion' => 'boolean',
         ];
     }
 }

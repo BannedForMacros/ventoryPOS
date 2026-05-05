@@ -1,4 +1,5 @@
-export type ModoCierreCaja = 'rapido' | 'con_declaraciones' | 'completo';
+export type ModoCierreCaja = 'rapido' | 'con_declaraciones';
+export type ModoCierreInventario = 'por_venta' | 'declarado';
 
 export interface Empresa extends Record<string, unknown> {
     id: number;
@@ -12,6 +13,9 @@ export interface Empresa extends Record<string, unknown> {
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
     modo_cierre_caja: ModoCierreCaja;
+    modo_cierre_inventario: ModoCierreInventario;
+    usa_fondos_iniciales: boolean;
+    fondos_iniciales_en_declaracion: boolean;
     activo: boolean;
     created_at: string;
     updated_at: string;
@@ -28,6 +32,9 @@ export interface Local extends Record<string, unknown> {
     activo: boolean;
     descuenta_stock_en_venta: boolean | null;
     modo_cierre_caja: ModoCierreCaja | null;
+    modo_cierre_inventario: ModoCierreInventario | null;
+    usa_fondos_iniciales: boolean | null;
+    fondos_iniciales_en_declaracion: boolean | null;
     empresa?: Empresa;
     created_at: string;
     updated_at: string;

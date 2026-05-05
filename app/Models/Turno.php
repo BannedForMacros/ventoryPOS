@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Turno extends Model
 {
@@ -44,23 +45,89 @@ class Turno extends Model
     public function scopeCerrado($q)        { return $q->where('estado', 'cerrado'); }
     public function scopeDeEmpresa($q, $id) { return $q->where('empresa_id', $id); }
 
+    /**
+     * Calcula el monto esperado en caja al cierre.
+     *
+     * Composición:
+     *   monto_apertura
+     * + ventas en efectivo del turno (pagos con método tipo='efectivo' en ventas completadas)
+     * - gastos del turno (siempre se asume que se pagan con efectivo de la caja)
+     * + monto_caja_chica  (solo si la empresa/local incluye fondos iniciales en la declaración)
+     *
+     * El último sumando depende de la configuración de la empresa/local: cuando los
+     * fondos iniciales se incluyen en la declaración, el cajero al final cuenta también
+     * los billetes que estaban como caja chica, así que el sistema espera ver ese monto.
+     */
     public function calcularMontoEsperado(): float
     {
-        $gastosEfectivo = $this->gastos()->sum('monto');
+        $gastosEfectivo = (float) $this->gastos()->sum('monto');
 
-        // Ventas en efectivo: pagos con método de tipo 'efectivo' en ventas completadas de este turno
-        $ventasEfectivo = \App\Models\VentaPago::whereHas('venta', fn($q) =>
+        $ventasEfectivo = (float) \App\Models\VentaPago::whereHas('venta', fn($q) =>
             $q->where('turno_id', $this->id)->where('estado', 'completada')
         )->whereHas('metodoPago', fn($q) =>
             $q->where('tipo', 'efectivo')
         )->sum('monto');
 
-        return (float) $this->monto_apertura + (float) $ventasEfectivo - $gastosEfectivo;
+        $apertura     = (float) $this->monto_apertura;
+        $fondos       = (float) $this->monto_caja_chica;
+        $sumaFondos   = $this->fondosEntranEnDeclaracion();
+
+        return $apertura
+             + $ventasEfectivo
+             - $gastosEfectivo
+             + ($sumaFondos ? $fondos : 0.0);
+    }
+
+    /**
+     * true si para este turno los fondos iniciales se cuentan en el arqueo de cierre.
+     * Resuelve la jerarquía local→empresa.
+     */
+    public function fondosEntranEnDeclaracion(): bool
+    {
+        $local = $this->local;
+        if (!$local) return false;
+        return app(\App\Services\ConfiguracionOperacionService::class)
+            ->fondosInicialesEnDeclaracion($local);
     }
 
     public function calcularTotalArqueo(): float
     {
         return (float) $this->arqueo()->sum('subtotal');
+    }
+
+    /**
+     * Recorre las ventas COMPLETADAS del turno y guarda un snapshot agregado por producto.
+     * Idempotente: borra y recrea las filas para este turno.
+     */
+    public function poblarSnapshotProductos(): void
+    {
+        DB::transaction(function () {
+            TurnoCierreProducto::where('turno_id', $this->id)->delete();
+
+            $ventas = \App\Models\VentaItem::whereHas('venta', fn($q) =>
+                $q->where('turno_id', $this->id)->where('estado', 'completada')
+            )
+            ->select(
+                'producto_id',
+                DB::raw("MIN(producto_nombre) as producto_nombre"),
+                DB::raw('SUM(cantidad) as cantidad_vendida'),
+                DB::raw('SUM(subtotal) as total'),
+                DB::raw('AVG(precio_unitario) as precio_unitario')
+            )
+            ->groupBy('producto_id')
+            ->get();
+
+            foreach ($ventas as $row) {
+                TurnoCierreProducto::create([
+                    'turno_id'         => $this->id,
+                    'producto_id'      => $row->producto_id,
+                    'producto_nombre'  => $row->producto_nombre,
+                    'cantidad_vendida' => $row->cantidad_vendida,
+                    'precio_unitario'  => round((float) $row->precio_unitario, 2),
+                    'total'            => round((float) $row->total, 2),
+                ]);
+            }
+        });
     }
 
     public static function turnoActivoDelUsuario(int $userId): ?self

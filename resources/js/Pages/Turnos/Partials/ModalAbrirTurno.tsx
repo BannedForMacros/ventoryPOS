@@ -25,19 +25,28 @@ const emptyForm = (): AbrirForm => ({
     observacion_apertura: '',
 });
 
+interface ConfigFondosLocal {
+    usa_fondos_iniciales: boolean;
+    fondos_iniciales_en_declaracion: boolean;
+}
+
 interface Props {
     isOpen:           boolean;
     onClose:          () => void;
     cajasDisponibles: CajaDisponible[];
+    configFondos?:    Record<number, ConfigFondosLocal>;
 }
 
-export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles }: Props) {
+export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, configFondos = {} }: Props) {
     const [form, setForm]     = useState<AbrirForm>(emptyForm());
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
 
     const cajaSeleccionada = cajasDisponibles.find(c => c.id === Number(form.caja_id)) ?? null;
-    const usaCajaChica     = cajaSeleccionada?.caja_chica_activa ?? false;
+    const empresaPideFondos = cajaSeleccionada
+        ? (configFondos[cajaSeleccionada.local_id]?.usa_fondos_iniciales ?? true)
+        : false;
+    const usaCajaChica     = empresaPideFondos && (cajaSeleccionada?.caja_chica_activa ?? false);
 
     const opcionesCajas = cajasDisponibles
         .filter(c => !c.tiene_turno_abierto)

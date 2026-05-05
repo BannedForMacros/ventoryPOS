@@ -55,7 +55,7 @@ class ConfiguracionOperacionService
 
     /**
      * Resuelve el modo de cierre de caja efectivo para un local.
-     * Retorna 'rapido' | 'con_declaraciones' | 'completo'.
+     * Retorna 'rapido' | 'con_declaraciones'.
      */
     public function modoCierreCaja(Local $local): string
     {
@@ -68,11 +68,29 @@ class ConfiguracionOperacionService
     }
 
     /**
+     * Resuelve el modo de cierre de inventario efectivo para un local.
+     * Retorna 'por_venta' | 'declarado'.
+     *
+     *  - por_venta: el stock se ajusta solo con cada venta. Sin acción al cerrar turno.
+     *  - declarado: al cerrar turno se exige un cierre de inventario confirmado
+     *               asociado al turno (el cajero declara stock real).
+     */
+    public function modoCierreInventario(Local $local): string
+    {
+        if ($local->modo_cierre_inventario !== null) {
+            return $local->modo_cierre_inventario;
+        }
+
+        $empresa = $local->empresa()->firstOrFail();
+        return $empresa->modo_cierre_inventario ?? 'por_venta';
+    }
+
+    /**
      * true si el cierre de turno requiere arqueo de denominaciones + métodos.
      */
     public function requiereArqueo(Local $local): bool
     {
-        return in_array($this->modoCierreCaja($local), ['con_declaraciones', 'completo'], true);
+        return $this->modoCierreCaja($local) === 'con_declaraciones';
     }
 
     /**
@@ -80,6 +98,38 @@ class ConfiguracionOperacionService
      */
     public function requiereCierreInventarioEnTurno(Local $local): bool
     {
-        return $this->modoCierreCaja($local) === 'completo';
+        return $this->modoCierreInventario($local) === 'declarado';
+    }
+
+    /**
+     * true si el local pide registrar fondos iniciales (caja chica) al abrir el turno.
+     */
+    public function usaFondosIniciales(Local $local): bool
+    {
+        if ($local->usa_fondos_iniciales !== null) {
+            return (bool) $local->usa_fondos_iniciales;
+        }
+
+        $empresa = $local->empresa()->firstOrFail();
+        return (bool) $empresa->usa_fondos_iniciales;
+    }
+
+    /**
+     * true si los fondos iniciales se incluyen en la declaración del cierre
+     * (es decir: el cajero también cuenta y declara los fondos al final).
+     * Cuando es true, el monto esperado SUMA los fondos iniciales.
+     */
+    public function fondosInicialesEnDeclaracion(Local $local): bool
+    {
+        if (!$this->usaFondosIniciales($local)) {
+            return false;
+        }
+
+        if ($local->fondos_iniciales_en_declaracion !== null) {
+            return (bool) $local->fondos_iniciales_en_declaracion;
+        }
+
+        $empresa = $local->empresa()->firstOrFail();
+        return (bool) $empresa->fondos_iniciales_en_declaracion;
     }
 }

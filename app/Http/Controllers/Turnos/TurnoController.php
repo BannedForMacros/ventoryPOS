@@ -48,14 +48,28 @@ class TurnoController extends Controller
             ->get(['id', 'nombre', 'tipo']);
 
         $turnoActivo = Turno::turnoActivoDelUsuario($user->id)
-            ?->load(['caja', 'gastos.tipo', 'gastos.concepto',
+            ?->load(['caja', 'local', 'gastos.tipo', 'gastos.concepto',
                      'ventas' => fn($q) => $q->where('estado', 'completada')->with('pagos.metodoPago')]);
+
+        // Configuración de fondos iniciales para los locales visibles del usuario
+        $localIds = $cajasDisponibles->pluck('local_id')->unique()->values()->all();
+        $configFondos = [];
+        foreach ($localIds as $localId) {
+            $local = \App\Models\Local::find($localId);
+            if ($local) {
+                $configFondos[$localId] = [
+                    'usa_fondos_iniciales'           => $this->config->usaFondosIniciales($local),
+                    'fondos_iniciales_en_declaracion' => $this->config->fondosInicialesEnDeclaracion($local),
+                ];
+            }
+        }
 
         return Inertia::render('Turnos/Index', [
             'turnos'           => $turnos,
             'cajasDisponibles' => $cajasDisponibles,
             'metodosPago'      => $metodosPago,
             'turnoActivo'      => $turnoActivo,
+            'configFondos'     => $configFondos,
         ]);
     }
 
@@ -140,8 +154,11 @@ class TurnoController extends Controller
     {
         $user = $request->user();
         $caja = Caja::findOrFail($request->input('caja_id'));
+        $local = $caja->local()->firstOrFail();
 
-        $montoCajaChica = $caja->caja_chica_activa
+        // Solo se pide caja chica si la empresa/local lo permite Y la caja la tiene activa
+        $usaFondos = $this->config->usaFondosIniciales($local);
+        $montoCajaChica = ($usaFondos && $caja->caja_chica_activa)
             ? (float) $request->input('monto_caja_chica', 0)
             : 0;
 
@@ -188,7 +205,10 @@ class TurnoController extends Controller
             ->orderBy('nombre')
             ->get(['id', 'nombre', 'tipo']);
 
-        $modoCierre = $this->config->modoCierreCaja($turno->local);
+        $modoCaja      = $this->config->modoCierreCaja($turno->local);
+        $modoInventario = $this->config->modoCierreInventario($turno->local);
+        $usaFondos     = $this->config->usaFondosIniciales($turno->local);
+        $fondosEnDecl  = $this->config->fondosInicialesEnDeclaracion($turno->local);
 
         // Cierre de inventario asociado a este turno (si existe)
         $cierreInventarioTurno = CierreInventario::where('turno_id', $turno->id)
@@ -196,14 +216,17 @@ class TurnoController extends Controller
             ->first();
 
         return Inertia::render('Turnos/Cerrar', [
-            'turno'                  => $turno,
-            'ventasPorMetodo'        => $ventasPorMetodo,
-            'totalVentas'            => $totalVentas,
-            'totalGastos'            => $totalGastos,
-            'montoEsperado'          => $montoEsperado,
-            'metodosPago'            => $metodosPago,
-            'modoCierre'             => $modoCierre,
-            'cierreInventarioTurno'  => $cierreInventarioTurno,
+            'turno'                        => $turno,
+            'ventasPorMetodo'              => $ventasPorMetodo,
+            'totalVentas'                  => $totalVentas,
+            'totalGastos'                  => $totalGastos,
+            'montoEsperado'                => $montoEsperado,
+            'metodosPago'                  => $metodosPago,
+            'modoCierreCaja'               => $modoCaja,
+            'modoCierreInventario'         => $modoInventario,
+            'cierreInventarioTurno'        => $cierreInventarioTurno,
+            'usaFondosIniciales'           => $usaFondos,
+            'fondosInicialesEnDeclaracion' => $fondosEnDecl,
         ]);
     }
 
@@ -213,26 +236,27 @@ class TurnoController extends Controller
         abort_if($turno->estado !== 'abierto', 422);
 
         $turno->loadMissing('local');
-        $modo = $this->config->modoCierreCaja($turno->local);
+        $modoCaja       = $this->config->modoCierreCaja($turno->local);
+        $modoInventario = $this->config->modoCierreInventario($turno->local);
 
-        // Modo completo: requiere cierre de inventario CONFIRMADO atado al turno
-        if ($modo === 'completo') {
+        // Inventario declarado: requiere cierre de inventario CONFIRMADO atado al turno
+        if ($modoInventario === 'declarado') {
             $cierreOk = CierreInventario::where('turno_id', $turno->id)
                 ->where('estado', 'confirmado')
                 ->exists();
 
             if (!$cierreOk) {
                 return back()->withErrors([
-                    'cierre_inventario' => 'Este local exige cierre de inventario al cerrar caja. Crea y confirma un cierre de inventario asociado al turno antes de cerrar.',
+                    'cierre_inventario' => 'Este local exige cierre de inventario declarado al cerrar caja. Crea y confirma un cierre de inventario asociado al turno antes de cerrar.',
                 ]);
             }
         }
 
-        DB::transaction(function () use ($request, $turno, $modo) {
+        DB::transaction(function () use ($request, $turno, $modoCaja) {
             $turno->arqueo()->delete();
             $turno->arqueoMetodos()->delete();
 
-            if ($modo !== 'rapido') {
+            if ($modoCaja !== 'rapido') {
                 foreach ($request->input('arqueo', []) as $fila) {
                     TurnoArqueo::create([
                         'turno_id'     => $turno->id,
@@ -252,9 +276,9 @@ class TurnoController extends Controller
 
             $turno->refresh();
 
-            $montoDeclarado = $modo === 'rapido' ? null : $turno->calcularTotalArqueo();
+            $montoDeclarado = $modoCaja === 'rapido' ? null : $turno->calcularTotalArqueo();
             $montoEsperado  = $turno->calcularMontoEsperado();
-            $diferencia     = ($modo === 'rapido' || $montoDeclarado === null)
+            $diferencia     = ($modoCaja === 'rapido' || $montoDeclarado === null)
                 ? null
                 : $montoDeclarado - $montoEsperado;
 
@@ -267,6 +291,9 @@ class TurnoController extends Controller
                 'fecha_cierre'           => now(),
                 'observacion_cierre'     => $request->input('observacion_cierre'),
             ]);
+
+            // Snapshot de productos vendidos en el turno (para reportes históricos)
+            $turno->poblarSnapshotProductos();
         });
 
         return redirect()->route('turnos.index')->with('success', 'Turno cerrado correctamente.');

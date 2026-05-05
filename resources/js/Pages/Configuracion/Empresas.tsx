@@ -16,7 +16,8 @@ interface Props extends PageProps {
     empresas: Empresa[];
 }
 
-type ModoCierre = 'rapido' | 'con_declaraciones' | 'completo';
+type ModoCierre = 'rapido' | 'con_declaraciones';
+type ModoInventario = 'por_venta' | 'declarado';
 
 type FormData = {
     razon_social: string;
@@ -28,6 +29,9 @@ type FormData = {
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
     modo_cierre_caja: ModoCierre;
+    modo_cierre_inventario: ModoInventario;
+    usa_fondos_iniciales: boolean;
+    fondos_iniciales_en_declaracion: boolean;
     activo: boolean;
 };
 
@@ -41,6 +45,9 @@ const emptyForm: FormData = {
     modo_almacen: 'simple',
     descuenta_stock_en_venta: true,
     modo_cierre_caja: 'con_declaraciones',
+    modo_cierre_inventario: 'por_venta',
+    usa_fondos_iniciales: true,
+    fondos_iniciales_en_declaracion: false,
     activo: true,
 };
 
@@ -75,6 +82,9 @@ export default function Empresas({ empresas }: Props) {
             modo_almacen: emp.modo_almacen,
             descuenta_stock_en_venta: emp.descuenta_stock_en_venta ?? true,
             modo_cierre_caja: (emp.modo_cierre_caja as ModoCierre) ?? 'con_declaraciones',
+            modo_cierre_inventario: (emp.modo_cierre_inventario as ModoInventario) ?? 'por_venta',
+            usa_fondos_iniciales: emp.usa_fondos_iniciales ?? true,
+            fondos_iniciales_en_declaracion: emp.fondos_iniciales_en_declaracion ?? false,
             activo: emp.activo,
         });
         setModalOpen(true);
@@ -247,9 +257,8 @@ export default function Empresas({ empresas }: Props) {
                         </p>
                         <div className="flex flex-col gap-2">
                             {([
-                                { value: 'rapido' as const,            label: 'Rápido',            hint: 'Solo cierra el turno. Sin arqueo ni declaraciones. Ideal para emprendedores.' },
-                                { value: 'con_declaraciones' as const, label: 'Con declaraciones', hint: 'Arqueo de efectivo + totales por método de pago. Sin cierre de inventario.' },
-                                { value: 'completo' as const,          label: 'Completo',          hint: 'Arqueo + cierre de inventario obligatorio al cerrar el turno.' },
+                                { value: 'rapido' as const,            label: 'Rápido',            hint: 'Solo cierra el turno. Sin arqueo ni declaraciones.' },
+                                { value: 'con_declaraciones' as const, label: 'Con declaraciones', hint: 'Arqueo de efectivo (denominaciones) + totales por método de pago.' },
                             ]).map(opt => (
                                 <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
                                     <input
@@ -269,6 +278,65 @@ export default function Empresas({ empresas }: Props) {
                         {errors.modo_cierre_caja && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_cierre_caja}</p>
                         )}
+
+                        <p className="text-sm font-medium mb-2 mt-4" style={{ color: 'var(--color-text)' }}>
+                            Modo de cierre de inventario <span style={{ color: 'var(--color-danger)' }}>*</span>
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            {([
+                                { value: 'por_venta' as const, label: 'Por venta', hint: 'El stock se descuenta automáticamente con cada venta. Sin declaración al cerrar turno.' },
+                                { value: 'declarado' as const, label: 'Declarado', hint: 'Al cerrar turno se exige un cierre de inventario confirmado: el cajero declara stock real y se registran diferencias.' },
+                            ]).map(opt => (
+                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="modo_cierre_inventario"
+                                        checked={data.modo_cierre_inventario === opt.value}
+                                        onChange={() => setData('modo_cierre_inventario', opt.value)}
+                                        className="mt-0.5 accent-[var(--color-primary)]"
+                                    />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        {errors.modo_cierre_inventario && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_cierre_inventario}</p>
+                        )}
+
+                        <div className="border-t pt-4 mt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                            <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Fondos iniciales (caja chica)</p>
+
+                            <label className="flex items-start gap-2 cursor-pointer">
+                                <Checkbox
+                                    checked={data.usa_fondos_iniciales}
+                                    onChange={e => setData('usa_fondos_iniciales', e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Pedir fondos iniciales al abrir/cerrar turno</span>
+                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        Si está activo, al abrir el turno se pide el monto que se entrega como caja chica para vueltos. Al cerrar se solicitará devolverlo.
+                                    </span>
+                                </span>
+                            </label>
+
+                            {data.usa_fondos_iniciales && (
+                                <label className="flex items-start gap-2 cursor-pointer pl-6">
+                                    <Checkbox
+                                        checked={data.fondos_iniciales_en_declaracion}
+                                        onChange={e => setData('fondos_iniciales_en_declaracion', e.target.checked)}
+                                    />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Incluir fondos iniciales en la declaración del cierre</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                            Si está activo, los fondos iniciales se SUMAN al monto esperado del arqueo (el cajero declara el efectivo total incluyendo los fondos). Si no, los fondos quedan aparte y solo se cuentan las ventas.
+                                        </span>
+                                    </span>
+                                </label>
+                            )}
+                        </div>
                     </div>
 
                     <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text)' }}>

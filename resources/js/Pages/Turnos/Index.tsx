@@ -21,14 +21,20 @@ interface Paginado<T> {
     total:         number;
 }
 
+interface ConfigFondosLocal {
+    usa_fondos_iniciales: boolean;
+    fondos_iniciales_en_declaracion: boolean;
+}
+
 interface Props extends PageProps {
     turnos:           Paginado<Turno>;
     cajasDisponibles: CajaDisponible[];
     metodosPago:      MetodoPago[];
     turnoActivo:      Turno | null;
+    configFondos:     Record<number, ConfigFondosLocal>;
 }
 
-export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago, turnoActivo }: Props) {
+export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago, turnoActivo, configFondos }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalAbrir, setModalAbrir] = useState(false);
 
@@ -287,6 +293,7 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago, tur
                 isOpen={modalAbrir}
                 onClose={() => setModalAbrir(false)}
                 cajasDisponibles={cajasDisponibles}
+                configFondos={configFondos}
             />
         </AppLayout>
     );

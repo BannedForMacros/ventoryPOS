@@ -11,16 +11,16 @@ class CerrarTurnoRequest extends FormRequest
 
     public function rules(): array
     {
-        $turno   = $this->route('turno');
-        $local   = $turno?->local()->first();
-        $config  = app(\App\Services\ConfiguracionOperacionService::class);
-        $modo    = $local ? $config->modoCierreCaja($local) : 'con_declaraciones';
+        $turno    = $this->route('turno');
+        $local    = $turno?->local()->first();
+        $config   = app(\App\Services\ConfiguracionOperacionService::class);
+        $modoCaja = $local ? $config->modoCierreCaja($local) : 'con_declaraciones';
 
         $base = [
             'observacion_cierre' => ['nullable', 'string', 'max:500'],
         ];
 
-        if ($modo === 'rapido') {
+        if ($modoCaja === 'rapido') {
             // Sin arqueo ni métodos
             return $base;
         }

@@ -19,13 +19,18 @@ class Empresa extends Model
         'modo_almacen',
         'descuenta_stock_en_venta',
         'modo_cierre_caja',
+        'modo_cierre_inventario',
+        'usa_fondos_iniciales',
+        'fondos_iniciales_en_declaracion',
     ];
 
     protected function casts(): array
     {
         return [
-            'activo'                   => 'boolean',
-            'descuenta_stock_en_venta' => 'boolean',
+            'activo'                          => 'boolean',
+            'descuenta_stock_en_venta'        => 'boolean',
+            'usa_fondos_iniciales'            => 'boolean',
+            'fondos_iniciales_en_declaracion' => 'boolean',
         ];
     }
 

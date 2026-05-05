@@ -5,7 +5,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
-import type { MetodoPago, ModoCierreCaja, Turno } from '@/types';
+import type { MetodoPago, ModoCierreCaja, ModoCierreInventario, Turno } from '@/types';
 
 interface CierreInventarioRef {
     id: number;
@@ -31,20 +31,24 @@ interface CerrarForm {
 }
 
 interface Props {
-    turno:                  Turno;
-    ventasPorMetodo:        Record<string, number>;
-    totalVentas:            number;
-    totalGastos:            number;
-    montoEsperado:          number;
-    metodosPago:            MetodoPago[];
-    modoCierre:             ModoCierreCaja;
-    cierreInventarioTurno:  CierreInventarioRef | null;
+    turno:                          Turno;
+    ventasPorMetodo:                Record<string, number>;
+    totalVentas:                    number;
+    totalGastos:                    number;
+    montoEsperado:                  number;
+    metodosPago:                    MetodoPago[];
+    modoCierreCaja:                 ModoCierreCaja;
+    modoCierreInventario:           ModoCierreInventario;
+    cierreInventarioTurno:          CierreInventarioRef | null;
+    usaFondosIniciales:             boolean;
+    fondosInicialesEnDeclaracion:   boolean;
 }
 
-export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, totalGastos, montoEsperado, metodosPago, modoCierre, cierreInventarioTurno }: Props) {
+export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, totalGastos, montoEsperado, metodosPago, modoCierreCaja, modoCierreInventario, cierreInventarioTurno, usaFondosIniciales, fondosInicialesEnDeclaracion }: Props) {
     const caja = turno.caja!;
-    const requiereArqueo  = modoCierre !== 'rapido';
-    const requiereCierreInv = modoCierre === 'completo';
+    const requiereArqueo  = modoCierreCaja === 'con_declaraciones';
+    const requiereCierreInv = modoCierreInventario === 'declarado';
+    const fondosCajaChica = parseFloat(turno.monto_caja_chica) || 0;
 
     const [form, setForm] = useState<CerrarForm>({
         arqueo: DENOMINACIONES_PEN.map(d => ({ denominacion: d, cantidad: 0 })),
@@ -107,10 +111,13 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
         });
     }
 
-    const modoLabel: Record<ModoCierreCaja, string> = {
+    const cajaLabel: Record<ModoCierreCaja, string> = {
         rapido: 'Rápido',
         con_declaraciones: 'Con declaraciones',
-        completo: 'Completo',
+    };
+    const invLabel: Record<ModoCierreInventario, string> = {
+        por_venta: 'Por venta',
+        declarado: 'Declarado',
     };
 
     return (
@@ -125,16 +132,12 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
                 }
             />
 
-            <div className="mb-4 flex items-center gap-2">
-                <Badge variant="primary">Modo: {modoLabel[modoCierre]}</Badge>
-                {modoCierre === 'rapido' && (
+            <div className="mb-4 flex items-center gap-2 flex-wrap">
+                <Badge variant="primary">Caja: {cajaLabel[modoCierreCaja]}</Badge>
+                <Badge variant="primary">Inventario: {invLabel[modoCierreInventario]}</Badge>
+                {!requiereArqueo && !requiereCierreInv && (
                     <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        Solo se cerrará el turno. Sin arqueo ni cierre de inventario.
-                    </span>
-                )}
-                {modoCierre === 'completo' && (
-                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        Requiere arqueo + cierre de inventario confirmado.
+                        Solo se cerrará el turno. Sin acciones adicionales.
                     </span>
                 )}
             </div>
@@ -230,20 +233,22 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
                         </span>
                     </div>
 
-                    {/* Caja chica */}
-                    {caja.caja_chica_activa && (
+                    {/* Caja chica / fondos iniciales */}
+                    {usaFondosIniciales && fondosCajaChica > 0 && (
                         <div
                             className="rounded-xl px-4 py-3 flex items-center justify-between"
                             style={{ backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}
                         >
                             <div>
-                                <p className="text-sm font-medium" style={{ color: '#b45309' }}>Caja chica asignada</p>
+                                <p className="text-sm font-medium" style={{ color: '#b45309' }}>Fondos iniciales (caja chica)</p>
                                 <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    No incluida en el arqueo
+                                    {fondosInicialesEnDeclaracion
+                                        ? 'Incluidos en el monto esperado: el cajero debe declarar también este efectivo.'
+                                        : 'Quedan aparte. No se cuentan en el arqueo de cierre.'}
                                 </p>
                             </div>
                             <span className="font-semibold" style={{ color: '#b45309' }}>
-                                S/ {parseFloat(turno.monto_caja_chica).toFixed(2)}
+                                S/ {fondosCajaChica.toFixed(2)}
                             </span>
                         </div>
                     )}

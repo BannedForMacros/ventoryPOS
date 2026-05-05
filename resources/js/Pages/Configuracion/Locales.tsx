@@ -11,7 +11,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Checkbox from '@/Components/UI/Checkbox';
 import TableActions from '@/Components/UI/TableActions';
-import type { Empresa, Local, ModoCierreCaja, PageProps } from '@/types';
+import type { Empresa, Local, ModoCierreCaja, ModoCierreInventario, PageProps } from '@/types';
 
 interface Props extends PageProps {
     locales: Local[];
@@ -20,6 +20,7 @@ interface Props extends PageProps {
 
 type TriBool = 'heredar' | 'si' | 'no';
 type ModoCierreSel = 'heredar' | ModoCierreCaja;
+type ModoInvSel    = 'heredar' | ModoCierreInventario;
 
 type FormData = {
     empresa_id: string;
@@ -30,6 +31,9 @@ type FormData = {
     activo: boolean;
     descuenta_stock_en_venta: TriBool;
     modo_cierre_caja: ModoCierreSel;
+    modo_cierre_inventario: ModoInvSel;
+    usa_fondos_iniciales: TriBool;
+    fondos_iniciales_en_declaracion: TriBool;
 };
 
 const emptyForm: FormData = {
@@ -41,6 +45,9 @@ const emptyForm: FormData = {
     activo: true,
     descuenta_stock_en_venta: 'heredar',
     modo_cierre_caja: 'heredar',
+    modo_cierre_inventario: 'heredar',
+    usa_fondos_iniciales: 'heredar',
+    fondos_iniciales_en_declaracion: 'heredar',
 };
 
 const TIPO_OPTIONS = [
@@ -51,7 +58,11 @@ const TIPO_OPTIONS = [
 const MODO_CIERRE_LABELS: Record<ModoCierreCaja, string> = {
     rapido: 'Rápido',
     con_declaraciones: 'Con declaraciones',
-    completo: 'Completo',
+};
+
+const MODO_INV_LABELS: Record<ModoCierreInventario, string> = {
+    por_venta: 'Por venta',
+    declarado: 'Declarado',
 };
 
 function triFromBoolean(v: boolean | null): TriBool {
@@ -76,6 +87,9 @@ export default function Locales({ locales, empresas }: Props) {
         ...d,
         descuenta_stock_en_venta: triToPayload(d.descuenta_stock_en_venta),
         modo_cierre_caja: d.modo_cierre_caja === 'heredar' ? null : d.modo_cierre_caja,
+        modo_cierre_inventario: d.modo_cierre_inventario === 'heredar' ? null : d.modo_cierre_inventario,
+        usa_fondos_iniciales: triToPayload(d.usa_fondos_iniciales),
+        fondos_iniciales_en_declaracion: triToPayload(d.fondos_iniciales_en_declaracion),
     }));
 
     useEffect(() => {
@@ -100,6 +114,9 @@ export default function Locales({ locales, empresas }: Props) {
             activo: local.activo,
             descuenta_stock_en_venta: triFromBoolean(local.descuenta_stock_en_venta),
             modo_cierre_caja: local.modo_cierre_caja ?? 'heredar',
+            modo_cierre_inventario: local.modo_cierre_inventario ?? 'heredar',
+            usa_fondos_iniciales: triFromBoolean(local.usa_fondos_iniciales),
+            fondos_iniciales_en_declaracion: triFromBoolean(local.fondos_iniciales_en_declaracion),
         });
         setModalOpen(true);
     }
@@ -134,6 +151,15 @@ export default function Locales({ locales, empresas }: Props) {
     const hintHerenciaCierre = empresaSeleccionada
         ? `Hoy la empresa: ${MODO_CIERRE_LABELS[empresaSeleccionada.modo_cierre_caja]}`
         : 'La empresa decide';
+    const hintHerenciaInv = empresaSeleccionada
+        ? `Hoy la empresa: ${MODO_INV_LABELS[empresaSeleccionada.modo_cierre_inventario]}`
+        : 'La empresa decide';
+    const hintHerenciaFondos = empresaSeleccionada
+        ? `Hoy la empresa: ${empresaSeleccionada.usa_fondos_iniciales ? 'sí pide' : 'no pide'}`
+        : 'La empresa decide';
+    const hintHerenciaFondosDecl = empresaSeleccionada
+        ? `Hoy la empresa: ${empresaSeleccionada.fondos_iniciales_en_declaracion ? 'sí incluye' : 'no incluye'}`
+        : 'La empresa decide';
 
     const columns: Column<Local>[] = [
         {
@@ -158,9 +184,16 @@ export default function Locales({ locales, empresas }: Props) {
         },
         {
             key: 'modo_cierre_caja',
-            label: 'Cierre de caja',
+            label: 'Cierre caja',
             render: (local) => local.modo_cierre_caja
                 ? <Badge variant="primary">{MODO_CIERRE_LABELS[local.modo_cierre_caja]}</Badge>
+                : <span style={{ color: 'var(--color-text-muted)' }}>Hereda</span>,
+        },
+        {
+            key: 'modo_cierre_inventario',
+            label: 'Cierre inventario',
+            render: (local) => local.modo_cierre_inventario
+                ? <Badge variant="primary">{MODO_INV_LABELS[local.modo_cierre_inventario]}</Badge>
                 : <span style={{ color: 'var(--color-text-muted)' }}>Hereda</span>,
         },
         {
@@ -280,10 +313,42 @@ export default function Locales({ locales, empresas }: Props) {
                                     { value: 'heredar',           label: `Heredar (${hintHerenciaCierre})` },
                                     { value: 'rapido',            label: 'Rápido' },
                                     { value: 'con_declaraciones', label: 'Con declaraciones' },
-                                    { value: 'completo',          label: 'Completo' },
                                 ]}
                                 value={data.modo_cierre_caja}
                                 onChange={(v) => setData('modo_cierre_caja', v as ModoCierreSel)}
+                            />
+
+                            <Select
+                                label="Modo de cierre de inventario"
+                                options={[
+                                    { value: 'heredar',   label: `Heredar (${hintHerenciaInv})` },
+                                    { value: 'por_venta', label: 'Por venta (descuento automático)' },
+                                    { value: 'declarado', label: 'Declarado (cierre obligatorio)' },
+                                ]}
+                                value={data.modo_cierre_inventario}
+                                onChange={(v) => setData('modo_cierre_inventario', v as ModoInvSel)}
+                            />
+
+                            <Select
+                                label="Pide fondos iniciales"
+                                options={[
+                                    { value: 'heredar', label: `Heredar (${hintHerenciaFondos})` },
+                                    { value: 'si',      label: 'Sí — pide al abrir y cerrar' },
+                                    { value: 'no',      label: 'No — no pide' },
+                                ]}
+                                value={data.usa_fondos_iniciales}
+                                onChange={(v) => setData('usa_fondos_iniciales', v as TriBool)}
+                            />
+
+                            <Select
+                                label="Fondos en declaración del cierre"
+                                options={[
+                                    { value: 'heredar', label: `Heredar (${hintHerenciaFondosDecl})` },
+                                    { value: 'si',      label: 'Sí — sumar al monto esperado' },
+                                    { value: 'no',      label: 'No — quedan aparte' },
+                                ]}
+                                value={data.fondos_iniciales_en_declaracion}
+                                onChange={(v) => setData('fondos_iniciales_en_declaracion', v as TriBool)}
                             />
                         </div>
                     </div>
