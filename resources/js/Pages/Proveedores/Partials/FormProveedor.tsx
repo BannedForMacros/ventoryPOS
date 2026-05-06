@@ -7,17 +7,19 @@ import Select from '@/Components/UI/Select';
 import Switch from '@/Components/UI/Switch';
 
 const TIPOS_DOC = [
-    { value: 'RUC', label: 'RUC' },
-    { value: 'DNI', label: 'DNI' },
-    { value: 'CE',  label: 'Carné de extranjería' },
-    { value: 'otro', label: 'Otro' },
+    { value: 'RUC',       label: 'RUC' },
+    { value: 'DNI',       label: 'DNI' },
+    { value: 'CE',        label: 'Carné de extranjería' },
+    { value: 'pasaporte', label: 'Pasaporte' },
+    { value: 'otro',      label: 'Otro' },
 ];
 
 const DOC_CONFIG: Record<string, { maxLength: number; soloNumeros: boolean; placeholder: string }> = {
-    RUC:  { maxLength: 11, soloNumeros: true,  placeholder: '11 dígitos' },
-    DNI:  { maxLength: 8,  soloNumeros: true,  placeholder: '8 dígitos' },
-    CE:   { maxLength: 12, soloNumeros: false, placeholder: 'Hasta 12 caracteres' },
-    otro: { maxLength: 20, soloNumeros: false, placeholder: 'Documento' },
+    RUC:       { maxLength: 11, soloNumeros: true,  placeholder: '11 dígitos' },
+    DNI:       { maxLength: 8,  soloNumeros: true,  placeholder: '8 dígitos' },
+    CE:        { maxLength: 12, soloNumeros: false, placeholder: 'Hasta 12 caracteres' },
+    pasaporte: { maxLength: 20, soloNumeros: false, placeholder: 'Número de pasaporte' },
+    otro:      { maxLength: 20, soloNumeros: false, placeholder: 'Documento' },
 };
 
 export interface ProveedorForm {

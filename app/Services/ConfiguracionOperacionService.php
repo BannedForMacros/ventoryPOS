@@ -115,6 +115,82 @@ class ConfiguracionOperacionService
     }
 
     /**
+     * Resuelve si la empresa/local permite devoluciones.
+     */
+    public function permiteDevoluciones(Local $local): bool
+    {
+        if ($local->permite_devoluciones !== null) {
+            return (bool) $local->permite_devoluciones;
+        }
+        $empresa = $local->empresa()->firstOrFail();
+        return (bool) $empresa->permite_devoluciones;
+    }
+
+    /**
+     * Días máximos para aceptar una devolución desde la fecha de venta.
+     * 0 = sin límite.
+     */
+    public function diasMaxDevolucion(Local $local): int
+    {
+        if ($local->dias_max_devolucion !== null) {
+            return (int) $local->dias_max_devolucion;
+        }
+        $empresa = $local->empresa()->firstOrFail();
+        return (int) ($empresa->dias_max_devolucion ?? 0);
+    }
+
+    /**
+     * true si las devoluciones requieren aprobación de un supervisor/admin.
+     */
+    public function requiereAprobacionDevolucion(Local $local): bool
+    {
+        if ($local->requiere_aprobacion_devolucion !== null) {
+            return (bool) $local->requiere_aprobacion_devolucion;
+        }
+        $empresa = $local->empresa()->firstOrFail();
+        return (bool) $empresa->requiere_aprobacion_devolucion;
+    }
+
+    /**
+     * Valor default de "restock" para los detalles nuevos de devolución.
+     */
+    public function restockDefault(Local $local): bool
+    {
+        if ($local->restock_default !== null) {
+            return (bool) $local->restock_default;
+        }
+        $empresa = $local->empresa()->firstOrFail();
+        return (bool) $empresa->restock_default;
+    }
+
+    /**
+     * Determina si un producto es retornable. Servicios siempre son no retornables.
+     * producto.es_retornable null → true por defecto (la mayoría de productos retornan).
+     */
+    public function esRetornable(Producto $producto): bool
+    {
+        if ($producto->esServicio()) {
+            return false;
+        }
+        if ($producto->es_retornable !== null) {
+            return (bool) $producto->es_retornable;
+        }
+        return true;
+    }
+
+    /**
+     * Verifica si la fecha de la venta está dentro del plazo permitido.
+     */
+    public function estaDentroDelPlazo(Local $local, \DateTimeInterface $fechaVenta): bool
+    {
+        $dias = $this->diasMaxDevolucion($local);
+        if ($dias === 0) return true;
+
+        $diff = (int) (new \DateTimeImmutable())->diff($fechaVenta)->days;
+        return $diff <= $dias;
+    }
+
+    /**
      * true si los fondos iniciales se incluyen en la declaración del cierre
      * (es decir: el cajero también cuenta y declara los fondos al final).
      * Cuando es true, el monto esperado SUMA los fondos iniciales.

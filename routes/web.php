@@ -14,13 +14,20 @@ use App\Http\Controllers\Configuracion\CuentaController;
 use App\Http\Controllers\Configuracion\MetodoPagoController;
 use App\Http\Controllers\Configuracion\ModuloController;
 use App\Http\Controllers\Configuracion\PermisoController;
+use App\Http\Controllers\Configuracion\DevolucionMotivoController;
 use App\Http\Controllers\Configuracion\RolController;
 use App\Http\Controllers\Configuracion\SalidaTipoController;
+use App\Http\Controllers\Devoluciones\DevolucionController;
 use App\Http\Controllers\Configuracion\UsuarioController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Gastos\GastoController;
 use App\Http\Controllers\Gastos\GastoTipoController;
 use App\Http\Controllers\Turnos\TurnoController;
+use App\Http\Controllers\Reportes\ReporteCajaController;
+use App\Http\Controllers\Reportes\ReporteDevolucionController;
+use App\Http\Controllers\Reportes\ReporteGastoController;
+use App\Http\Controllers\Reportes\ReporteProductoController;
+use App\Http\Controllers\Reportes\ReporteVentaController;
 use App\Http\Controllers\Ventas\DescuentoConceptoController;
 use App\Http\Controllers\Ventas\DescuentoLogController;
 use App\Http\Controllers\Ventas\VentaController;
@@ -67,6 +74,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::apiResource('salidas-tipos', SalidaTipoController::class)
             ->parameters(['salidas-tipos' => 'tipo'])
             ->except(['show']);
+
+        // Motivos de devolución
+        Route::apiResource('devolucion-motivos', DevolucionMotivoController::class)
+            ->parameters(['devolucion-motivos' => 'motivo'])
+            ->except(['show']);
     });
 
     Route::prefix('inventario')->name('inventario.')->group(function () {
@@ -109,6 +121,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/{cliente}', [ClienteController::class, 'show'])->name('show');
         Route::put('/{cliente}', [ClienteController::class, 'update'])->name('update');
         Route::delete('/{cliente}', [ClienteController::class, 'destroy'])->name('destroy');
+    });
+
+    // Devoluciones
+    Route::prefix('devoluciones')->name('devoluciones.')->group(function () {
+        Route::get('/', [DevolucionController::class, 'index'])->name('index');
+        Route::get('/crear', [DevolucionController::class, 'create'])->name('create');
+        Route::get('/buscar-venta', [DevolucionController::class, 'buscarVenta'])->name('buscar-venta');
+        Route::post('/', [DevolucionController::class, 'store'])->name('store');
+        Route::get('/{devolucion}', [DevolucionController::class, 'show'])->name('show');
+        Route::post('/{devolucion}/aprobar', [DevolucionController::class, 'aprobar'])->name('aprobar');
+        Route::post('/{devolucion}/rechazar', [DevolucionController::class, 'rechazar'])->name('rechazar');
+        Route::post('/{devolucion}/anular', [DevolucionController::class, 'anular'])->name('anular');
     });
 
     // Proveedores
@@ -183,8 +207,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->names('configuracion.descuento-conceptos')
         ->except(['show']);
 
-    // Reporte de descuentos
-    Route::get('reportes/descuentos', [DescuentoLogController::class, 'index'])->name('reportes.descuentos');
+    // Reportes
+    Route::prefix('reportes')->name('reportes.')->group(function () {
+        Route::get('descuentos',   [DescuentoLogController::class,        'index'])->name('descuentos');
+        Route::get('ventas',       [ReporteVentaController::class,        'index'])->name('ventas');
+        Route::get('productos',    [ReporteProductoController::class,     'index'])->name('productos');
+        Route::get('caja',         [ReporteCajaController::class,         'index'])->name('caja');
+        Route::get('gastos',       [ReporteGastoController::class,        'index'])->name('gastos');
+        Route::get('devoluciones', [ReporteDevolucionController::class,   'index'])->name('devoluciones');
+    });
 
     // WhatsApp (URLs de notificación)
     Route::prefix('whatsapp')->name('whatsapp.')->group(function () {
