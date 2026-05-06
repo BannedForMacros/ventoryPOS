@@ -51,33 +51,31 @@ class StockController extends Controller
     }
 
     /**
-     * Recalcula el stock de TODOS los productos en TODOS los almacenes visibles
-     * procesando las entradas confirmadas en orden cronológico.
-     * Solo disponible para admins.
+     * Reconstruye el stock de TODOS los productos en los almacenes visibles
+     * sumando todos los movimientos confirmados del sistema (entradas, salidas,
+     * transferencias, ventas, devoluciones-restock y cierres de inventario).
+     *
+     * Solo el admin debería ver el botón; la autorización formal vive en el
+     * middleware `permiso:inventario.stock,editar` aplicado a la ruta.
      */
     public function recalcular(Request $request)
     {
-        $user       = $request->user();
-        $almacenIds = $this->scope->almacenIdsVisibles($user);
+        $almacenIds = $this->scope->almacenIdsVisibles($request->user());
 
         DB::transaction(function () use ($almacenIds) {
-            // Obtener combinaciones únicas de almacen+producto con entradas confirmadas
-            $combinaciones = \App\Models\EntradaDetalle::whereHas('entrada', fn ($q) =>
-                    $q->whereIn('almacen_id', $almacenIds)->where('estado', 'confirmado')
-                )
-                ->join('entradas', 'entradas_detalle.entrada_id', '=', 'entradas.id')
-                ->select('entradas.almacen_id', 'entradas_detalle.producto_id')
-                ->distinct()
-                ->get();
+            $pares = Stock::combinacionesConMovimientos($almacenIds);
 
-            // Resetear stock a 0 para recalcular limpio
-            Stock::whereIn('almacen_id', $almacenIds)->update(['cantidad' => 0, 'costo_promedio' => 0]);
+            // Para no dejar registros con cantidad inflada de un escenario previo,
+            // reseteamos solo los almacenes visibles a 0 y luego reconstruimos los pares.
+            Stock::whereIn('almacen_id', $almacenIds)
+                ->update(['cantidad' => 0, 'costo_promedio' => 0]);
 
-            foreach ($combinaciones as $combo) {
-                Stock::recalcularDesdeEntradas($combo->almacen_id, $combo->producto_id);
+            foreach ($pares as $p) {
+                Stock::reconstruir($p['almacen_id'], $p['producto_id']);
             }
         });
 
-        return redirect()->back()->with('success', 'Stock recalculado correctamente desde las entradas confirmadas.');
+        return redirect()->back()->with('success',
+            'Stock reconstruido a partir de entradas, salidas, transferencias, ventas, devoluciones y cierres confirmados.');
     }
 }

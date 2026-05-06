@@ -48,7 +48,24 @@
       "Bash(PGPASSWORD=postgres psql -U postgres -h 127.0.0.1 -d ventoryPOS -c \"\n-- Asignar cliente general a ventas sin cliente\nUPDATE ventas SET cliente_id = 3 WHERE cliente_id IS NULL AND empresa_id = 1;\n-- Asignar cliente general a descuentos_log sin cliente\nUPDATE descuentos_log SET cliente_id = 3 WHERE cliente_id IS NULL AND empresa_id = 1;\n-- Revertir la columna a NOT NULL\nALTER TABLE descuentos_log ALTER COLUMN cliente_id SET NOT NULL;\n\" 2>&1)",
       "Bash(findstr /i reportes)",
       "PowerShell($out = npx tsc --noEmit 2>&1; \\($out | Where-Object { $_ -match 'Reportes' }\\) -join \"`n\")",
-      "PowerShell($out = npx tsc --noEmit 2>&1 | Out-String; if \\($out -match 'Reportes'\\) { \\($out -split \"`n\" | Where-Object { $_ -match 'Reportes' }\\) -join \"`n\" } else { 'No errors mentioning Reportes' })"
+      "PowerShell($out = npx tsc --noEmit 2>&1 | Out-String; if \\($out -match 'Reportes'\\) { \\($out -split \"`n\" | Where-Object { $_ -match 'Reportes' }\\) -join \"`n\" } else { 'No errors mentioning Reportes' })",
+      "Bash(php -l app/Http/Controllers/Reportes/ReporteVentaController.php app/Http/Controllers/Reportes/ReporteProductoController.php app/Http/Controllers/Reportes/ReporteCajaController.php app/Http/Controllers/Reportes/ReporteGastoController.php app/Http/Controllers/Reportes/ReporteDevolucionController.php database/seeders/PermisosReportesSeeder.php)",
+      "PowerShell(php --version; php artisan --version)",
+      "PowerShell(php artisan db:show 2>&1 | Select-Object -First 30)",
+      "PowerShell(php artisan route:list --columns=method,uri,name 2>&1 | Select-Object -First 100)",
+      "PowerShell(php artisan route:list 2>&1 | Select-Object -First 200)",
+      "PowerShell(php artisan tinker --execute=\"echo json_encode\\(['users' => \\\\App\\\\Models\\\\User::count\\(\\), 'productos' => \\\\DB::table\\('productos'\\)->count\\(\\), 'clientes' => \\\\DB::table\\('clientes'\\)->count\\(\\), 'ventas' => \\\\DB::table\\('ventas'\\)->count\\(\\), 'entradas' => \\\\DB::table\\('entradas'\\)->count\\(\\), 'salidas' => \\\\DB::table\\('salidas'\\)->count\\(\\), 'turnos' => \\\\DB::table\\('turnos'\\)->count\\(\\), 'almacenes' => \\\\DB::table\\('almacenes'\\)->count\\(\\), 'locales' => \\\\DB::table\\('locales'\\)->count\\(\\), 'cajas' => \\\\DB::table\\('cajas'\\)->count\\(\\), 'proveedores' => \\\\DB::table\\('proveedores'\\)->count\\(\\), 'devoluciones' => \\\\DB::table\\('devoluciones'\\)->count\\(\\), 'gastos' => \\\\DB::table\\('gastos'\\)->count\\(\\) ], JSON_PRETTY_PRINT\\);\")",
+      "PowerShell(php artisan tinker --execute=\"echo json_encode\\(\\\\DB::select\\('SELECT table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY table_name', ['public']\\)\\);\")",
+      "PowerShell(php artisan tinker --execute=\"$u = \\\\App\\\\Models\\\\User::with\\('empresa','rol'\\)->first\\(\\); echo json_encode\\(['id'=>$u->id,'name'=>$u->name,'email'=>$u->email,'empresa_id'=>$u->empresa_id,'local_id'=>$u->local_id,'rol_id'=>$u->rol_id], JSON_PRETTY_PRINT\\); echo PHP_EOL; foreach\\(\\\\App\\\\Models\\\\User::all\\(\\) as $usr\\){ echo $usr->id.' | '.$usr->name.' | '.$usr->email.' | empresa='.$usr->empresa_id.' | rol='.$usr->rol_id.PHP_EOL; }\"})",
+      "PowerShell(php artisan tinker storage/app/probe.php)",
+      "PowerShell($env:PGCLIENTENCODING='UTF8'; php artisan tinker --execute='echo App\\\\Models\\\\Producto::count\\(\\) . \" productos | \" . App\\\\Models\\\\Cliente::count\\(\\) . \" clientes | \" . App\\\\Models\\\\Venta::count\\(\\) . \" ventas | \" . App\\\\Models\\\\Devolucion::count\\(\\) . \" devoluciones | \" . App\\\\Models\\\\Gasto::count\\(\\) . \" gastos | \" . App\\\\Models\\\\Stock::count\\(\\) . \" stocks\";')",
+      "PowerShell(Out-File *)",
+      "Bash(php -r \"require 'vendor/autoload.php'; require 'bootstrap/app.php';\")",
+      "Bash(node_modules/.bin/vite build *)",
+      "PowerShell(npm run *)",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(node node_modules/vite/bin/vite.js build)",
+      "PowerShell(Set-Content *)"
     ]
   }
 }

@@ -60,164 +60,215 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     });
 
+    // ── CONFIGURACIÓN ─────────────────────────────────────────────────────
     Route::prefix('configuracion')->name('configuracion.')->group(function () {
-        Route::resource('empresas', EmpresaController::class)->except(['show', 'create', 'edit']);
-        Route::resource('locales', LocalController::class)->except(['show', 'create', 'edit'])->parameters(['locales' => 'local']);
-        Route::resource('roles', RolController::class)->except(['show', 'create', 'edit'])->parameters(['roles' => 'rol']);
-        Route::resource('modulos', ModuloController::class)->except(['show', 'create', 'edit']);
-        Route::resource('usuarios', UsuarioController::class)->except(['show', 'create', 'edit']);
-        Route::get('permisos', [PermisoController::class, 'index'])->name('permisos.index');
-        Route::post('permisos/{rol}', [PermisoController::class, 'store'])->name('permisos.store');
-        Route::resource('almacenes', AlmacenController::class)->except(['show', 'create', 'edit'])->parameters(['almacenes' => 'almacen']);
+        Route::middleware('permiso:config.empresas')->group(function () {
+            Route::resource('empresas', EmpresaController::class)->except(['show', 'create', 'edit']);
+        });
+        Route::middleware('permiso:config.locales')->group(function () {
+            Route::resource('locales', LocalController::class)->except(['show', 'create', 'edit'])->parameters(['locales' => 'local']);
+        });
+        Route::middleware('permiso:config.roles')->group(function () {
+            Route::resource('roles', RolController::class)->except(['show', 'create', 'edit'])->parameters(['roles' => 'rol']);
+        });
+        Route::middleware('permiso:config.modulos')->group(function () {
+            Route::resource('modulos', ModuloController::class)->except(['show', 'create', 'edit']);
+        });
+        Route::middleware('permiso:config.usuarios')->group(function () {
+            Route::resource('usuarios', UsuarioController::class)->except(['show', 'create', 'edit']);
+        });
+        Route::middleware('permiso:config.permisos,ver')->get('permisos', [PermisoController::class, 'index'])->name('permisos.index');
+        Route::middleware('permiso:config.permisos,editar')->post('permisos/{rol}', [PermisoController::class, 'store'])->name('permisos.store');
 
-        // Tipos de salida
-        Route::apiResource('salidas-tipos', SalidaTipoController::class)
-            ->parameters(['salidas-tipos' => 'tipo'])
-            ->except(['show']);
+        Route::middleware('permiso:configuracion.almacenes')->group(function () {
+            Route::resource('almacenes', AlmacenController::class)->except(['show', 'create', 'edit'])->parameters(['almacenes' => 'almacen']);
+        });
 
-        // Motivos de devolución
-        Route::apiResource('devolucion-motivos', DevolucionMotivoController::class)
-            ->parameters(['devolucion-motivos' => 'motivo'])
-            ->except(['show']);
+        Route::middleware('permiso:configuracion.salidas-tipos')->group(function () {
+            Route::apiResource('salidas-tipos', SalidaTipoController::class)
+                ->parameters(['salidas-tipos' => 'tipo'])
+                ->except(['show']);
+        });
+
+        Route::middleware('permiso:configuracion.devolucion-motivos')->group(function () {
+            Route::apiResource('devolucion-motivos', DevolucionMotivoController::class)
+                ->parameters(['devolucion-motivos' => 'motivo'])
+                ->except(['show']);
+        });
     });
 
+    // ── INVENTARIO ────────────────────────────────────────────────────────
     Route::prefix('inventario')->name('inventario.')->group(function () {
-        Route::get('stock', [StockController::class, 'index'])->name('stock.index');
-        Route::post('stock/recalcular', [StockController::class, 'recalcular'])->name('stock.recalcular');
+        // Stock
+        Route::middleware('permiso:inventario.stock,ver')->get('stock', [StockController::class, 'index'])->name('stock.index');
+        // Recalcular es una operación de mutación masiva → exige permiso "editar".
+        Route::middleware('permiso:inventario.stock,editar')->post('stock/recalcular', [StockController::class, 'recalcular'])->name('stock.recalcular');
 
-        Route::get('entradas/crear', [EntradaController::class, 'create'])->name('entradas.create');
-        Route::get('entradas/{entrada}/editar', [EntradaController::class, 'edit'])->name('entradas.edit');
-        Route::post('entradas/{entrada}/confirmar', [EntradaController::class, 'confirmar'])->name('entradas.confirmar');
-        Route::apiResource('entradas', EntradaController::class)->except(['show']);
+        // Entradas
+        Route::middleware('permiso:inventario.entradas,ver')->get('entradas/crear', [EntradaController::class, 'create'])->name('entradas.create');
+        Route::middleware('permiso:inventario.entradas,editar')->get('entradas/{entrada}/editar', [EntradaController::class, 'edit'])->name('entradas.edit');
+        Route::middleware('permiso:inventario.entradas,editar')->post('entradas/{entrada}/confirmar', [EntradaController::class, 'confirmar'])->name('entradas.confirmar');
+        Route::middleware('permiso:inventario.entradas')->group(function () {
+            Route::apiResource('entradas', EntradaController::class)->except(['show']);
+        });
 
-        Route::get('transferencias/crear', [TransferenciaController::class, 'create'])->name('transferencias.create');
-        Route::get('transferencias/{transferencia}/editar', [TransferenciaController::class, 'edit'])->name('transferencias.edit');
-        Route::post('transferencias/{transferencia}/enviar', [TransferenciaController::class, 'enviar'])->name('transferencias.enviar');
-        Route::post('transferencias/{transferencia}/recibir', [TransferenciaController::class, 'recibir'])->name('transferencias.recibir');
-        Route::post('transferencias/{transferencia}/anular', [TransferenciaController::class, 'anular'])->name('transferencias.anular');
-        Route::apiResource('transferencias', TransferenciaController::class);
+        // Transferencias
+        Route::middleware('permiso:inventario.transferencias,ver')->get('transferencias/crear', [TransferenciaController::class, 'create'])->name('transferencias.create');
+        Route::middleware('permiso:inventario.transferencias,editar')->get('transferencias/{transferencia}/editar', [TransferenciaController::class, 'edit'])->name('transferencias.edit');
+        Route::middleware('permiso:inventario.transferencias,editar')->post('transferencias/{transferencia}/enviar', [TransferenciaController::class, 'enviar'])->name('transferencias.enviar');
+        Route::middleware('permiso:inventario.transferencias,editar')->post('transferencias/{transferencia}/recibir', [TransferenciaController::class, 'recibir'])->name('transferencias.recibir');
+        Route::middleware('permiso:inventario.transferencias,editar')->post('transferencias/{transferencia}/anular', [TransferenciaController::class, 'anular'])->name('transferencias.anular');
+        Route::middleware('permiso:inventario.transferencias')->group(function () {
+            Route::apiResource('transferencias', TransferenciaController::class);
+        });
 
         // Cierres de inventario
-        Route::get('cierres/crear', [CierreInventarioController::class, 'create'])->name('cierres.create');
-        Route::get('cierres/productos-para-declarar', [CierreInventarioController::class, 'productosParaDeclarar'])->name('cierres.productos');
-        Route::post('cierres/{cierre}/confirmar', [CierreInventarioController::class, 'confirmar'])->name('cierres.confirmar');
-        Route::apiResource('cierres', CierreInventarioController::class)
-            ->parameters(['cierres' => 'cierre'])
-            ->except(['edit', 'update']);
+        Route::middleware('permiso:inventario.cierres,ver')->get('cierres/crear', [CierreInventarioController::class, 'create'])->name('cierres.create');
+        Route::middleware('permiso:inventario.cierres,ver')->get('cierres/productos-para-declarar', [CierreInventarioController::class, 'productosParaDeclarar'])->name('cierres.productos');
+        Route::middleware('permiso:inventario.cierres,editar')->post('cierres/{cierre}/confirmar', [CierreInventarioController::class, 'confirmar'])->name('cierres.confirmar');
+        Route::middleware('permiso:inventario.cierres')->group(function () {
+            Route::apiResource('cierres', CierreInventarioController::class)
+                ->parameters(['cierres' => 'cierre'])
+                ->except(['edit', 'update']);
+        });
 
         // Salidas
-        Route::get('salidas/crear', [SalidaController::class, 'create'])->name('salidas.create');
-        Route::get('salidas/{salida}/editar', [SalidaController::class, 'edit'])->name('salidas.edit');
-        Route::post('salidas/{salida}/confirmar', [SalidaController::class, 'confirmar'])->name('salidas.confirmar');
-        Route::apiResource('salidas', SalidaController::class)
-            ->parameters(['salidas' => 'salida'])
-            ->except(['show']);
+        Route::middleware('permiso:inventario.salidas,ver')->get('salidas/crear', [SalidaController::class, 'create'])->name('salidas.create');
+        Route::middleware('permiso:inventario.salidas,editar')->get('salidas/{salida}/editar', [SalidaController::class, 'edit'])->name('salidas.edit');
+        Route::middleware('permiso:inventario.salidas,editar')->post('salidas/{salida}/confirmar', [SalidaController::class, 'confirmar'])->name('salidas.confirmar');
+        Route::middleware('permiso:inventario.salidas')->group(function () {
+            Route::apiResource('salidas', SalidaController::class)
+                ->parameters(['salidas' => 'salida'])
+                ->except(['show']);
+        });
     });
 
-    // Clientes
+    // ── CLIENTES ─────────────────────────────────────────────────────────
     Route::prefix('clientes')->name('clientes.')->group(function () {
-        Route::get('/', [ClienteController::class, 'index'])->name('index');
-        Route::post('/', [ClienteController::class, 'store'])->name('store');
-        Route::get('/{cliente}', [ClienteController::class, 'show'])->name('show');
-        Route::put('/{cliente}', [ClienteController::class, 'update'])->name('update');
-        Route::delete('/{cliente}', [ClienteController::class, 'destroy'])->name('destroy');
+        Route::middleware('permiso:clientes,ver')->get('/', [ClienteController::class, 'index'])->name('index');
+        Route::middleware('permiso:clientes,crear')->post('/', [ClienteController::class, 'store'])->name('store');
+        Route::middleware('permiso:clientes,ver')->get('/{cliente}', [ClienteController::class, 'show'])->name('show');
+        Route::middleware('permiso:clientes,editar')->put('/{cliente}', [ClienteController::class, 'update'])->name('update');
+        Route::middleware('permiso:clientes,eliminar')->delete('/{cliente}', [ClienteController::class, 'destroy'])->name('destroy');
     });
 
-    // Devoluciones
+    // ── DEVOLUCIONES ─────────────────────────────────────────────────────
     Route::prefix('devoluciones')->name('devoluciones.')->group(function () {
-        Route::get('/', [DevolucionController::class, 'index'])->name('index');
-        Route::get('/crear', [DevolucionController::class, 'create'])->name('create');
-        Route::get('/buscar-venta', [DevolucionController::class, 'buscarVenta'])->name('buscar-venta');
-        Route::post('/', [DevolucionController::class, 'store'])->name('store');
-        Route::get('/{devolucion}', [DevolucionController::class, 'show'])->name('show');
-        Route::post('/{devolucion}/aprobar', [DevolucionController::class, 'aprobar'])->name('aprobar');
-        Route::post('/{devolucion}/rechazar', [DevolucionController::class, 'rechazar'])->name('rechazar');
-        Route::post('/{devolucion}/anular', [DevolucionController::class, 'anular'])->name('anular');
+        Route::middleware('permiso:devoluciones,ver')->get('/', [DevolucionController::class, 'index'])->name('index');
+        Route::middleware('permiso:devoluciones,ver')->get('/crear', [DevolucionController::class, 'create'])->name('create');
+        Route::middleware('permiso:devoluciones,ver')->get('/buscar-venta', [DevolucionController::class, 'buscarVenta'])->name('buscar-venta');
+        Route::middleware('permiso:devoluciones,crear')->post('/', [DevolucionController::class, 'store'])->name('store');
+        Route::middleware('permiso:devoluciones,ver')->get('/{devolucion}', [DevolucionController::class, 'show'])->name('show');
+        Route::middleware('permiso:devoluciones,editar')->post('/{devolucion}/aprobar', [DevolucionController::class, 'aprobar'])->name('aprobar');
+        Route::middleware('permiso:devoluciones,editar')->post('/{devolucion}/rechazar', [DevolucionController::class, 'rechazar'])->name('rechazar');
+        Route::middleware('permiso:devoluciones,editar')->post('/{devolucion}/anular', [DevolucionController::class, 'anular'])->name('anular');
     });
 
-    // Proveedores
+    // ── PROVEEDORES ──────────────────────────────────────────────────────
     Route::prefix('proveedores')->name('proveedores.')->group(function () {
-        Route::get('/', [ProveedorController::class, 'index'])->name('index');
-        Route::post('/', [ProveedorController::class, 'store'])->name('store');
-        Route::get('/{proveedor}', [ProveedorController::class, 'show'])->name('show');
-        Route::put('/{proveedor}', [ProveedorController::class, 'update'])->name('update');
-        Route::delete('/{proveedor}', [ProveedorController::class, 'destroy'])->name('destroy');
+        Route::middleware('permiso:proveedores,ver')->get('/', [ProveedorController::class, 'index'])->name('index');
+        Route::middleware('permiso:proveedores,crear')->post('/', [ProveedorController::class, 'store'])->name('store');
+        Route::middleware('permiso:proveedores,ver')->get('/{proveedor}', [ProveedorController::class, 'show'])->name('show');
+        Route::middleware('permiso:proveedores,editar')->put('/{proveedor}', [ProveedorController::class, 'update'])->name('update');
+        Route::middleware('permiso:proveedores,eliminar')->delete('/{proveedor}', [ProveedorController::class, 'destroy'])->name('destroy');
     });
 
-    // Métodos de pago y Cuentas (dentro de configuración)
-    Route::apiResource('configuracion/metodos-pago', MetodoPagoController::class)
-         ->names('configuracion.metodos-pago')
-         ->except(['show']);
+    // ── MÉTODOS DE PAGO Y CUENTAS ────────────────────────────────────────
+    Route::middleware('permiso:configuracion.metodos-pago')->group(function () {
+        Route::apiResource('configuracion/metodos-pago', MetodoPagoController::class)
+             ->names('configuracion.metodos-pago')
+             ->except(['show']);
+    });
 
-    Route::apiResource('configuracion/cuentas', CuentaController::class)
-         ->names('configuracion.cuentas')
-         ->except(['show']);
+    Route::middleware('permiso:configuracion.cuentas')->group(function () {
+        Route::apiResource('configuracion/cuentas', CuentaController::class)
+             ->names('configuracion.cuentas')
+             ->except(['show']);
+    });
 
-    // API interna Decolecta (con throttle)
+    // ── DECOLECTA (consulta DNI/RUC) ─────────────────────────────────────
+    // No requiere permiso específico: cualquier usuario que pueda crear clientes/proveedores
+    // necesita esto. Se mantiene el throttle.
     Route::middleware('throttle:30,1')->prefix('api/decolecta')->group(function () {
         Route::post('dni', [DecolectaController::class, 'consultarDni'])->name('decolecta.dni');
         Route::post('ruc', [DecolectaController::class, 'consultarRuc'])->name('decolecta.ruc');
     });
 
+    // ── CATÁLOGO ─────────────────────────────────────────────────────────
     Route::prefix('catalogo')->name('catalogo.')->group(function () {
-        Route::apiResource('categorias', CategoriaController::class)->except(['show']);
-        Route::apiResource('unidades-medida', UnidadMedidaController::class)->except(['show']);
-        Route::get('productos/crear', [ProductoController::class, 'create'])->name('productos.create');
-        Route::get('productos/{producto}/editar', [ProductoController::class, 'edit'])->name('productos.edit');
-        Route::apiResource('productos', ProductoController::class)->except(['show']);
+        Route::middleware('permiso:catalogo.categorias')->group(function () {
+            Route::apiResource('categorias', CategoriaController::class)->except(['show']);
+        });
+        Route::middleware('permiso:catalogo.unidades')->group(function () {
+            Route::apiResource('unidades-medida', UnidadMedidaController::class)->except(['show']);
+        });
+        Route::middleware('permiso:catalogo.productos,ver')->get('productos/crear', [ProductoController::class, 'create'])->name('productos.create');
+        Route::middleware('permiso:catalogo.productos,editar')->get('productos/{producto}/editar', [ProductoController::class, 'edit'])->name('productos.edit');
+        Route::middleware('permiso:catalogo.productos')->group(function () {
+            Route::apiResource('productos', ProductoController::class)->except(['show']);
+        });
     });
 
-    // Cajas
-    Route::apiResource('configuracion/cajas', CajaController::class)
-         ->names('configuracion.cajas')
-         ->except(['show']);
+    // ── CAJAS ────────────────────────────────────────────────────────────
+    Route::middleware('permiso:configuracion.cajas')->group(function () {
+        Route::apiResource('configuracion/cajas', CajaController::class)
+             ->names('configuracion.cajas')
+             ->except(['show']);
+    });
 
-    // Tipos de gasto
+    // ── TIPOS DE GASTO ──────────────────────────────────────────────────
     Route::prefix('configuracion/gastos')->name('configuracion.gastos.')->group(function () {
-        Route::apiResource('tipos', GastoTipoController::class)->except(['show']);
+        Route::middleware('permiso:configuracion.gastos-tipos')->group(function () {
+            Route::apiResource('tipos', GastoTipoController::class)->except(['show']);
+        });
     });
 
-    // Turnos
+    // ── TURNOS ───────────────────────────────────────────────────────────
     Route::prefix('turnos')->name('turnos.')->group(function () {
-        Route::get('/', [TurnoController::class, 'index'])->name('index');
-        Route::get('/activo', [TurnoController::class, 'turnoActivo'])->name('activo');
-        Route::post('/abrir', [TurnoController::class, 'abrir'])->name('abrir');
-        Route::get('/{turno}', [TurnoController::class, 'show'])->name('show');
-        Route::get('/{turno}/cerrar', [TurnoController::class, 'cerrarPage'])->name('cerrar.page');
-        Route::post('/{turno}/cerrar', [TurnoController::class, 'cerrar'])->name('cerrar');
-        Route::post('/{turno}/reabrir', [TurnoController::class, 'reabrir'])->name('reabrir');
+        Route::middleware('permiso:turnos,ver')->get('/', [TurnoController::class, 'index'])->name('index');
+        Route::middleware('permiso:turnos,ver')->get('/activo', [TurnoController::class, 'turnoActivo'])->name('activo');
+        Route::middleware('permiso:turnos,crear')->post('/abrir', [TurnoController::class, 'abrir'])->name('abrir');
+        Route::middleware('permiso:turnos,ver')->get('/{turno}', [TurnoController::class, 'show'])->name('show');
+        Route::middleware('permiso:turnos,editar')->get('/{turno}/cerrar', [TurnoController::class, 'cerrarPage'])->name('cerrar.page');
+        Route::middleware('permiso:turnos,editar')->post('/{turno}/cerrar', [TurnoController::class, 'cerrar'])->name('cerrar');
+        Route::middleware('permiso:turnos,editar')->post('/{turno}/reabrir', [TurnoController::class, 'reabrir'])->name('reabrir');
     });
 
-    // Gastos
-    Route::apiResource('gastos', GastoController::class)->except(['show', 'update']);
+    // ── GASTOS ───────────────────────────────────────────────────────────
+    Route::middleware('permiso:gastos')->group(function () {
+        Route::apiResource('gastos', GastoController::class)->except(['show', 'update']);
+    });
 
-    // POS
-    Route::get('/pos', [VentaController::class, 'pos'])->name('pos.index');
+    // ── POS ──────────────────────────────────────────────────────────────
+    Route::middleware('permiso:pos,ver')->get('/pos', [VentaController::class, 'pos'])->name('pos.index');
 
-    // Ventas
+    // ── VENTAS ───────────────────────────────────────────────────────────
     Route::prefix('ventas')->name('ventas.')->group(function () {
-        Route::get('/', [VentaController::class, 'index'])->name('index');
-        Route::post('/', [VentaController::class, 'store'])->name('store');
-        Route::get('/{venta}', [VentaController::class, 'show'])->name('show');
-        Route::post('/{venta}/anular', [VentaController::class, 'anular'])->name('anular');
+        Route::middleware('permiso:ventas,ver')->get('/', [VentaController::class, 'index'])->name('index');
+        Route::middleware('permiso:ventas,crear')->post('/', [VentaController::class, 'store'])->name('store');
+        Route::middleware('permiso:ventas,ver')->get('/{venta}', [VentaController::class, 'show'])->name('show');
+        Route::middleware('permiso:ventas,editar')->post('/{venta}/anular', [VentaController::class, 'anular'])->name('anular');
     });
 
-    // Conceptos de descuento (configuración)
-    Route::apiResource('configuracion/descuento-conceptos', DescuentoConceptoController::class)
-        ->names('configuracion.descuento-conceptos')
-        ->except(['show']);
+    // ── CONCEPTOS DE DESCUENTO ───────────────────────────────────────────
+    Route::middleware('permiso:configuracion.descuento-conceptos')->group(function () {
+        Route::apiResource('configuracion/descuento-conceptos', DescuentoConceptoController::class)
+            ->names('configuracion.descuento-conceptos')
+            ->except(['show']);
+    });
 
-    // Reportes
+    // ── REPORTES ─────────────────────────────────────────────────────────
     Route::prefix('reportes')->name('reportes.')->group(function () {
-        Route::get('descuentos',   [DescuentoLogController::class,        'index'])->name('descuentos');
-        Route::get('ventas',       [ReporteVentaController::class,        'index'])->name('ventas');
-        Route::get('productos',    [ReporteProductoController::class,     'index'])->name('productos');
-        Route::get('caja',         [ReporteCajaController::class,         'index'])->name('caja');
-        Route::get('gastos',       [ReporteGastoController::class,        'index'])->name('gastos');
-        Route::get('devoluciones', [ReporteDevolucionController::class,   'index'])->name('devoluciones');
+        Route::middleware('permiso:reportes.descuentos,ver')->get('descuentos',   [DescuentoLogController::class,        'index'])->name('descuentos');
+        Route::middleware('permiso:reportes.ventas,ver')->get('ventas',           [ReporteVentaController::class,        'index'])->name('ventas');
+        Route::middleware('permiso:reportes.productos,ver')->get('productos',     [ReporteProductoController::class,     'index'])->name('productos');
+        Route::middleware('permiso:reportes.caja,ver')->get('caja',               [ReporteCajaController::class,         'index'])->name('caja');
+        Route::middleware('permiso:reportes.gastos,ver')->get('gastos',           [ReporteGastoController::class,        'index'])->name('gastos');
+        Route::middleware('permiso:reportes.devoluciones,ver')->get('devoluciones', [ReporteDevolucionController::class, 'index'])->name('devoluciones');
     });
 
-    // WhatsApp (URLs de notificación)
+    // ── WHATSAPP (callbacks externos) ────────────────────────────────────
+    // Endpoints firmados/restringidos por la propia lógica del controlador.
     Route::prefix('whatsapp')->name('whatsapp.')->group(function () {
         Route::post('aprobacion', [WhatsappController::class, 'urlAprobacion'])->name('aprobacion');
         Route::post('confirmacion/{venta}', [WhatsappController::class, 'urlConfirmacion'])->name('confirmacion');
