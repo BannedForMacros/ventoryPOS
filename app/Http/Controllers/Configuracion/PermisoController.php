@@ -37,6 +37,11 @@ class PermisoController extends Controller
             'permisos.*.eliminar'    => 'boolean',
         ]);
 
+        // Snapshot de permisos previos para auditar el diff
+        $previos = Permiso::where('rol_id', $rol->id)->get()->keyBy('modulo_id')
+            ->map(fn($p) => ['ver'=>$p->ver,'crear'=>$p->crear,'editar'=>$p->editar,'eliminar'=>$p->eliminar])
+            ->toArray();
+
         foreach ($request->permisos as $p) {
             Permiso::updateOrCreate(
                 ['rol_id' => $rol->id, 'modulo_id' => $p['modulo_id']],
@@ -48,6 +53,18 @@ class PermisoController extends Controller
                 ]
             );
         }
+
+        \App\Services\AuditoriaService::log('permisos.modificados', $rol, [
+            'rol_nombre'       => $rol->nombre,
+            'permisos_previos' => $previos,
+            'permisos_nuevos'  => collect($request->permisos)->keyBy('modulo_id')
+                ->map(fn($p) => [
+                    'ver'=>(bool)($p['ver']??false),
+                    'crear'=>(bool)($p['crear']??false),
+                    'editar'=>(bool)($p['editar']??false),
+                    'eliminar'=>(bool)($p['eliminar']??false),
+                ])->toArray(),
+        ]);
 
         return redirect()->back()->with('success', 'Permisos guardados correctamente.');
     }

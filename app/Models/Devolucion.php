@@ -140,6 +140,8 @@ class Devolucion extends Model
         if ($this->esAnulada()) return;
 
         DB::transaction(function () {
+            $estadoPrevio = $this->estado;
+
             // Si ya estaba completada, revertir el restock aplicado
             if ($this->esCompletada()) {
                 $almacenId = $this->resolverAlmacenLocal();
@@ -161,6 +163,14 @@ class Devolucion extends Model
             }
 
             $this->update(['estado' => 'anulada']);
+
+            \App\Services\AuditoriaService::log('devolucion.anulada', $this, [
+                'numero'         => $this->numero,
+                'venta_id'       => $this->venta_id,
+                'monto'          => (float) $this->monto_devolucion,
+                'estado_previo'  => $estadoPrevio,
+                'forma_reembolso'=> $this->forma_reembolso,
+            ]);
         });
     }
 

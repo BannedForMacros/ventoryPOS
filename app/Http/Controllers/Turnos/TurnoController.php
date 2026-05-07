@@ -123,7 +123,15 @@ class TurnoController extends Controller
         abort_if($turno->empresa_id !== $request->user()->empresa_id, 403);
         abort_if($turno->estado !== 'cerrado', 422);
 
-        DB::transaction(function () use ($turno) {
+        DB::transaction(function () use ($turno, $request) {
+            $snapshot = [
+                'cerrado_por'        => $turno->user_cierre_id,
+                'fecha_cierre'       => $turno->fecha_cierre?->toDateTimeString(),
+                'monto_declarado'    => (float) $turno->monto_cierre_declarado,
+                'monto_esperado'     => (float) $turno->monto_cierre_esperado,
+                'diferencia'         => (float) $turno->diferencia,
+            ];
+
             $turno->arqueo()->delete();
             $turno->arqueoMetodos()->delete();
 
@@ -136,6 +144,11 @@ class TurnoController extends Controller
                 'diferencia'             => null,
                 'observacion_cierre'     => null,
             ]);
+
+            \App\Services\AuditoriaService::log('turno.reabierto', $turno, [
+                'cierre_anterior' => $snapshot,
+                'turno_de'        => $turno->user_id,
+            ], $request->user());
         });
 
         return redirect()->route('turnos.show', $turno->id)
@@ -295,6 +308,14 @@ class TurnoController extends Controller
             // Snapshot de productos vendidos en el turno (para reportes históricos)
             $turno->poblarSnapshotProductos();
         });
+
+        $turno->refresh();
+        \App\Services\AuditoriaService::log('turno.cerrado', $turno, [
+            'declarado'  => (float) $turno->monto_cierre_declarado,
+            'esperado'   => (float) $turno->monto_cierre_esperado,
+            'diferencia' => (float) $turno->diferencia,
+            'modo_caja'  => $modoCaja,
+        ], $request->user());
 
         return redirect()->route('turnos.index')->with('success', 'Turno cerrado correctamente.');
     }

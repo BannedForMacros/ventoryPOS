@@ -215,6 +215,13 @@ class DevolucionController extends Controller
         $devolucion->aprobar($request->user()->id, $obs);
         $devolucion->refresh()->completar();
 
+        \App\Services\AuditoriaService::log('devolucion.aprobada', $devolucion, [
+            'numero'        => $devolucion->numero,
+            'venta_id'      => $devolucion->venta_id,
+            'monto'         => (float) $devolucion->monto_devolucion,
+            'observacion'   => $obs,
+        ]);
+
         return redirect()->back()->with('success', 'Devolución aprobada y completada.');
     }
 
@@ -225,6 +232,12 @@ class DevolucionController extends Controller
 
         $obs = $request->input('observacion_aprobacion');
         $devolucion->rechazar($request->user()->id, $obs);
+
+        \App\Services\AuditoriaService::log('devolucion.rechazada', $devolucion, [
+            'numero'      => $devolucion->numero,
+            'venta_id'    => $devolucion->venta_id,
+            'observacion' => $obs,
+        ]);
 
         return redirect()->back()->with('success', 'Devolución rechazada.');
     }

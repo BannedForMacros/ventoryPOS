@@ -29,6 +29,19 @@ type TipoComprobante = 'ticket' | 'boleta' | 'factura';
 
 function uid() { return Math.random().toString(36).slice(2); }
 
+/**
+ * Token unico de la venta-en-construccion. Se genera al abrir la confirmacion y
+ * acompana cada intento de submit. El backend usa este key para garantizar que
+ * un doble click o un reintento por timeout NO genere ventas duplicadas.
+ * Usa crypto.randomUUID si esta disponible (browsers modernos), si no, fallback.
+ */
+function generarIdempotencyKey(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 function calcularTotales(items: LineaCarrito[], descuentoTotal: number) {
     const subtotal  = items.reduce((s, i) => s + i.subtotal, 0);
     const baseItems = items.reduce((s, i) =>
@@ -54,6 +67,10 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [loading, setLoading]             = useState(false);
     const [carritoAbierto, setCarritoAbierto] = useState(false);
     const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null);
+    // Token de idempotencia: se genera al abrir el modal de confirmacion y se
+    // mantiene mientras siga la misma venta-en-construccion. Se renueva al
+    // limpiar el carrito tras un OK exitoso.
+    const [idempotencyKey, setIdempotencyKey] = useState<string>(() => generarIdempotencyKey());
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -186,6 +203,11 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     }
 
     function submitVenta() {
+        // Anti-doble-click: si ya hay una venta en proceso, ignorar nuevos intentos.
+        // El boton del modal ya se deshabilita visualmente, pero esta guarda cubre
+        // casos como tecla Enter o clicks muy rapidos antes del re-render.
+        if (loading) return;
+
         setLoading(true);
 
         const payload = {
@@ -193,6 +215,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             tipo_comprobante:      tipoComprobante,
             descuento_total:       descuentoTotal,
             descuento_concepto_id: descuentoConceptoId,
+            // Se reenvia el mismo key en cada reintento. El backend desduplica.
+            idempotency_key:       idempotencyKey,
             items: carrito.map(i => ({
                 producto_id:           i.producto_id,
                 producto_unidad_id:    i.producto_unidad_id,
@@ -217,6 +241,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 setModalConfirm(false);
                 limpiarCarrito();
                 setCarritoAbierto(false);
+                // Renovar key para la proxima venta (la actual ya quedo persistida).
+                setIdempotencyKey(generarIdempotencyKey());
             },
             onError: (errors) => {
                 setLoading(false);

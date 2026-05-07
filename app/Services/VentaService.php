@@ -25,10 +25,25 @@ class VentaService
     /**
      * Registra una venta completa dentro de una transacción:
      * crea la cabecera, items, movimientos de stock, pagos y logs de descuento.
+     *
+     * Idempotencia: si $data['idempotency_key'] viene y ya existe una venta con ese key
+     * en la misma empresa, se devuelve la venta original sin crear nada nuevo.
+     * Esto protege contra doble click en POS y reintentos por timeout de red.
      */
     public function crear(array $data, User $user, Turno $turno): Venta
     {
-        return DB::transaction(function () use ($data, $user, $turno) {
+        // Check idempotente fuera de la transaccion principal: si ya existe, devolverla.
+        $idempotencyKey = $data['idempotency_key'] ?? null;
+        if ($idempotencyKey) {
+            $existente = Venta::where('idempotency_key', $idempotencyKey)
+                ->where('empresa_id', $user->empresa_id)
+                ->first();
+            if ($existente) {
+                return $existente->load(['items', 'pagos', 'cliente']);
+            }
+        }
+
+        return DB::transaction(function () use ($data, $user, $turno, $idempotencyKey) {
             $almacen = $this->scope->almacenParaVentas($user)
                 ?? abort(422, 'No se encontró un almacén de ventas configurado.');
 
@@ -38,24 +53,34 @@ class VentaService
                 ?? abort(422, 'No se encontró el Cliente General de la empresa.');
 
             // Cabecera de la venta
-            $venta = Venta::create([
-                'empresa_id'            => $user->empresa_id,
-                'local_id'              => $turno->local_id,
-                'turno_id'              => $turno->id,
-                'caja_id'               => $turno->caja_id,
-                'user_id'               => $user->id,
-                'cliente_id'            => $clienteId,
-                'numero'                => Venta::generarNumero($turno->id),
-                'tipo_comprobante'      => $data['tipo_comprobante'],
-                'subtotal'              => 0,
-                'descuento_total'       => $data['descuento_total'] ?? 0,
-                'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
-                'igv'                   => 0,
-                'total'                 => 0,
-                'estado'                => 'completada',
-                'observacion'           => $data['observacion'] ?? null,
-                'fecha_venta'           => now(),
-            ]);
+            try {
+                $venta = Venta::create([
+                    'empresa_id'            => $user->empresa_id,
+                    'local_id'              => $turno->local_id,
+                    'turno_id'              => $turno->id,
+                    'caja_id'               => $turno->caja_id,
+                    'user_id'               => $user->id,
+                    'cliente_id'            => $clienteId,
+                    'numero'                => Venta::generarNumero($turno->id),
+                    'idempotency_key'       => $idempotencyKey,
+                    'tipo_comprobante'      => $data['tipo_comprobante'],
+                    'subtotal'              => 0,
+                    'descuento_total'       => $data['descuento_total'] ?? 0,
+                    'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
+                    'igv'                   => 0,
+                    'total'                 => 0,
+                    'estado'                => 'completada',
+                    'observacion'           => $data['observacion'] ?? null,
+                    'fecha_venta'           => now(),
+                ]);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                // Race condition: dos requests con el mismo idempotency_key llegaron a la vez.
+                // El primero creo la venta, el segundo choca con UNIQUE. Devolvemos la primera.
+                $existente = Venta::where('idempotency_key', $idempotencyKey)
+                    ->where('empresa_id', $user->empresa_id)
+                    ->firstOrFail();
+                return $existente->load(['items', 'pagos', 'cliente']);
+            }
 
             // Items
             foreach ($data['items'] as $itemData) {
@@ -171,6 +196,14 @@ class VentaService
             }
 
             $venta->update(['estado' => 'anulada']);
+
+            \App\Services\AuditoriaService::log('venta.anulada', $venta, [
+                'numero'           => $venta->numero,
+                'total'            => (float) $venta->total,
+                'tipo_comprobante' => $venta->tipo_comprobante,
+                'turno_id'         => $venta->turno_id,
+                'cliente_id'       => $venta->cliente_id,
+            ], $user);
         });
     }
 }

@@ -175,6 +175,15 @@ class ProductoController extends Controller
     {
         $producto->update(['activo' => false]);
 
+        \App\Services\AuditoriaService::log('producto.eliminado', $producto, [
+            'codigo' => $producto->codigo,
+            'nombre' => $producto->nombre,
+            'tipo'   => $producto->tipo,
+            // Es soft (activo=false). Si se vuelve hard delete en el futuro,
+            // este registro queda como prueba de quien lo desactivo.
+            'soft'   => true,
+        ]);
+
         return redirect()->back()->with('success', 'Producto desactivado correctamente.');
     }
 }

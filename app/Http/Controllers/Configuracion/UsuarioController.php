@@ -24,7 +24,13 @@ class UsuarioController extends Controller
 
     public function store(UsuarioRequest $request)
     {
-        User::create($request->validated());
+        $u = User::create($request->validated());
+        \App\Services\AuditoriaService::log('usuario.creado', $u, [
+            'name'  => $u->name,
+            'email' => $u->email,
+            'rol_id'=> $u->rol_id,
+            'local_id' => $u->local_id,
+        ]);
         return redirect()->back()->with('success', 'Usuario creado correctamente.');
     }
 
@@ -34,13 +40,26 @@ class UsuarioController extends Controller
         if (empty($data['password'])) {
             unset($data['password']);
         }
+        $cambios = collect($data)
+            ->except(['password', 'password_confirmation'])
+            ->filter(fn($val, $key) => $usuario->{$key} != $val)
+            ->toArray();
+
         $usuario->update($data);
+
+        \App\Services\AuditoriaService::log('usuario.actualizado', $usuario, [
+            'name'    => $usuario->name,
+            'cambios' => $cambios,
+            'reseteo_password' => isset($data['password']),
+        ]);
         return redirect()->back()->with('success', 'Usuario actualizado correctamente.');
     }
 
     public function destroy(User $usuario)
     {
+        $snapshot = ['name' => $usuario->name, 'email' => $usuario->email, 'rol_id' => $usuario->rol_id];
         $usuario->delete();
+        \App\Services\AuditoriaService::log('usuario.eliminado', $usuario, $snapshot);
         return redirect()->back()->with('success', 'Usuario eliminado correctamente.');
     }
 }

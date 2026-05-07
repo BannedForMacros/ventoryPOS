@@ -23,6 +23,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Gastos\GastoController;
 use App\Http\Controllers\Gastos\GastoTipoController;
 use App\Http\Controllers\Turnos\TurnoController;
+use App\Http\Controllers\Reportes\ReporteAuditoriaController;
 use App\Http\Controllers\Reportes\ReporteCajaController;
 use App\Http\Controllers\Reportes\ReporteDevolucionController;
 use App\Http\Controllers\Reportes\ReporteGastoController;
@@ -265,6 +266,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:reportes.caja,ver')->get('caja',               [ReporteCajaController::class,         'index'])->name('caja');
         Route::middleware('permiso:reportes.gastos,ver')->get('gastos',           [ReporteGastoController::class,        'index'])->name('gastos');
         Route::middleware('permiso:reportes.devoluciones,ver')->get('devoluciones', [ReporteDevolucionController::class, 'index'])->name('devoluciones');
+        Route::middleware('permiso:reportes.auditoria,ver')->get('auditoria',     [ReporteAuditoriaController::class,    'index'])->name('auditoria');
     });
 
     // ── WHATSAPP (callbacks externos) ────────────────────────────────────

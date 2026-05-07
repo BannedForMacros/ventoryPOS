@@ -62,8 +62,13 @@ class StockController extends Controller
     {
         $almacenIds = $this->scope->almacenIdsVisibles($request->user());
 
-        DB::transaction(function () use ($almacenIds) {
+        $stats = DB::transaction(function () use ($almacenIds) {
             $pares = Stock::combinacionesConMovimientos($almacenIds);
+
+            // Snapshot de cantidades antes del reseteo para auditoria
+            $stockPrevio = Stock::whereIn('almacen_id', $almacenIds)
+                ->selectRaw('SUM(cantidad) as total_unidades, SUM(cantidad * costo_promedio) as valor')
+                ->first();
 
             // Para no dejar registros con cantidad inflada de un escenario previo,
             // reseteamos solo los almacenes visibles a 0 y luego reconstruimos los pares.
@@ -73,7 +78,22 @@ class StockController extends Controller
             foreach ($pares as $p) {
                 Stock::reconstruir($p['almacen_id'], $p['producto_id']);
             }
+
+            $stockPosterior = Stock::whereIn('almacen_id', $almacenIds)
+                ->selectRaw('SUM(cantidad) as total_unidades, SUM(cantidad * costo_promedio) as valor')
+                ->first();
+
+            return [
+                'almacenes_afectados' => count($almacenIds),
+                'combinaciones'       => $pares->count(),
+                'unidades_antes'      => (float) ($stockPrevio?->total_unidades ?? 0),
+                'unidades_despues'    => (float) ($stockPosterior?->total_unidades ?? 0),
+                'valor_antes'         => round((float) ($stockPrevio?->valor ?? 0), 2),
+                'valor_despues'       => round((float) ($stockPosterior?->valor ?? 0), 2),
+            ];
         });
+
+        \App\Services\AuditoriaService::log('stock.recalculado', null, $stats);
 
         return redirect()->back()->with('success',
             'Stock reconstruido a partir de entradas, salidas, transferencias, ventas, devoluciones y cierres confirmados.');

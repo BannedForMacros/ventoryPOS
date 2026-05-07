@@ -19,6 +19,10 @@ class StoreVentaRequest extends FormRequest
             'tipo_comprobante'       => ['required', Rule::in(['ticket', 'boleta', 'factura'])],
             'observacion'            => ['nullable', 'string', 'max:500'],
             'descuento_total'        => ['nullable', 'numeric', 'min:0'],
+            // Token unico generado por el frontend para prevenir duplicados por reintentos.
+            // Si el cliente reenvia la misma venta (timeout, doble click, etc.) el backend
+            // detecta el key y devuelve la venta ya creada en lugar de duplicarla.
+            'idempotency_key'        => ['nullable', 'string', 'min:10', 'max:100'],
             'descuento_concepto_id'  => [
                 'nullable', 'integer',
                 Rule::exists('descuento_conceptos', 'id')->where('empresa_id', $empresaId),
