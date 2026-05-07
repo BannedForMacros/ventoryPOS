@@ -147,7 +147,15 @@ class Devolucion extends Model
 
                 foreach ($this->detalles as $d) {
                     if ($d->restock && $almacenId) {
-                        Stock::ajustar($almacenId, $d->producto_id, -1 * (float) $d->cantidad_base);
+                        // Reverso administrativo: si entre tanto se vendieron las unidades restockeadas,
+                        // el stock puede quedar transitoriamente negativo. Es responsabilidad del admin
+                        // ajustarlo despues. No bloqueamos la anulacion por consistencia contable.
+                        Stock::ajustar(
+                            $almacenId,
+                            $d->producto_id,
+                            -1 * (float) $d->cantidad_base,
+                            permitirNegativo: true,
+                        );
                     }
                 }
             }

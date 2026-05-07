@@ -24,6 +24,22 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Stock insuficiente → 422 con mensaje claro al usuario, sin stack trace.
+        // En requests Inertia/web devuelve back()->withErrors para que el frontend
+        // muestre el error en el formulario. En requests JSON puros responde 422.
+        $exceptions->render(function (\App\Exceptions\InsufficientStockException $e, Request $request) {
+            if ($request->expectsJson() && !$request->header('X-Inertia')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'errors'  => ['stock' => [$e->getMessage()]],
+                ], 422);
+            }
+
+            return back()
+                ->withErrors(['stock' => $e->getMessage()])
+                ->withInput();
+        });
+
         // Renderiza una página Inertia bonita en lugar del HTML por defecto de Laravel
         // para los errores que el usuario puede llegar a ver: 401, 403, 404, 419, 429, 500, 503.
         // Se respeta el modo debug en local (ahí seguirá apareciendo Whoops) y los requests

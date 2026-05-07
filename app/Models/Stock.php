@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Exceptions\InsufficientStockException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 class Stock extends Model
 {
@@ -34,51 +36,95 @@ class Stock extends Model
         return $this->belongsTo(Producto::class);
     }
 
-    // ── Lógica central de stock ──────────────────────────────────────────────
+    // ── Logica central de stock ──────────────────────────────────────────────
     //
-    // Este es el ÚNICO método que debe modificar el stock.
+    // Este es el UNICO metodo que debe modificar el stock.
     // Nunca actualices cantidad/costo_promedio directamente desde un controller.
     //
-    // Parámetros:
-    //   $cantidadBase  → positivo = entrada, negativo = salida
-    //   $costoNuevo    → solo se usa si es entrada (cantidad positiva)
-    //                    para recalcular el costo promedio ponderado.
-    //                    En salidas pasa 0 (no afecta el costo promedio).
+    // Garantias de concurrencia:
+    //   1. INSERT ... ON CONFLICT DO NOTHING asegura que el row exista sin race
+    //      (depende del UNIQUE (almacen_id, producto_id) que ya existe en BD).
+    //   2. SELECT ... FOR UPDATE bloquea la fila para todas las demas transacciones
+    //      hasta que la nuestra haga commit. Dos ventas simultaneas del mismo producto
+    //      se serializan: la segunda espera a que la primera termine y lee el valor
+    //      actualizado.
+    //   3. En salidas validamos disponibilidad ANTES de descontar y lanzamos
+    //      InsufficientStockException si no alcanza, en vez de recortar a 0.
+    //      La excepcion revierte la transaccion completa de la venta/transferencia.
+    //
+    // Parametros:
+    //   $cantidadBase    positivo = entrada, negativo = salida
+    //   $costoNuevo      solo se usa en entradas (cantidadBase > 0) para
+    //                    recalcular el costo promedio ponderado. En salidas se ignora.
+    //   $permitirNegativo  si true, permite stock < 0 (no recomendado; util para
+    //                    operaciones administrativas como ajustes manuales).
+    //                    Por defecto false: una salida que excede dispara excepcion.
+    //
+    // IMPORTANTE: este metodo abre su propia transaccion. Si lo llamas dentro
+    // de una transaccion mayor (ej. VentaService) la transaccion exterior gana
+    // (Laravel anida transacciones via savepoints).
 
     public static function ajustar(
         int   $almacenId,
         int   $productoId,
         float $cantidadBase,
-        float $costoNuevo = 0
+        float $costoNuevo = 0,
+        bool  $permitirNegativo = false,
     ): self {
-        $stock = self::firstOrCreate(
-            ['almacen_id' => $almacenId, 'producto_id' => $productoId],
-            ['cantidad' => 0, 'costo_promedio' => 0]
-        );
+        return DB::transaction(function () use ($almacenId, $productoId, $cantidadBase, $costoNuevo, $permitirNegativo) {
+            // 1) Asegurar que la fila exista. Idempotente y atomico gracias al
+            //    UNIQUE (almacen_id, producto_id). Si dos transacciones la crean
+            //    simultaneamente, una gana y la otra recibe DO NOTHING (sin error).
+            DB::statement(
+                'INSERT INTO stock (almacen_id, producto_id, cantidad, costo_promedio, created_at, updated_at)
+                 VALUES (?, ?, 0, 0, NOW(), NOW())
+                 ON CONFLICT (almacen_id, producto_id) DO NOTHING',
+                [$almacenId, $productoId]
+            );
 
-        if ($cantidadBase > 0) {
-            // Entrada: recalcular costo promedio ponderado
-            // CPP = (stock_actual * costo_actual + cantidad_nueva * costo_nuevo)
-            //       / (stock_actual + cantidad_nueva)
+            // 2) Bloquear la fila. Cualquier otro ajustar() concurrente sobre
+            //    el mismo (almacen, producto) espera aqui hasta que commiteemos.
+            $stock = self::where('almacen_id', $almacenId)
+                ->where('producto_id', $productoId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
             $cantidadActual = (float) $stock->cantidad;
-            $costoActual    = (float) $stock->costo_promedio;
 
-            $nuevaCantidad = $cantidadActual + $cantidadBase;
+            if ($cantidadBase > 0) {
+                // Entrada: recalcular costo promedio ponderado
+                // CPP = (stock_actual * costo_actual + cantidad_nueva * costo_nuevo)
+                //       / (stock_actual + cantidad_nueva)
+                $costoActual    = (float) $stock->costo_promedio;
+                $nuevaCantidad  = $cantidadActual + $cantidadBase;
+                $nuevoCosto     = $nuevaCantidad > 0
+                    ? (($cantidadActual * $costoActual) + ($cantidadBase * $costoNuevo)) / $nuevaCantidad
+                    : 0;
 
-            $nuevoCosto = $nuevaCantidad > 0
-                ? (($cantidadActual * $costoActual) + ($cantidadBase * $costoNuevo)) / $nuevaCantidad
-                : 0;
+                $stock->cantidad       = $nuevaCantidad;
+                $stock->costo_promedio = round($nuevoCosto, 4);
+            } else {
+                // Salida: validar disponibilidad antes de descontar
+                $solicitado = abs($cantidadBase);
 
-            $stock->cantidad       = $nuevaCantidad;
-            $stock->costo_promedio = round($nuevoCosto, 4);
-        } else {
-            // Salida: solo descuenta cantidad, no toca costo promedio
-            $stock->cantidad = max(0, (float) $stock->cantidad + $cantidadBase);
-        }
+                if (!$permitirNegativo && $solicitado > $cantidadActual + 0.0001) {
+                    $producto = Producto::find($productoId);
+                    throw new InsufficientStockException(
+                        almacenId:      $almacenId,
+                        productoId:     $productoId,
+                        disponible:     $cantidadActual,
+                        solicitado:     $solicitado,
+                        productoNombre: $producto?->nombre,
+                    );
+                }
 
-        $stock->save();
+                $stock->cantidad = $cantidadActual + $cantidadBase; // suma con cantidadBase negativo
+            }
 
-        return $stock;
+            $stock->save();
+
+            return $stock;
+        });
     }
 
     /**

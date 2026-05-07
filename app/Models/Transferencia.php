@@ -183,11 +183,13 @@ class Transferencia extends Model
         if ($this->esRecibida()) {
             foreach ($this->detalles as $d) {
                 $cantBaseRecibida = (float) ($d->cantidad_base_recibida ?? $d->cantidad_base_enviada);
-                // Revertir entrada al destino (sacar del local)
+                // Reverso administrativo: si entre tanto se vendio en el destino, podria quedar
+                // negativo transitoriamente. No bloqueamos para preservar consistencia contable.
                 Stock::ajustar(
                     $this->almacen_destino_id,
                     $d->producto_id,
-                    -1 * $cantBaseRecibida
+                    -1 * $cantBaseRecibida,
+                    permitirNegativo: true,
                 );
             }
         }
