@@ -74,8 +74,13 @@ class ProductoController extends Controller
                 'es_retornable'  => $esProducto ? ($data['es_retornable'] ?? null) : false,
             ]);
 
-            if ($producto->esProductoFisico()) {
-                foreach ($data['unidades'] as $u) {
+            $unidades = $data['unidades'] ?? [];
+
+            // Procesa presentaciones para AMBOS tipos (productos y servicios con variantes).
+            // Si el form no envia ninguna y es servicio, se crea una unica presentacion
+            // por defecto para que el POS pueda agregarlo al carrito (precio del servicio).
+            if (!empty($unidades)) {
+                foreach ($unidades as $u) {
                     $producto->unidades()->create([
                         'unidad_medida_id'  => $u['unidad_medida_id'],
                         'es_base'           => $u['es_base'],
@@ -86,11 +91,36 @@ class ProductoController extends Controller
                         'activo'            => $u['activo'] ?? true,
                     ]);
                 }
+            } elseif ($producto->esServicio()) {
+                $this->crearPresentacionDefaultServicio($producto, $data);
             }
         });
 
         return redirect()->route('catalogo.productos.index')
             ->with('success', 'Producto creado correctamente.');
+    }
+
+    /**
+     * Para servicios sin variantes explicitas, crea una presentacion default
+     * con la unidad "Servicio" (la crea si no existe) y el precio del servicio.
+     * Esto garantiza que todo servicio sea agregable desde el POS.
+     */
+    private function crearPresentacionDefaultServicio(Producto $producto, array $data): void
+    {
+        $um = UnidadMedida::firstOrCreate(
+            ['empresa_id' => $producto->empresa_id, 'nombre' => 'Servicio'],
+            ['abreviatura' => 'srv', 'activo' => true]
+        );
+
+        $producto->unidades()->create([
+            'unidad_medida_id'  => $um->id,
+            'es_base'           => true,
+            'factor_conversion' => 1,
+            'tipo_precio'       => $data['tipo_precio'] ?? 'fijo',
+            'precio_venta'      => $data['precio_venta'] ?? 0,
+            'precio_costo'      => 0,
+            'activo'            => true,
+        ]);
     }
 
     public function edit(Request $request, Producto $producto)
@@ -126,8 +156,13 @@ class ProductoController extends Controller
                 'es_retornable'  => $esProducto ? ($data['es_retornable'] ?? null) : false,
             ]);
 
-            if ($producto->esProductoFisico()) {
-                $incoming    = collect($data['unidades']);
+            $unidades = $data['unidades'] ?? null;
+
+            // Si el form mando presentaciones (sea producto o servicio con variantes),
+            // sincronizarlas. Si no mando ninguna y es servicio sin presentaciones aun,
+            // crear la default para mantener consistencia.
+            if (!empty($unidades)) {
+                $incoming    = collect($unidades);
                 $incomingIds = $incoming->pluck('id')->filter();
 
                 // Unidades removidas del formulario: borrar solo si no tienen ventas;
@@ -143,8 +178,6 @@ class ProductoController extends Controller
                 }
 
                 foreach ($incoming as $u) {
-                    // Si viene con ID, buscar por ID; si no, buscar por unidad_medida_id
-                    // (puede existir desactivada) para evitar violación de unicidad.
                     $match = isset($u['id'])
                         ? ['id' => $u['id']]
                         : ['unidad_medida_id' => $u['unidad_medida_id']];
@@ -162,8 +195,8 @@ class ProductoController extends Controller
                         ]
                     );
                 }
-            } else {
-                $producto->unidades()->delete();
+            } elseif ($producto->esServicio() && $producto->unidades()->count() === 0) {
+                $this->crearPresentacionDefaultServicio($producto, $data);
             }
         });
 

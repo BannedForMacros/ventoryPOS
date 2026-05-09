@@ -226,23 +226,24 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                     <Switch label="Activo" checked={data.activo} onChange={v => setData('activo', v)} />
                 </section>
 
-                {/* ── Sección 2: Unidades de medida (solo productos físicos) ── */}
-                {data.tipo === 'producto' && (
-                    <section className="rounded-2xl border p-6 space-y-4"
-                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                                    Unidades de medida
-                                </h2>
-                                <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Define las unidades disponibles y su precio de venta
-                                </p>
-                            </div>
-                            <Button type="button" variant="ghost" onClick={addUnidad}>
-                                <Plus size={14} className="mr-1" />Agregar unidad
-                            </Button>
+                {/* ── Sección 2: Presentaciones / variantes ── */}
+                <section className="rounded-2xl border p-6 space-y-4"
+                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                                Presentaciones {data.tipo === 'servicio' && <span className="lowercase font-normal opacity-70">(opcional para servicios)</span>}
+                            </h2>
+                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                {data.tipo === 'producto'
+                                    ? 'Define las presentaciones disponibles y su precio de venta. Mínimo una.'
+                                    : 'Si tu servicio tiene varias versiones (ej: Talla pequeña / mediana / grande), agrégalas aquí. Si no, el precio del servicio aplica para todos.'}
+                            </p>
                         </div>
+                        <Button type="button" variant="ghost" onClick={addUnidad}>
+                            <Plus size={14} className="mr-1" />Agregar presentación
+                        </Button>
+                    </div>
 
                         {errors.unidades && (
                             <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm"
@@ -299,9 +300,9 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                                     )}
                                 </div>
 
-                                {/* Unidad de medida + Factor de conversión */}
+                                {/* Presentación + Factor de conversión */}
                                 <div className="grid grid-cols-2 gap-3">
-                                    <Select label="Unidad de medida" required value={u.unidad_medida_id}
+                                    <Select label="Presentación" required value={u.unidad_medida_id}
                                         onChange={v => setUnidad(i, 'unidad_medida_id', Number(v))}
                                         options={unidades.map(um => ({ value: um.id, label: `${um.nombre} (${um.abreviatura})` }))}
                                         error={(errors as Record<string, string>)[`unidades.${i}.unidad_medida_id`]} />
@@ -346,7 +347,6 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                             </div>
                         ))}
                     </section>
-                )}
 
                 <div className="flex gap-3">
                     <Button type="button" variant="ghost" onClick={() => router.visit(route('catalogo.productos.index'))}>

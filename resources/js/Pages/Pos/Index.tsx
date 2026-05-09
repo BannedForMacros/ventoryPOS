@@ -13,7 +13,8 @@ import PanelPago, { LineaPago } from './Partials/PanelPago';
 import PanelDescuento from './Partials/PanelDescuento';
 import ModalClienteRapido from './Partials/ModalClienteRapido';
 import ModalConfirmacionVenta from './Partials/ModalConfirmacionVenta';
-import type { Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, Turno, PageProps } from '@/types';
+import ModalSelectorPresentacion from './Partials/ModalSelectorPresentacion';
+import type { Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, ProductoUnidad, Turno, PageProps } from '@/types';
 
 interface MetodoPagoConCuentas extends MetodoPago { cuentas?: Cuenta[]; }
 
@@ -71,6 +72,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // mantiene mientras siga la misma venta-en-construccion. Se renueva al
     // limpiar el carrito tras un OK exitoso.
     const [idempotencyKey, setIdempotencyKey] = useState<string>(() => generarIdempotencyKey());
+    // Producto pendiente de elegir presentacion (cuando tiene 2+ unidades)
+    const [productoEnSeleccion, setProductoEnSeleccion] = useState<Producto | null>(null);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -128,23 +131,47 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         return filtrados;
     }, [busqueda, productos, categoriaActiva]);
 
+    /**
+     * Punto de entrada al hacer click en un producto del catalogo.
+     * - Si tiene 1 sola presentacion (caso tipico) → agrega directo al carrito.
+     * - Si tiene 2+ presentaciones (talla P/M/G en servicios, presentaciones
+     *   de bebida en bodega) → abre el modal selector para que el cajero elija.
+     */
     function agregarProducto(producto: Producto) {
-        const unidadBase = producto.unidades?.find(u => u.es_base) ?? producto.unidades?.[0];
-        if (!unidadBase) { toast.error('El producto no tiene unidades configuradas.'); return; }
+        const unidadesActivas = (producto.unidades ?? []).filter(u => u.activo !== false);
 
-        const key = `${producto.id}-${unidadBase.id}`;
+        if (unidadesActivas.length === 0) {
+            toast.error('El producto no tiene presentaciones configuradas.');
+            return;
+        }
+
+        if (unidadesActivas.length === 1) {
+            agregarConPresentacion(producto, unidadesActivas[0]);
+            return;
+        }
+
+        // 2+ presentaciones → abrir modal selector
+        setProductoEnSeleccion(producto);
+    }
+
+    /**
+     * Agrega al carrito una linea con la presentacion ya elegida.
+     * Si esa misma presentacion ya esta en el carrito, suma cantidad.
+     */
+    function agregarConPresentacion(producto: Producto, unidad: ProductoUnidad) {
+        const key = `${producto.id}-${unidad.id}`;
         const existente = carrito.find(i => i.key === key);
 
         if (existente) {
             cambiarCantidad(key, 1);
         } else {
-            const precio = parseFloat(unidadBase.precio_venta);
+            const precio = parseFloat(unidad.precio_venta);
             const item: LineaCarrito = {
                 key,
                 producto_id:          producto.id,
-                producto_unidad_id:   unidadBase.id,
+                producto_unidad_id:   unidad.id,
                 producto_nombre:      producto.nombre,
-                unidad_nombre:        unidadBase.unidad_medida?.nombre ?? '',
+                unidad_nombre:        unidad.unidad_medida?.nombre ?? '',
                 precio_unitario:      precio,
                 precio_original:      precio,
                 cantidad:             1,
@@ -156,8 +183,10 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             setCarrito(prev => [...prev, item]);
         }
 
-        // Feedback visual
-        toast.success(`${producto.nombre} agregado`, { duration: 1000, icon: '🛒' });
+        const nombreCompleto = unidad.unidad_medida?.nombre
+            ? `${producto.nombre} (${unidad.unidad_medida.nombre})`
+            : producto.nombre;
+        toast.success(`${nombreCompleto} agregado`, { duration: 1000, icon: '🛒' });
     }
 
     function cambiarCantidad(key: string, delta: number) {
@@ -439,13 +468,28 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                             >
                                                 {producto.categoria?.nombre ?? 'General'}
                                             </span>
-                                            <span className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>
-                                                S/ {parseFloat(
-                                                    producto.unidad_base?.precio_venta
-                                                    ?? producto.unidades?.find(u => u.es_base)?.precio_venta
-                                                    ?? producto.precio_venta
-                                                ).toFixed(2)}
-                                            </span>
+                                            {(() => {
+                                                const unidadesActivas = (producto.unidades ?? []).filter(u => u.activo !== false);
+                                                if (unidadesActivas.length > 1) {
+                                                    const precios = unidadesActivas.map(u => parseFloat(u.precio_venta));
+                                                    const min = Math.min(...precios);
+                                                    return (
+                                                        <span className="text-sm font-bold flex items-center gap-1" style={{ color: 'var(--color-primary)' }}>
+                                                            <span className="text-[9px] font-medium opacity-70 uppercase tracking-wider">desde</span>
+                                                            S/ {min.toFixed(2)}
+                                                        </span>
+                                                    );
+                                                }
+                                                return (
+                                                    <span className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>
+                                                        S/ {parseFloat(
+                                                            producto.unidad_base?.precio_venta
+                                                            ?? producto.unidades?.find(u => u.es_base)?.precio_venta
+                                                            ?? producto.precio_venta
+                                                        ).toFixed(2)}
+                                                    </span>
+                                                );
+                                            })()}
                                         </div>
                                     </button>
                                 );
@@ -609,6 +653,13 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 total={total}
                 metodosPago={metodosPago}
                 conceptos={conceptosDescuento}
+            />
+
+            <ModalSelectorPresentacion
+                isOpen={productoEnSeleccion !== null}
+                onClose={() => setProductoEnSeleccion(null)}
+                producto={productoEnSeleccion}
+                onElegir={agregarConPresentacion}
             />
 
             {/* CSS para animación del drawer */}

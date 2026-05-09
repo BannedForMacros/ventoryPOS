@@ -41,34 +41,37 @@ class ProductoRequest extends FormRequest
             'es_retornable'  => 'nullable|boolean',
         ];
 
-        if ($this->input('tipo') === 'producto') {
-            $rules['unidades']                     = 'required|array|min:1';
-            $rules['unidades.*.unidad_medida_id']  = [
-                'required',
-                Rule::exists('unidades_medida', 'id')->where('empresa_id', $empresaId),
-            ];
-            $rules['unidades.*.es_base']           = 'required|boolean';
-            $rules['unidades.*.factor_conversion'] = 'required|numeric|min:0.0001';
-            $rules['unidades.*.tipo_precio']       = 'required|in:fijo,referencial';
-            $rules['unidades.*.precio_venta']      = 'required|numeric|min:0';
-            $rules['unidades.*.activo']            = 'boolean';
-        }
+        // Productos: unidades obligatorias (1+).
+        // Servicios: unidades opcionales. Si vienen, validan igual.
+        // Si un servicio no envia unidades, el controller crea una por defecto al guardar.
+        $unidadesBase = ($this->input('tipo') === 'producto') ? 'required|array|min:1' : 'nullable|array';
+
+        $rules['unidades']                     = $unidadesBase;
+        $rules['unidades.*.unidad_medida_id']  = [
+            'required',
+            Rule::exists('unidades_medida', 'id')->where('empresa_id', $empresaId),
+        ];
+        $rules['unidades.*.es_base']           = 'required|boolean';
+        $rules['unidades.*.factor_conversion'] = 'required|numeric|min:0.0001';
+        $rules['unidades.*.tipo_precio']       = 'required|in:fijo,referencial';
+        $rules['unidades.*.precio_venta']      = 'required|numeric|min:0';
+        $rules['unidades.*.activo']            = 'boolean';
 
         return $rules;
     }
 
     public function withValidator($validator): void
     {
-        if ($this->input('tipo') !== 'producto') {
-            return;
-        }
-
         $validator->after(function ($v) {
             $unidades = $this->input('unidades', []);
-            $bases    = array_filter($unidades, fn($u) => !empty($u['es_base']));
 
-            if (count($bases) !== 1) {
-                $v->errors()->add('unidades', 'Exactamente una unidad debe ser la unidad base.');
+            // Si el form envio presentaciones (sea producto o servicio con variantes),
+            // exigir exactamente 1 unidad base.
+            if (count($unidades) >= 1) {
+                $bases = array_filter($unidades, fn($u) => !empty($u['es_base']));
+                if (count($bases) !== 1) {
+                    $v->errors()->add('unidades', 'Exactamente una presentación debe marcarse como base.');
+                }
             }
         });
     }

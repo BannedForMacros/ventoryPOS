@@ -152,7 +152,7 @@ export default function VentasShow({ venta, flash }: Props) {
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
-                                        {['Producto', 'Unidad', 'Cant.', 'P. Unit.', 'Desc.', 'Subtotal'].map(h => (
+                                        {['Producto', 'Presentación', 'Cant.', 'P. Unit.', 'Desc.', 'Subtotal'].map(h => (
                                             <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
                                                 {h}
                                             </th>

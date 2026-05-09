@@ -104,40 +104,56 @@ export default function UnidadesMedida({ unidades }: Props) {
     ];
 
     return (
-        <AppLayout title="Unidades de medida">
+        <AppLayout title="Presentaciones">
             <PageHeader
-                title="Unidades de medida"
-                subtitle="Unidades usadas en productos del catálogo"
-                actions={<Button onClick={openCreate}>+ Nueva Unidad</Button>}
+                title="Presentaciones"
+                subtitle="Presentaciones disponibles para tus productos y servicios (ej: 1 kg, Talla M, Caja x12)"
+                actions={<Button onClick={openCreate}>+ Nueva presentación</Button>}
             />
 
             <Table
                 data={unidades}
                 columns={columns}
-                searchPlaceholder="Buscar unidad..."
-                emptyMessage="No hay unidades de medida registradas"
+                searchPlaceholder="Buscar presentación..."
+                emptyMessage="No hay presentaciones registradas"
             />
 
             {/* Form Modal */}
             <Modal
                 isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
-                title={editing ? 'Editar Unidad' : 'Nueva Unidad de Medida'}
+                title={editing ? 'Editar presentación' : 'Nueva presentación'}
                 size="sm"
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
                         <Button loading={processing} onClick={submit}>
-                            {editing ? 'Guardar cambios' : 'Crear unidad'}
+                            {editing ? 'Guardar cambios' : 'Crear presentación'}
                         </Button>
                     </>
                 }
             >
                 <form onSubmit={submit} className="space-y-4">
+                    <div
+                        className="rounded-md p-3 text-xs"
+                        style={{
+                            backgroundColor: 'color-mix(in srgb, var(--color-primary) 6%, transparent)',
+                            border: '1px solid color-mix(in srgb, var(--color-primary) 20%, transparent)',
+                            color: 'var(--color-text)',
+                        }}
+                    >
+                        <p className="font-semibold mb-1">¿Qué es una presentación?</p>
+                        <p style={{ color: 'var(--color-text-muted)' }}>
+                            Es la forma específica en la que vendes un producto o servicio.
+                            Ejemplos: <strong>Kilogramo</strong>, <strong>Litro</strong>, <strong>Talla pequeña</strong>,
+                            <strong> Caja x12</strong>, <strong>Sesión 30 min</strong>.
+                            Un mismo producto puede tener varias presentaciones con distinto precio.
+                        </p>
+                    </div>
                     <Input
                         label="Nombre"
                         required
-                        placeholder="ej: Kilogramo, Litro, Unidad"
+                        placeholder="ej: Kilogramo, Talla mediana, Sesión 30 min"
                         value={data.nombre}
                         onChange={e => setData('nombre', e.target.value)}
                         error={errors.nombre}
@@ -145,13 +161,13 @@ export default function UnidadesMedida({ unidades }: Props) {
                     <Input
                         label="Abreviatura"
                         required
-                        placeholder="ej: kg, L, und"
+                        placeholder="ej: kg, M, 30m"
                         value={data.abreviatura}
                         onChange={e => setData('abreviatura', e.target.value)}
                         error={errors.abreviatura}
                     />
                     <Switch
-                        label="Unidad activa"
+                        label="Presentación activa"
                         checked={data.activo}
                         onChange={v => setData('activo', v)}
                     />
