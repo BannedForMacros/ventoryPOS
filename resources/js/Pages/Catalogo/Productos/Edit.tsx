@@ -5,6 +5,7 @@ import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
+import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import Tabs from '@/Components/UI/Tabs';
 import type { PageProps } from '@/types';
@@ -269,12 +270,12 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <p className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                                            Tipo de unidad
+                                            Tipo
                                         </p>
                                         <div className="flex gap-5">
                                             {([
-                                                { val: true,  label: 'Base',    hint: 'Factor = 1, es la unidad principal' },
-                                                { val: false, label: 'Derivada', hint: 'Se convierte desde la unidad base' },
+                                                { val: true,  label: 'Principal', hint: 'La presentación más vendida o por defecto' },
+                                                { val: false, label: 'Adicional', hint: 'Otra presentación / variante del mismo producto' },
                                             ]).map(opt => (
                                                 <label key={String(opt.val)} className="flex items-start gap-2 cursor-pointer">
                                                     <input
@@ -300,21 +301,62 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                                     )}
                                 </div>
 
-                                {/* Presentación + Factor de conversión */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <Select label="Presentación" required value={u.unidad_medida_id}
-                                        onChange={v => setUnidad(i, 'unidad_medida_id', Number(v))}
-                                        options={unidades.map(um => ({ value: um.id, label: `${um.nombre} (${um.abreviatura})` }))}
-                                        error={(errors as Record<string, string>)[`unidades.${i}.unidad_medida_id`]} />
-                                    <Input
-                                        label="Factor de conversión"
-                                        type="number" min="0.0001" step="0.0001"
-                                        value={u.factor_conversion}
-                                        onChange={e => setUnidad(i, 'factor_conversion', e.target.value)}
-                                        disabled={u.es_base}
-                                        hint={u.es_base ? 'La unidad base siempre tiene factor 1' : 'Cuántas unidades base equivale 1 de esta'}
-                                        error={(errors as Record<string, string>)[`unidades.${i}.factor_conversion`]} />
-                                </div>
+                                {/* Presentación */}
+                                <SearchableSelect
+                                    label="Presentación"
+                                    required
+                                    value={u.unidad_medida_id}
+                                    onChange={v => setUnidad(i, 'unidad_medida_id', Number(v))}
+                                    options={unidades.map(um => ({ value: um.id, label: `${um.nombre} (${um.abreviatura})` }))}
+                                    searchPlaceholder="Buscar presentación..."
+                                    emptyMessage="No hay presentaciones que coincidan"
+                                    error={(errors as Record<string, string>)[`unidades.${i}.unidad_medida_id`]}
+                                />
+
+                                {/* Agrupación (solo productos físicos derivados). Para servicios y para
+                                    presentaciones base no aplica: factor queda en 1 implícitamente. */}
+                                {data.tipo === 'producto' && !u.es_base && (() => {
+                                    const esAgrupacion = parseFloat(String(u.factor_conversion)) !== 1;
+                                    return (
+                                        <div
+                                            className="rounded-lg p-3 space-y-3"
+                                            style={{
+                                                backgroundColor: 'var(--color-surface)',
+                                                border: '1px dashed var(--color-border)',
+                                            }}
+                                        >
+                                            <label className="flex items-start gap-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={esAgrupacion}
+                                                    onChange={e => setUnidad(i, 'factor_conversion', e.target.checked ? '2' : '1')}
+                                                    className="mt-0.5 accent-[var(--color-primary)]"
+                                                />
+                                                <span>
+                                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                                                        Esta presentación contiene varias unidades base
+                                                    </span>
+                                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                                        Marca esto solo si vendes una <strong>agrupación</strong> (ej: caja x12, six-pack).
+                                                        Para variantes simples (talla, color) déjalo desmarcado.
+                                                    </span>
+                                                </span>
+                                            </label>
+
+                                            {esAgrupacion && (
+                                                <Input
+                                                    label="¿Cuántas unidades base contiene?"
+                                                    type="number" min="2" step="1"
+                                                    placeholder="Ej: 12"
+                                                    value={u.factor_conversion}
+                                                    onChange={e => setUnidad(i, 'factor_conversion', e.target.value)}
+                                                    hint="Al vender 1 de esta presentación, el stock descontará esta cantidad."
+                                                    error={(errors as Record<string, string>)[`unidades.${i}.factor_conversion`]}
+                                                />
+                                            )}
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Precio de venta + Tipo de precio */}
                                 <div className="grid grid-cols-2 gap-3">
