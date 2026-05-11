@@ -62,6 +62,12 @@ class Auditoria extends Model
             'producto.eliminado'      => 'Producto eliminado',
             'transferencia.anulada'   => 'Transferencia anulada',
             'entrada.confirmada'      => 'Entrada confirmada',
+            'cita.creada'             => 'Cita creada',
+            'cita.confirmada'         => 'Cita confirmada',
+            'cita.iniciada'           => 'Cita iniciada (en atención)',
+            'cita.cancelada'          => 'Cita cancelada',
+            'cita.no_asistio'         => 'Cita marcada como no asistió',
+            'cita.completada'         => 'Cita completada (cobrada)',
         ];
     }
 }

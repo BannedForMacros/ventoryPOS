@@ -23,6 +23,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Gastos\GastoController;
 use App\Http\Controllers\Gastos\GastoTipoController;
 use App\Http\Controllers\Turnos\TurnoController;
+use App\Http\Controllers\Agenda\AgendaController;
 use App\Http\Controllers\Reportes\ReporteAuditoriaController;
 use App\Http\Controllers\Reportes\ReporteCajaController;
 use App\Http\Controllers\Reportes\ReporteDevolucionController;
@@ -256,6 +257,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::apiResource('configuracion/descuento-conceptos', DescuentoConceptoController::class)
             ->names('configuracion.descuento-conceptos')
             ->except(['show']);
+    });
+
+    // ── AGENDA / CITAS ───────────────────────────────────────────────────
+    Route::prefix('agenda')->name('agenda.')->group(function () {
+        Route::middleware('permiso:agenda,ver')->get('/',                              [AgendaController::class, 'index'])->name('index');
+        Route::middleware('permiso:agenda,crear')->get('/crear',                       [AgendaController::class, 'create'])->name('create');
+        Route::middleware('permiso:agenda,crear')->post('/',                           [AgendaController::class, 'store'])->name('store');
+        Route::middleware('permiso:agenda,ver')->get('/{cita}',                        [AgendaController::class, 'show'])->name('show');
+        Route::middleware('permiso:agenda,editar')->get('/{cita}/editar',              [AgendaController::class, 'edit'])->name('edit');
+        Route::middleware('permiso:agenda,editar')->put('/{cita}',                     [AgendaController::class, 'update'])->name('update');
+        Route::middleware('permiso:agenda,eliminar')->delete('/{cita}',                [AgendaController::class, 'destroy'])->name('destroy');
+        // Transiciones de estado
+        Route::middleware('permiso:agenda,editar')->post('/{cita}/confirmar',          [AgendaController::class, 'confirmar'])->name('confirmar');
+        Route::middleware('permiso:agenda,editar')->post('/{cita}/iniciar',            [AgendaController::class, 'iniciar'])->name('iniciar');
+        Route::middleware('permiso:agenda,editar')->post('/{cita}/cancelar',           [AgendaController::class, 'cancelar'])->name('cancelar');
+        Route::middleware('permiso:agenda,editar')->post('/{cita}/no-asistio',         [AgendaController::class, 'noAsistio'])->name('no_asistio');
+        // Completar = redirige a POS prellenado
+        Route::middleware('permiso:agenda,editar')->post('/{cita}/completar',          [AgendaController::class, 'completar'])->name('completar');
     });
 
     // ── REPORTES ─────────────────────────────────────────────────────────

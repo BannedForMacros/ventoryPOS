@@ -317,6 +317,25 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                                     presentaciones base no aplica: factor queda en 1 implícitamente. */}
                                 {data.tipo === 'producto' && !u.es_base && (() => {
                                     const esAgrupacion = parseFloat(String(u.factor_conversion)) !== 1;
+
+                                    // Resuelve nombres reales de las presentaciones para construir
+                                    // un hint dinámico tipo: "Vender 1 'Caja x12' descontará 12 'Botella 500ml'".
+                                    const baseRow            = data.unidades.find(uu => uu.es_base);
+                                    const basePresentacionId = baseRow?.unidad_medida_id;
+                                    const nombreBase         = unidades.find(um => um.id === basePresentacionId)?.nombre ?? '';
+                                    const nombreActual       = unidades.find(um => um.id === u.unidad_medida_id)?.nombre ?? '';
+                                    const factor             = parseFloat(String(u.factor_conversion));
+
+                                    const hintDinamico = (() => {
+                                        if (!nombreBase || !nombreActual) {
+                                            return 'Selecciona primero la presentación principal y esta presentación para ver el cálculo de stock.';
+                                        }
+                                        if (!factor || factor < 2) {
+                                            return `Indica cuántas "${nombreBase}" contiene 1 "${nombreActual}".`;
+                                        }
+                                        return `Vender 1 "${nombreActual}" descontará ${factor} "${nombreBase}" del inventario.`;
+                                    })();
+
                                     return (
                                         <div
                                             className="rounded-lg p-3 space-y-3"
@@ -345,12 +364,14 @@ export default function Edit({ producto, categorias, unidades }: Props) {
 
                                             {esAgrupacion && (
                                                 <Input
-                                                    label="¿Cuántas unidades base contiene?"
+                                                    label={nombreBase
+                                                        ? `¿Cuántas "${nombreBase}" contiene esta presentación?`
+                                                        : '¿Cuántas unidades base contiene?'}
                                                     type="number" min="2" step="1"
                                                     placeholder="Ej: 12"
                                                     value={u.factor_conversion}
                                                     onChange={e => setUnidad(i, 'factor_conversion', e.target.value)}
-                                                    hint="Al vender 1 de esta presentación, el stock descontará esta cantidad."
+                                                    hint={hintDinamico}
                                                     error={(errors as Record<string, string>)[`unidades.${i}.factor_conversion`]}
                                                 />
                                             )}

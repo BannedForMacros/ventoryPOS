@@ -26,6 +26,10 @@ class Empresa extends Model
         'dias_max_devolucion',
         'requiere_aprobacion_devolucion',
         'restock_default',
+        // Modulo Agenda multidisciplina
+        'usa_agenda',
+        'agenda_sujeto_label',
+        'agenda_sujeto_requerido',
     ];
 
     protected function casts(): array
@@ -38,6 +42,8 @@ class Empresa extends Model
             'permite_devoluciones'            => 'boolean',
             'requiere_aprobacion_devolucion'  => 'boolean',
             'restock_default'                 => 'boolean',
+            'usa_agenda'                      => 'boolean',
+            'agenda_sujeto_requerido'         => 'boolean',
         ];
     }
 
