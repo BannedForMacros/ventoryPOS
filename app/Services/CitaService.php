@@ -237,6 +237,45 @@ class CitaService
         });
     }
 
+    /**
+     * Vincula una cita activa con una venta ya creada (flujo "completar y cobrar"
+     * desde el POS prellenado). Marca la cita como completada.
+     *
+     * Diferente a completarYCobrar(): aqui la venta YA EXISTE (creada por el POS),
+     * solo asociamos. completarYCobrar crea la venta internamente.
+     */
+    public function vincularVenta(Cita $cita, Venta $venta, User $user): void
+    {
+        if ($cita->venta_id) {
+            throw new LogicException('Esta cita ya tiene una venta asociada.');
+        }
+        $this->guardEstado($cita, [
+            Cita::ESTADO_PROGRAMADA, Cita::ESTADO_CONFIRMADA, Cita::ESTADO_EN_ATENCION,
+        ], 'vincular venta');
+
+        if ($venta->empresa_id !== $cita->empresa_id) {
+            throw new LogicException('La venta y la cita pertenecen a empresas distintas.');
+        }
+
+        DB::transaction(function () use ($cita, $venta, $user) {
+            $cita->update([
+                'estado'        => Cita::ESTADO_COMPLETADA,
+                'completada_at' => now(),
+                'venta_id'      => $venta->id,
+            ]);
+
+            AuditoriaService::log('cita.completada', $cita, [
+                'numero'           => $cita->numero,
+                'venta_id'         => $venta->id,
+                'venta_numero'     => $venta->numero,
+                'venta_total'      => (float) $venta->total,
+                'items_reservados' => $cita->items()->count(),
+                'items_vendidos'   => $venta->items()->count(),
+                'via'              => 'pos_directo',
+            ], $user);
+        });
+    }
+
     // ── HELPERS ──────────────────────────────────────────────────────────
 
     /**

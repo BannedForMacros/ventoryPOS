@@ -18,12 +18,30 @@ import type { Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, Producto
 
 interface MetodoPagoConCuentas extends MetodoPago { cuentas?: Cuenta[]; }
 
+interface CitaPrellenada {
+    id:           number;
+    numero:       string;
+    sujeto_label: string | null;
+    sujeto:       string | null;
+    cliente:      Cliente;
+    items: Array<{
+        producto_id:        number;
+        producto_unidad_id: number;
+        producto_nombre:    string;
+        unidad_nombre:      string;
+        cantidad:           number;
+        precio_unitario:    number;
+        incluye_igv:        boolean;
+    }>;
+}
+
 interface Props extends PageProps {
     turno:              Turno;
     productos:          Producto[];
     clientes:           Cliente[];
     metodosPago:        MetodoPagoConCuentas[];
     conceptosDescuento: DescuentoConcepto[];
+    citaPrellenada?:    CitaPrellenada | null;
 }
 
 type TipoComprobante = 'ticket' | 'boleta' | 'factura';
@@ -53,13 +71,34 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number) {
     return { subtotal, igv, total };
 }
 
-export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash }: Props) {
+export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada }: Props) {
     const clienteGeneral = clientes.find(c => c.numero_documento === '99999999') ?? null;
 
+    // Si venimos desde una cita, prellenar carrito y cliente automaticamente
+    const carritoInicial: LineaCarrito[] = citaPrellenada?.items.map(it => {
+        const subtotal = it.precio_unitario * it.cantidad;
+        return {
+            key: `${it.producto_id}-${it.producto_unidad_id}`,
+            producto_id:           it.producto_id,
+            producto_unidad_id:    it.producto_unidad_id,
+            producto_nombre:       it.producto_nombre,
+            unidad_nombre:         it.unidad_nombre,
+            precio_unitario:       it.precio_unitario,
+            precio_original:       it.precio_unitario,
+            cantidad:              it.cantidad,
+            descuento_item:        0,
+            descuento_concepto_id: null,
+            subtotal,
+            incluye_igv:           it.incluye_igv,
+        };
+    }) ?? [];
+
+    const clienteInicial: Cliente | null = citaPrellenada?.cliente ?? clienteGeneral;
+
     const [busqueda, setBusqueda]           = useState('');
-    const [carrito, setCarrito]             = useState<LineaCarrito[]>([]);
+    const [carrito, setCarrito]             = useState<LineaCarrito[]>(carritoInicial);
     const [pagos, setPagos]                 = useState<LineaPago[]>([]);
-    const [cliente, setCliente]             = useState<Cliente | null>(clienteGeneral);
+    const [cliente, setCliente]             = useState<Cliente | null>(clienteInicial);
     const [descuentoTotal, setDescuentoTotal]       = useState(0);
     const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(null);
     const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>('ticket');
@@ -246,6 +285,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             descuento_concepto_id: descuentoConceptoId,
             // Se reenvia el mismo key en cada reintento. El backend desduplica.
             idempotency_key:       idempotencyKey,
+            // Si vino de una cita, lo enviamos para que el backend la vincule.
+            cita_id:               citaPrellenada?.id ?? null,
             items: carrito.map(i => ({
                 producto_id:           i.producto_id,
                 producto_unidad_id:    i.producto_unidad_id,
@@ -285,6 +326,44 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
 
     return (
         <PosLayout>
+            {/* Banner de cita activa (cuando se llega desde la agenda) */}
+            {citaPrellenada && (
+                <div
+                    className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 flex-shrink-0 border-b text-sm"
+                    style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, var(--color-bg))',
+                        borderColor: 'var(--color-primary)',
+                        color: 'var(--color-text)',
+                    }}
+                >
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                            style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}>
+                            Cita {citaPrellenada.numero}
+                        </span>
+                        <span style={{ color: 'var(--color-text)' }}>
+                            <strong>
+                                {citaPrellenada.cliente.razon_social
+                                    ?? `${citaPrellenada.cliente.nombres ?? ''} ${citaPrellenada.cliente.apellidos ?? ''}`.trim()}
+                            </strong>
+                        </span>
+                        {citaPrellenada.sujeto && citaPrellenada.sujeto_label && (
+                            <span style={{ color: 'var(--color-text-muted)' }}>
+                                · {citaPrellenada.sujeto_label}: <strong>{citaPrellenada.sujeto}</strong>
+                            </span>
+                        )}
+                        <span className="text-xs opacity-70" style={{ color: 'var(--color-text-muted)' }}>
+                            · Carrito prellenado, puedes agregar/quitar antes de cobrar
+                        </span>
+                    </div>
+                    <Link href={route('agenda.show', citaPrellenada.id)}
+                        className="text-xs font-medium underline hover:opacity-80"
+                        style={{ color: 'var(--color-primary)' }}>
+                        Ver cita
+                    </Link>
+                </div>
+            )}
+
             {/* ── Barra superior ─────────────────────────────────────────── */}
             <div
                 className="flex items-center justify-between px-3 sm:px-4 py-2.5 flex-shrink-0"

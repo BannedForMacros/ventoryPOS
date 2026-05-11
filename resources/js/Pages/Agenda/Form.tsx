@@ -116,11 +116,11 @@ export default function AgendaForm({
     function onProductoChange(i: number, productoId: number) {
         const prod = productos.find(p => p.id === productoId);
         const unidadBase = prod?.unidades?.find(u => u.activo) ?? prod?.unidades?.[0];
-        const next = data.items.map((it, idx) => idx !== i ? it : {
+        const next: ItemRow[] = data.items.map((it, idx) => idx !== i ? it : ({
             ...it,
             producto_id: productoId,
-            producto_unidad_id: unidadBase?.id ?? '',
-        });
+            producto_unidad_id: (unidadBase?.id ?? '') as number | '',
+        }));
         setData('items', next);
     }
 

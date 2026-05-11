@@ -10,6 +10,7 @@ use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\Turno;
 use App\Models\Venta;
+use App\Services\CitaService;
 use App\Services\LocalScopeService;
 use App\Services\VentaService;
 use Illuminate\Http\Request;
@@ -18,8 +19,9 @@ use Inertia\Inertia;
 class VentaController extends Controller
 {
     public function __construct(
-        private VentaService     $ventaService,
+        private VentaService      $ventaService,
         private LocalScopeService $scope,
+        private CitaService       $citaService,
     ) {}
 
     // ── POS ────────────────────────────────────────────────────────────────────
@@ -56,12 +58,42 @@ class VentaController extends Controller
             ->orderBy('nombre')
             ->get();
 
+        // Si el POS se abre desde una cita (cita_id en query), prellenar el carrito.
+        // El frontend usa esta data para inicializar carrito + cliente automaticamente.
+        $citaPrellenada = null;
+        if ($citaId = $request->query('cita_id')) {
+            $cita = \App\Models\Cita::with(['cliente', 'items.producto', 'items.productoUnidad.unidadMedida'])
+                ->where('id', $citaId)
+                ->where('empresa_id', $user->empresa_id)
+                ->first();
+
+            if ($cita && !$cita->venta_id && $cita->estaActiva()) {
+                $citaPrellenada = [
+                    'id'           => $cita->id,
+                    'numero'       => $cita->numero,
+                    'sujeto_label' => $user->empresa->agenda_sujeto_label,
+                    'sujeto'       => $cita->sujeto_nombre,
+                    'cliente'      => $cita->cliente,
+                    'items'        => $cita->items->map(fn($it) => [
+                        'producto_id'        => $it->producto_id,
+                        'producto_unidad_id' => $it->producto_unidad_id,
+                        'producto_nombre'    => $it->producto->nombre,
+                        'unidad_nombre'      => $it->productoUnidad->unidadMedida->nombre ?? '',
+                        'cantidad'           => (float) $it->cantidad,
+                        'precio_unitario'    => (float) $it->productoUnidad->precio_venta, // precio actual del catalogo
+                        'incluye_igv'        => (bool) $it->producto->incluye_igv,
+                    ]),
+                ];
+            }
+        }
+
         return Inertia::render('Pos/Index', [
             'turno'              => $turno,
             'productos'          => $productos,
             'clientes'           => $clientes,
             'metodosPago'        => $metodosPago,
             'conceptosDescuento' => $conceptosDescuento,
+            'citaPrellenada'     => $citaPrellenada,
         ]);
     }
 
@@ -120,6 +152,25 @@ class VentaController extends Controller
         }
 
         $venta = $this->ventaService->crear($request->validated(), $user, $turno);
+
+        // Si la venta vino desde una cita prellenada, vincular y marcar la cita
+        // como completada. Falla silenciosamente si la cita no existe / no aplica.
+        if ($citaId = $request->input('cita_id')) {
+            $cita = \App\Models\Cita::where('id', $citaId)
+                ->where('empresa_id', $user->empresa_id)
+                ->first();
+            if ($cita && !$cita->venta_id && $cita->estaActiva()) {
+                try {
+                    $this->citaService->vincularVenta($cita, $venta, $user);
+                } catch (\Throwable $e) {
+                    \Log::warning('No se pudo vincular cita con venta', [
+                        'cita_id'  => $citaId,
+                        'venta_id' => $venta->id,
+                        'error'    => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
 
         return redirect()->route('ventas.show', $venta)
             ->with('success', "Venta {$venta->numero} registrada correctamente.");
