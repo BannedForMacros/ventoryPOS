@@ -324,9 +324,10 @@ export default function AgendaForm({
                                 </div>
 
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                    <Input label="Cantidad" type="number" min="0.0001" step="0.01"
+                                    <Input label="Cantidad" type="number" min="0" step="any"
                                         value={item.cantidad}
                                         onChange={e => setItem(i, 'cantidad', e.target.value)}
+                                        hint="Ej: 1, 2, 1.5"
                                         error={(errors as any)[`items.${i}.cantidad`]} />
                                     <Input label="Duración (min)" type="number" min="1" step="1"
                                         value={item.duracion_min}

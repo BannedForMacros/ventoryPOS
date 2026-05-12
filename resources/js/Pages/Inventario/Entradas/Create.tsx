@@ -248,7 +248,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                                 <div className="col-span-2">
                                     <Input
                                         placeholder="0"
-                                        type="number" min="0.0001" step="0.0001"
+                                        type="number" min="0" step="any"
                                         value={d.cantidad}
                                         onChange={e => setDetalle(i, 'cantidad', e.target.value)}
                                         error={(errors as Record<string, string>)[`detalles.${i}.cantidad`]}

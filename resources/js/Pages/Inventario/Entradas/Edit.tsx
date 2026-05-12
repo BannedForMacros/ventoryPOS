@@ -227,7 +227,7 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                                         }))} />
                                 </div>
                                 <div className="col-span-2">
-                                    <Input placeholder="0" type="number" min="0.0001" step="0.0001"
+                                    <Input placeholder="0" type="number" min="0" step="any"
                                         value={d.cantidad} onChange={e => setDetalle(i, 'cantidad', e.target.value)} />
                                 </div>
                                 <div className="col-span-2">

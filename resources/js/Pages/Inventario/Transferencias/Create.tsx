@@ -191,7 +191,7 @@ export default function TransferenciaCreate({ almacenesOrigen, almacenesDestino,
                                         error={(errors)[`detalles.${i}.unidad_medida_id`]} />
                                 </div>
                                 <div className="col-span-3">
-                                    <Input placeholder="0" type="number" min="0.0001" step="0.0001"
+                                    <Input placeholder="0" type="number" min="0" step="any"
                                         value={d.cantidad} onChange={e => setDetalle(i, 'cantidad', e.target.value)}
                                         error={(errors)[`detalles.${i}.cantidad`]} />
                                 </div>
