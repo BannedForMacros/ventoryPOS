@@ -728,6 +728,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         onSetDescuento={(d, cid) => { setDescuentoTotal(d); setDescuentoConceptoId(cid); }}
                         onSetPagos={setPagos}
                         onConfirmar={confirmarVenta}
+                        puedeVender={puedeVender}
+                        razonNoVender={razonNoVender}
                     />
                 </div>
 
@@ -771,6 +773,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 onSetDescuento={(d, cid) => { setDescuentoTotal(d); setDescuentoConceptoId(cid); }}
                                 onSetPagos={setPagos}
                                 onConfirmar={confirmarVenta}
+                                puedeVender={puedeVender}
+                                razonNoVender={razonNoVender}
                             />
                         </div>
                     </div>
@@ -880,6 +884,9 @@ interface CarritoPanelProps {
     onSetDescuento: (d: number, cid: number | null) => void;
     onSetPagos: (pagos: LineaPago[]) => void;
     onConfirmar: () => void;
+    // A14: bandera de bloqueo del POS (admin sin local, almacén desactivado, etc.)
+    puedeVender: boolean;
+    razonNoVender: string | null;
 }
 
 function CarritoPanel({
@@ -888,6 +895,7 @@ function CarritoPanel({
     subtotal, igv, total, tasaIgv, inactivosCount,
     onCambiarCantidad, onAplicarDescuentoItem, onEliminarItem,
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar,
+    puedeVender, razonNoVender,
 }: CarritoPanelProps) {
     const hayInactivos = inactivosCount > 0;
     return (
