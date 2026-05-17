@@ -2,8 +2,12 @@
 
 namespace App\Http\Requests\Ventas;
 
+use App\Models\Cuenta;
+use App\Models\Empresa;
+use App\Models\MetodoPago;
 use App\Models\ProductoUnidad;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class StoreVentaRequest extends FormRequest
@@ -15,7 +19,13 @@ class StoreVentaRequest extends FormRequest
         $empresaId = $this->user()->empresa_id;
 
         return [
-            'cliente_id'             => ['nullable', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $empresaId)],
+            // Cliente: si viene, debe ser de la empresa Y estar activo.
+            'cliente_id'             => [
+                'nullable', 'integer',
+                Rule::exists('clientes', 'id')
+                    ->where('empresa_id', $empresaId)
+                    ->where('activo', true),
+            ],
             'tipo_comprobante'       => ['required', Rule::in(['ticket', 'boleta', 'factura'])],
             'observacion'            => ['nullable', 'string', 'max:500'],
             'descuento_total'        => ['nullable', 'numeric', 'min:0'],
@@ -27,66 +37,313 @@ class StoreVentaRequest extends FormRequest
             'cita_id'                => ['nullable', 'integer', Rule::exists('citas', 'id')->where('empresa_id', $empresaId)],
             'descuento_concepto_id'  => [
                 'nullable', 'integer',
-                Rule::exists('descuento_conceptos', 'id')->where('empresa_id', $empresaId),
+                Rule::exists('descuento_conceptos', 'id')
+                    ->where('empresa_id', $empresaId)
+                    ->where('activo', true),
             ],
 
-            // Items
+            // Items: producto debe ser de la empresa Y activo.
+            // producto_unidad_id se valida cruzado en withValidator (pertenencia + activo).
             'items'                           => ['required', 'array', 'min:1'],
-            'items.*.producto_id'             => ['required', 'integer', Rule::exists('productos', 'id')->where('empresa_id', $empresaId)],
+            'items.*.producto_id'             => [
+                'required', 'integer',
+                Rule::exists('productos', 'id')
+                    ->where('empresa_id', $empresaId)
+                    ->where('activo', true),
+            ],
             'items.*.producto_unidad_id'      => ['required', 'integer', 'exists:producto_unidades,id'],
             'items.*.cantidad'                => ['required', 'numeric', 'min:0.0001'],
             'items.*.precio_unitario'         => ['required', 'numeric', 'min:0'],
             'items.*.descuento_item'          => ['nullable', 'numeric', 'min:0'],
             'items.*.descuento_concepto_id'   => [
                 'nullable', 'integer',
-                Rule::exists('descuento_conceptos', 'id')->where('empresa_id', $empresaId),
+                Rule::exists('descuento_conceptos', 'id')
+                    ->where('empresa_id', $empresaId)
+                    ->where('activo', true),
             ],
 
-            // Pagos
+            // Pagos: metodo activo y de la empresa.
+            // cuenta_metodo_pago_id se valida cruzado en withValidator (debe pertenecer
+            // al metodo Y a la empresa, y la cuenta debe estar activa).
             'pagos'                              => ['required', 'array', 'min:1'],
-            'pagos.*.metodo_pago_id'             => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $empresaId)],
+            'pagos.*.metodo_pago_id'             => [
+                'required', 'integer',
+                Rule::exists('metodos_pago', 'id')
+                    ->where('empresa_id', $empresaId)
+                    ->where('activo', true),
+            ],
             'pagos.*.cuenta_metodo_pago_id'      => ['nullable', 'integer', 'exists:cuenta_metodo_pago,id'],
             'pagos.*.monto'                      => ['required', 'numeric', 'min:0.01'],
             'pagos.*.referencia'                 => ['nullable', 'string', 'max:200'],
+            // El flag `es_efectivo` del frontend ya no se usa: el backend deriva
+            // la decision desde metodos_pago.admite_vuelto. Se acepta y se ignora
+            // para no romper clientes viejos del API.
+            'pagos.*.es_efectivo'                => ['nullable', 'boolean'],
+            'pagos.*.admite_vuelto'              => ['nullable', 'boolean'],
         ];
     }
 
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
-            // Validar que cada producto_unidad_id pertenece al producto_id correspondiente
-            foreach ($this->input('items', []) as $index => $item) {
-                if (empty($item['producto_id']) || empty($item['producto_unidad_id'])) continue;
+            $empresaId = $this->user()->empresa_id;
 
-                $unidad = ProductoUnidad::find($item['producto_unidad_id']);
-                if ($unidad && (int) $unidad->producto_id !== (int) $item['producto_id']) {
-                    $validator->errors()->add(
-                        "items.{$index}.producto_unidad_id",
-                        'La unidad no pertenece al producto seleccionado.'
-                    );
-                }
-            }
+            $this->validarItems($validator, $empresaId);
+            $this->validarPagosPertenencia($validator, $empresaId);
 
-            // Validar que el total de pagos cubre el total de la venta
-            $baseItems = 0;
-            foreach ($this->input('items', []) as $item) {
-                $precio      = (float) ($item['precio_unitario'] ?? 0);
-                $descuento   = (float) ($item['descuento_item'] ?? 0);
-                $cantidad    = (float) ($item['cantidad'] ?? 0);
-                $incluyeIgv  = !empty($item['incluye_igv']);
-                $importe     = ($precio - $descuento) * $cantidad;
-                $baseItems  += $incluyeIgv ? $importe / 1.18 : $importe;
-            }
+            $total = $this->calcularTotalEsperado($empresaId);
 
-            $descuentoTotal = (float) ($this->input('descuento_total') ?? 0);
-            $base  = max(0, $baseItems - $descuentoTotal);
-            $total = round($base * 1.18, 2);
-
-            $totalPagado = collect($this->input('pagos', []))->sum(fn($p) => (float) ($p['monto'] ?? 0));
-
-            if ($totalPagado < $total - 0.01) {
-                $validator->errors()->add('pagos', "El total pagado ({$totalPagado}) no cubre el total de la venta ({$total}).");
-            }
+            $this->validarTotalCubierto($validator, $total);
+            $this->validarSobrepagoNoEfectivo($validator, $total, $empresaId);
         });
+    }
+
+    /**
+     * Valida que cada item:
+     *   - Su producto_unidad_id pertenezca al producto_id indicado.
+     *   - La unidad este activa (no fue desactivada despues de cargar el catalogo).
+     *   - El producto este activo (defensa redundante por si paso el exists()).
+     */
+    private function validarItems($validator, int $empresaId): void
+    {
+        $unidadIds = collect($this->input('items', []))
+            ->pluck('producto_unidad_id')
+            ->filter()
+            ->unique()
+            ->all();
+
+        $unidades = ProductoUnidad::with('producto')
+            ->whereIn('id', $unidadIds)
+            ->get()
+            ->keyBy('id');
+
+        foreach ($this->input('items', []) as $index => $item) {
+            $unidadId   = $item['producto_unidad_id'] ?? null;
+            $productoId = $item['producto_id']        ?? null;
+            if (!$unidadId || !$productoId) continue;
+
+            $unidad = $unidades->get($unidadId);
+            if (!$unidad) continue;
+
+            if ((int) $unidad->producto_id !== (int) $productoId) {
+                $validator->errors()->add(
+                    "items.{$index}.producto_unidad_id",
+                    'La unidad no pertenece al producto seleccionado.',
+                );
+                continue;
+            }
+
+            // Defense in depth: la unidad y el producto deben ser de la empresa.
+            // exists() ya filtra el producto, pero la unidad solo se busca por id,
+            // asi que un atacante podria enviar una unidad de otra empresa cuyo
+            // producto_id coincida con un producto de su propia empresa. Bloqueamos.
+            if (!$unidad->producto || $unidad->producto->empresa_id !== $empresaId) {
+                $validator->errors()->add(
+                    "items.{$index}.producto_unidad_id",
+                    'La unidad no pertenece a tu empresa.',
+                );
+                continue;
+            }
+
+            if ($unidad->activo === false) {
+                $validator->errors()->add(
+                    "items.{$index}.producto_unidad_id",
+                    'La presentación seleccionada está inactiva.',
+                );
+            }
+
+            if ($unidad->producto->activo === false) {
+                $validator->errors()->add(
+                    "items.{$index}.producto_id",
+                    'El producto seleccionado fue desactivado. Refresca el catálogo.',
+                );
+            }
+        }
+    }
+
+    /**
+     * Valida que, cuando un pago incluye cuenta_metodo_pago_id:
+     *   - La cuenta exista, sea de la empresa y este activa.
+     *   - La cuenta este efectivamente vinculada al metodo_pago_id elegido.
+     *
+     * Sin esta validacion un usuario podria enviar el ID de una cuenta de otra
+     * empresa o de un metodo distinto, y el pago se asentaria contra esa cuenta.
+     */
+    private function validarPagosPertenencia($validator, int $empresaId): void
+    {
+        $pivotIds = collect($this->input('pagos', []))
+            ->pluck('cuenta_metodo_pago_id')
+            ->filter()
+            ->unique()
+            ->all();
+
+        if (empty($pivotIds)) return;
+
+        $pivots = DB::table('cuenta_metodo_pago')
+            ->whereIn('id', $pivotIds)
+            ->get()
+            ->keyBy('id');
+
+        $cuentaIds = $pivots->pluck('cuenta_id')->unique()->all();
+        $cuentas = Cuenta::whereIn('id', $cuentaIds)->get()->keyBy('id');
+
+        foreach ($this->input('pagos', []) as $index => $pago) {
+            $pivotId  = $pago['cuenta_metodo_pago_id'] ?? null;
+            $metodoId = $pago['metodo_pago_id']        ?? null;
+            if (!$pivotId) continue;
+
+            $pivot = $pivots->get($pivotId);
+            if (!$pivot) continue;
+
+            // La cuenta debe pertenecer a la empresa del usuario y estar activa.
+            $cuenta = $cuentas->get($pivot->cuenta_id);
+            if (!$cuenta || $cuenta->empresa_id !== $empresaId) {
+                $validator->errors()->add(
+                    "pagos.{$index}.cuenta_metodo_pago_id",
+                    'La cuenta seleccionada no pertenece a tu empresa.',
+                );
+                continue;
+            }
+            if ($cuenta->activo === false) {
+                $validator->errors()->add(
+                    "pagos.{$index}.cuenta_metodo_pago_id",
+                    'La cuenta seleccionada está inactiva.',
+                );
+                continue;
+            }
+
+            // El pivot debe corresponder al metodo enviado.
+            if ((int) $pivot->metodo_pago_id !== (int) $metodoId) {
+                $validator->errors()->add(
+                    "pagos.{$index}.cuenta_metodo_pago_id",
+                    'La cuenta no pertenece al método de pago seleccionado.',
+                );
+            }
+        }
+    }
+
+    /**
+     * Calculo espejo de Venta::calcularTotales: separa base gravada (afecta IGV)
+     * de base exonerada (no afecta IGV) y prorrateamos el descuento_total entre
+     * ambas. Tasa de IGV se lee de la empresa.
+     */
+    private function calcularTotalEsperado(int $empresaId): float
+    {
+        $tasa = (float) (Empresa::find($empresaId)?->tasa_igv ?? 18) / 100;
+
+        $baseGravadaRaw = 0.0;
+        $baseExonerada  = 0.0;
+
+        foreach ($this->input('items', []) as $item) {
+            $precio     = (float) ($item['precio_unitario'] ?? 0);
+            $descuento  = (float) ($item['descuento_item'] ?? 0);
+            $cantidad   = (float) ($item['cantidad'] ?? 0);
+            $incluyeIgv = !empty($item['incluye_igv']);
+            $importe    = ($precio - $descuento) * $cantidad;
+
+            if ($incluyeIgv) {
+                $baseGravadaRaw += $tasa > 0 ? $importe / (1 + $tasa) : $importe;
+            } else {
+                $baseExonerada += $importe;
+            }
+        }
+
+        $descuentoTotal = (float) ($this->input('descuento_total') ?? 0);
+        $totalBases = $baseGravadaRaw + $baseExonerada;
+
+        if ($totalBases > 0 && $descuentoTotal > 0) {
+            $descGravado   = $descuentoTotal * ($baseGravadaRaw / $totalBases);
+            $descExonerado = $descuentoTotal * ($baseExonerada  / $totalBases);
+        } else {
+            $descGravado = $descExonerado = 0.0;
+        }
+
+        $baseGravadaFinal = max(0, $baseGravadaRaw - $descGravado);
+        $baseExonFinal    = max(0, $baseExonerada  - $descExonerado);
+
+        // Misma secuencia de redondeo que Venta::calcularTotales(): primero
+        // redondear IGV a 2 decimales y luego sumar al total. Esto garantiza
+        // que el "total esperado" coincida bit-a-bit con el total persistido,
+        // sin centavos de diferencia que provocarian "pagos no cubren".
+        $igv = round($baseGravadaFinal * $tasa, 2);
+        return round($baseGravadaFinal + $igv + $baseExonFinal, 2);
+    }
+
+    private function validarTotalCubierto($validator, float $total): void
+    {
+        $totalPagado = round(collect($this->input('pagos', []))->sum(fn($p) => (float) ($p['monto'] ?? 0)), 2);
+
+        if ($totalPagado < $total - 0.01) {
+            $validator->errors()->add(
+                'pagos',
+                "El total pagado ({$totalPagado}) no cubre el total de la venta ({$total}).",
+            );
+        }
+    }
+
+    /**
+     * Regla de sobrepago:
+     *   - Pagos cuyo metodo tiene `admite_vuelto=true` SI pueden sobrepasar el
+     *     total (genera vuelto fisico). Tipicamente efectivo, pero el admin
+     *     puede marcar otros (ej. vales internos con devolucion).
+     *   - La suma de pagos que NO admiten vuelto no puede exceder el total
+     *     de la venta. Cualquier sobrepago debe pagarse con un metodo que SI
+     *     admita vuelto, porque es el unico capaz de devolverlo fisicamente.
+     *
+     * Fuente de verdad: la columna `metodos_pago.admite_vuelto`, decidida por
+     * el admin al crear/editar cada metodo. Esto reemplaza la inferencia
+     * `tipo='efectivo'` anterior, que rompia escenarios reales (admin crea
+     * "SIP" o "Sodexo" y el sistema asumia mal su comportamiento de vuelto).
+     *
+     * Casos validos (asumiendo Efectivo.admite_vuelto=true, Tarjeta=false):
+     *   - Total 50, efectivo 70             → OK (vuelto 20).
+     *   - Total 50, tarjeta 50              → OK.
+     *   - Total 100, tarjeta 80 + efect 30  → OK (vuelto 10 efectivo).
+     *
+     * Casos invalidos:
+     *   - Total 50, tarjeta 70              → exceso 20 sin metodo de vuelto.
+     *   - Total 50, tarjeta 40 + yape 20    → exceso 10 sin metodo de vuelto.
+     */
+    private function validarSobrepagoNoEfectivo($validator, float $total, int $empresaId): void
+    {
+        $metodoIds = collect($this->input('pagos', []))
+            ->pluck('metodo_pago_id')
+            ->filter()
+            ->unique()
+            ->all();
+
+        $metodos = MetodoPago::whereIn('id', $metodoIds)
+            ->where('empresa_id', $empresaId)
+            ->get()
+            ->keyBy('id');
+
+        $sinVueltoTotal = 0.0;
+        $sinVueltoIdx   = [];
+
+        foreach ($this->input('pagos', []) as $index => $pago) {
+            $monto    = (float) ($pago['monto'] ?? 0);
+            $metodoId = $pago['metodo_pago_id'] ?? null;
+            $metodo   = $metodoId ? $metodos->get($metodoId) : null;
+
+            // Fuente de verdad: flag `admite_vuelto` en BD. Si el metodo no
+            // existe en BD lo tratamos como "no admite vuelto" (defensa).
+            $admiteVuelto = (bool) ($metodo?->admite_vuelto);
+            if ($admiteVuelto) continue;
+
+            $sinVueltoTotal += $monto;
+            $sinVueltoIdx[]  = $index;
+        }
+
+        if ($sinVueltoTotal > $total + 0.01) {
+            $exceso = round($sinVueltoTotal - $total, 2);
+            foreach ($sinVueltoIdx as $idx) {
+                $validator->errors()->add(
+                    "pagos.{$idx}.monto",
+                    "La suma de pagos sin vuelto (S/ {$sinVueltoTotal}) excede el total "
+                    . "de la venta (S/ {$total}). Exceso: S/ {$exceso}. Usa un método que "
+                    . "admita vuelto para cubrir el excedente.",
+                );
+            }
+        }
     }
 }

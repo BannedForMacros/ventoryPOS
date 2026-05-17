@@ -16,6 +16,7 @@ class Empresa extends Model
         'email',
         'logo',
         'activo',
+        'tasa_igv',
         'modo_almacen',
         'descuenta_stock_en_venta',
         'modo_cierre_caja',
@@ -36,6 +37,7 @@ class Empresa extends Model
     {
         return [
             'activo'                          => 'boolean',
+            'tasa_igv'                        => 'decimal:2',
             'descuenta_stock_en_venta'        => 'boolean',
             'usa_fondos_iniciales'            => 'boolean',
             'fondos_iniciales_en_declaracion' => 'boolean',

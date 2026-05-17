@@ -29,7 +29,7 @@ function buildArqueoInicial(): FilaArqueo[] {
 
 function buildMetodosInicial(metodos: MetodoPago[]): FilaMetodo[] {
     return metodos
-        .filter(m => m.tipo !== 'efectivo')
+        .filter(m => m.tipo?.slug !== 'efectivo')
         .map(m => ({ metodo_pago_id: m.id, monto_declarado: '' }));
 }
 
@@ -103,7 +103,7 @@ export default function ModalCerrarTurno({ isOpen, onClose, turno, metodosPago }
         });
     }
 
-    const metodosFiltrados = metodosPago.filter(m => m.tipo !== 'efectivo');
+    const metodosFiltrados = metodosPago.filter(m => m.tipo?.slug !== 'efectivo');
 
     return (
         <Modal

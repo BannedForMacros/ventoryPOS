@@ -18,21 +18,29 @@ import type { Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, Producto
 
 interface MetodoPagoConCuentas extends MetodoPago { cuentas?: Cuenta[]; }
 
+interface CitaPrellenadaItem {
+    producto_id:        number;
+    producto_unidad_id: number;
+    producto_nombre:    string;
+    unidad_nombre:      string;
+    cantidad:           number;
+    precio_unitario:    number;
+    incluye_igv:        boolean;
+    // Flags de frescura: el producto o la unidad pueden haber sido desactivados
+    // entre el agendamiento y el cobro. El cajero debe verlo y resolverlo.
+    producto_activo:    boolean;
+    unidad_activa:      boolean;
+    inactivo:           boolean;
+}
+
 interface CitaPrellenada {
-    id:           number;
-    numero:       string;
-    sujeto_label: string | null;
-    sujeto:       string | null;
-    cliente:      Cliente;
-    items: Array<{
-        producto_id:        number;
-        producto_unidad_id: number;
-        producto_nombre:    string;
-        unidad_nombre:      string;
-        cantidad:           number;
-        precio_unitario:    number;
-        incluye_igv:        boolean;
-    }>;
+    id:               number;
+    numero:           string;
+    sujeto_label:     string | null;
+    sujeto:           string | null;
+    cliente:          Cliente;
+    items:            CitaPrellenadaItem[];
+    tiene_inactivos:  boolean;
 }
 
 interface Props extends PageProps {
@@ -61,22 +69,60 @@ function generarIdempotencyKey(): string {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
-function calcularTotales(items: LineaCarrito[], descuentoTotal: number) {
-    const subtotal  = items.reduce((s, i) => s + i.subtotal, 0);
-    const baseItems = items.reduce((s, i) =>
-        s + (i.incluye_igv ? i.subtotal / 1.18 : i.subtotal), 0);
-    const base  = Math.max(0, baseItems - descuentoTotal);
-    const igv   = Math.round(base * 0.18 * 100) / 100;
-    const total = Math.round((base + igv) * 100) / 100;
+/**
+ * Espejo en TS del calculo del backend (Venta::calcularTotales).
+ * Separa base gravada (afecta IGV) de base exonerada (no afecta IGV) y
+ * prorratea el descuento_total entre ambas bases. Debe coincidir centavo
+ * a centavo con el backend para que el cajero no vea un total y el backend
+ * cobre otro.
+ */
+function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorcentaje: number) {
+    const tasa = tasaPorcentaje / 100;
+    const subtotal = items.reduce((s, i) => s + i.subtotal, 0);
+
+    let baseGravadaRaw = 0;
+    let baseExonerada  = 0;
+    for (const i of items) {
+        if (i.incluye_igv) {
+            baseGravadaRaw += tasa > 0 ? i.subtotal / (1 + tasa) : i.subtotal;
+        } else {
+            baseExonerada += i.subtotal;
+        }
+    }
+
+    const totalBases = baseGravadaRaw + baseExonerada;
+    let descGravado = 0;
+    let descExon    = 0;
+    if (totalBases > 0 && descuentoTotal > 0) {
+        descGravado = descuentoTotal * (baseGravadaRaw / totalBases);
+        descExon    = descuentoTotal * (baseExonerada  / totalBases);
+    }
+
+    const baseGravadaFinal = Math.max(0, baseGravadaRaw - descGravado);
+    const baseExonFinal    = Math.max(0, baseExonerada  - descExon);
+
+    const igv   = Math.round(baseGravadaFinal * tasa * 100) / 100;
+    const total = Math.round((baseGravadaFinal + igv + baseExonFinal) * 100) / 100;
     return { subtotal, igv, total };
 }
 
 export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada }: Props) {
+    // Tasa de IGV de la empresa (configurable por tenant). Default 18% si no llega.
+    const empresaAuth = usePage().props.auth?.user?.empresa as { tasa_igv?: number | string } | undefined;
+    const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
+
     const clienteGeneral = clientes.find(c => c.numero_documento === '99999999') ?? null;
 
-    // Si venimos desde una cita, prellenar carrito y cliente automaticamente
+    // Si venimos desde una cita, prellenar carrito y cliente automaticamente.
+    // Cada linea propaga su flag `inactivo` para que CarritoItem la pinte en rojo
+    // y el boton de cobrar quede deshabilitado mientras existan inactivos.
     const carritoInicial: LineaCarrito[] = citaPrellenada?.items.map(it => {
         const subtotal = it.precio_unitario * it.cantidad;
+        const motivo = !it.producto_activo
+            ? `El producto "${it.producto_nombre}" fue desactivado.`
+            : !it.unidad_activa
+                ? `La presentación "${it.unidad_nombre}" fue desactivada.`
+                : undefined;
         return {
             key: `${it.producto_id}-${it.producto_unidad_id}`,
             producto_id:           it.producto_id,
@@ -90,6 +136,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             descuento_concepto_id: null,
             subtotal,
             incluye_igv:           it.incluye_igv,
+            inactivo:              it.inactivo,
+            motivo_inactivo:       motivo,
         };
     }) ?? [];
 
@@ -119,10 +167,26 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
-    const { subtotal, igv, total } = calcularTotales(carrito, descuentoTotal);
+    // Aviso inmediato al cajero cuando se abre el POS desde una cita con items
+    // desactivados. Solo se dispara una vez al montar; despues se ven los flags
+    // por linea y el banner persistente.
+    useEffect(() => {
+        if (citaPrellenada?.tiene_inactivos) {
+            const inactivos = citaPrellenada.items.filter(i => i.inactivo);
+            toast.error(
+                `Esta cita tiene ${inactivos.length} ítem(s) desactivado(s) desde que se agendó. ` +
+                'Revisa el carrito antes de cobrar.',
+                { duration: 6000, icon: '⚠️' },
+            );
+        }
+    }, []);
 
-    // Auto-agregar pago en efectivo por defecto cuando hay items y no hay pagos
-    const efectivo = metodosPago.find(m => m.tipo === 'efectivo');
+    const { subtotal, igv, total } = calcularTotales(carrito, descuentoTotal, tasaIgv);
+
+    // Auto-agregar pago en efectivo por defecto cuando hay items y no hay pagos.
+    // Buscamos el método con tipo.slug === 'efectivo' como conveniencia inicial.
+    // El flag `admite_vuelto` se lee del método (BD).
+    const efectivo = metodosPago.find(m => m.tipo?.slug === 'efectivo');
     useEffect(() => {
         if (carrito.length > 0 && pagos.length === 0 && efectivo) {
             setPagos([{
@@ -131,14 +195,16 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 cuenta_metodo_pago_id: null,
                 monto:                 parseFloat(total.toFixed(2)),
                 referencia:            '',
+                admite_vuelto:         !!efectivo.admite_vuelto,
                 es_efectivo:           true,
             }]);
         }
     }, [carrito.length]);
 
-    // Auto-actualizar monto del pago si es el único (efectivo por defecto)
+    // Auto-actualizar monto del pago si es el único y admite vuelto (efectivo
+    // por defecto). Si no admite vuelto el monto debe ser exacto, lo dejamos.
     useEffect(() => {
-        if (pagos.length === 1 && pagos[0].es_efectivo && total > 0) {
+        if (pagos.length === 1 && pagos[0].admite_vuelto && total > 0) {
             setPagos(prev => [{ ...prev[0], monto: parseFloat(total.toFixed(2)) }]);
         }
     }, [total]);
@@ -262,8 +328,19 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         setTipoComprobante('ticket');
     }
 
+    // Lineas que vienen de una cita con producto/unidad desactivada. Si hay,
+    // no permitimos confirmar la venta hasta que el cajero las elimine o pida
+    // al admin reactivarlas. El backend tambien lo rechaza, pero queremos UX
+    // clara en lugar de un error 422 al final del flujo.
+    const itemsInactivos = carrito.filter(i => i.inactivo);
+    const hayInactivos   = itemsInactivos.length > 0;
+
     function confirmarVenta() {
         if (carrito.length === 0) { toast.error('El carrito está vacío.'); return; }
+        if (hayInactivos) {
+            toast.error(`Hay ${itemsInactivos.length} ítem(s) inactivo(s). Elimínalos del carrito antes de cobrar.`);
+            return;
+        }
         if (pagos.length === 0) { toast.error('Agrega al menos un método de pago.'); return; }
         const totalPagado = pagos.reduce((s, p) => s + p.monto, 0);
         if (totalPagado < total - 0.009) { toast.error(`Faltan S/ ${(total - totalPagado).toFixed(2)} por cubrir.`); return; }
@@ -301,6 +378,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 cuenta_metodo_pago_id: p.cuenta_metodo_pago_id,
                 monto:                 p.monto,
                 referencia:            p.referencia,
+                // El backend ignora estos flags y deriva la decisión desde
+                // metodos_pago.admite_vuelto en BD. Los enviamos por compatibilidad.
+                admite_vuelto:         p.admite_vuelto,
                 es_efectivo:           p.es_efectivo,
             })),
         };
@@ -627,6 +707,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         subtotal={subtotal}
                         igv={igv}
                         total={total}
+                        tasaIgv={tasaIgv}
+                        inactivosCount={itemsInactivos.length}
                         onCambiarCantidad={cambiarCantidad}
                         onAplicarDescuentoItem={aplicarDescuentoItem}
                         onEliminarItem={eliminarItem}
@@ -668,6 +750,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 subtotal={subtotal}
                                 igv={igv}
                                 total={total}
+                                tasaIgv={tasaIgv}
+                                inactivosCount={itemsInactivos.length}
                                 onCambiarCantidad={cambiarCantidad}
                                 onAplicarDescuentoItem={aplicarDescuentoItem}
                                 onEliminarItem={eliminarItem}
@@ -775,6 +859,8 @@ interface CarritoPanelProps {
     subtotal: number;
     igv: number;
     total: number;
+    tasaIgv: number;
+    inactivosCount: number;
     onCambiarCantidad: (key: string, delta: number) => void;
     onAplicarDescuentoItem: (key: string, desc: number, cid: number | null) => void;
     onEliminarItem: (key: string) => void;
@@ -787,10 +873,11 @@ interface CarritoPanelProps {
 function CarritoPanel({
     carrito, pagos, conceptosDescuento, metodosPago,
     descuentoTotal, descuentoConceptoId,
-    subtotal, igv, total,
+    subtotal, igv, total, tasaIgv, inactivosCount,
     onCambiarCantidad, onAplicarDescuentoItem, onEliminarItem,
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar,
 }: CarritoPanelProps) {
+    const hayInactivos = inactivosCount > 0;
     return (
         <>
             {/* Cabecera carrito */}
@@ -825,6 +912,29 @@ function CarritoPanel({
                     </button>
                 )}
             </div>
+
+            {/* Banner persistente: items inactivos en la cita prellenada.
+                Se mantiene visible mientras el cajero no resuelva los ítems
+                (eliminándolos o pidiendo al admin reactivar el catálogo). */}
+            {hayInactivos && (
+                <div
+                    className="mx-3 mt-3 mb-1 rounded-lg p-3 flex items-start gap-2"
+                    style={{
+                        backgroundColor: 'rgba(239,68,68,0.10)',
+                        border: '1px solid var(--color-danger)',
+                    }}
+                >
+                    <span className="text-base leading-none" style={{ color: 'var(--color-danger)' }}>⚠️</span>
+                    <div className="text-xs leading-tight" style={{ color: 'var(--color-danger)' }}>
+                        <p className="font-bold mb-0.5">
+                            {inactivosCount} ítem(s) inactivo(s) en este carrito
+                        </p>
+                        <p className="opacity-90">
+                            No podrás cobrar hasta que los elimines del carrito o pidas al administrador reactivar el producto/presentación.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Lista de items */}
             <div className="flex-1 overflow-y-auto px-3 py-2">
@@ -884,7 +994,7 @@ function CarritoPanel({
                         </div>
                     )}
                     <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        <span>IGV (18%)</span>
+                        <span>IGV ({tasaIgv.toFixed(tasaIgv % 1 === 0 ? 0 : 2)}%)</span>
                         <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {igv.toFixed(2)}</span>
                     </div>
                 </div>
@@ -909,9 +1019,10 @@ function CarritoPanel({
                     radius="lg"
                     className="w-full !py-3 !text-base !font-bold"
                     onClick={onConfirmar}
-                    disabled={carrito.length === 0}
+                    disabled={carrito.length === 0 || hayInactivos}
+                    title={hayInactivos ? 'Hay ítems inactivos en el carrito. Elimínalos para cobrar.' : undefined}
                 >
-                    Cobrar venta
+                    {hayInactivos ? 'Resuelve ítems inactivos' : 'Cobrar venta'}
                 </Button>
             </div>
         </>

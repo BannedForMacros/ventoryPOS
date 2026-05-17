@@ -117,7 +117,7 @@ class ReporteVentaController extends Controller
 
         $locales      = $this->scope->localesVisibles($user);
         $usuarios     = User::where('empresa_id', $user->empresa_id)->orderBy('name')->get(['id', 'name']);
-        $metodosPago  = MetodoPago::where('empresa_id', $user->empresa_id)->orderBy('nombre')->get(['id', 'nombre', 'tipo']);
+        $metodosPago  = MetodoPago::where('empresa_id', $user->empresa_id)->with('tipo:id,slug,nombre')->orderBy('nombre')->get(['id', 'nombre', 'tipo_id']);
 
         return Inertia::render('Reportes/Ventas', [
             'ventas'        => $ventas,

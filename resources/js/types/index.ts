@@ -10,6 +10,7 @@ export interface Empresa extends Record<string, unknown> {
     telefono: string | null;
     email: string | null;
     logo: string | null;
+    tasa_igv: number | string;
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
     modo_cierre_caja: ModoCierreCaja;
@@ -163,11 +164,22 @@ export interface Producto extends Record<string, unknown> {
     updated_at: string;
 }
 
+export interface TipoMetodoPago {
+    id:                    number;
+    slug:                  string;
+    nombre:                string;
+    icono:                 string | null;
+    admite_vuelto_default: boolean;
+    requiere_referencia:   boolean;
+}
+
 export interface MetodoPago extends Record<string, unknown> {
-    id:     number;
-    nombre: string;
-    tipo:   string;
-    activo: boolean;
+    id:            number;
+    nombre:        string;
+    tipo_id:       number;
+    tipo:          TipoMetodoPago | null;
+    admite_vuelto: boolean;
+    activo:        boolean;
 }
 
 export interface Caja extends Record<string, unknown> {

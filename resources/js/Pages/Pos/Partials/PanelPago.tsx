@@ -8,6 +8,11 @@ export interface LineaPago {
     cuenta_metodo_pago_id:  number | null;
     monto:                  number;
     referencia:             string;
+    // Indica si el método de pago elegido admite vuelto/sobrepago. Se deriva
+    // del flag `admite_vuelto` del método (configurable por el admin).
+    // Mantenemos también `es_efectivo` por compatibilidad con código antiguo
+    // del POS, pero el cálculo de vuelto usa `admite_vuelto`.
+    admite_vuelto:          boolean;
     es_efectivo:            boolean;
 }
 
@@ -34,20 +39,25 @@ function MetodoIcon({ tipo }: { tipo: string }) {
 export default function PanelPago({ pagos, metodosPago, total, onChange }: Props) {
     const totalPagado  = pagos.reduce((s, p) => s + p.monto, 0);
     const pendiente    = Math.max(0, total - totalPagado);
-    const vuelto       = pagos.find(p => p.es_efectivo)
+    // El vuelto solo se muestra cuando al menos un método admite vuelto.
+    // Fuente de verdad: la columna metodos_pago.admite_vuelto del backend.
+    const vuelto       = pagos.some(p => p.admite_vuelto)
         ? Math.max(0, totalPagado - total)
         : 0;
 
     function addPago() {
         const metodo = metodosPago[0];
         if (!metodo) return;
+        const admiteVuelto = !!metodo.admite_vuelto;
+        const tipoSlug     = metodo.tipo?.slug ?? '';
         const nuevoPago: LineaPago = {
             key:                   uid(),
             metodo_pago_id:        metodo.id,
             cuenta_metodo_pago_id: null,
             monto:                 pendiente > 0 ? parseFloat(pendiente.toFixed(2)) : 0,
             referencia:            '',
-            es_efectivo:           metodo.tipo === 'efectivo',
+            admite_vuelto:         admiteVuelto,
+            es_efectivo:           tipoSlug === 'efectivo',
         };
         onChange([...pagos, nuevoPago]);
     }
@@ -61,10 +71,12 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
     }
 
     function handleMetodoChange(key: string, metodoId: number) {
-        const metodo = metodosPago.find(m => m.id === metodoId);
+        const metodo   = metodosPago.find(m => m.id === metodoId);
+        const tipoSlug = metodo?.tipo?.slug ?? '';
         updatePago(key, {
             metodo_pago_id:        metodoId,
-            es_efectivo:           metodo?.tipo === 'efectivo',
+            admite_vuelto:         !!metodo?.admite_vuelto,
+            es_efectivo:           tipoSlug === 'efectivo',
             cuenta_metodo_pago_id: null,
         });
     }
@@ -72,9 +84,13 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
     return (
         <div className="flex flex-col gap-2">
             {pagos.map(pago => {
-                const metodo   = metodosPago.find(m => m.id === pago.metodo_pago_id);
-                const cuentas  = metodo?.cuentas ?? [];
-                const necesitaRef = ['yape', 'plin', 'transferencia'].includes(metodo?.tipo ?? '');
+                const metodo      = metodosPago.find(m => m.id === pago.metodo_pago_id);
+                const cuentas     = metodo?.cuentas ?? [];
+                const tipoSlug    = metodo?.tipo?.slug ?? '';
+                // `requiere_referencia` ahora viene del catálogo (en lugar de hardcodear
+                // qué slugs lo necesitan). Si el admin marca el flag al crear el tipo,
+                // el POS lo respeta sin tocar código.
+                const necesitaRef = !!metodo?.tipo?.requiere_referencia;
 
                 return (
                     <div
@@ -89,7 +105,7 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
                         <div className="flex gap-2 items-center">
                             <div className="flex items-center gap-2 flex-1 min-w-0">
                                 <span className="flex-shrink-0" style={{ color: 'var(--color-primary)' }}>
-                                    <MetodoIcon tipo={metodo?.tipo ?? ''} />
+                                    <MetodoIcon tipo={tipoSlug} />
                                 </span>
                                 <select
                                     value={pago.metodo_pago_id}

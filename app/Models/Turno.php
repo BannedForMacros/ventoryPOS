@@ -64,16 +64,16 @@ class Turno extends Model
 
         $ventasEfectivo = (float) \App\Models\VentaPago::whereHas('venta', fn($q) =>
             $q->where('turno_id', $this->id)->where('estado', 'completada')
-        )->whereHas('metodoPago', fn($q) =>
-            $q->where('tipo', 'efectivo')
+        )->whereHas('metodoPago.tipo', fn($q) =>
+            $q->where('slug', 'efectivo')
         )->sum('monto');
 
         // Reembolsos de devoluciones en efectivo del turno (descuentan caja)
         $reembolsosEfectivo = (float) \App\Models\DevolucionPago::whereHas('devolucion', fn($q) =>
             $q->where('turno_id', $this->id)
               ->whereIn('estado', ['aprobada', 'completada'])
-        )->whereHas('metodoPago', fn($q) =>
-            $q->where('tipo', 'efectivo')
+        )->whereHas('metodoPago.tipo', fn($q) =>
+            $q->where('slug', 'efectivo')
         )->sum('monto');
 
         $apertura     = (float) $this->monto_apertura;

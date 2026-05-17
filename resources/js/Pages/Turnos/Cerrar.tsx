@@ -53,7 +53,7 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
     const [form, setForm] = useState<CerrarForm>({
         arqueo: DENOMINACIONES_PEN.map(d => ({ denominacion: d, cantidad: 0 })),
         arqueo_metodos: metodosPago
-            .filter(m => m.tipo !== 'efectivo')
+            .filter(m => m.tipo?.slug !== 'efectivo')
             .map(m => ({ metodo_pago_id: m.id, monto_declarado: '' })),
         observacion_cierre: '',
     });
@@ -66,7 +66,7 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
 
     const diferencia = totalEfectivo - montoEsperado;
 
-    const metodosFiltrados = metodosPago.filter(m => m.tipo !== 'efectivo');
+    const metodosFiltrados = metodosPago.filter(m => m.tipo?.slug !== 'efectivo');
 
     function setCantidad(denominacion: number, cantidad: number) {
         setForm(f => ({

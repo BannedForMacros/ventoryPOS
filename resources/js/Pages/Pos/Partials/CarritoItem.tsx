@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Trash2, Minus, Plus, Percent, X } from 'lucide-react';
+import { Trash2, Minus, Plus, Percent, X, AlertTriangle } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
 
 export interface LineaCarrito {
@@ -15,6 +15,10 @@ export interface LineaCarrito {
     descuento_concepto_id: number | null;
     subtotal:             number;
     incluye_igv:          boolean;
+    // Flags opcionales (solo presentes en items que vienen de cita prellenada).
+    // Cuando true, la linea NO se puede vender y se renderiza marcada en rojo.
+    inactivo?:            boolean;
+    motivo_inactivo?:     string;
 }
 
 interface Props {
@@ -42,20 +46,44 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
         if (val === 0) setShowDescuento(false);
     }
 
+    const esInactivo = !!item.inactivo;
+
     return (
         <div
             className="rounded-xl p-3 mb-2 transition-all"
             style={{
-                backgroundColor: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
+                backgroundColor: esInactivo ? 'rgba(239,68,68,0.06)' : 'var(--color-surface)',
+                border: esInactivo
+                    ? '1px solid var(--color-danger)'
+                    : '1px solid var(--color-border)',
                 boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
             }}
         >
+            {esInactivo && (
+                <div
+                    className="flex items-start gap-2 mb-2 p-2 rounded-lg"
+                    style={{ backgroundColor: 'rgba(239,68,68,0.10)' }}
+                >
+                    <AlertTriangle size={14} style={{ color: 'var(--color-danger)' }} className="flex-shrink-0 mt-0.5" />
+                    <div className="text-[11px] leading-tight" style={{ color: 'var(--color-danger)' }}>
+                        <p className="font-semibold">No se puede vender este ítem.</p>
+                        <p className="opacity-90">
+                            {item.motivo_inactivo ?? 'Producto o presentación desactivada desde que se agendó la cita.'}
+                            {' '}Elimínalo del carrito o pide al admin reactivarlo.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Fila 1: Nombre + Subtotal */}
             <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>
+                    <p
+                        className="text-sm font-semibold truncate"
+                        style={{ color: esInactivo ? 'var(--color-danger)' : 'var(--color-text)' }}
+                    >
                         {item.producto_nombre}
+                        {esInactivo && <span className="ml-1 text-[10px] font-normal opacity-80">(inactivo)</span>}
                     </p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>

@@ -45,7 +45,8 @@ class TurnoController extends Controller
         $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
             ->activo()
             ->orderBy('nombre')
-            ->get(['id', 'nombre', 'tipo']);
+            ->with('tipo:id,slug,nombre,icono')
+            ->get(['id', 'nombre', 'tipo_id']);
 
         $turnoActivo = Turno::turnoActivoDelUsuario($user->id)
             ?->load(['caja', 'local', 'gastos.tipo', 'gastos.concepto',
@@ -216,7 +217,8 @@ class TurnoController extends Controller
         $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
             ->activo()
             ->orderBy('nombre')
-            ->get(['id', 'nombre', 'tipo']);
+            ->with('tipo:id,slug,nombre,icono')
+            ->get(['id', 'nombre', 'tipo_id']);
 
         $modoCaja      = $this->config->modoCierreCaja($turno->local);
         $modoInventario = $this->config->modoCierreInventario($turno->local);

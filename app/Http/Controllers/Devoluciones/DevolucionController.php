@@ -49,7 +49,7 @@ class DevolucionController extends Controller
 
         return Inertia::render('Devoluciones/Create', [
             'motivos'     => DevolucionMotivo::deEmpresa($user->empresa_id)->activo()->orderBy('orden')->get(),
-            'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->orderBy('nombre')->get(['id','nombre','tipo']),
+            'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->with('tipo:id,slug,nombre,icono')->orderBy('nombre')->get(['id','nombre','tipo_id']),
             'turnoActivo' => $turno?->load('caja'),
         ]);
     }

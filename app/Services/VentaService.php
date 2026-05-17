@@ -151,12 +151,31 @@ class VentaService
             $venta->calcularTotales();
             $venta->refresh();
 
-            // Pagos
+            // Pagos.
+            // Sobrepago/vuelto: la fuente de verdad es `metodo.admite_vuelto` en BD,
+            // no el flag del request. Calculamos el vuelto GLOBAL (suma de montos −
+            // total de venta) y lo asignamos al primer pago cuyo metodo admita
+            // vuelto. Asi soporta correctamente combinaciones como tarjeta exacta
+            // + efectivo con vuelto (caso comun: el cliente paga tarjeta 80 + 30
+            // efectivo para una venta de 100; el vuelto de 10 se persiste contra
+            // la linea de efectivo).
+            $metodoIds = collect($data['pagos'])->pluck('metodo_pago_id')->unique()->all();
+            $metodos   = \App\Models\MetodoPago::whereIn('id', $metodoIds)->get()->keyBy('id');
+
+            $totalPagado    = collect($data['pagos'])->sum(fn($p) => (float) $p['monto']);
+            $vueltoGlobal   = max(0, round($totalPagado - (float) $venta->total, 2));
+            $vueltoAsignado = false;
+
             foreach ($data['pagos'] as $pagoData) {
-                $monto  = (float) $pagoData['monto'];
-                $vuelto = isset($pagoData['es_efectivo']) && $pagoData['es_efectivo']
-                    ? max(0, round($monto - (float) $venta->total, 2))
-                    : 0;
+                $monto        = (float) $pagoData['monto'];
+                $metodo       = $metodos->get($pagoData['metodo_pago_id']);
+                $admiteVuelto = (bool) ($metodo?->admite_vuelto);
+
+                $vuelto = 0.0;
+                if (!$vueltoAsignado && $admiteVuelto && $vueltoGlobal > 0) {
+                    $vuelto         = $vueltoGlobal;
+                    $vueltoAsignado = true;
+                }
 
                 VentaPago::create([
                     'venta_id'              => $venta->id,

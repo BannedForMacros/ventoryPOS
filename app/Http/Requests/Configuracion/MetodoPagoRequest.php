@@ -24,7 +24,13 @@ class MetodoPagoRequest extends FormRequest
                     ->where('empresa_id', $empresaId)
                     ->ignore($id),
             ],
-            'tipo'       => 'required|in:efectivo,tarjeta_debito,tarjeta_credito,transferencia,yape,plin,otro',
+            // FK al catálogo de tipos. Antes era enum string.
+            'tipo_id'    => [
+                'required', 'integer',
+                Rule::exists('tipos_metodo_pago', 'id')->where('activo', true),
+            ],
+            // Flag explicito por método. Reemplaza la inferencia desde el tipo.
+            'admite_vuelto' => 'nullable|boolean',
             'activo'     => 'boolean',
             'cuenta_ids' => 'nullable|array',
             'cuenta_ids.*' => [

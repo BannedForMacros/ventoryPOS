@@ -65,7 +65,15 @@
       "PowerShell(npm run *)",
       "Bash(node node_modules/typescript/bin/tsc --noEmit)",
       "Bash(node node_modules/vite/bin/vite.js build)",
-      "PowerShell(Set-Content *)"
+      "PowerShell(Set-Content *)",
+      "Bash(php *)",
+      "Bash(grep *)",
+      "Bash(vendor/bin/pest tests/Feature/Support/SmokeTestEnvTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos/VentaServiceTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos/SobrepagoValidacionTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Stock/StockTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Turnos/TurnoTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Turnos/TurnoTest.php --filter=\"calcularMontoEsperado\" --colors=never)"
     ]
   }
 }

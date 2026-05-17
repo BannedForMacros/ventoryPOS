@@ -28,6 +28,7 @@ type FormData = {
     email: string;
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
+    tasa_igv: number | '';
     modo_cierre_caja: ModoCierre;
     modo_cierre_inventario: ModoInventario;
     usa_fondos_iniciales: boolean;
@@ -48,6 +49,7 @@ const emptyForm: FormData = {
     email: '',
     modo_almacen: 'simple',
     descuenta_stock_en_venta: true,
+    tasa_igv: 18,
     modo_cierre_caja: 'con_declaraciones',
     modo_cierre_inventario: 'por_venta',
     usa_fondos_iniciales: true,
@@ -89,6 +91,7 @@ export default function Empresas({ empresas }: Props) {
             email: emp.email ?? '',
             modo_almacen: emp.modo_almacen,
             descuenta_stock_en_venta: emp.descuenta_stock_en_venta ?? true,
+            tasa_igv: emp.tasa_igv != null ? Number(emp.tasa_igv) : 18,
             modo_cierre_caja: (emp.modo_cierre_caja as ModoCierre) ?? 'con_declaraciones',
             modo_cierre_inventario: (emp.modo_cierre_inventario as ModoInventario) ?? 'por_venta',
             usa_fondos_iniciales: emp.usa_fondos_iniciales ?? true,
@@ -263,6 +266,31 @@ export default function Empresas({ empresas }: Props) {
                         </label>
                         {errors.descuenta_stock_en_venta && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.descuenta_stock_en_venta}</p>
+                        )}
+                    </div>
+
+                    {/* ── Sección: Impuestos (IGV) ── */}
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Impuestos</p>
+
+                        <label className="block">
+                            <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Tasa de IGV (%)</span>
+                            <span className="block text-xs mt-0.5 mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                                Aplica solo a productos marcados como "incluye IGV". 0 = empresa exenta (RUS, comercio inafecto). Default Perú: 18.
+                            </span>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min={0}
+                                max={30}
+                                value={data.tasa_igv}
+                                onChange={e => setData('tasa_igv', e.target.value === '' ? '' : Number(e.target.value))}
+                                className="w-32 rounded border px-2 py-1 text-sm"
+                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                            />
+                        </label>
+                        {errors.tasa_igv && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.tasa_igv}</p>
                         )}
                     </div>
 

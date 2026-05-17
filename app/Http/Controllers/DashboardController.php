@@ -96,15 +96,18 @@ class DashboardController extends Controller
             ->limit(8)
             ->get();
 
-        // Ventas por método de pago (mes)
+        // Ventas por método de pago (mes). El `tipo` (slug) ahora viene del
+        // catálogo tipos_metodo_pago vía join — antes era enum nativo.
         $ventasPorMetodo = VentaPago::join('ventas', 'ventas.id', '=', 'venta_pagos.venta_id')
             ->join('metodos_pago', 'metodos_pago.id', '=', 'venta_pagos.metodo_pago_id')
+            ->join('tipos_metodo_pago', 'tipos_metodo_pago.id', '=', 'metodos_pago.tipo_id')
             ->where('ventas.empresa_id', $empresaId)
             ->where('ventas.estado', 'completada')
             ->where('ventas.fecha_venta', '>=', $mesIni)
-            ->select('metodos_pago.nombre', 'metodos_pago.tipo',
+            ->select('metodos_pago.nombre',
+                     DB::raw('tipos_metodo_pago.slug as tipo'),
                      DB::raw('SUM(venta_pagos.monto) as total'))
-            ->groupBy('metodos_pago.id', 'metodos_pago.nombre', 'metodos_pago.tipo')
+            ->groupBy('metodos_pago.id', 'metodos_pago.nombre', 'tipos_metodo_pago.slug')
             ->orderByDesc('total')
             ->get();
 
@@ -176,11 +179,13 @@ class DashboardController extends Controller
             // Ventas por método del turno
             $porMetodo = VentaPago::join('ventas', 'ventas.id', '=', 'venta_pagos.venta_id')
                 ->join('metodos_pago', 'metodos_pago.id', '=', 'venta_pagos.metodo_pago_id')
+                ->join('tipos_metodo_pago', 'tipos_metodo_pago.id', '=', 'metodos_pago.tipo_id')
                 ->where('ventas.turno_id', $turnoActivo->id)
                 ->where('ventas.estado', 'completada')
-                ->select('metodos_pago.nombre', 'metodos_pago.tipo',
+                ->select('metodos_pago.nombre',
+                         DB::raw('tipos_metodo_pago.slug as tipo'),
                          DB::raw('SUM(venta_pagos.monto) as total'))
-                ->groupBy('metodos_pago.id', 'metodos_pago.nombre', 'metodos_pago.tipo')
+                ->groupBy('metodos_pago.id', 'metodos_pago.nombre', 'tipos_metodo_pago.slug')
                 ->orderByDesc('total')
                 ->get();
 

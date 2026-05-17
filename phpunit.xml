@@ -23,8 +23,9 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!-- DB_CONNECTION / DB_DATABASE: NO sobreescribimos. Los tests usan
+             la conexión de .env (Postgres). Cada test corre con DatabaseTransactions
+             para hacer rollback automático y no persistir cambios. -->
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

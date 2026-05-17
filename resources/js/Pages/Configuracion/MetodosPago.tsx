@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Banknote, CreditCard, Smartphone, ArrowLeftRight, Wallet, Check } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -12,37 +12,8 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
+import DynamicIcon from '@/Components/DynamicIcon';
 import type { PageProps } from '@/types';
-
-const TIPOS = [
-    { value: 'efectivo',        label: 'Efectivo' },
-    { value: 'tarjeta_debito',  label: 'Tarjeta débito' },
-    { value: 'tarjeta_credito', label: 'Tarjeta crédito' },
-    { value: 'transferencia',   label: 'Transferencia' },
-    { value: 'yape',            label: 'Yape' },
-    { value: 'plin',            label: 'Plin' },
-    { value: 'otro',            label: 'Otro' },
-];
-
-const TIPO_ICON: Record<string, React.ReactNode> = {
-    efectivo:        <Banknote size={14} />,
-    tarjeta_debito:  <CreditCard size={14} />,
-    tarjeta_credito: <CreditCard size={14} />,
-    transferencia:   <ArrowLeftRight size={14} />,
-    yape:            <Smartphone size={14} />,
-    plin:            <Smartphone size={14} />,
-    otro:            <Wallet size={14} />,
-};
-
-const TIPO_LABEL: Record<string, string> = {
-    efectivo:        'Efectivo',
-    tarjeta_debito:  'Tarjeta débito',
-    tarjeta_credito: 'Tarjeta crédito',
-    transferencia:   'Transferencia',
-    yape:            'Yape',
-    plin:            'Plin',
-    otro:            'Otro',
-};
 
 interface CuentaMin {
     id:            number;
@@ -51,31 +22,44 @@ interface CuentaMin {
     banco:         string | null;
 }
 
+interface TipoMetodoPago {
+    id:                       number;
+    slug:                     string;
+    nombre:                   string;
+    icono:                    string | null;
+    admite_vuelto_default:    boolean;
+    requiere_referencia:      boolean;
+}
+
 interface MetodoPago extends Record<string, unknown> {
-    id:         number;
-    nombre:     string;
-    tipo:       string;
-    activo:     boolean;
-    cuentas:    CuentaMin[];
+    id:             number;
+    nombre:         string;
+    tipo_id:        number;
+    tipo:           TipoMetodoPago | null;
+    admite_vuelto:  boolean;
+    activo:         boolean;
+    cuentas:        CuentaMin[];
 }
 
 interface FormState {
-    nombre:     string;
-    tipo:       string;
-    activo:     boolean;
-    cuenta_ids: number[];
+    nombre:        string;
+    tipo_id:       number | '';
+    admite_vuelto: boolean;
+    activo:        boolean;
+    cuenta_ids:    number[];
 }
 
 interface Props extends PageProps {
-    metodos: MetodoPago[];
-    cuentas: CuentaMin[];
+    metodos:         MetodoPago[];
+    cuentas:         CuentaMin[];
+    tiposMetodoPago: TipoMetodoPago[];
 }
 
 const emptyForm = (): FormState => ({
-    nombre: '', tipo: 'efectivo', activo: true, cuenta_ids: [],
+    nombre: '', tipo_id: '', admite_vuelto: false, activo: true, cuenta_ids: [],
 });
 
-export default function MetodosPago({ metodos, cuentas }: Props) {
+export default function MetodosPago({ metodos, cuentas, tiposMetodoPago }: Props) {
     const { flash } = usePage<Props>().props;
     const [modal, setModal]         = useState(false);
     const [editing, setEditing]     = useState<MetodoPago | null>(null);
@@ -96,10 +80,11 @@ export default function MetodosPago({ metodos, cuentas }: Props) {
     function openEdit(m: MetodoPago) {
         setEditing(m);
         setForm({
-            nombre:     m.nombre,
-            tipo:       m.tipo,
-            activo:     m.activo,
-            cuenta_ids: (m.cuentas as CuentaMin[]).map(c => c.id),
+            nombre:        m.nombre,
+            tipo_id:       m.tipo_id,
+            admite_vuelto: m.admite_vuelto ?? !!m.tipo?.admite_vuelto_default,
+            activo:        m.activo,
+            cuenta_ids:    (m.cuentas as CuentaMin[]).map(c => c.id),
         });
         setErrors({}); setModal(true);
     }
@@ -132,7 +117,20 @@ export default function MetodosPago({ metodos, cuentas }: Props) {
         }));
     }
 
-    const mostrarCuentas = form.tipo !== 'efectivo';
+    // Al cambiar el tipo, sugerimos sus defaults (admite_vuelto). El admin
+    // puede sobreescribirlos abajo en el form.
+    function handleTipoChange(tipoId: number) {
+        const tipo = tiposMetodoPago.find(t => t.id === tipoId);
+        setForm(f => ({
+            ...f,
+            tipo_id:       tipoId,
+            admite_vuelto: tipo?.admite_vuelto_default ?? false,
+            cuenta_ids:    [],
+        }));
+    }
+
+    const tipoSeleccionado = tiposMetodoPago.find(t => t.id === form.tipo_id);
+    const mostrarCuentas   = tipoSeleccionado ? tipoSeleccionado.slug !== 'efectivo' : false;
 
     const columns: Column<MetodoPago>[] = [
         {
@@ -144,7 +142,8 @@ export default function MetodosPago({ metodos, cuentas }: Props) {
             render: (m) => (
                 <Badge variant="primary">
                     <span className="flex items-center gap-1">
-                        {TIPO_ICON[m.tipo]}{TIPO_LABEL[m.tipo] ?? m.tipo}
+                        {m.tipo?.icono && <DynamicIcon name={m.tipo.icono} size={14} />}
+                        {m.tipo?.nombre ?? '—'}
                     </span>
                 </Badge>
             ),
@@ -200,7 +199,6 @@ export default function MetodosPago({ metodos, cuentas }: Props) {
                 emptyMessage="No hay métodos de pago configurados"
             />
 
-            {/* Modal crear / editar */}
             <Modal
                 isOpen={modal}
                 onClose={() => setModal(false)}
@@ -227,11 +225,26 @@ export default function MetodosPago({ metodos, cuentas }: Props) {
                     <Select
                         label="Tipo"
                         required
-                        value={form.tipo}
-                        onChange={v => setForm(f => ({ ...f, tipo: String(v), cuenta_ids: [] }))}
-                        options={TIPOS}
+                        value={form.tipo_id}
+                        onChange={v => handleTipoChange(Number(v))}
+                        options={tiposMetodoPago.map(t => ({ value: t.id, label: t.nombre }))}
                         disabled={saving}
                     />
+                    {errors.tipo_id && (
+                        <p className="text-xs -mt-2" style={{ color: 'var(--color-danger)' }}>{errors.tipo_id}</p>
+                    )}
+                    <div>
+                        <Switch
+                            label="¿Admite vuelto?"
+                            checked={form.admite_vuelto}
+                            onChange={v => setForm(f => ({ ...f, admite_vuelto: v }))}
+                            disabled={saving}
+                        />
+                        <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Si está activo, el POS permitirá sobrepagar con este método y calculará vuelto.
+                            Marca esto solo en métodos donde el cajero puede devolver el excedente físicamente.
+                        </p>
+                    </div>
                     <Switch
                         label="Activo"
                         checked={form.activo}
@@ -239,7 +252,6 @@ export default function MetodosPago({ metodos, cuentas }: Props) {
                         disabled={saving}
                     />
 
-                    {/* Cuentas asignadas */}
                     {mostrarCuentas && (
                         <div className="pt-1">
                             <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
@@ -289,7 +301,6 @@ export default function MetodosPago({ metodos, cuentas }: Props) {
                 </div>
             </Modal>
 
-            {/* Confirmar desactivar */}
             <Modal
                 isOpen={confirmId !== null}
                 onClose={() => setConfirmId(null)}

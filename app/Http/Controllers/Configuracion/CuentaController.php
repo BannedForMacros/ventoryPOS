@@ -15,7 +15,7 @@ class CuentaController extends Controller
         $empresaId = $request->user()->empresa_id;
 
         $cuentas = Cuenta::deEmpresa($empresaId)
-            ->with(['metodosPago' => fn($q) => $q->select('metodos_pago.id', 'nombre', 'tipo')])
+            ->with(['metodosPago' => fn($q) => $q->select('metodos_pago.id', 'nombre', 'tipo_id')->with('tipo:id,slug,nombre')])
             ->orderBy('nombre')
             ->get();
 

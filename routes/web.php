@@ -189,8 +189,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     // ── DECOLECTA (consulta DNI/RUC) ─────────────────────────────────────
-    // No requiere permiso específico: cualquier usuario que pueda crear clientes/proveedores
-    // necesita esto. Se mantiene el throttle.
+    // Endpoint sensible: consulta datos personales (Habeas Data en Perú, Ley 29733)
+    // y consume cuota del token Decolecta. El controlador exige que el usuario
+    // pueda crear clientes O proveedores (los dos formularios que lo invocan).
+    // El throttle defiende contra enumeracion masiva.
     Route::middleware('throttle:30,1')->prefix('api/decolecta')->group(function () {
         Route::post('dni', [DecolectaController::class, 'consultarDni'])->name('decolecta.dni');
         Route::post('ruc', [DecolectaController::class, 'consultarRuc'])->name('decolecta.ruc');

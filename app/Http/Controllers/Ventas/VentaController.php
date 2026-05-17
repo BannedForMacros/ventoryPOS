@@ -68,13 +68,16 @@ class VentaController extends Controller
                 ->first();
 
             if ($cita && !$cita->venta_id && $cita->estaActiva()) {
-                $citaPrellenada = [
-                    'id'           => $cita->id,
-                    'numero'       => $cita->numero,
-                    'sujeto_label' => $user->empresa->agenda_sujeto_label,
-                    'sujeto'       => $cita->sujeto_nombre,
-                    'cliente'      => $cita->cliente,
-                    'items'        => $cita->items->map(fn($it) => [
+                // Marcamos por item si producto/unidad siguen activos. Entre agendar
+                // y cobrar pueden haber pasado dias y el admin pudo desactivar items.
+                // El frontend usa estos flags para mostrar alerta visible y bloquear
+                // el cobro hasta que el cajero resuelva (eliminar la linea o pedir
+                // reactivacion al admin).
+                $items = $cita->items->map(function ($it) {
+                    $productoActivo = (bool) ($it->producto?->activo);
+                    $unidadActiva   = (bool) ($it->productoUnidad?->activo);
+
+                    return [
                         'producto_id'        => $it->producto_id,
                         'producto_unidad_id' => $it->producto_unidad_id,
                         'producto_nombre'    => $it->producto->nombre,
@@ -82,7 +85,20 @@ class VentaController extends Controller
                         'cantidad'           => (float) $it->cantidad,
                         'precio_unitario'    => (float) $it->productoUnidad->precio_venta, // precio actual del catalogo
                         'incluye_igv'        => (bool) $it->producto->incluye_igv,
-                    ]),
+                        'producto_activo'    => $productoActivo,
+                        'unidad_activa'      => $unidadActiva,
+                        'inactivo'           => !($productoActivo && $unidadActiva),
+                    ];
+                });
+
+                $citaPrellenada = [
+                    'id'             => $cita->id,
+                    'numero'         => $cita->numero,
+                    'sujeto_label'   => $user->empresa->agenda_sujeto_label,
+                    'sujeto'         => $cita->sujeto_nombre,
+                    'cliente'        => $cita->cliente,
+                    'items'          => $items,
+                    'tiene_inactivos'=> $items->contains(fn($i) => $i['inactivo']),
                 ];
             }
         }

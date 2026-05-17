@@ -24,6 +24,10 @@ class EmpresaRequest extends FormRequest
             'telefono'         => 'nullable|string|max:20',
             'email'            => 'nullable|email|max:255',
             'activo'           => 'boolean',
+            // Tasa de IGV aplicable a la empresa (en %). 18.00 default Perú.
+            // Topes generosos para tolerar reformas tributarias o paises con
+            // tasas distintas; 0 permite empresas exentas (RUS, comercio inafecto).
+            'tasa_igv'         => 'nullable|numeric|min:0|max:30',
             'modo_almacen'     => 'required|in:simple,central_y_local',
             'descuenta_stock_en_venta'        => 'boolean',
             'modo_cierre_caja'                => 'required|in:rapido,con_declaraciones',
