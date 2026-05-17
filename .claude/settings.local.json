@@ -74,7 +74,11 @@
       "Bash(vendor/bin/pest tests/Feature/Stock/StockTest.php --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Turnos/TurnoTest.php --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Turnos/TurnoTest.php --filter=\"calcularMontoEsperado\" --colors=never)",
-      "Bash(vendor/bin/pest tests/Feature/Devoluciones/DevolucionTest.php --colors=never)"
+      "Bash(vendor/bin/pest tests/Feature/Devoluciones/DevolucionTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Agenda/CitaTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Agenda/CitaTest.php --filter=\"producto inactivo\" --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Igv/IgvCalculoTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Support --colors=never)"
     ]
   }
 }
