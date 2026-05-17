@@ -50,6 +50,12 @@ interface Props extends PageProps {
     metodosPago:        MetodoPagoConCuentas[];
     conceptosDescuento: DescuentoConcepto[];
     citaPrellenada?:    CitaPrellenada | null;
+    // A14: el backend valida que el usuario pueda operar el POS al CARGAR la
+    // pantalla (admin sin local_id en modo central_y_local, almacén
+    // desactivado, etc.). Si puedeVender=false bloqueamos el botón cobrar
+    // desde el principio en vez de fallar al final con un 422.
+    puedeVender:        boolean;
+    razonNoVender:      string | null;
 }
 
 type TipoComprobante = 'ticket' | 'boleta' | 'factura';
@@ -106,12 +112,18 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total };
 }
 
-export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada }: Props) {
+export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, puedeVender, razonNoVender }: Props) {
     // Tasa de IGV de la empresa (configurable por tenant). Default 18% si no llega.
     const empresaAuth = usePage().props.auth?.user?.empresa as { tasa_igv?: number | string } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
 
-    const clienteGeneral = clientes.find(c => c.numero_documento === '99999999') ?? null;
+    // A15: identificar el Cliente General por la flag `es_cliente_general`
+    // (no por DNI mágico). Fallback al DNI legado para compatibilidad si el
+    // backend no envía la flag por alguna razón.
+    const clienteGeneral =
+        clientes.find(c => (c as Cliente & { es_cliente_general?: boolean }).es_cliente_general)
+        ?? clientes.find(c => c.numero_documento === '99999999')
+        ?? null;
 
     // Si venimos desde una cita, prellenar carrito y cliente automaticamente.
     // Cada linea propaga su flag `inactivo` para que CarritoItem la pinte en rojo
@@ -1012,6 +1024,20 @@ function CarritoPanel({
                     <span>S/ {total.toFixed(2)}</span>
                 </div>
 
+                {/* A14: banner rojo cuando el backend dice que no puede vender */}
+                {!puedeVender && razonNoVender && (
+                    <div
+                        className="px-3 py-2 rounded-lg text-sm font-medium border"
+                        style={{
+                            background: '#fef2f2',
+                            color: '#991b1b',
+                            borderColor: '#fecaca',
+                        }}
+                    >
+                        ⚠️ {razonNoVender}
+                    </div>
+                )}
+
                 {/* Botón cobrar */}
                 <Button
                     variant="success"
@@ -1019,10 +1045,16 @@ function CarritoPanel({
                     radius="lg"
                     className="w-full !py-3 !text-base !font-bold"
                     onClick={onConfirmar}
-                    disabled={carrito.length === 0 || hayInactivos}
-                    title={hayInactivos ? 'Hay ítems inactivos en el carrito. Elimínalos para cobrar.' : undefined}
+                    disabled={carrito.length === 0 || hayInactivos || !puedeVender}
+                    title={
+                        !puedeVender ? (razonNoVender ?? 'No puedes registrar ventas en este momento.')
+                        : hayInactivos ? 'Hay ítems inactivos en el carrito. Elimínalos para cobrar.'
+                        : undefined
+                    }
                 >
-                    {hayInactivos ? 'Resuelve ítems inactivos' : 'Cobrar venta'}
+                    {!puedeVender ? 'POS bloqueado'
+                     : hayInactivos ? 'Resuelve ítems inactivos'
+                     : 'Cobrar venta'}
                 </Button>
             </div>
         </>

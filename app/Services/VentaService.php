@@ -47,7 +47,9 @@ class VentaService
             $almacen = $this->scope->almacenParaVentas($user)
                 ?? abort(422, 'No se encontró un almacén de ventas configurado.');
 
-            // Si no se indicó cliente, usar el Cliente General (DNI 99999999) de la empresa
+            // Si no se indico cliente, usar el Cliente General de la empresa.
+            // A15: la identificacion del Cliente General es por la columna
+            // `es_cliente_general` (no por DNI magico).
             $clienteId = $data['cliente_id']
                 ?? Cliente::generalDeEmpresa($user->empresa_id)?->id
                 ?? abort(422, 'No se encontró el Cliente General de la empresa.');

@@ -26,14 +26,17 @@ class EmpresaController extends Controller
     {
         $empresa = Empresa::create($request->validated());
 
-        // Cliente general por defecto
+        // Cliente general por defecto. La flag `es_cliente_general` (A15) es
+        // la fuente de verdad; mantenemos DNI 99999999 como valor poblado pero
+        // ya no se usa para identificarlo.
         Cliente::create([
-            'empresa_id'       => $empresa->id,
-            'tipo_documento'   => 'DNI',
-            'numero_documento' => '99999999',
-            'nombres'          => 'Clientes Varios',
-            'apellidos'        => '',
-            'activo'           => true,
+            'empresa_id'         => $empresa->id,
+            'tipo_documento'     => 'DNI',
+            'numero_documento'   => '99999999',
+            'nombres'            => 'Clientes Varios',
+            'apellidos'          => '',
+            'activo'             => true,
+            'es_cliente_general' => true,
         ]);
 
         return redirect()->back()->with('success', 'Empresa creada correctamente.');

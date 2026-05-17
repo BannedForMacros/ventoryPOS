@@ -144,12 +144,13 @@ class TestEnv
         // Cliente General (DNI 99999999) — VentaService::crear lo necesita
         // como fallback cuando no se pasa cliente_id.
         $self->clienteGeneral = Cliente::create([
-            'empresa_id'       => $self->empresa->id,
-            'tipo_documento'   => 'DNI', // enum nativo PG: DNI/RUC/CE/pasaporte/otro
-            'numero_documento' => '99999999',
-            'nombres'          => 'Cliente',
-            'apellidos'        => 'General',
-            'activo'           => true,
+            'empresa_id'         => $self->empresa->id,
+            'tipo_documento'     => 'DNI', // enum nativo PG: DNI/RUC/CE/pasaporte/otro
+            'numero_documento'   => '99999999',
+            'nombres'            => 'Cliente',
+            'apellidos'          => 'General',
+            'activo'             => true,
+            'es_cliente_general' => true, // A15: fuente de verdad
         ]);
 
         // Unidad de medida + Categoría defaults

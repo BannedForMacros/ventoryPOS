@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, AlertTriangle } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -25,6 +25,7 @@ interface StockRow extends Record<string, unknown> {
     cantidad: number;
     costo_promedio: number;
     valor_total: number;
+    es_negativo: boolean;       // A9: marcado por el backend cuando cantidad < 0
 }
 
 interface Props extends PageProps {
@@ -32,9 +33,10 @@ interface Props extends PageProps {
     almacenes: Almacen[];
     mostrarSelector: boolean;
     filters: { almacen_id?: string; busqueda?: string };
+    stocksNegativosCount: number; // A9: total de stocks con saldo negativo en almacenes visibles
 }
 
-export default function Stock({ stocks, almacenes, mostrarSelector, filters }: Props) {
+export default function Stock({ stocks, almacenes, mostrarSelector, filters, stocksNegativosCount }: Props) {
     const { flash } = usePage<Props>().props;
     const [almacenId, setAlmacenId] = useState(filters.almacen_id ?? '');
     const [busqueda, setBusqueda]   = useState(filters.busqueda ?? '');
@@ -89,11 +91,13 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters }: P
         {
             key: 'cantidad', label: 'Cantidad', sortable: true,
             render: (s) => {
-                const qty = s.cantidad;
-                const variant = qty === 0 ? 'danger' : qty < 5 ? 'warning' : 'success';
+                const qty = Number(s.cantidad);
+                // A9: negativos en rojo intenso (es una inconsistencia real)
+                const variant = qty < 0 ? 'danger' : qty === 0 ? 'danger' : qty < 5 ? 'warning' : 'success';
                 return (
                     <Badge variant={variant}>
-                        {Number(qty).toFixed(2)}
+                        {qty.toFixed(2)}
+                        {qty < 0 && <span className="ml-1">⚠</span>}
                     </Badge>
                 );
             },
