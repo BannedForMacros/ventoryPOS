@@ -247,9 +247,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('permiso:pos,ver')->get('/pos', [VentaController::class, 'pos'])->name('pos.index');
 
     // ── VENTAS ───────────────────────────────────────────────────────────
+    // M17: throttle:60,1 en `store` evita que un usuario autenticado (sesion
+    // robada, bug de FE en loop, cajero malicioso) genere cientos de ventas
+    // por segundo. 60/min es muy holgado para uso normal (un cajero rapido
+    // raramente pasa de 1 venta cada 10s) y bloquea abuso obvio.
     Route::prefix('ventas')->name('ventas.')->group(function () {
         Route::middleware('permiso:ventas,ver')->get('/', [VentaController::class, 'index'])->name('index');
-        Route::middleware('permiso:ventas,crear')->post('/', [VentaController::class, 'store'])->name('store');
+        Route::middleware(['permiso:ventas,crear', 'throttle:60,1'])->post('/', [VentaController::class, 'store'])->name('store');
         Route::middleware('permiso:ventas,ver')->get('/{venta}', [VentaController::class, 'show'])->name('show');
         Route::middleware('permiso:ventas,editar')->post('/{venta}/anular', [VentaController::class, 'anular'])->name('anular');
     });

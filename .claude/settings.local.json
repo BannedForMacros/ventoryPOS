@@ -88,7 +88,9 @@
       "Bash(vendor/bin/pest tests/Feature/Turnos --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Pos/PosBloqueadoSinLocalTest.php --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Clientes/ClienteGeneralA15Test.php --colors=never)",
-      "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Ventas tests/Feature/Clientes tests/Feature/Support --colors=never)"
+      "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Ventas tests/Feature/Clientes tests/Feature/Support --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos/RateLimitTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos/RateLimitTest.php --filter=\"61\" --colors=never)"
     ]
   }
 }
