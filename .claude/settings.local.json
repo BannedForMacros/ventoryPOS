@@ -73,7 +73,8 @@
       "Bash(vendor/bin/pest tests/Feature/Pos/SobrepagoValidacionTest.php --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Stock/StockTest.php --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Turnos/TurnoTest.php --colors=never)",
-      "Bash(vendor/bin/pest tests/Feature/Turnos/TurnoTest.php --filter=\"calcularMontoEsperado\" --colors=never)"
+      "Bash(vendor/bin/pest tests/Feature/Turnos/TurnoTest.php --filter=\"calcularMontoEsperado\" --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Devoluciones/DevolucionTest.php --colors=never)"
     ]
   }
 }
