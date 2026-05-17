@@ -132,6 +132,32 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters, sto
                 }
             />
 
+            {/* A9: banner de alerta cuando hay stocks con saldo negativo */}
+            {stocksNegativosCount > 0 && (
+                <div
+                    className="mb-4 flex items-start gap-3 px-4 py-3 rounded-lg border"
+                    style={{
+                        background: '#fef2f2',
+                        color: '#991b1b',
+                        borderColor: '#fecaca',
+                    }}
+                >
+                    <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                    <div className="text-sm">
+                        <p className="font-semibold">
+                            {stocksNegativosCount === 1
+                                ? 'Hay 1 producto con stock negativo'
+                                : `Hay ${stocksNegativosCount} productos con stock negativo`}
+                        </p>
+                        <p className="mt-0.5 opacity-90">
+                            Indica una inconsistencia (venta sin transferencia previa, anulación
+                            de devolución sobre stock ya vendido, etc). Revisa las filas marcadas
+                            con ⚠ y ajusta el inventario.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Filtros */}
             <div className="mb-4 flex flex-wrap gap-3 items-end">
                 {mostrarSelector && (

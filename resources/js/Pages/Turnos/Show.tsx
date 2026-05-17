@@ -24,6 +24,9 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
     const { flash } = usePage<Props>().props;
     const [modalReabrir, setModalReabrir] = useState(false);
     const [reabriendo, setReabriendo]     = useState(false);
+    // A8: motivo obligatorio. El backend exige min 10 chars; bloqueamos el
+    // submit aqui mismo para feedback inmediato sin viajar al server.
+    const [motivoReabrir, setMotivoReabrir] = useState('');
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -31,11 +34,20 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
     }, [flash]);
 
     const esCerrado = turno.estado === 'cerrado';
+    const motivoValido = motivoReabrir.trim().length >= 10;
 
     function reabrir() {
+        if (!motivoValido) {
+            toast.error('El motivo es obligatorio (mínimo 10 caracteres).');
+            return;
+        }
         setReabriendo(true);
-        router.post(route('turnos.reabrir', turno.id), {}, {
-            onFinish: () => { setReabriendo(false); setModalReabrir(false); },
+        router.post(route('turnos.reabrir', turno.id), { motivo: motivoReabrir.trim() }, {
+            onFinish: () => { setReabriendo(false); },
+            onSuccess: () => {
+                setModalReabrir(false);
+                setMotivoReabrir('');
+            },
         });
     }
 
@@ -396,13 +408,15 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
             {/* Modal confirmar reabrir */}
             <Modal
                 isOpen={modalReabrir}
-                onClose={() => setModalReabrir(false)}
+                onClose={() => { setModalReabrir(false); setMotivoReabrir(''); }}
                 title="Reabrir turno"
                 size="sm"
                 footer={
                     <>
-                        <Button variant="ghost" onClick={() => setModalReabrir(false)}>Cancelar</Button>
-                        <Button variant="danger" onClick={reabrir} disabled={reabriendo}>
+                        <Button variant="ghost" onClick={() => { setModalReabrir(false); setMotivoReabrir(''); }}>
+                            Cancelar
+                        </Button>
+                        <Button variant="danger" onClick={reabrir} disabled={reabriendo || !motivoValido}>
                             {reabriendo ? 'Reabriendo...' : 'Sí, reabrir'}
                         </Button>
                     </>
@@ -415,12 +429,42 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
                     >
                         <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
                         <p style={{ color: 'var(--color-text)' }}>
-                            Se eliminará el arqueo de cierre. El cajero podrá registrar ventas y gastos nuevamente hasta que se vuelva a cerrar.
+                            Se eliminará el arqueo de cierre y se anulará el cierre de inventario asociado.
+                            El cajero podrá registrar ventas y gastos nuevamente hasta que se vuelva a cerrar.
                         </p>
                     </div>
-                    <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-                        ¿Confirmas que deseas reabrir este turno?
-                    </p>
+
+                    {/* A8: motivo obligatorio para auditoria */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                            Motivo de la reapertura <span style={{ color: 'var(--color-danger)' }}>*</span>
+                        </label>
+                        <textarea
+                            value={motivoReabrir}
+                            onChange={(e) => setMotivoReabrir(e.target.value)}
+                            rows={3}
+                            maxLength={500}
+                            placeholder="Ej: El cajero olvidó declarar un pago Yape de S/ 150"
+                            className="w-full rounded-lg border px-3 py-2 text-sm"
+                            style={{
+                                borderColor: motivoReabrir.length > 0 && !motivoValido
+                                    ? 'var(--color-danger)'
+                                    : 'var(--color-border)',
+                                background: 'var(--color-surface)',
+                                color: 'var(--color-text)',
+                            }}
+                        />
+                        <div className="flex justify-between mt-1 text-xs">
+                            <span style={{ color: motivoValido ? 'var(--color-text-muted)' : 'var(--color-danger)' }}>
+                                {motivoValido
+                                    ? 'Mínimo 10 caracteres ✓'
+                                    : `Mínimo 10 caracteres (${motivoReabrir.trim().length}/10)`}
+                            </span>
+                            <span style={{ color: 'var(--color-text-muted)' }}>
+                                {motivoReabrir.length}/500
+                            </span>
+                        </div>
+                    </div>
                 </div>
             </Modal>
         </AppLayout>
