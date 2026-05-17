@@ -52,34 +52,57 @@ class VentaService
                 ?? Cliente::generalDeEmpresa($user->empresa_id)?->id
                 ?? abort(422, 'No se encontró el Cliente General de la empresa.');
 
-            // Cabecera de la venta
-            try {
-                $venta = Venta::create([
-                    'empresa_id'            => $user->empresa_id,
-                    'local_id'              => $turno->local_id,
-                    'turno_id'              => $turno->id,
-                    'caja_id'               => $turno->caja_id,
-                    'user_id'               => $user->id,
-                    'cliente_id'            => $clienteId,
-                    'numero'                => Venta::generarNumero($turno->id),
-                    'idempotency_key'       => $idempotencyKey,
-                    'tipo_comprobante'      => $data['tipo_comprobante'],
-                    'subtotal'              => 0,
-                    'descuento_total'       => $data['descuento_total'] ?? 0,
-                    'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
-                    'igv'                   => 0,
-                    'total'                 => 0,
-                    'estado'                => 'completada',
-                    'observacion'           => $data['observacion'] ?? null,
-                    'fecha_venta'           => now(),
-                ]);
-            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
-                // Race condition: dos requests con el mismo idempotency_key llegaron a la vez.
-                // El primero creo la venta, el segundo choca con UNIQUE. Devolvemos la primera.
-                $existente = Venta::where('idempotency_key', $idempotencyKey)
-                    ->where('empresa_id', $user->empresa_id)
-                    ->firstOrFail();
-                return $existente->load(['items', 'pagos', 'cliente']);
+            // Cabecera de la venta — con retry contra dos races posibles:
+            //   1) idempotency_key duplicado (mismo request dos veces)
+            //   2) turno_id+numero duplicado (dos POS abriendo en el mismo turno
+            //      calculan el mismo correlativo por casualidad)
+            // El UNIQUE constraint `ventas_turno_id_numero_unique` garantiza
+            // que solo uno gane; el otro reintenta con el siguiente número.
+            $venta = null;
+            $intentos = 0;
+            $maxIntentos = 5;
+            while ($venta === null) {
+                $intentos++;
+                try {
+                    $venta = Venta::create([
+                        'empresa_id'            => $user->empresa_id,
+                        'local_id'              => $turno->local_id,
+                        'turno_id'              => $turno->id,
+                        'caja_id'               => $turno->caja_id,
+                        'user_id'               => $user->id,
+                        'cliente_id'            => $clienteId,
+                        'numero'                => Venta::generarNumero($turno->id),
+                        'idempotency_key'       => $idempotencyKey,
+                        'tipo_comprobante'      => $data['tipo_comprobante'],
+                        'subtotal'              => 0,
+                        'descuento_total'       => $data['descuento_total'] ?? 0,
+                        'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
+                        'igv'                   => 0,
+                        'total'                 => 0,
+                        'estado'                => 'completada',
+                        'observacion'           => $data['observacion'] ?? null,
+                        'fecha_venta'           => now(),
+                    ]);
+                } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                    // Caso idempotency_key: si la venta original ya existe con el
+                    // mismo key, devolverla en lugar de seguir intentando.
+                    if ($idempotencyKey) {
+                        $existente = Venta::where('idempotency_key', $idempotencyKey)
+                            ->where('empresa_id', $user->empresa_id)
+                            ->first();
+                        if ($existente) {
+                            return $existente->load(['items', 'pagos', 'cliente']);
+                        }
+                    }
+
+                    // Caso turno_id+numero: otro request ganó el correlativo.
+                    // Regeneramos en el siguiente loop (Venta::generarNumero
+                    // ahora va a ver el numero recién insertado por el ganador).
+                    if ($intentos >= $maxIntentos) {
+                        throw $e; // no debería pasar bajo carga normal
+                    }
+                    // continúa el while con un nuevo número
+                }
             }
 
             // Items

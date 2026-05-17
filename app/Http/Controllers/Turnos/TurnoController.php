@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Turnos;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Turnos\AbrirTurnoRequest;
 use App\Http\Requests\Turnos\CerrarTurnoRequest;
+use App\Http\Requests\Turnos\ReabrirTurnoRequest;
 use App\Models\Caja;
 use App\Models\CierreInventario;
 use App\Models\MetodoPago;
@@ -118,13 +119,15 @@ class TurnoController extends Controller
         ]);
     }
 
-    public function reabrir(Request $request, Turno $turno)
+    public function reabrir(ReabrirTurnoRequest $request, Turno $turno)
     {
         abort_if(!$request->user()->rol->es_admin, 403);
         abort_if($turno->empresa_id !== $request->user()->empresa_id, 403);
         abort_if($turno->estado !== 'cerrado', 422);
 
-        DB::transaction(function () use ($turno, $request) {
+        $motivo = $request->validated('motivo');
+
+        DB::transaction(function () use ($turno, $request, $motivo) {
             $snapshot = [
                 'cerrado_por'        => $turno->user_cierre_id,
                 'fecha_cierre'       => $turno->fecha_cierre?->toDateTimeString(),
@@ -135,6 +138,26 @@ class TurnoController extends Controller
 
             $turno->arqueo()->delete();
             $turno->arqueoMetodos()->delete();
+
+            // A8 — Anular el cierre de inventario asociado al turno (si existe).
+            // Si no se anula, el cierre confirmado anterior queda "huerfano"
+            // y los reportes posteriores cuentan el inventario dos veces cuando
+            // el siguiente cierre se confirme. Guardamos los IDs en el snapshot
+            // para que la auditoria muestre exactamente cuales quedaron sin validez.
+            $cierresAnulados = CierreInventario::where('turno_id', $turno->id)
+                ->where('estado', 'confirmado')
+                ->get();
+
+            foreach ($cierresAnulados as $c) {
+                $observacionPrevia = $c->observacion ? "{$c->observacion}\n" : '';
+                $c->update([
+                    'estado'      => 'anulado',
+                    'observacion' => $observacionPrevia
+                        . "[Anulado por reapertura de turno el "
+                        . now()->toDateTimeString()
+                        . " — motivo: {$motivo}]",
+                ]);
+            }
 
             $turno->update([
                 'estado'                 => 'abierto',
@@ -147,8 +170,10 @@ class TurnoController extends Controller
             ]);
 
             \App\Services\AuditoriaService::log('turno.reabierto', $turno, [
-                'cierre_anterior' => $snapshot,
-                'turno_de'        => $turno->user_id,
+                'cierre_anterior'        => $snapshot,
+                'turno_de'               => $turno->user_id,
+                'motivo'                 => $motivo,
+                'cierres_inventario_anulados' => $cierresAnulados->pluck('id')->all(),
             ], $request->user());
         });
 

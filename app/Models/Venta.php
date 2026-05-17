@@ -106,21 +106,24 @@ class Venta extends Model
         ]);
     }
 
+    /**
+     * Calcula el siguiente número correlativo para un turno: V-0001, V-0002, ...
+     *
+     * NOTA importante sobre concurrencia: esta funcion NO bloquea filas.
+     * En su lugar, la garantía de unicidad la da el UNIQUE constraint
+     * `ventas_turno_id_numero_unique`. Si dos requests calculan el mismo
+     * número y ambos intentan insertar, el segundo recibe
+     * UniqueConstraintViolationException y `VentaService::crear` reintenta
+     * (patrón optimistic-insert + retry). La query MAX es solo el cálculo
+     * inicial — la BD es la fuente final de la verdad.
+     */
     public static function generarNumero(int $turnoId): string
     {
-        // Numerar por turno: cada turno arranca en V-0001
-        // lockForUpdate sobre la subquery evita duplicados en concurrencia
-        $sub = DB::table('ventas')
-            ->select(DB::raw("CAST(SUBSTRING(numero FROM 3) AS INTEGER) as n"))
+        $max = (int) DB::table('ventas')
             ->where('turno_id', $turnoId)
-            ->lockForUpdate();
+            ->selectRaw('COALESCE(MAX(CAST(SUBSTRING(numero FROM 3) AS INTEGER)), 0) as n')
+            ->value('n');
 
-        $max = DB::table(DB::raw("({$sub->toSql()}) as sub"))
-            ->mergeBindings($sub)
-            ->max('n');
-
-        $siguiente = ($max ?? 0) + 1;
-
-        return 'V-' . str_pad($siguiente, 4, '0', STR_PAD_LEFT);
+        return 'V-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
     }
 }

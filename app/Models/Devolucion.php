@@ -142,22 +142,36 @@ class Devolucion extends Model
         DB::transaction(function () {
             $estadoPrevio = $this->estado;
 
+            // Productos que quedan en stock negativo tras revertir el restock.
+            // Se incluyen en el contexto de la auditoria para que el admin
+            // pueda rastrear inconsistencias generadas por la anulacion.
+            $negativosResultantes = [];
+
             // Si ya estaba completada, revertir el restock aplicado
             if ($this->esCompletada()) {
                 $almacenId = $this->resolverAlmacenLocal();
-                $this->loadMissing('detalles');
+                $this->loadMissing('detalles.producto');
 
                 foreach ($this->detalles as $d) {
                     if ($d->restock && $almacenId) {
                         // Reverso administrativo: si entre tanto se vendieron las unidades restockeadas,
                         // el stock puede quedar transitoriamente negativo. Es responsabilidad del admin
                         // ajustarlo despues. No bloqueamos la anulacion por consistencia contable.
-                        Stock::ajustar(
+                        $stock = Stock::ajustar(
                             $almacenId,
                             $d->producto_id,
                             -1 * (float) $d->cantidad_base,
                             permitirNegativo: true,
                         );
+
+                        if ((float) $stock->cantidad < 0) {
+                            $negativosResultantes[] = [
+                                'producto_id'     => $d->producto_id,
+                                'producto_nombre' => $d->producto?->nombre,
+                                'cantidad_final'  => (float) $stock->cantidad,
+                                'cantidad_revertida' => (float) $d->cantidad_base,
+                            ];
+                        }
                     }
                 }
             }
@@ -165,11 +179,13 @@ class Devolucion extends Model
             $this->update(['estado' => 'anulada']);
 
             \App\Services\AuditoriaService::log('devolucion.anulada', $this, [
-                'numero'         => $this->numero,
-                'venta_id'       => $this->venta_id,
-                'monto'          => (float) $this->monto_devolucion,
-                'estado_previo'  => $estadoPrevio,
-                'forma_reembolso'=> $this->forma_reembolso,
+                'numero'                  => $this->numero,
+                'venta_id'                => $this->venta_id,
+                'monto'                   => (float) $this->monto_devolucion,
+                'estado_previo'           => $estadoPrevio,
+                'forma_reembolso'         => $this->forma_reembolso,
+                'genero_stock_negativo'   => !empty($negativosResultantes),
+                'stocks_negativos'        => $negativosResultantes ?: null,
             ]);
         });
     }

@@ -78,7 +78,15 @@
       "Bash(vendor/bin/pest tests/Feature/Agenda/CitaTest.php --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Agenda/CitaTest.php --filter=\"producto inactivo\" --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Igv/IgvCalculoTest.php --colors=never)",
-      "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Support --colors=never)"
+      "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Support --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Ventas/WhatsappTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Stock/StockNegativoTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Devoluciones/AnulacionStockNegativoTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos/NumeroVentaConcurrenciaTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Agenda/AntiColisionTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Turnos --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos/PosBloqueadoSinLocalTest.php --colors=never)"
     ]
   }
 }

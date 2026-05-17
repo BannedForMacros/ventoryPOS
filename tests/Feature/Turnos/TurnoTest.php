@@ -150,8 +150,10 @@ it('reabrir un turno cerrado limpia los campos de cierre y registra auditoría',
     ]);
     expect($turno->fresh()->estado)->toBe('cerrado');
 
-    // reabrir
-    $this->post(route('turnos.reabrir', $turno))->assertRedirect();
+    // reabrir (A8: motivo ahora es obligatorio)
+    $this->post(route('turnos.reabrir', $turno), [
+        'motivo' => 'Diferencia mal contada, recontamos',
+    ])->assertRedirect();
 
     $turno->refresh();
     expect($turno->estado)->toBe('abierto');
@@ -175,7 +177,11 @@ it('un cajero no-admin no puede reabrir un turno (403)', function () {
     // (que requiere el manifest de Vite). Probamos directamente la excepción.
     $this->withoutExceptionHandling();
     try {
-        $this->post(route('turnos.reabrir', $turno));
+        // Mandamos motivo válido para que la validación pase y la negativa
+        // venga del check de rol (no del FormRequest).
+        $this->post(route('turnos.reabrir', $turno), [
+            'motivo' => 'Quiero reabrir como cajero',
+        ]);
         $this->fail('Debió abortar con 403');
     } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
         expect($e->getStatusCode())->toBe(403);

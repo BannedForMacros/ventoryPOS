@@ -20,13 +20,15 @@ class Cliente extends Model
         'direccion',
         'fecha_nacimiento',
         'activo',
+        'es_cliente_general',
     ];
 
     protected function casts(): array
     {
         return [
-            'fecha_nacimiento' => 'date',
-            'activo'           => 'boolean',
+            'fecha_nacimiento'   => 'date',
+            'activo'             => 'boolean',
+            'es_cliente_general' => 'boolean',
         ];
     }
 
@@ -58,15 +60,16 @@ class Cliente extends Model
         return trim($this->nombres . ' ' . $this->apellidos);
     }
 
-    public function getEsClienteGeneralAttribute(): bool
-    {
-        return $this->numero_documento === '99999999';
-    }
-
+    /**
+     * Retorna el Cliente General de la empresa (el "cliente por defecto" para
+     * ventas sin cliente identificado). Fuente de verdad: la columna
+     * `es_cliente_general` (A15). La convención anterior "DNI 99999999"
+     * quedó atrás porque dependía de una regla SUNAT puntual.
+     */
     public static function generalDeEmpresa(int $empresaId): ?self
     {
         return static::where('empresa_id', $empresaId)
-            ->where('numero_documento', '99999999')
+            ->where('es_cliente_general', true)
             ->first();
     }
 }

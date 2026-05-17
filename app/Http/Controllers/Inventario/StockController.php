@@ -40,13 +40,21 @@ class StockController extends Controller
             'cantidad'       => (float) $s->cantidad,
             'costo_promedio' => (float) $s->costo_promedio,
             'valor_total'    => round((float) $s->cantidad * (float) $s->costo_promedio, 2),
+            'es_negativo'    => (float) $s->cantidad < 0,
         ]);
 
+        // Conteo de stocks negativos en los almacenes visibles. El FE muestra
+        // banner rojo con "X productos con saldo negativo" cuando > 0.
+        $stocksNegativosCount = Stock::whereIn('almacen_id', $almacenIds)
+            ->negativo()
+            ->count();
+
         return Inertia::render('Inventario/Stock', [
-            'stocks'              => $stocks,
-            'almacenes'           => $almacenes,
-            'mostrarSelector'     => $this->scope->mostrarSelectorLocal($user),
-            'filters'             => $request->only(['almacen_id', 'busqueda']),
+            'stocks'               => $stocks,
+            'almacenes'            => $almacenes,
+            'mostrarSelector'      => $this->scope->mostrarSelectorLocal($user),
+            'filters'              => $request->only(['almacen_id', 'busqueda']),
+            'stocksNegativosCount' => $stocksNegativosCount,
         ]);
     }
 

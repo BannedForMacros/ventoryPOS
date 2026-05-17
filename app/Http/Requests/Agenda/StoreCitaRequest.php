@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Agenda;
 
+use App\Models\Cita;
 use App\Models\Empresa;
 use App\Models\ProductoUnidad;
 use Illuminate\Foundation\Http\FormRequest;
@@ -36,7 +37,10 @@ class StoreCitaRequest extends FormRequest
                 'nullable', 'integer',
                 Rule::exists('users', 'id')->where('empresa_id', $empresaId),
             ],
-            'fecha_hora'         => ['required', 'date'],
+            // after_or_equal:now evita citas agendadas en el pasado por error
+            // (typo en fecha, zona horaria, etc.). Si se necesita backfill
+            // historico, hacerlo via comando admin, no via formulario.
+            'fecha_hora'         => ['required', 'date', 'after_or_equal:now'],
             'observaciones'      => ['nullable', 'string', 'max:500'],
             'sujeto_nombre'      => [$this->sujetoEsRequerido() ? 'required' : 'nullable', 'string', 'max:150'],
             'sujeto_descripcion' => ['nullable', 'string', 'max:1000'],
@@ -67,7 +71,75 @@ class StoreCitaRequest extends FormRequest
                     );
                 }
             }
+
+            // Anti-colision: no permitir solape contra citas activas del mismo
+            // profesional (o del mismo local si no se asigno profesional).
+            // Considera la duracion estimada de la cita nueva (suma de items).
+            $this->validarSolape($v);
         });
+    }
+
+    /**
+     * Comprueba que la nueva cita no se solape con otra activa del mismo
+     * profesional (o del mismo local si no hay profesional). Solo agrega
+     * error si encuentra colision; no es estricto con timezone (usa Carbon
+     * parseando la cadena tal cual la mando el cliente).
+     */
+    private function validarSolape($validator): void
+    {
+        $fechaHoraStr = $this->input('fecha_hora');
+        if (!$fechaHoraStr) return;
+
+        try {
+            $inicio = \Carbon\Carbon::parse($fechaHoraStr);
+        } catch (\Throwable $e) {
+            return; // ya falla por la regla 'date'
+        }
+
+        // Calcular la duracion total de la cita nueva sumando items
+        // (mismo algoritmo que CitaService::crear).
+        $duracionNueva = 0;
+        foreach ($this->input('items', []) as $item) {
+            $dur = (int) ($item['duracion_min'] ?? 30);
+            $cnt = (int) ($item['cantidad'] ?? 1);
+            $duracionNueva += $dur * $cnt;
+        }
+        if ($duracionNueva <= 0) $duracionNueva = 30;
+        $fin = $inicio->copy()->addMinutes($duracionNueva);
+
+        $empresaId      = $this->user()->empresa_id;
+        $profesionalId  = $this->input('profesional_id');
+        $localId        = $this->input('local_id');
+        $citaIdActual   = $this->route('cita')?->id; // en update, ignorar la cita misma
+
+        $query = Cita::query()
+            ->where('empresa_id', $empresaId)
+            ->activas()
+            ->when($citaIdActual, fn ($q) => $q->where('id', '!=', $citaIdActual));
+
+        if ($profesionalId) {
+            $query->where('profesional_id', $profesionalId);
+            $contexto = 'el profesional';
+        } else {
+            $query->where('local_id', $localId)->whereNull('profesional_id');
+            $contexto = 'el local';
+        }
+
+        // Postgres: solape <=> existing.inicio < nueva.fin
+        //                    AND existing.inicio + interval '1 minute' * existing.duracion_min > nueva.inicio
+        $colision = $query
+            ->whereRaw('fecha_hora < ?', [$fin])
+            ->whereRaw("(fecha_hora + (duracion_min * interval '1 minute')) > ?", [$inicio])
+            ->orderBy('fecha_hora')
+            ->first();
+
+        if ($colision) {
+            $validator->errors()->add(
+                'fecha_hora',
+                "Existe una cita {$colision->numero} de {$contexto} que se solapa con este horario "
+                ."(empieza a las {$colision->fecha_hora->format('H:i')}, duración {$colision->duracion_min} min)."
+            );
+        }
     }
 
     public function messages(): array

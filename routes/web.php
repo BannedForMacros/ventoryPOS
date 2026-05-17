@@ -290,11 +290,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:reportes.auditoria,ver')->get('auditoria',     [ReporteAuditoriaController::class,    'index'])->name('auditoria');
     });
 
-    // ── WHATSAPP (callbacks externos) ────────────────────────────────────
-    // Endpoints firmados/restringidos por la propia lógica del controlador.
+    // ── WHATSAPP ─────────────────────────────────────────────────────────
+    // Cada endpoint exige el permiso del flujo POS (`ventas.crear`).
+    // El controlador audita cada intento via AuditoriaService.
     Route::prefix('whatsapp')->name('whatsapp.')->group(function () {
-        Route::post('aprobacion', [WhatsappController::class, 'urlAprobacion'])->name('aprobacion');
-        Route::post('confirmacion/{venta}', [WhatsappController::class, 'urlConfirmacion'])->name('confirmacion');
+        Route::middleware('permiso:ventas,crear')->post('aprobacion', [WhatsappController::class, 'urlAprobacion'])->name('aprobacion');
+        Route::middleware('permiso:ventas,crear')->post('confirmacion/{venta}', [WhatsappController::class, 'urlConfirmacion'])->name('confirmacion');
     });
 });
 

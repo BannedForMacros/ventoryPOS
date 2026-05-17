@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Ventas;
 use App\Http\Controllers\Controller;
 use App\Models\DescuentoLog;
 use App\Models\Venta;
+use App\Services\AuditoriaService;
 use App\Services\WhatsappService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,6 +40,14 @@ class WhatsappController extends Controller
 
         $log->update(['notificacion_enviada' => true]);
 
+        AuditoriaService::log('whatsapp.aprobacion_solicitada', $log, [
+            'venta_numero'        => $log->venta?->numero,
+            'venta_id'            => $log->venta_id,
+            'concepto'            => $log->concepto?->nombre,
+            'monto_descuento'     => (float) $log->monto_descuento,
+            'telefono_supervisor' => $request->telefono_supervisor,
+        ], $request->user());
+
         return response()->json(['url' => $url]);
     }
 
@@ -60,6 +69,13 @@ class WhatsappController extends Controller
             ventaNumero:     $venta->numero,
             total:           (float) $venta->total,
         );
+
+        AuditoriaService::log('whatsapp.confirmacion_enviada', $venta, [
+            'venta_numero'    => $venta->numero,
+            'cliente_id'      => $venta->cliente_id,
+            'telefono_destino'=> $venta->cliente->telefono,
+            'total'           => (float) $venta->total,
+        ], $request->user());
 
         return response()->json(['url' => $url]);
     }

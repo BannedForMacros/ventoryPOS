@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Exceptions\InsufficientStockException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +35,17 @@ class Stock extends Model
     public function producto(): BelongsTo
     {
         return $this->belongsTo(Producto::class);
+    }
+
+    /**
+     * Stocks con saldo negativo: indican una inconsistencia que el admin debe
+     * atender (venta sin transferencia previa, reversión de devolución que
+     * comio inventario que ya no estaba, etc.). El frontend usa este scope
+     * para listarlos y mostrar el banner de "alerta de stock".
+     */
+    public function scopeNegativo(Builder $q): Builder
+    {
+        return $q->where('cantidad', '<', 0);
     }
 
     // ── Logica central de stock ──────────────────────────────────────────────
@@ -244,7 +256,12 @@ class Stock extends Model
             $cantCpp = $nuevaCantidad;
         }
 
-        $stock->cantidad       = max(0, round($cantidad, 4));
+        // Permitimos cantidades negativas: si los movimientos confirmados arrojan
+        // saldo negativo significa que hubo una merma/error real que el admin
+        // debe atender (caso típico: venta en local con stock que nunca recibió
+        // transferencia). Truncar a 0 ocultaba la inconsistencia. El frontend
+        // pinta los negativos en rojo y la lista los expone via scopeNegativo().
+        $stock->cantidad       = round($cantidad, 4);
         $stock->costo_promedio = round($costo, 4);
         $stock->save();
 

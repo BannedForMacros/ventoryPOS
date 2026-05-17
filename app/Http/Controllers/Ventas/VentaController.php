@@ -103,6 +103,19 @@ class VentaController extends Controller
             }
         }
 
+        // A14 — Bloquear el POS cuando el usuario no tiene un almacén de ventas
+        // resoluble (típicamente admin sin local_id en modo central_y_local).
+        // Cargar el POS, llenar el carrito e intentar cobrar al final daba un
+        // 422 sorpresa. Ahora el frontend recibe esta bandera y deshabilita el
+        // botón "Cobrar" con un mensaje claro desde el primer momento.
+        $puedeVender    = $this->scope->puedeVender($user);
+        $razonNoVender  = null;
+        if (!$puedeVender) {
+            $razonNoVender = $user->empresa->usaCentralYLocal() && !$user->local_id
+                ? 'No tienes un local asignado. Selecciona un local para operar el POS.'
+                : 'No hay almacén de ventas configurado para tu local. Contacta al administrador.';
+        }
+
         return Inertia::render('Pos/Index', [
             'turno'              => $turno,
             'productos'          => $productos,
@@ -110,6 +123,8 @@ class VentaController extends Controller
             'metodosPago'        => $metodosPago,
             'conceptosDescuento' => $conceptosDescuento,
             'citaPrellenada'     => $citaPrellenada,
+            'puedeVender'        => $puedeVender,
+            'razonNoVender'      => $razonNoVender,
         ]);
     }
 
