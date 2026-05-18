@@ -8,6 +8,7 @@ import {
     CheckCircle2,
     Eye,
     EyeOff,
+    Hand,
     Lock,
     Mail,
     ShieldCheck,
@@ -205,8 +206,16 @@ export default function Login({
                         >
                             {/* Header */}
                             <div className="mb-8 text-center lg:text-left">
-                                <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: palette.text }}>
-                                    Bienvenido de vuelta 👋
+                                <h1
+                                    className="flex items-center justify-center gap-2 text-3xl font-extrabold tracking-tight lg:justify-start"
+                                    style={{ color: palette.text }}
+                                >
+                                    Bienvenido de vuelta
+                                    <Hand
+                                        size={26}
+                                        style={{ color: palette.warning }}
+                                        className="origin-bottom-right"
+                                    />
                                 </h1>
                                 <p className="mt-2 text-sm" style={{ color: palette.textMuted }}>
                                     Ingresa tus credenciales para acceder a tu punto de venta.
