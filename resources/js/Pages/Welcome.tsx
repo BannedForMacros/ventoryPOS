@@ -111,27 +111,20 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
             <Head title="ventoryPOS — Punto de venta para retail, farmacias y veterinarias" />
 
             <div className="relative min-h-screen overflow-x-hidden" style={{ backgroundColor: palette.bg, color: palette.text }}>
-                {/* Decorative animated blobs */}
-                <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+                {/* Decorative animated blobs (hidden en móvil/PWA para ahorrar GPU) */}
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden overflow-hidden sm:block">
                     <div
-                        className="absolute -left-32 -top-32 h-[480px] w-[480px] rounded-full opacity-30 blur-3xl"
+                        className="absolute -left-32 -top-32 h-[420px] w-[420px] rounded-full opacity-25 blur-3xl"
                         style={{
                             background: `radial-gradient(circle, ${palette.primary} 0%, transparent 70%)`,
-                            animation: 'blob 18s ease-in-out infinite',
+                            animation: 'blob 22s ease-in-out infinite',
                         }}
                     />
                     <div
-                        className="absolute -right-32 top-40 h-[420px] w-[420px] rounded-full opacity-25 blur-3xl"
+                        className="absolute -right-32 top-40 h-[380px] w-[380px] rounded-full opacity-20 blur-3xl"
                         style={{
                             background: `radial-gradient(circle, ${palette.success} 0%, transparent 70%)`,
-                            animation: 'blob 22s ease-in-out infinite reverse',
-                        }}
-                    />
-                    <div
-                        className="absolute left-1/3 bottom-0 h-[360px] w-[360px] rounded-full opacity-20 blur-3xl"
-                        style={{
-                            background: `radial-gradient(circle, ${palette.warning} 0%, transparent 70%)`,
-                            animation: 'blob 26s ease-in-out infinite',
+                            animation: 'blob 26s ease-in-out infinite reverse',
                         }}
                     />
                 </div>
@@ -157,7 +150,7 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                         background-clip: text;
                         -webkit-background-clip: text;
                         -webkit-text-fill-color: transparent;
-                        animation: shimmer 4s linear infinite;
+                        animation: shimmer 6s linear infinite;
                     }
                     .fade-up {
                         opacity: 0;
@@ -168,10 +161,28 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                         opacity: 1;
                         transform: translateY(0);
                     }
+                    .safe-top { padding-top: max(1.25rem, env(safe-area-inset-top)); }
+                    .safe-bottom { padding-bottom: max(2rem, env(safe-area-inset-bottom)); }
+                    @media (display-mode: standalone) {
+                        .pwa-compact-top { padding-top: max(0.75rem, env(safe-area-inset-top)); }
+                    }
+                    @media (prefers-reduced-motion: reduce) {
+                        .float-slow,
+                        .shimmer-text,
+                        [style*="animation: blob"],
+                        [style*="animation: float"] {
+                            animation: none !important;
+                        }
+                        .shimmer-text {
+                            -webkit-text-fill-color: ${palette.primary};
+                            background: none;
+                        }
+                        .fade-up { transition: none; }
+                    }
                 `}</style>
 
                 {/* Nav */}
-                <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
+                <header className="safe-top pwa-compact-top relative z-10 mx-auto flex max-w-7xl items-center justify-between px-4 pb-4 sm:px-6 lg:px-8">
                     <Link href="/" className="flex items-center gap-2.5 select-none">
                         <img src="/logo-full.svg" alt="ventoryPOS" className="h-9 w-auto" draggable={false} />
                         <span className="text-lg font-bold tracking-tight" style={{ color: palette.text }}>
@@ -212,7 +223,7 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                 </header>
 
                 {/* Hero */}
-                <section className="relative z-10 mx-auto max-w-7xl px-4 pb-16 pt-10 sm:px-6 sm:pt-16 lg:px-8">
+                <section className="relative z-10 mx-auto max-w-7xl px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 lg:px-8">
                     <div className={`fade-up ${mounted ? 'in' : ''}`}>
                         <div className="mx-auto max-w-3xl text-center">
                             <div
@@ -227,14 +238,13 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                                 <span>Hecho en Perú para negocios que crecen</span>
                             </div>
 
-                            <h1 className="mt-6 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-                                El punto de venta que tu negocio
-                                <br />
+                            <h1 className="mt-5 text-3xl font-extrabold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl">
+                                El punto de venta que tu negocio{' '}
                                 <span className="shimmer-text">realmente necesita.</span>
                             </h1>
 
                             <p
-                                className="mx-auto mt-6 max-w-2xl text-base sm:text-lg"
+                                className="mx-auto mt-5 max-w-2xl text-base sm:text-lg"
                                 style={{ color: palette.textMuted }}
                             >
                                 Diseñado para <strong style={{ color: palette.text }}>veterinarias</strong>,{' '}
@@ -243,7 +253,7 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                                 Vende más rápido, controla tu inventario y entiende tu negocio en tiempo real.
                             </p>
 
-                            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                            <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
                                 <Link
                                     href={auth?.user ? route('dashboard') : route('register')}
                                     className="group inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-base font-semibold text-white shadow-xl transition-all duration-200 hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] sm:w-auto"
@@ -265,7 +275,7 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                                 </Link>
                             </div>
 
-                            <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs" style={{ color: palette.textMuted }}>
+                            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs" style={{ color: palette.textMuted }}>
                                 <span className="inline-flex items-center gap-1.5">
                                     <BadgeCheck size={14} style={{ color: palette.success }} />
                                     Sin tarjeta de crédito
@@ -283,10 +293,10 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                     </div>
 
                     {/* Mock POS Receipt — floating card */}
-                    <div className={`fade-up ${mounted ? 'in' : ''} mt-16`} style={{ transitionDelay: '200ms' }}>
+                    <div className={`fade-up ${mounted ? 'in' : ''} mt-10 sm:mt-12`} style={{ transitionDelay: '200ms' }}>
                         <div className="relative mx-auto max-w-4xl">
                             <div
-                                className="rounded-2xl border p-6 shadow-2xl float-slow"
+                                className="rounded-2xl border p-4 shadow-2xl float-slow sm:p-5"
                                 style={{
                                     backgroundColor: palette.surface,
                                     borderColor: palette.border,
@@ -314,7 +324,7 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                                     </span>
                                 </div>
 
-                                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                                <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
                                     {[
                                         { label: 'Royal Canin Adult 3kg', qty: '1', amount: 'S/ 89.90' },
                                         { label: 'Antipulgas Frontline', qty: '2', amount: 'S/ 71.80' },
@@ -381,7 +391,7 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                 </section>
 
                 {/* Industries */}
-                <section className="relative z-10 mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+                <section className="relative z-10 mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
                     <div className="text-center">
                         <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: palette.primary }}>
                             Hecho a tu medida
@@ -389,7 +399,7 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                         <h2 className="mt-2 text-2xl font-bold sm:text-3xl">Un POS para cada tipo de negocio</h2>
                     </div>
 
-                    <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                    <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                         {industries.map((ind, i) => {
                             const Icon = ind.icon;
                             return (
@@ -415,7 +425,7 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                 </section>
 
                 {/* Features */}
-                <section className="relative z-10 mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+                <section className="relative z-10 mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
                     <div className="text-center">
                         <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: palette.primary }}>
                             Funcionalidades
@@ -426,7 +436,7 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                         </p>
                     </div>
 
-                    <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                         {features.map((f, i) => {
                             const Icon = f.icon;
                             return (
@@ -458,9 +468,9 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                 </section>
 
                 {/* CTA */}
-                <section className="relative z-10 mx-auto max-w-7xl px-4 pb-20 sm:px-6 lg:px-8">
+                <section className="relative z-10 mx-auto max-w-7xl px-4 pb-14 sm:px-6 sm:pb-20 lg:px-8">
                     <div
-                        className="relative overflow-hidden rounded-3xl px-6 py-12 text-center shadow-2xl sm:px-12 sm:py-16"
+                        className="relative overflow-hidden rounded-3xl px-6 py-10 text-center shadow-2xl sm:px-12 sm:py-14"
                         style={{
                             background: `linear-gradient(135deg, ${palette.primary} 0%, ${palette.primaryHover} 100%)`,
                         }}
@@ -499,8 +509,8 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                 </section>
 
                 {/* Footer */}
-                <footer className="relative z-10 border-t" style={{ borderColor: palette.border }}>
-                    <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-8 text-xs sm:flex-row sm:px-6 lg:px-8" style={{ color: palette.textMuted }}>
+                <footer className="safe-bottom relative z-10 border-t" style={{ borderColor: palette.border }}>
+                    <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 pb-2 pt-6 text-xs sm:flex-row sm:px-6 sm:pb-4 sm:pt-8 lg:px-8" style={{ color: palette.textMuted }}>
                         <div className="flex items-center gap-2">
                             <img src="/logo-full.svg" alt="ventoryPOS" className="h-6 w-auto opacity-80" draggable={false} />
                             <span>© {new Date().getFullYear()} ventoryPOS · MacSoft</span>
