@@ -98,7 +98,12 @@
       "Bash(vendor/bin/pest tests/Feature/Reportes/PaginacionM19Test.php --filter=\"DEBUG\" --colors=never})",
       "Bash(vendor/bin/pest tests/Feature/Reportes/PaginacionM19Test.php --filter=\"DEBUG\" --colors=never)",
       "Bash(npm run *)",
-      "Bash(vendor/bin/pest tests/Feature/Pos/DescuentoTopeM20Test.php --colors=never)"
+      "Bash(vendor/bin/pest tests/Feature/Pos/DescuentoTopeM20Test.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Ventas tests/Feature/Clientes tests/Feature/Inventario tests/Feature/Reportes tests/Feature/Support --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Configuracion/RolTopeDescuentoTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Ventas tests/Feature/Clientes tests/Feature/Inventario tests/Feature/Reportes tests/Feature/Configuracion tests/Feature/Support --colors=never)",
+      "PowerShell(Test-Path *)"
     ]
   }
 }

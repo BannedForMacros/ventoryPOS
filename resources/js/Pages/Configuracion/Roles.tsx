@@ -24,6 +24,8 @@ type FormData = {
     descripcion: string;
     es_admin: boolean;
     activo: boolean;
+    // M20: tope porcentual de descuento. Vacío ('') = sin tope (envía null).
+    max_descuento_porcentaje: string;
 };
 
 const emptyForm: FormData = {
@@ -32,6 +34,7 @@ const emptyForm: FormData = {
     descripcion: '',
     es_admin: false,
     activo: true,
+    max_descuento_porcentaje: '',
 };
 
 export default function Roles({ roles, empresas }: Props) {
@@ -55,18 +58,22 @@ export default function Roles({ roles, empresas }: Props) {
 
     function openEdit(rol: Rol) {
         setEditing(rol);
+        const tope = (rol as Rol & { max_descuento_porcentaje?: string | number | null }).max_descuento_porcentaje;
         setData({
             empresa_id: String(rol.empresa_id),
             nombre: rol.nombre,
             descripcion: rol.descripcion ?? '',
             es_admin: rol.es_admin,
             activo: rol.activo,
+            max_descuento_porcentaje: tope === null || tope === undefined ? '' : String(tope),
         });
         setModalOpen(true);
     }
 
     function submit(e: React.FormEvent) {
         e.preventDefault();
+        // El backend (RolRequest::prepareForValidation) convierte string vacío
+        // a null antes de validar, así que mandamos el form tal cual.
         if (editing) {
             put(route('configuracion.roles.update', editing.id), {
                 onSuccess: () => { setModalOpen(false); reset(); },
@@ -118,6 +125,18 @@ export default function Roles({ roles, empresas }: Props) {
                     {rol.es_admin ? 'Sí' : 'No'}
                 </Badge>
             ),
+        },
+        {
+            key: 'max_descuento_porcentaje',
+            label: 'Tope descuento',
+            sortable: true,
+            render: (rol) => {
+                const tope = (rol as Rol & { max_descuento_porcentaje?: string | number | null }).max_descuento_porcentaje;
+                if (tope === null || tope === undefined || tope === '') {
+                    return <span style={{ color: 'var(--color-text-muted)' }}>Sin tope</span>;
+                }
+                return <Badge variant="primary">{Number(tope).toFixed(2)}%</Badge>;
+            },
         },
         {
             key: 'activo',
@@ -194,6 +213,26 @@ export default function Roles({ roles, empresas }: Props) {
                         onChange={e => setData('descripcion', e.target.value)}
                         error={errors.descripcion}
                     />
+
+                    {/* M20: tope de descuento por rol. Vacío = sin tope (admin típicamente). */}
+                    <div>
+                        <Input
+                            label="Tope de descuento (%)"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            placeholder="Ej: 10 (vacío = sin tope)"
+                            value={data.max_descuento_porcentaje}
+                            onChange={e => setData('max_descuento_porcentaje', e.target.value)}
+                            error={errors.max_descuento_porcentaje}
+                        />
+                        <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Porcentaje máximo de descuento que este rol puede aplicar en una venta.
+                            Dejar vacío para que no tenga límite (recomendado solo para admin).
+                        </p>
+                    </div>
+
                     <div className="flex gap-6">
                         <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text)' }}>
                             <Checkbox

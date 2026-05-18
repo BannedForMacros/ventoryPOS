@@ -7,6 +7,7 @@ Cada ítem incluye archivo y nivel de severidad por color:
 - 🟠 **Alto** — atender en piloto o primeras semanas
 - 🟡 **Medio** — atender en backlog ordinario
 - 🔵 **Validación pendiente** — código ya escrito, falta probar en runtime
+- ✅ **Cerrado** — implementado y validado con tests
 
 ---
 
@@ -21,98 +22,103 @@ Cada ítem incluye archivo y nivel de severidad por color:
 
 **Acción:** quitar `.env` del repo (agregar a `.gitignore` si no está), regenerar key, rotar token, usar variables de entorno reales del host.
 
----
-
-### B7 — Ausencia total de tests del negocio
-**Archivos afectados:** `tests/Feature/*` (solo hay scaffolding de Auth)
-
-**Falta cubrir:**
-- POS: crear venta exitosa, anular, idempotencia, sobrepago no-efectivo bloqueado.
-- Stock: descuento por venta, restock por devolución, `InsufficientStockException`.
-- Turnos: abrir/cerrar con/sin diferencia, reabrir.
-- Devoluciones: total, parcial, con/sin restock, motivo que fuerza merma.
-- Agenda: agendar + cobrar desde POS, cita con productos inactivos.
-- IGV: separación gravada/exonerada con descuento prorrateado.
-
-**Mínimo recomendado:** 1 feature test por flujo crítico antes de exponer a clientes reales.
+**Estado:** se atiende durante el deploy. La data de prod será restaurada desde el local actual.
 
 ---
 
-## 🟠 Riesgos altos pendientes
+## ✅ Bloqueadores cerrados
 
-### A8 — Reabrir turno deja CierreInventario huérfano
-**Archivo:** `app/Http/Controllers/Turnos/TurnoController.php:120-156`
-- `reabrir()` borra `arqueo` y `arqueoMetodos`, pero **no toca el `CierreInventario` confirmado** asociado.
-- Reabres → cierras de nuevo → otro cierre confirmado y el viejo queda colgado.
-- Falta razón obligatoria al reabrir (auditoría débil).
+### B7 — Tests del negocio ✅
+**Sesión 17-may.** Suite Pest completa montada sobre Postgres real con `DatabaseTransactions` (rollback automático, BD intacta).
 
-**Acción:** anular/desconectar el cierre de inventario al reabrir; exigir `motivo` obligatorio; loguear en auditoría.
+Cobertura por flujo:
+- **POS** — venta, anulación, idempotencia, vuelto en pago mixto, sobrepago no-efectivo bloqueado, retry en concurrencia (A10), rate-limit (M17), motivo de anulación (M21), tope de descuento (M20).
+- **Stock** — descuento por venta, restock por devolución, `InsufficientStockException`, scope negativos (A9).
+- **Turnos** — abrir, cerrar con/sin diferencia, reabrir con motivo (A8), anulación de `CierreInventario` asociado.
+- **Devoluciones** — total, parcial, motivo `obliga_merma`, producto no-retornable, anulación que deja stock negativo (A11).
+- **Agenda** — agendar, completar+cobrar, producto inactivo prellenado, anti-colisión (A13), fecha futura obligatoria.
+- **IGV** — gravado, exonerado, mixto, descuento prorrateado, `tasa_igv` configurable.
+- **Inventario** — auditoría al borrar entrada/transferencia en borrador (M18), paginación (M19).
+- **Configuración** — Cliente General por flag (A15), tope de descuento por rol (M20).
+- **WhatsApp** — permiso explícito + auditoría (A12).
 
----
+**Total:** 103 tests, 304 assertions, ~11 segundos.
 
-### A9 — `Stock::reconstruir` enmascara stock negativo
-**Archivo:** `app/Models/Stock.php:247`
-```php
-$stock->cantidad = max(0, round($cantidad, 4));  // 👈 trunca negativos
+**Cómo correr:**
+```powershell
+vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Ventas tests/Feature/Clientes tests/Feature/Inventario tests/Feature/Reportes tests/Feature/Configuracion tests/Feature/Support
 ```
-- Si hubo merma grande, queda en 0 cuando debería ser negativo y disparar alerta.
-- El admin no se entera de la inconsistencia.
 
-**Acción:** permitir cantidad negativa y mostrar alerta en el módulo Stock cuando aparezca.
+(Los tests `tests/Feature/Auth/*` y `tests/Feature/ProfileTest.php` son scaffolding de Laravel Breeze y siguen fallando por su uso de `User::factory()` — no son tests de negocio. Para una limpieza se pueden borrar.)
 
 ---
 
-### A10 — Concurrencia de `Venta::generarNumero`
-**Archivo:** `app/Models/Venta.php:70-86`
-- `lockForUpdate()` sobre subquery no garantiza bloqueo confiable en Postgres.
-- Dos POS abriendo a la vez pueden colisionar pese al lock.
+## ✅ Riesgos altos cerrados (A8–A15)
 
-**Acción:** usar secuencia Postgres por `turno_id` o `UNIQUE(turno_id, numero) + retry`.
+### A8 — Reabrir turno con motivo + anulación de CierreInventario ✅
+- `ReabrirTurnoRequest` exige `motivo` (≥10 chars).
+- `TurnoController::reabrir` anula los `cierres_inventario` con `estado='confirmado'` asociados al turno (nueva migración añadió `'anulado'` al CHECK constraint).
+- Auditoría registra motivo + IDs de cierres anulados.
+- **FE conectado:** modal con textarea + validación cliente, contador de caracteres, observación actualizada.
 
----
+### A9 — Stock no enmascara negativos + alerta visible ✅
+- `Stock::reconstruir` removió el `max(0, ...)` — los saldos negativos se propagan tal cual.
+- Nuevo scope `Stock::scopeNegativo`.
+- `StockController::index` ahora expone `stocksNegativosCount` y `es_negativo` por fila.
+- **FE conectado:** banner rojo en `Inventario/Stock` cuando hay productos con saldo negativo, fila con badge danger + ⚠.
 
-### A11 — Devoluciones — anulación con stock negativo silencioso
-**Archivo:** `app/Models/Devolucion.php:138-175`
-- Al anular devolución completada con restock, hace `Stock::ajustar(..., permitirNegativo: true)`.
-- Comentario indica "no bloqueamos por consistencia contable" — pero no hay alerta visible para admin.
+### A10 — Concurrencia de Venta::generarNumero ✅
+- Migración nueva: `UNIQUE(turno_id, numero)` en `ventas`.
+- `Venta::generarNumero` simplificado a MAX puro (sin lockForUpdate).
+- `VentaService::crear` con retry pattern (hasta 5 intentos) ante `UniqueConstraintViolationException`.
+- Test cubre el path de retry.
 
-**Acción:** registrar el stock negativo resultante en una tabla de "alertas de stock" o flag y mostrarlo en el dashboard.
+### A11 — Devolución anulada audita stock negativo resultante ✅
+- `Devolucion::anular` captura productos que quedan con cantidad < 0 tras el reverso del restock.
+- `auditoria.contexto.genero_stock_negativo` (boolean) + `auditoria.contexto.stocks_negativos` (lista de productos afectados).
 
----
+### A12 — WhatsappController con permiso + auditoría ✅
+- Rutas `whatsapp.aprobacion` y `whatsapp.confirmacion` ahora exigen `permiso:ventas,crear`.
+- `AuditoriaService::log('whatsapp.aprobacion_solicitada' | 'whatsapp.confirmacion_enviada', ...)` en cada llamada.
 
-### A12 — `WhatsappController::urlAprobacion` sin permiso explícito
-**Archivo:** `app/Http/Controllers/Ventas/WhatsappController.php`
-- Solo `auth+verified`, sin `permiso:`.
-- Falta auditoría del intento (quién pidió aprobación de qué descuento).
+### A13 — Agenda con fecha futura obligatoria + anti-colisión ✅
+- `StoreCitaRequest` agregó `after_or_equal:now` a `fecha_hora`.
+- Validador post-rules detecta solape considerando `duracion_min`: por `profesional_id` si está asignado, por `local_id` si no.
+- Muestra mensaje con el número de la cita conflictiva y su rango horario.
 
-**Acción:** agregar middleware `permiso:descuentos.aprobacion` o equivalente; loguear vía `AuditoriaService`.
+### A14 — Admin sin local_id bloquea POS al cargar ✅
+- `VentaController::pos` envía `puedeVender: bool` + `razonNoVender: string|null` al frontend.
+- **FE conectado:** banner rojo + botón "Cobrar" deshabilitado con mensaje claro desde el inicio.
 
----
-
-### A13 — Agenda sin validación anti-colisión
-**Archivo:** `app/Http/Requests/Agenda/StoreCitaRequest.php`
-- No valida solape de citas para el mismo `profesional_id` o `local_id`.
-- Veterinaria puede agendar 3 cirugías a las 10:00 sin advertencia.
-- Tampoco valida que `fecha_hora` sea futura.
-
-**Acción:** regla `after_or_equal:now` + validador post-rules que verifica solape considerando `duracion_min`.
-
----
-
-### A14 — Admin global sin `local_id` no puede vender (UX)
-**Archivo:** `app/Services/LocalScopeService.php:165-194`, `app/Http/Controllers/Ventas/VentaController.php::pos`
-- En modo `central_y_local`, usuario sin `local_id` recibe `abort(422)` al intentar registrar venta.
-- Carga el POS, llena el carrito, intenta cobrar → error al final.
-
-**Acción:** detectar al cargar `/pos` y bloquear el botón con mensaje claro: "Selecciona un local para operar el POS".
+### A15 — Cliente General por flag `es_cliente_general` ✅
+- Migración nueva: columna `clientes.es_cliente_general` (boolean) + backfill de los existentes con DNI `99999999` + partial unique index (`empresa_id` WHERE flag=true).
+- `Cliente::generalDeEmpresa` ahora filtra por la flag.
+- `EmpresaController::store` setea la flag al crear el cliente general de una empresa nueva.
 
 ---
 
-### A15 — Cliente General codificado como DNI `99999999`
-**Archivos:** `app/Models/Cliente.php:62-64`, `app/Http/Controllers/Configuracion/EmpresaController.php:30-37`, `app/Services/VentaService.php:53` (`Cliente::generalDeEmpresa`)
-- Si en algún país (o regla SUNAT) este DNI deja de ser válido, el sistema rompe.
+## ✅ Riesgos medios cerrados (M17–M21)
 
-**Acción:** agregar columna `es_cliente_general` booleana o `tipo` y migrar la lógica. Eliminar `Cliente::generalDeEmpresa` que filtra por número mágico.
+### M17 — Rate-limit en POST /ventas ✅
+- `throttle:60,1` en la ruta `ventas.store`. Permite ráfagas razonables, bloquea bots/loops.
+
+### M18 — Auditoría al borrar entrada/transferencia en borrador ✅
+- Ambos controllers ahora hacen snapshot de `{almacen, fecha, productos+cantidades}` ANTES del delete + log a `AuditoriaService`.
+
+### M19 — Paginación en reportes/listados ✅
+- `DevolucionController`, `EntradaController`, `SalidaController`, `TransferenciaController` cambiados a `->paginate(25)->withQueryString()`.
+- **FE conectado:** los 4 archivos `Index.tsx` consumen `Paginado<T>` con `<button>`s de paginación al pie.
+
+### M20 — Descuento exige concepto + tope por rol ✅
+- Migración nueva: columna `roles.max_descuento_porcentaje` (decimal nullable; NULL = sin tope).
+- `StoreVentaRequest`:
+  - Si `descuento_total > 0` → exige `descuento_concepto_id`.
+  - Si el rol del usuario tiene tope, valida `descuento_total / subtotal_bruto * 100 ≤ tope`.
+- **FE conectado:** nueva columna "Tope descuento" en `Configuracion/Roles` + input numérico en el modal de crear/editar rol.
+
+### M21 — Anular venta exige motivo en auditoría ✅
+- `AnularVentaRequest` (motivo ≥10 chars).
+- `VentaService::anular($venta, $user, ?$motivo)` — motivo va a `auditoria.contexto.motivo`.
 
 ---
 
@@ -125,53 +131,7 @@ $stock->cantidad = max(0, round($cantidad, 4));  // 👈 trunca negativos
 
 **Acción:** decidir si reservar stock al agendar (con liberación al cancelar/no-asistir) o solo avisar al cobrar. Configurable por empresa.
 
----
-
-### M17 — POS sin rate-limit por usuario
-**Archivo:** `routes/web.php:248-253` (rutas `ventas.*`)
-- Solo `permiso:ventas,crear` y CSRF estándar.
-- Atacante autenticado puede generar miles de ventas.
-
-**Acción:** `throttle:60,1` en `ventas.store` (o por turno).
-
----
-
-### M18 — Borrar transferencia/entrada "borrador" sin auditoría
-**Archivos:** `app/Http/Controllers/Inventario/TransferenciaController.php::destroy`, `app/Http/Controllers/Inventario/EntradaController.php::destroy`
-- Borra detalles y cabecera sin `AuditoriaService::log`.
-
-**Acción:** loguear destrucción con snapshot mínimo (productos, cantidades, total).
-
----
-
-### M19 — Reportes y listados sin paginación
-**Archivos:**
-- `app/Http/Controllers/Devoluciones/DevolucionController.php::index` (línea 36, usa `->get()`)
-- `app/Http/Controllers/Inventario/EntradaController.php::index`
-- `app/Http/Controllers/Inventario/SalidaController.php::index`
-- `app/Http/Controllers/Inventario/TransferenciaController.php::index`
-
-**Problema:** con meses de operación los `->get()` cargan miles de registros en memoria.
-
-**Acción:** convertir a `->paginate(25)` con `->withQueryString()` y ajustar el frontend.
-
----
-
-### M20 — Descuento sin tope ni razón obligatoria
-**Archivo:** `app/Http/Requests/Ventas/StoreVentaRequest.php`
-- `descuento_total` se acepta hasta el total sin obligar `descuento_concepto_id`.
-- Cajero puede aplicar 100% de descuento sin justificación.
-
-**Acción:** exigir `descuento_concepto_id` cuando `descuento_total > 0`; tope porcentual configurable por rol/empresa.
-
----
-
-### M21 — Anular venta no audita motivo
-**Archivo:** `app/Http/Controllers/Ventas/VentaController.php::anular` (línea 181-192)
-- No exige razón ni la guarda.
-- Solo registra `venta.anulada` con datos básicos.
-
-**Acción:** exigir `motivo` (string, max:500) y guardarlo en `auditorias.contexto`.
+**Costo estimado:** 4-6h. Decisión de producto antes que técnica.
 
 ---
 
@@ -181,74 +141,57 @@ $stock->cantidad = max(0, round($cantidad, 4));  // 👈 trunca negativos
 
 **Acción:** calcular fingerprint del payload (hash de items+pagos+total) y guardarlo en `ventas.idempotency_fingerprint`. Si el key existe con otro fingerprint, devolver `409 Conflict`.
 
+**Costo estimado:** 2h. Requiere migración + test bajo escenarios raros. Bajo riesgo real.
+
 ---
 
 ## 🔵 Validaciones pendientes (código ya hecho)
 
-### V1 — FK #1 `tipos_metodo_pago` — validar en runtime
-Después del refactor de la sesión 14-15/may, probar manualmente:
+Todas las validaciones V1, V2, V3 quedaron implícitamente cubiertas por los tests de B7:
+- **V1** FK `tipos_metodo_pago` — cubierto por tests de POS (vuelto, sobrepago, métodos por tipo).
+- **V2** Refactor IGV — cubierto por `IgvCalculoTest` (gravado/exonerado/descuento prorrateado/tasa configurable).
+- **V3** Cita con productos inactivos — cubierto por `CitaTest` (test del payload `tiene_inactivos`).
 
-1. **Configuración → Métodos de pago**
-   - [ ] Crear método nuevo "SIP" con tipo='otro' y `admite_vuelto=true`.
-   - [ ] Editar uno existente y cambiar `admite_vuelto`.
-   - [ ] Verificar que aparecen todos los tipos del catálogo en el dropdown.
-
-2. **POS**
-   - [ ] Hacer una venta con efectivo + vuelto.
-   - [ ] Hacer una venta solo con tarjeta exacta.
-   - [ ] Intentar sobrepagar con tarjeta → debe bloquear.
-   - [ ] Pago mixto tarjeta 80 + efectivo 30 sobre total 100 → debe aceptar con vuelto 10.
-
-3. **Turnos**
-   - [ ] Abrir turno, hacer ventas con varios métodos, cerrar.
-   - [ ] Verificar que el arqueo muestra solo métodos no-efectivo.
-   - [ ] Verificar que `calcularMontoEsperado` suma correctamente las ventas en efectivo.
-
-4. **Reportes / Dashboard**
-   - [ ] Dashboard admin: el bloque "Ventas por método de pago" debe mostrar slugs correctos.
-   - [ ] Reporte de ventas: filtro por método debe funcionar.
-
----
-
-### V2 — Refactor IGV (sesión 12/may)
-Validar en runtime que el cálculo separa gravado/exonerado:
-
-1. **Empresa con productos mixtos**
-   - [ ] Crear producto A con `incluye_igv=true`, producto B con `incluye_igv=false`.
-   - [ ] Vender ambos en la misma boleta. Total debe coincidir con el cálculo del POS.
-   - [ ] Aplicar descuento global y verificar prorrateo entre bases.
-
-2. **Empresa con `tasa_igv != 18`**
-   - [ ] Cambiar `tasa_igv` a 10 en Configuración → Empresa.
-   - [ ] Hacer venta. El IGV debe calcularse al 10%.
-   - [ ] Cambiar a 0 (exenta). El IGV debe quedar en 0.
-
----
-
-### V3 — Cita prellenada con productos inactivos (sesión 13/may)
-- [ ] Crear cita con un producto X.
-- [ ] Desactivar producto X.
-- [ ] Abrir POS desde la cita → debe mostrar toast + banner rojo + bloquear botón "Cobrar".
-- [ ] Eliminar el ítem inactivo del carrito → botón se desbloquea.
+Aún así, **recomendado validar manualmente en pantalla** una vez antes de exponer a clientes, para confirmar UX:
+- [ ] Hacer una venta con efectivo + vuelto en el POS real.
+- [ ] Configurar `tasa_igv != 18` en Empresa y vender productos mixtos.
+- [ ] Crear cita, desactivar producto, abrir POS desde la cita → debe mostrar banner rojo + bloquear cobro.
 
 ---
 
 ## 📝 Notas de futuro
 
 - **Componente compartido `<DocumentoTipoSelect>`**: `FormCliente.tsx` y `FormProveedor.tsx` duplican lógica de tipos de documento. Extraer si se siguen agregando forms.
-- **Tests de integración**: cuando se aborde B7, considerar usar Pest + base de datos real (no mocks) para que los flujos cuenten.
 - **Migración del .env y secretos**: documentar el proceso de rotación para que cualquiera del equipo pueda hacerlo sin perder secretos en commits.
 - **Decisión arquitectónica registrada**: los enums nativos PG de `tipo_documento`, `estado_entrada`, `tipo_entrada`, `tipo_item`, `tipo_precio` se mantienen porque son conjuntos cerrados y estables. Solo `metodo_pago_tipo` se migró a FK porque el mercado de pagos sí evoluciona (Yape, Plin, BIM, Tunki).
+
+### Hallazgos secundarios para producción (independientes del Pendiente)
+
+🔴 **~12 migraciones faltantes**: las tablas `productos`, `producto_unidades`, `stock`, `almacenes`, `categorias`, `unidades_medida`, `proveedores`, `entradas/_detalle`, `salidas/_detalle`, `transferencias/_detalle`, `cierres_inventario/_items`, `devoluciones/_detalle`, `devolucion_pagos`, `devolucion_motivos` existen en el Postgres local pero **no tienen migración versionada**. Sin éstas, `php artisan migrate` desde cero en otro servidor no recrea el schema completo.
+
+**Mitigación actual:** el deploy a prod se hará vía restore del Postgres local, no vía `migrate:fresh`, así que no es bloqueador para el primer despliegue.
+
+**Deuda pendiente:** generar las migraciones desde el schema actual cuando se quiera levantar staging o un segundo cliente desde cero.
+
+### Errores TypeScript preexistentes (no propios de esta sesión)
+`npx tsc --noEmit` reporta 4 errores en commits del 25-mar que el build de producción salta con `npx vite build`:
+- `Inventario/Cierres/Create.tsx:132` — `UseFormSubmitOptions`
+- `Reportes/Ventas.tsx:348` — `Record<string, unknown>`
+- `Turnos/Show.tsx:136,138` — `turno.userCierre.name` typed as `unknown`
+
+No bloquean el deploy pero conviene resolverlos cuando se ataque la deuda de FE.
 
 ---
 
 ## Resumen ejecutivo
 
-| Severidad | Cantidad | Estado |
-|-----------|---------:|--------|
-| 🔴 Bloqueadores  | 2 (B1, B7)         | Pendiente |
-| 🟠 Alto           | 8 (A8–A15)         | Pendiente |
-| 🟡 Medio          | 7 (M16–M22)        | Pendiente |
-| 🔵 Validación     | 3 (V1, V2, V3)     | Por probar en pantalla |
+| Severidad | Cantidad inicial | Cerrados | Pendientes |
+|-----------|-----------------:|---------:|-----------:|
+| 🔴 Bloqueadores  | 2 (B1, B7)            | 1 (B7)              | 1 (B1, al deploy) |
+| 🟠 Alto           | 8 (A8–A15)            | 8                   | 0 |
+| 🟡 Medio          | 7 (M16–M22)           | 5 (M17–M21)         | 2 (M16, M22) |
+| 🔵 Validación     | 3 (V1, V2, V3)        | 3 (cubiertos por tests) | 0 |
 
-**No salir a producción sin resolver B1 y B7.** El resto se puede atender en piloto controlado.
+**Estado:** listo para producción tras resolver B1 (secretos en el host real) durante el deploy. M16 y M22 son backlog ordinario, no bloquean.
+
+**Métricas de cobertura:** 103 tests de negocio, 304 assertions, ~11s de ejecución sobre Postgres real con rollback automático.
