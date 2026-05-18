@@ -46,7 +46,7 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
     const [filtroCategoria, setFiltroCategoria] = useState<number | ''>('');
     const [items, setItems]             = useState<Record<number, ItemDeclarado>>({});
 
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, post, processing, errors, transform } = useForm({
         almacen_id: '' as number | '',
         fecha: new Date().toISOString().slice(0, 10),
         observacion: '',
@@ -126,17 +126,19 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
             return;
         }
 
-        setData(d => ({ ...d, items: itemsArr, confirmar }));
+        // Inertia useForm.post() no acepta `data` en sus options. Para inyectar
+        // campos que no viven en el form-state (almacen_id, turno_id, items
+        // calculados en cada submit) usamos transform(): se ejecuta justo
+        // antes de enviar y produce el payload final.
+        transform(d => ({
+            ...d,
+            almacen_id: almacenId,
+            turno_id: turnoId,
+            items: itemsArr,
+            confirmar,
+        }));
 
         post(route('inventario.cierres.store'), {
-            data: {
-                almacen_id: almacenId,
-                turno_id: turnoId,
-                fecha: data.fecha,
-                observacion: data.observacion,
-                confirmar,
-                items: itemsArr,
-            },
             forceFormData: false,
         });
     }

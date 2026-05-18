@@ -345,7 +345,7 @@ export default function ReportesVentas({
                     ))}
                 </div>
 
-                <Pagination paginado={ventas} ruta="reportes.ventas" filters={filters} />
+                <Pagination paginado={ventas} ruta="reportes.ventas" filters={filters as unknown as Record<string, unknown>} />
             </Card>
         </AppLayout>
     );
