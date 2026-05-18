@@ -61,31 +61,80 @@ export default function ModalConfirmacionVenta({
             }
         >
             <div className="flex flex-col gap-4 text-sm">
-                {/* Cliente y Comprobante en fila */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div
-                        className="rounded-xl p-3"
-                        style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
-                    >
-                        <SectionLabel icon={User} label="Cliente" />
-                        <p className="font-medium" style={{ color: 'var(--color-text)' }}>
-                            {cliente
-                                ? (cliente.razon_social ?? `${cliente.nombres} ${cliente.apellidos ?? ''}`.trim())
-                                : 'Cliente general'}
-                        </p>
-                        {cliente?.numero_documento && (
-                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                {cliente.tipo_documento}: {cliente.numero_documento}
-                            </p>
-                        )}
-                    </div>
-                    <div
-                        className="rounded-xl p-3"
-                        style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
-                    >
-                        <SectionLabel icon={Receipt} label="Comprobante" />
-                        <p className="font-medium capitalize" style={{ color: 'var(--color-text)' }}>{tipoComprobante}</p>
-                    </div>
+                {/* Cliente — destacado al tope con avatar */}
+                {(() => {
+                    const clienteNombre = cliente
+                        ? (cliente.razon_social ?? `${cliente.nombres} ${cliente.apellidos ?? ''}`.trim())
+                        : 'Cliente general';
+                    const esGeneral = !cliente
+                        || (cliente as Cliente & { es_cliente_general?: boolean }).es_cliente_general
+                        || cliente.numero_documento === '99999999';
+                    const inicial = (clienteNombre || 'C').charAt(0).toUpperCase();
+                    return (
+                        <div
+                            className="rounded-xl p-3 flex items-center gap-3"
+                            style={{
+                                backgroundColor: esGeneral
+                                    ? 'var(--color-bg)'
+                                    : 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))',
+                                border: `1px solid ${esGeneral ? 'var(--color-border)' : 'color-mix(in srgb, var(--color-primary) 35%, transparent)'}`,
+                            }}
+                        >
+                            <div
+                                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-white text-base font-bold shadow-sm"
+                                style={{
+                                    backgroundColor: esGeneral ? 'var(--color-text-muted)' : 'var(--color-primary)',
+                                }}
+                            >
+                                {esGeneral ? <User size={18} /> : inicial}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p
+                                    className="text-[10px] font-bold uppercase tracking-wider"
+                                    style={{ color: 'var(--color-text-muted)' }}
+                                >
+                                    Facturando a
+                                </p>
+                                <p className="text-base font-bold truncate leading-tight" style={{ color: 'var(--color-text)' }}>
+                                    {clienteNombre}
+                                </p>
+                                {cliente?.numero_documento && (
+                                    <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--color-text-muted)' }}>
+                                        {cliente.tipo_documento}: {cliente.numero_documento}
+                                    </p>
+                                )}
+                            </div>
+                            <div
+                                className="hidden sm:flex flex-col items-end flex-shrink-0 pl-3 ml-auto border-l"
+                                style={{ borderColor: 'var(--color-border)' }}
+                            >
+                                <span
+                                    className="text-[10px] font-bold uppercase tracking-wider"
+                                    style={{ color: 'var(--color-text-muted)' }}
+                                >
+                                    Comprobante
+                                </span>
+                                <span className="text-sm font-semibold capitalize flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}>
+                                    <Receipt size={13} style={{ color: 'var(--color-primary)' }} />
+                                    {tipoComprobante}
+                                </span>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Comprobante (en móvil, fila separada) */}
+                <div
+                    className="sm:hidden rounded-xl p-3 flex items-center justify-between"
+                    style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
+                >
+                    <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                        <Receipt size={13} style={{ color: 'var(--color-primary)' }} />
+                        Comprobante
+                    </span>
+                    <span className="font-semibold capitalize" style={{ color: 'var(--color-text)' }}>
+                        {tipoComprobante}
+                    </span>
                 </div>
 
                 {/* Items */}

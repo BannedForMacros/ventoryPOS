@@ -464,27 +464,28 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                     color: '#fff',
                 }}
             >
-                <div className="flex items-center gap-2 sm:gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                     <Link
                         href={route('dashboard')}
                         aria-label="Volver al dashboard"
-                        className="flex items-center justify-center h-9 w-9 rounded-lg hover:bg-white/15 active:bg-white/25 transition-colors"
+                        className="flex items-center justify-center h-9 w-9 rounded-lg hover:bg-white/15 active:bg-white/25 transition-colors flex-shrink-0"
                     >
                         <ArrowLeft size={18} />
                     </Link>
-                    <div className="hidden sm:block w-px h-5 bg-white/20" />
-                    <div>
-                        <p className="font-bold text-sm leading-tight">
-                            POS · {turno.caja?.nombre ?? 'Caja'}
+                    <div className="hidden sm:block w-px h-5 bg-white/20 flex-shrink-0" />
+                    <div className="min-w-0">
+                        <p className="font-bold text-sm leading-tight truncate">
+                            <span className="sm:hidden">POS</span>
+                            <span className="hidden sm:inline">POS · {turno.caja?.nombre ?? 'Caja'}</span>
                         </p>
-                        <p className="text-[10px] opacity-70 leading-tight">
+                        <p className="hidden sm:block text-[10px] opacity-70 leading-tight">
                             Turno #{turno.id}
                         </p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    {/* Comprobante */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Comprobante (solo desktop/tablet) */}
                     <div className="hidden sm:flex items-center gap-1.5">
                         <Receipt size={14} className="opacity-70" />
                         <select
@@ -498,18 +499,19 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         </select>
                     </div>
 
-                    {/* Cliente */}
+                    {/* Cliente — siempre visible (incluso en móvil/PWA) */}
                     <button
                         onClick={() => setModalCliente(true)}
-                        className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors min-h-[36px]"
+                        aria-label="Cambiar cliente"
+                        className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors min-h-[36px] max-w-[180px] sm:max-w-[220px]"
                     >
-                        <User size={14} />
-                        <span className="hidden sm:inline max-w-[120px] truncate">
+                        <User size={14} className="flex-shrink-0" />
+                        <span className="truncate font-medium text-[13px]">
                             {cliente
                                 ? (cliente.razon_social ?? `${cliente.nombres} ${cliente.apellidos ?? ''}`.trim())
-                                : 'General'}
+                                : 'Cliente general'}
                         </span>
-                        <ChevronDown size={12} className="opacity-60" />
+                        <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
                     </button>
                 </div>
             </div>
@@ -721,6 +723,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         pagos={pagos}
                         conceptosDescuento={conceptosDescuento}
                         metodosPago={metodosPago}
+                        cliente={cliente}
+                        onAbrirCliente={() => setModalCliente(true)}
                         descuentoTotal={descuentoTotal}
                         descuentoConceptoId={descuentoConceptoId}
                         subtotal={subtotal}
@@ -782,6 +786,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 pagos={pagos}
                                 conceptosDescuento={conceptosDescuento}
                                 metodosPago={metodosPago}
+                                cliente={cliente}
+                                onAbrirCliente={() => setModalCliente(true)}
                                 descuentoTotal={descuentoTotal}
                                 descuentoConceptoId={descuentoConceptoId}
                                 subtotal={subtotal}
@@ -920,6 +926,8 @@ interface CarritoPanelProps {
     pagos: LineaPago[];
     conceptosDescuento: DescuentoConcepto[];
     metodosPago: (MetodoPago & { cuentas?: any[] })[];
+    cliente: Cliente | null;
+    onAbrirCliente: () => void;
     descuentoTotal: number;
     descuentoConceptoId: number | null;
     subtotal: number;
@@ -941,6 +949,7 @@ interface CarritoPanelProps {
 
 function CarritoPanel({
     carrito, pagos, conceptosDescuento, metodosPago,
+    cliente, onAbrirCliente,
     descuentoTotal, descuentoConceptoId,
     subtotal, igv, total, tasaIgv, inactivosCount,
     onCambiarCantidad, onAplicarDescuentoItem, onEliminarItem,
@@ -948,6 +957,18 @@ function CarritoPanel({
     puedeVender, razonNoVender,
 }: CarritoPanelProps) {
     const hayInactivos = inactivosCount > 0;
+
+    const clienteNombre = cliente
+        ? (cliente.razon_social ?? `${cliente.nombres} ${cliente.apellidos ?? ''}`.trim())
+        : 'Cliente general';
+    const clienteDoc = cliente?.numero_documento
+        ? `${cliente.tipo_documento ?? 'DOC'}: ${cliente.numero_documento}`
+        : null;
+    const clienteInicial = (clienteNombre || 'C').charAt(0).toUpperCase();
+    const esClienteGeneral = !cliente
+        || (cliente as Cliente & { es_cliente_general?: boolean }).es_cliente_general
+        || cliente.numero_documento === '99999999';
+
     return (
         <>
             {/* Cabecera carrito */}
@@ -982,6 +1003,41 @@ function CarritoPanel({
                     </button>
                 )}
             </div>
+
+            {/* Cliente activo — siempre visible mientras se revisa el carrito.
+                Tappable para cambiarlo. Se distingue visualmente entre Cliente
+                general (neutro) y un cliente identificado (acento primary). */}
+            <button
+                onClick={onAbrirCliente}
+                className="flex items-center gap-3 px-4 py-2.5 w-full text-left flex-shrink-0 transition-colors hover:bg-black/5 active:bg-black/10"
+                style={{
+                    borderBottom: '1px solid var(--color-border)',
+                    backgroundColor: 'var(--color-surface)',
+                }}
+            >
+                <div
+                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-white text-sm font-bold"
+                    style={{
+                        backgroundColor: esClienteGeneral ? 'var(--color-text-muted)' : 'var(--color-primary)',
+                    }}
+                >
+                    {esClienteGeneral ? <User size={16} /> : clienteInicial}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                        Facturando a
+                    </p>
+                    <p className="text-sm font-semibold truncate leading-tight" style={{ color: 'var(--color-text)' }}>
+                        {clienteNombre}
+                    </p>
+                    {clienteDoc && (
+                        <p className="text-[11px] truncate" style={{ color: 'var(--color-text-muted)' }}>
+                            {clienteDoc}
+                        </p>
+                    )}
+                </div>
+                <ChevronDown size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
+            </button>
 
             {/* Banner persistente: items inactivos en la cita prellenada.
                 Se mantiene visible mientras el cajero no resuelva los ítems
