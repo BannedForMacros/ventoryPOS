@@ -28,8 +28,11 @@ interface Devolucion extends Record<string, unknown> {
     fue_aprobada: boolean;
 }
 
+// M19: el backend ahora paginé estos listados; el FE consume {data, links, meta}.
+interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
+
 interface Props extends PageProps {
-    devoluciones: Devolucion[];
+    devoluciones: Paginado<Devolucion>;
     filters: Record<string, string>;
 }
 
@@ -178,7 +181,26 @@ export default function DevolucionesIndex({ devoluciones, filters }: Props) {
                 </div>
             </div>
 
-            <Table data={devoluciones} columns={columns} emptyMessage="No hay devoluciones registradas" />
+            <Table data={devoluciones.data} columns={columns} emptyMessage="No hay devoluciones registradas" />
+
+            {/* Paginación (M19) */}
+            {devoluciones.last_page > 1 && (
+                <div className="flex items-center justify-center gap-1 mt-4">
+                    {Array.from({ length: devoluciones.last_page }, (_, i) => i + 1).map(page => (
+                        <button
+                            key={page}
+                            onClick={() => router.get(route('devoluciones.index'), { ...filters, page }, { preserveState: true })}
+                            className="w-8 h-8 rounded-lg text-xs font-medium transition-colors"
+                            style={{
+                                backgroundColor: page === devoluciones.current_page ? 'var(--color-primary)' : 'transparent',
+                                color: page === devoluciones.current_page ? '#fff' : 'var(--color-text-muted)',
+                            }}
+                        >
+                            {page}
+                        </button>
+                    ))}
+                </div>
+            )}
         </AppLayout>
     );
 }

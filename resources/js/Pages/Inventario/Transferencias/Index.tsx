@@ -29,8 +29,11 @@ interface Transferencia extends Record<string, unknown> {
     fecha_recepcion: string | null;
 }
 
+// M19: paginado server-side.
+interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
+
 interface Props extends PageProps {
-    transferencias: Transferencia[];
+    transferencias: Paginado<Transferencia>;
     almacenes: Almacen[];
     filters: Record<string, string>;
 }
@@ -159,7 +162,7 @@ export default function TransferenciasIndex({ transferencias, filters }: Props) 
         },
     ];
 
-    const filtered = transferencias.filter(t =>
+    const filtered = transferencias.data.filter(t =>
         !filtrEstado || t.estado === filtrEstado
     );
 
@@ -196,6 +199,25 @@ export default function TransferenciasIndex({ transferencias, filters }: Props) 
             </div>
 
             <Table data={filtered} columns={columns} emptyMessage="No hay transferencias registradas" />
+
+            {/* Paginación (M19) */}
+            {transferencias.last_page > 1 && (
+                <div className="flex items-center justify-center gap-1 mt-4">
+                    {Array.from({ length: transferencias.last_page }, (_, i) => i + 1).map(page => (
+                        <button
+                            key={page}
+                            onClick={() => router.get(route('inventario.transferencias.index'), { page }, { preserveState: true })}
+                            className="w-8 h-8 rounded-lg text-xs font-medium transition-colors"
+                            style={{
+                                backgroundColor: page === transferencias.current_page ? 'var(--color-primary)' : 'transparent',
+                                color: page === transferencias.current_page ? '#fff' : 'var(--color-text-muted)',
+                            }}
+                        >
+                            {page}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* Modal: enviar (despachar) */}
             <Modal isOpen={enviarId !== null} onClose={() => setEnviarId(null)}

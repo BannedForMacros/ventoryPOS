@@ -23,6 +23,7 @@ class SalidaController extends Controller
         $user       = $request->user();
         $almacenIds = $this->scope->almacenIdsVisibles($user);
 
+        // M19: paginar para no cargar miles de filas en memoria.
         $salidas = Salida::whereIn('almacen_id', $almacenIds)
             ->with(['almacen.local', 'user', 'tipo'])
             ->when($request->almacen_id, fn ($q, $id) => $q->where('almacen_id', $id))
@@ -32,7 +33,8 @@ class SalidaController extends Controller
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
             ->orderByDesc('fecha')
             ->orderByDesc('id')
-            ->get();
+            ->paginate(25)
+            ->withQueryString();
 
         return Inertia::render('Inventario/Salidas/Index', [
             'salidas'         => $salidas,

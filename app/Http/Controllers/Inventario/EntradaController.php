@@ -23,6 +23,7 @@ class EntradaController extends Controller
         // aunque la creación esté restringida a almacenes para compras.
         $almacenIds = $this->scope->almacenIdsVisibles($user);
 
+        // M19: paginar (default 25/page) y preservar query string en navegación.
         $entradas = Entrada::whereIn('almacen_id', $almacenIds)
             ->with(['almacen.local', 'user', 'proveedorRel'])
             ->when($request->almacen_id, fn ($q, $id) => $q->where('almacen_id', $id))
@@ -31,7 +32,8 @@ class EntradaController extends Controller
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
             ->orderByDesc('fecha')
             ->orderByDesc('id')
-            ->get();
+            ->paginate(25)
+            ->withQueryString();
 
         return Inertia::render('Inventario/Entradas/Index', [
             'entradas'        => $entradas,
@@ -261,8 +263,26 @@ class EntradaController extends Controller
         abort_if($entrada->estado !== 'borrador', 403, 'Solo se pueden eliminar entradas en borrador.');
         abort_unless($this->scope->puedeAccederAlmacen($request->user(), $entrada->almacen), 403);
 
+        // M18: snapshot ANTES de borrar para que la auditoría tenga registro de
+        // qué se perdió (productos, cantidades). Sin esto, una disputa futura
+        // "¿quién borró la entrada del lunes?" queda sin respuesta.
+        $entrada->loadMissing('detalles.producto');
+        $snapshot = [
+            'almacen_id'   => $entrada->almacen_id,
+            'tipo'         => $entrada->tipo,
+            'fecha'        => $entrada->fecha?->toDateString(),
+            'total_items'  => $entrada->detalles->count(),
+            'detalles'     => $entrada->detalles->map(fn ($d) => [
+                'producto_id'     => $d->producto_id,
+                'producto_nombre' => $d->producto?->nombre,
+                'cantidad_base'   => (float) $d->cantidad_base,
+            ])->all(),
+        ];
+
         $entrada->detalles()->delete();
         $entrada->delete();
+
+        \App\Services\AuditoriaService::log('entrada.eliminada', $entrada, $snapshot, $request->user());
 
         return redirect()->back()->with('success', 'Entrada eliminada correctamente.');
     }

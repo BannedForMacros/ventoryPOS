@@ -28,8 +28,11 @@ interface Salida extends Record<string, unknown> {
     turno_id: number | null;
 }
 
+// M19: paginado server-side.
+interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
+
 interface Props extends PageProps {
-    salidas: Salida[];
+    salidas: Paginado<Salida>;
     almacenes: Almacen[];
     tipos: TipoSalida[];
     mostrarSelector: boolean;
@@ -133,7 +136,7 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
         },
     ];
 
-    const filtered = salidas.filter(s => {
+    const filtered = salidas.data.filter(s => {
         if (filtrAlmacen && s.almacen.id !== Number(filtrAlmacen)) return false;
         if (filtrTipo    && s.tipo?.id !== Number(filtrTipo))      return false;
         if (filtrEstado  && s.estado !== filtrEstado)              return false;
@@ -202,6 +205,25 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
                 searchPlaceholder="Buscar por documento..."
                 emptyMessage="No hay salidas registradas"
             />
+
+            {/* Paginación (M19) */}
+            {salidas.last_page > 1 && (
+                <div className="flex items-center justify-center gap-1 mt-4">
+                    {Array.from({ length: salidas.last_page }, (_, i) => i + 1).map(page => (
+                        <button
+                            key={page}
+                            onClick={() => router.get(route('inventario.salidas.index'), { page }, { preserveState: true })}
+                            className="w-8 h-8 rounded-lg text-xs font-medium transition-colors"
+                            style={{
+                                backgroundColor: page === salidas.current_page ? 'var(--color-primary)' : 'transparent',
+                                color: page === salidas.current_page ? '#fff' : 'var(--color-text-muted)',
+                            }}
+                        >
+                            {page}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             <Modal
                 isOpen={confirmId !== null}

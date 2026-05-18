@@ -26,6 +26,8 @@ class DevolucionController extends Controller
     {
         $user = $request->user();
 
+        // M19: paginar para no cargar miles de filas. withQueryString preserva
+        // los filtros activos al navegar entre páginas.
         $devoluciones = Devolucion::deEmpresa($user->empresa_id)
             ->with(['venta:id,numero,fecha_venta,total', 'motivo', 'user', 'local'])
             ->when($request->estado, fn ($q, $e) => $q->where('estado', $e))
@@ -33,7 +35,8 @@ class DevolucionController extends Controller
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
             ->orderByDesc('fecha')
             ->orderByDesc('id')
-            ->get();
+            ->paginate(25)
+            ->withQueryString();
 
         return Inertia::render('Devoluciones/Index', [
             'devoluciones' => $devoluciones,

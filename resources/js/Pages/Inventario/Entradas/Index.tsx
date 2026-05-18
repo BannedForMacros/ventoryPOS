@@ -26,8 +26,13 @@ interface Entrada extends Record<string, unknown> {
     estado: 'borrador' | 'confirmado';
 }
 
+// M19: paginado server-side. El filtro de almacén/estado se mantiene client-side
+// sobre la página actual; en el futuro conviene mover los filtros al server
+// para combinar paginación + filtro correctamente.
+interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
+
 interface Props extends PageProps {
-    entradas: Entrada[];
+    entradas: Paginado<Entrada>;
     almacenes: Almacen[];
     mostrarSelector: boolean;
     filters: Record<string, string>;
@@ -129,7 +134,7 @@ export default function EntradasIndex({ entradas, almacenes, mostrarSelector, fi
         },
     ];
 
-    const filtered = entradas.filter(e => {
+    const filtered = entradas.data.filter(e => {
         if (filtrAlmacen && e.almacen.id !== Number(filtrAlmacen)) return false;
         if (filtrEstado  && e.estado !== filtrEstado) return false;
         return true;
@@ -186,6 +191,25 @@ export default function EntradasIndex({ entradas, almacenes, mostrarSelector, fi
                 searchPlaceholder="Buscar por proveedor o documento..."
                 emptyMessage="No hay entradas registradas"
             />
+
+            {/* Paginación (M19) */}
+            {entradas.last_page > 1 && (
+                <div className="flex items-center justify-center gap-1 mt-4">
+                    {Array.from({ length: entradas.last_page }, (_, i) => i + 1).map(page => (
+                        <button
+                            key={page}
+                            onClick={() => router.get(route('inventario.entradas.index'), { page }, { preserveState: true })}
+                            className="w-8 h-8 rounded-lg text-xs font-medium transition-colors"
+                            style={{
+                                backgroundColor: page === entradas.current_page ? 'var(--color-primary)' : 'transparent',
+                                color: page === entradas.current_page ? '#fff' : 'var(--color-text-muted)',
+                            }}
+                        >
+                            {page}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* Modal confirmar */}
             <Modal

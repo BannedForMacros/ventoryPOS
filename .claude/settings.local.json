@@ -90,7 +90,12 @@
       "Bash(vendor/bin/pest tests/Feature/Clientes/ClienteGeneralA15Test.php --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Ventas tests/Feature/Clientes tests/Feature/Support --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Pos/RateLimitTest.php --colors=never)",
-      "Bash(vendor/bin/pest tests/Feature/Pos/RateLimitTest.php --filter=\"61\" --colors=never)"
+      "Bash(vendor/bin/pest tests/Feature/Pos/RateLimitTest.php --filter=\"61\" --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Pos/AnularVentaM21Test.php tests/Feature/Pos/VentaServiceTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Inventario/BorrarBorradorAuditoriaTest.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Reportes/PaginacionM19Test.php --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Reportes/PaginacionM19Test.php --filter=\"Devolucion\" --colors=never)",
+      "Bash(vendor/bin/pest tests/Feature/Reportes/PaginacionM19Test.php --filter=\"DEBUG\" --colors=never})"
     ]
   }
 }

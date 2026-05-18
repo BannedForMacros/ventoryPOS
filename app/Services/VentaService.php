@@ -218,10 +218,14 @@ class VentaService
 
     /**
      * Anula una venta y restaura el stock de los productos físicos.
+     *
+     * M21: $motivo es la justificación auditable de la anulación. El controller
+     * la exige via AnularVentaRequest (mín 10 chars). Se acepta null solo en
+     * llamadas internas/legacy; en ese caso el contexto de auditoría lo refleja.
      */
-    public function anular(Venta $venta, User $user): void
+    public function anular(Venta $venta, User $user, ?string $motivo = null): void
     {
-        DB::transaction(function () use ($venta, $user) {
+        DB::transaction(function () use ($venta, $user, $motivo) {
             if ($venta->estado === 'anulada') {
                 throw new \RuntimeException('La venta ya está anulada.');
             }
@@ -247,6 +251,7 @@ class VentaService
                 'tipo_comprobante' => $venta->tipo_comprobante,
                 'turno_id'         => $venta->turno_id,
                 'cliente_id'       => $venta->cliente_id,
+                'motivo'           => $motivo,
             ], $user);
         });
     }

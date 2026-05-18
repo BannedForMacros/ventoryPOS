@@ -24,6 +24,7 @@ class TransferenciaController extends Controller
         $user       = $request->user();
         $almacenIds = $this->scope->almacenIdsVisibles($user);
 
+        // M19: paginar (25/page) y conservar filtros en navegación.
         $transferencias = Transferencia::where('empresa_id', $user->empresa_id)
             ->where(fn ($q) =>
                 $q->whereIn('almacen_origen_id', $almacenIds)
@@ -35,7 +36,8 @@ class TransferenciaController extends Controller
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
             ->orderByDesc('fecha')
             ->orderByDesc('id')
-            ->get();
+            ->paginate(25)
+            ->withQueryString();
 
         return Inertia::render('Inventario/Transferencias/Index', [
             'transferencias'  => $transferencias,
@@ -259,8 +261,24 @@ class TransferenciaController extends Controller
         abort_if($transferencia->empresa_id !== $request->user()->empresa_id, 403);
         abort_if(!$transferencia->esBorrador(), 403, 'Solo se pueden eliminar transferencias en borrador. Si está enviada o recibida, anúlala en lugar de eliminar.');
 
+        // M18: snapshot antes de borrar para trazabilidad post-mortem.
+        $transferencia->loadMissing('detalles.producto');
+        $snapshot = [
+            'almacen_origen_id'  => $transferencia->almacen_origen_id,
+            'almacen_destino_id' => $transferencia->almacen_destino_id,
+            'fecha'              => $transferencia->fecha?->toDateString(),
+            'total_items'        => $transferencia->detalles->count(),
+            'detalles'           => $transferencia->detalles->map(fn ($d) => [
+                'producto_id'           => $d->producto_id,
+                'producto_nombre'       => $d->producto?->nombre,
+                'cantidad_base_enviada' => (float) $d->cantidad_base_enviada,
+            ])->all(),
+        ];
+
         $transferencia->detalles()->delete();
         $transferencia->delete();
+
+        \App\Services\AuditoriaService::log('transferencia.eliminada', $transferencia, $snapshot, $request->user());
 
         return redirect()->back()->with('success', 'Transferencia eliminada.');
     }

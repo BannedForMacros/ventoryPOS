@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Ventas;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Ventas\AnularVentaRequest;
 use App\Http\Requests\Ventas\StoreVentaRequest;
 use App\Models\Cliente;
 use App\Models\DescuentoConcepto;
@@ -209,7 +210,7 @@ class VentaController extends Controller
 
     // ── Anular ─────────────────────────────────────────────────────────────────
 
-    public function anular(Request $request, Venta $venta)
+    public function anular(AnularVentaRequest $request, Venta $venta)
     {
         abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
 
@@ -217,7 +218,11 @@ class VentaController extends Controller
             return back()->withErrors(['venta' => 'La venta ya está anulada.']);
         }
 
-        $this->ventaService->anular($venta, $request->user());
+        $this->ventaService->anular(
+            $venta,
+            $request->user(),
+            $request->validated('motivo'),
+        );
 
         return redirect()->back()->with('success', "Venta {$venta->numero} anulada correctamente.");
     }
