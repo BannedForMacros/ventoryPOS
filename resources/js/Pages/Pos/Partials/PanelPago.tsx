@@ -127,12 +127,13 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
                                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>S/</span>
                                 <input
                                     type="number"
+                                    inputMode="decimal"
                                     min="0"
                                     step="0.01"
                                     value={pago.monto || ''}
                                     onChange={e => updatePago(pago.key, { monto: parseFloat(e.target.value) || 0 })}
                                     placeholder="0.00"
-                                    className="w-full pl-7 pr-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 font-semibold"
+                                    className="w-full pl-7 pr-2 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 font-semibold"
                                     style={{
                                         borderColor: 'var(--color-border)',
                                         backgroundColor: 'var(--color-bg)',

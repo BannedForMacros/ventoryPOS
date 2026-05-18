@@ -3,7 +3,7 @@ import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
-    Package, Receipt, Layers,
+    Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import PosLayout from '@/Layouts/PosLayout';
@@ -188,7 +188,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             toast.error(
                 `Esta cita tiene ${inactivos.length} ítem(s) desactivado(s) desde que se agendó. ` +
                 'Revisa el carrito antes de cobrar.',
-                { duration: 6000, icon: '⚠️' },
+                { duration: 6000 },
             );
         }
     }, []);
@@ -303,7 +303,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         const nombreCompleto = unidad.unidad_medida?.nombre
             ? `${producto.nombre} (${unidad.unidad_medida.nombre})`
             : producto.nombre;
-        toast.success(`${nombreCompleto} agregado`, { duration: 1000, icon: '🛒' });
+        toast.success(`${nombreCompleto} agregado`, { duration: 1000 });
     }
 
     function cambiarCantidad(key: string, delta: number) {
@@ -467,7 +467,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 <div className="flex items-center gap-2 sm:gap-3">
                     <Link
                         href={route('dashboard')}
-                        className="p-1.5 rounded-lg hover:bg-white/15 transition-colors"
+                        aria-label="Volver al dashboard"
+                        className="flex items-center justify-center h-9 w-9 rounded-lg hover:bg-white/15 active:bg-white/25 transition-colors"
                     >
                         <ArrowLeft size={18} />
                     </Link>
@@ -500,7 +501,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                     {/* Cliente */}
                     <button
                         onClick={() => setModalCliente(true)}
-                        className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 transition-colors"
+                        className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors min-h-[36px]"
                     >
                         <User size={14} />
                         <span className="hidden sm:inline max-w-[120px] truncate">
@@ -538,12 +539,15 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         <div className="relative">
                             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
                             <input
-                                type="text"
+                                type="search"
+                                inputMode="search"
+                                enterKeyHint="search"
                                 value={busqueda}
                                 onChange={e => setBusqueda(e.target.value)}
                                 placeholder="Buscar por nombre o código..."
                                 autoFocus
-                                className="w-full pl-10 pr-3 py-2 text-sm border rounded-xl focus:outline-none focus:ring-2"
+                                autoComplete="off"
+                                className="w-full pl-10 pr-3 py-2.5 text-sm border rounded-xl focus:outline-none focus:ring-2"
                                 style={{
                                     borderColor: 'var(--color-border)',
                                     backgroundColor: 'var(--color-bg)',
@@ -596,7 +600,10 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                     </div>
 
                     {/* Grid de productos */}
-                    <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3">
+                    <div
+                        className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 pb-[calc(96px+env(safe-area-inset-bottom,0px))] lg:pb-3"
+                        style={{ overscrollBehavior: 'contain' }}
+                    >
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-3">
                             {productosFiltrados.map(producto => {
                                 const enCarrito = carrito.find(i => i.producto_id === producto.id);
@@ -733,23 +740,39 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                     />
                 </div>
 
-                {/* ── Drawer del carrito (móvil/tablet) ──────────────── */}
+                {/* ── Drawer del carrito (móvil/tablet) ────────────────
+                    En móvil: bottom-sheet (slide up) con drag handle.
+                    En tablet: side drawer derecho. Ambos con safe-area. */}
                 {carritoAbierto && (
                     <div className="lg:hidden fixed inset-0 z-50 flex">
-                        {/* Overlay */}
                         <div
-                            className="absolute inset-0 bg-black/40 transition-opacity"
+                            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm animate-fade-in"
                             onClick={() => setCarritoAbierto(false)}
                         />
-                        {/* Panel */}
                         <div
-                            className="relative ml-auto w-full max-w-md flex flex-col animate-slide-in-right"
-                            style={{ backgroundColor: 'var(--color-bg)' }}
+                            className="
+                                relative flex flex-col overflow-hidden
+                                w-full bottom-sheet
+                                mt-auto rounded-t-3xl
+                                md:mt-0 md:ml-auto md:rounded-t-none md:rounded-l-3xl md:max-w-md md:h-full md:side-drawer
+                            "
+                            style={{
+                                backgroundColor: 'var(--color-bg)',
+                                maxHeight: '92dvh',
+                                boxShadow: '0 -20px 50px -10px rgba(15,23,42,0.25)',
+                            }}
                         >
-                            {/* Botón cerrar */}
+                            {/* Drag handle (móvil) + Cerrar (tablet) */}
+                            <div className="relative flex items-center justify-center flex-shrink-0 pt-2 pb-1 md:hidden">
+                                <span
+                                    className="block h-1.5 w-10 rounded-full"
+                                    style={{ backgroundColor: 'var(--color-border)' }}
+                                />
+                            </div>
                             <button
                                 onClick={() => setCarritoAbierto(false)}
-                                className="absolute top-3 left-3 p-1.5 rounded-lg z-10 hover:bg-black/5 transition-colors"
+                                aria-label="Cerrar carrito"
+                                className="hidden md:flex absolute top-3 left-3 items-center justify-center w-10 h-10 rounded-lg z-10 hover:bg-black/5 transition-colors"
                                 style={{ color: 'var(--color-text-muted)' }}
                             >
                                 <X size={20} />
@@ -780,29 +803,40 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                     </div>
                 )}
 
-                {/* ── FAB del carrito (móvil/tablet) ─────────────────── */}
+                {/* ── Barra de acción inferior (móvil/tablet) ────────
+                    Se mantiene siempre visible para que el pulgar la
+                    alcance sin estirar la mano. Reemplaza al FAB de esquina. */}
                 {!carritoAbierto && (
                     <button
                         onClick={() => setCarritoAbierto(true)}
-                        className="lg:hidden fixed bottom-4 right-4 z-40 flex items-center gap-2 pl-4 pr-5 py-3 rounded-2xl shadow-2xl transition-all active:scale-95"
+                        className="lg:hidden fixed left-3 right-3 z-40 flex items-center justify-between gap-3 px-4 py-3.5 rounded-2xl shadow-2xl transition-all active:scale-[0.98]"
                         style={{
+                            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
                             backgroundColor: 'var(--color-primary)',
                             color: '#fff',
-                            boxShadow: '0 8px 30px rgba(26,115,200,0.35)',
+                            boxShadow: '0 10px 40px -10px rgba(15,23,42,0.45), 0 4px 12px rgba(15,23,42,0.15)',
                         }}
                     >
-                        <div className="relative">
-                            <ShoppingCart size={20} />
-                            {cantidadItems > 0 && (
-                                <span className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-white text-[10px] font-bold flex items-center justify-center"
-                                    style={{ color: 'var(--color-primary)' }}>
-                                    {cantidadItems}
+                        <div className="flex items-center gap-3 min-w-0">
+                            <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white/15">
+                                <ShoppingCart size={18} />
+                                {cantidadItems > 0 && (
+                                    <span
+                                        className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-[10px] font-bold flex items-center justify-center"
+                                        style={{ color: 'var(--color-primary)' }}
+                                    >
+                                        {cantidadItems}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex flex-col items-start leading-tight min-w-0">
+                                <span className="text-[10px] font-medium uppercase tracking-wider opacity-80">
+                                    {cantidadItems === 0 ? 'Carrito vacío' : `${cantidadItems} ${cantidadItems === 1 ? 'item' : 'items'} · Tocar para cobrar`}
                                 </span>
-                            )}
+                                <span className="text-base font-bold">S/ {total.toFixed(2)}</span>
+                            </div>
                         </div>
-                        <span className="font-bold text-sm">
-                            S/ {total.toFixed(2)}
-                        </span>
+                        <ChevronUp size={20} className="flex-shrink-0 opacity-80" />
                     </button>
                 )}
             </div>
@@ -841,14 +875,30 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 onElegir={agregarConPresentacion}
             />
 
-            {/* CSS para animación del drawer */}
+            {/* CSS para animaciones del drawer */}
             <style>{`
+                @keyframes slideUp {
+                    from { transform: translateY(100%); }
+                    to { transform: translateY(0); }
+                }
                 @keyframes slideInRight {
                     from { transform: translateX(100%); }
                     to { transform: translateX(0); }
                 }
-                .animate-slide-in-right {
-                    animation: slideInRight 0.25s ease-out;
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                .bottom-sheet {
+                    animation: slideUp 0.32s cubic-bezier(0.32, 0.72, 0.0, 1);
+                }
+                @media (min-width: 768px) {
+                    .side-drawer {
+                        animation: slideInRight 0.32s cubic-bezier(0.32, 0.72, 0.0, 1);
+                    }
+                }
+                .animate-fade-in {
+                    animation: fadeIn 0.25s ease-out;
                 }
                 .scrollbar-hide::-webkit-scrollbar { display: none; }
                 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
@@ -944,7 +994,7 @@ function CarritoPanel({
                         border: '1px solid var(--color-danger)',
                     }}
                 >
-                    <span className="text-base leading-none" style={{ color: 'var(--color-danger)' }}>⚠️</span>
+                    <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-danger)' }} />
                     <div className="text-xs leading-tight" style={{ color: 'var(--color-danger)' }}>
                         <p className="font-bold mb-0.5">
                             {inactivosCount} ítem(s) inactivo(s) en este carrito
@@ -983,7 +1033,11 @@ function CarritoPanel({
             {/* Footer del carrito */}
             <div
                 className="flex-shrink-0 px-3 py-3 flex flex-col gap-3"
-                style={{ borderTop: '2px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+                style={{
+                    borderTop: '2px solid var(--color-border)',
+                    backgroundColor: 'var(--color-surface)',
+                    paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+                }}
             >
                 {/* Descuento global */}
                 <PanelDescuento
@@ -1035,14 +1089,15 @@ function CarritoPanel({
                 {/* A14: banner rojo cuando el backend dice que no puede vender */}
                 {!puedeVender && razonNoVender && (
                     <div
-                        className="px-3 py-2 rounded-lg text-sm font-medium border"
+                        className="flex items-start gap-2 px-3 py-2 rounded-lg text-sm font-medium border"
                         style={{
                             background: '#fef2f2',
                             color: '#991b1b',
                             borderColor: '#fecaca',
                         }}
                     >
-                        ⚠️ {razonNoVender}
+                        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                        <span>{razonNoVender}</span>
                     </div>
                 )}
 
