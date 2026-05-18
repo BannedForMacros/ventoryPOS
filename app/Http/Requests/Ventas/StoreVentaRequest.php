@@ -90,12 +90,69 @@ class StoreVentaRequest extends FormRequest
 
             $this->validarItems($validator, $empresaId);
             $this->validarPagosPertenencia($validator, $empresaId);
+            $this->validarDescuentoYTope($validator); // M20
 
             $total = $this->calcularTotalEsperado($empresaId);
 
             $this->validarTotalCubierto($validator, $total);
             $this->validarSobrepagoNoEfectivo($validator, $total, $empresaId);
         });
+    }
+
+    /**
+     * M20 — Reglas de gobernanza del descuento global:
+     *
+     *  (a) Si descuento_total > 0 → exigir descuento_concepto_id (motivo
+     *      auditable, no puede ser regalo arbitrario).
+     *
+     *  (b) Si el rol del usuario tiene `max_descuento_porcentaje` definido,
+     *      validar que el descuento aplicado no exceda ese porcentaje del
+     *      subtotal bruto del carrito.
+     *
+     *  Admin típicamente tiene `max_descuento_porcentaje = NULL` (sin tope).
+     *  Cajeros pueden estar limitados a 10%, 20%, etc. según política de cada
+     *  empresa.
+     */
+    private function validarDescuentoYTope($validator): void
+    {
+        $descuentoTotal = (float) ($this->input('descuento_total') ?? 0);
+        if ($descuentoTotal <= 0) return;
+
+        // (a) Concepto obligatorio cuando hay descuento global
+        if (empty($this->input('descuento_concepto_id'))) {
+            $validator->errors()->add(
+                'descuento_concepto_id',
+                'Debes seleccionar un motivo (concepto de descuento) cuando aplicas un descuento global.'
+            );
+            return;
+        }
+
+        // (b) Tope porcentual por rol
+        $user = $this->user();
+        $user->loadMissing('rol');
+        $topePct = $user->rol?->max_descuento_porcentaje;
+        if ($topePct === null) return; // sin tope (típicamente admin)
+
+        // Subtotal bruto del carrito (suma simple, no la base IGV-separada).
+        // El cajero entiende este monto como "el total antes del descuento".
+        $subtotalBruto = 0.0;
+        foreach ($this->input('items', []) as $item) {
+            $precio    = (float) ($item['precio_unitario'] ?? 0);
+            $descItem  = (float) ($item['descuento_item']  ?? 0);
+            $cantidad  = (float) ($item['cantidad']        ?? 0);
+            $subtotalBruto += ($precio - $descItem) * $cantidad;
+        }
+
+        if ($subtotalBruto <= 0) return; // sin productos válidos, otra regla lo atrapa
+
+        $pctSolicitado = round(($descuentoTotal / $subtotalBruto) * 100, 2);
+        if ($pctSolicitado > (float) $topePct + 0.01) {
+            $validator->errors()->add(
+                'descuento_total',
+                "Tu rol permite máximo {$topePct}% de descuento sobre el subtotal. "
+                . "Estás aplicando {$pctSolicitado}%. Pide aprobación de un supervisor."
+            );
+        }
     }
 
     /**

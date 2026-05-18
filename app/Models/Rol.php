@@ -16,13 +16,15 @@ class Rol extends Model
         'descripcion',
         'es_admin',
         'activo',
+        'max_descuento_porcentaje',
     ];
 
     protected function casts(): array
     {
         return [
-            'es_admin' => 'boolean',
-            'activo'   => 'boolean',
+            'es_admin'                 => 'boolean',
+            'activo'                   => 'boolean',
+            'max_descuento_porcentaje' => 'decimal:2',
         ];
     }
 
