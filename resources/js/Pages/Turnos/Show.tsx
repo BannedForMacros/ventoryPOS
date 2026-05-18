@@ -133,9 +133,9 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
                         <Badge variant={esCerrado ? 'secondary' : 'success'}>
                             {esCerrado ? 'Cerrado' : 'Abierto'}
                         </Badge>
-                        {esCerrado && turno.userCierre && (
+                        {esCerrado && turno.user_cierre && (
                             <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                                Cerrado por <strong style={{ color: 'var(--color-text)' }}>{turno.userCierre.name as string}</strong>
+                                Cerrado por <strong style={{ color: 'var(--color-text)' }}>{turno.user_cierre.name}</strong>
                             </span>
                         )}
                         {turno.caja?.caja_chica_activa && (
