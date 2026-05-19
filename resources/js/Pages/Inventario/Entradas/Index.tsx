@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, CheckCircle } from 'lucide-react';
+import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -48,6 +48,9 @@ export default function EntradasIndex({ entradas, almacenes, mostrarSelector, fi
     const [deleteId, setDeleteId]     = useState<number | null>(null);
     const [filtrAlmacen, setFiltrAlmacen] = useState(filters.almacen_id ?? '');
     const [filtrEstado, setFiltrEstado]   = useState(filters.estado ?? '');
+    // Search vive a nivel de página para compartirse entre la vista de cards (mobile)
+    // y la tabla (desktop). El Table interno recibe searchable=false para no duplicar.
+    const [search, setSearch]             = useState('');
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -134,11 +137,19 @@ export default function EntradasIndex({ entradas, almacenes, mostrarSelector, fi
         },
     ];
 
-    const filtered = entradas.data.filter(e => {
-        if (filtrAlmacen && e.almacen.id !== Number(filtrAlmacen)) return false;
-        if (filtrEstado  && e.estado !== filtrEstado) return false;
-        return true;
-    });
+    const filtered = useMemo(() => {
+        const s = search.trim().toLowerCase();
+        return entradas.data.filter(e => {
+            if (filtrAlmacen && e.almacen.id !== Number(filtrAlmacen)) return false;
+            if (filtrEstado  && e.estado !== filtrEstado) return false;
+            if (!s) return true;
+            const haystack = [
+                e.proveedor ?? '', e.numero_documento ?? '', e.almacen.nombre,
+                e.user.name, TIPOS[e.tipo] ?? e.tipo, e.fecha,
+            ].join(' ').toLowerCase();
+            return haystack.includes(s);
+        });
+    }, [entradas.data, filtrAlmacen, filtrEstado, search]);
 
     return (
         <AppLayout title="Entradas">
@@ -152,45 +163,180 @@ export default function EntradasIndex({ entradas, almacenes, mostrarSelector, fi
                 }
             />
 
-            <div className="mb-4 flex flex-wrap gap-3">
-                {mostrarSelector && (
-                    <div className="w-52">
+            {/* Búsqueda + filtros (compartidos entre mobile y desktop) */}
+            <div className="mb-4 space-y-3">
+                <div className="relative w-full sm:max-w-md">
+                    <Search
+                        size={15}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                        style={{ color: 'var(--color-text-muted)' }}
+                    />
+                    <input
+                        type="text"
+                        placeholder="Buscar por proveedor, documento, almacén..."
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        className="w-full rounded-xl border py-2 pl-9 pr-9 text-sm outline-none transition-all"
+                        style={{
+                            borderColor: 'var(--color-border)',
+                            backgroundColor: 'var(--color-surface)',
+                            color: 'var(--color-text)',
+                        }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-primary)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                    />
+                    {search && (
+                        <button
+                            onClick={() => setSearch('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5"
+                            style={{ color: 'var(--color-text-muted)' }}
+                        >
+                            ✕
+                        </button>
+                    )}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                    {mostrarSelector && (
+                        <div className="w-full sm:w-52">
+                            <Select
+                                placeholder="Todos los almacenes"
+                                value={filtrAlmacen}
+                                onChange={v => setFiltrAlmacen(String(v))}
+                                options={[
+                                    { value: '', label: 'Todos los almacenes' },
+                                    ...almacenes.map(a => ({ value: a.id, label: a.nombre })),
+                                ]}
+                            />
+                        </div>
+                    )}
+                    <div className="w-full sm:w-44">
                         <Select
-                            placeholder="Todos los almacenes"
-                            value={filtrAlmacen}
-                            onChange={v => setFiltrAlmacen(String(v))}
+                            placeholder="Todos los estados"
+                            value={filtrEstado}
+                            onChange={v => setFiltrEstado(String(v))}
                             options={[
-                                { value: '', label: 'Todos los almacenes' },
-                                ...almacenes.map(a => ({ value: a.id, label: a.nombre })),
+                                { value: '',           label: 'Todos los estados' },
+                                { value: 'borrador',   label: 'Borrador' },
+                                { value: 'confirmado', label: 'Confirmado' },
                             ]}
                         />
                     </div>
-                )}
-                <div className="w-44">
-                    <Select
-                        placeholder="Todos los estados"
-                        value={filtrEstado}
-                        onChange={v => setFiltrEstado(String(v))}
-                        options={[
-                            { value: '',           label: 'Todos los estados' },
-                            { value: 'borrador',   label: 'Borrador' },
-                            { value: 'confirmado', label: 'Confirmado' },
-                        ]}
-                    />
+                    {(filtrAlmacen || filtrEstado || search) && (
+                        <Button variant="ghost" onClick={() => { setFiltrAlmacen(''); setFiltrEstado(''); setSearch(''); }}>
+                            Limpiar filtros
+                        </Button>
+                    )}
                 </div>
-                {(filtrAlmacen || filtrEstado) && (
-                    <Button variant="ghost" onClick={() => { setFiltrAlmacen(''); setFiltrEstado(''); }}>
-                        Limpiar filtros
-                    </Button>
-                )}
             </div>
 
-            <Table
-                data={filtered}
-                columns={columns}
-                searchPlaceholder="Buscar por proveedor o documento..."
-                emptyMessage="No hay entradas registradas"
-            />
+            {/* Mobile: cards */}
+            <div className="sm:hidden space-y-2.5">
+                {filtered.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-16 rounded-2xl border" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                        <div className="rounded-full p-4" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                            <Package size={22} style={{ color: 'var(--color-text-muted)', opacity: 0.5 }} />
+                        </div>
+                        <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                            {search || filtrAlmacen || filtrEstado ? 'Sin resultados con esos filtros' : 'No hay entradas registradas'}
+                        </p>
+                    </div>
+                ) : filtered.map(e => (
+                    <div key={e.id} className="rounded-2xl border p-4 space-y-3"
+                        style={{
+                            borderColor: e.estado === 'borrador' ? 'color-mix(in srgb, var(--color-warning) 35%, var(--color-border))' : 'var(--color-border)',
+                            backgroundColor: 'var(--color-surface)',
+                        }}>
+                        {/* Fila 1: fecha + total. Lo que el usuario mira primero. */}
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <p className="text-xs uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                                    {e.fecha}
+                                </p>
+                                <p className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    {TIPOS[e.tipo] ?? e.tipo}
+                                </p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-lg font-bold font-mono leading-tight" style={{ color: 'var(--color-text)' }}>
+                                    S/ {Number(e.total).toFixed(2)}
+                                </p>
+                                <Badge variant={e.estado === 'confirmado' ? 'success' : 'warning'}>
+                                    {e.estado === 'confirmado' ? 'Confirmado' : 'Borrador'}
+                                </Badge>
+                            </div>
+                        </div>
+
+                        {/* Fila 2: meta */}
+                        <div className="space-y-1 text-sm">
+                            <p style={{ color: 'var(--color-text)' }}>
+                                <span className="font-medium">{e.almacen.nombre}</span>
+                                {e.almacen.local && (
+                                    <span className="text-xs ml-1" style={{ color: 'var(--color-text-muted)' }}>
+                                        · {e.almacen.local.nombre}
+                                    </span>
+                                )}
+                            </p>
+                            {e.proveedor && (
+                                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                    {e.proveedor}
+                                </p>
+                            )}
+                            {e.numero_documento && (
+                                <p className="text-xs flex items-center gap-1 font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                                    <FileText size={11} />
+                                    {e.numero_documento}
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Fila 3: acciones */}
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
+                            {e.estado === 'borrador' ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmId(e.id)}
+                                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+                                    style={{ color: 'var(--color-success)', backgroundColor: 'color-mix(in srgb, var(--color-success) 12%, transparent)' }}
+                                >
+                                    <CheckCircle size={13} />Confirmar
+                                </button>
+                            ) : <span />}
+                            <div className="flex items-center gap-1">
+                                {e.estado === 'borrador' && (
+                                    <>
+                                        <button
+                                            onClick={() => router.visit(route('inventario.entradas.edit', e.id))}
+                                            className="rounded-lg p-2"
+                                            style={{ color: 'var(--color-text-muted)' }}
+                                            aria-label="Editar"
+                                        >
+                                            <Edit2 size={15} />
+                                        </button>
+                                        <button
+                                            onClick={() => setDeleteId(e.id)}
+                                            className="rounded-lg p-2"
+                                            style={{ color: 'var(--color-danger)' }}
+                                            aria-label="Eliminar"
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Desktop: tabla */}
+            <div className="hidden sm:block">
+                <Table
+                    data={filtered}
+                    columns={columns}
+                    searchable={false}
+                    emptyMessage="No hay entradas registradas"
+                />
+            </div>
 
             {/* Paginación (M19) */}
             {entradas.last_page > 1 && (

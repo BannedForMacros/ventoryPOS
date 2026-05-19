@@ -20,6 +20,7 @@ interface EntradaDetalleData {
     cantidad: string;
     factor_conversion: string;
     precio_costo: string;
+    numero_documento: string | null;
     producto?: Producto;
     unidad_medida?: UnidadMedida;
 }
@@ -53,6 +54,7 @@ interface DetalleRow {
     cantidad: string;
     factor_conversion: string;
     precio_costo: string;
+    numero_documento: string;
 }
 
 export default function EntradaEdit({ entrada, almacenes, productos, proveedores, mostrarSelector, modoAlmacen }: Props) {
@@ -72,6 +74,7 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
             cantidad:          String(d.cantidad),
             factor_conversion: String(d.factor_conversion),
             precio_costo:      String(d.precio_costo),
+            numero_documento:  d.numero_documento ?? '',
         }))
     );
 
@@ -98,7 +101,7 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
         });
     }
 
-    function addDetalle()    { setDetalles(d => [...d, { producto_id: '', unidad_medida_id: '', cantidad: '', factor_conversion: '1', precio_costo: '' }]); }
+    function addDetalle()    { setDetalles(d => [...d, { producto_id: '', unidad_medida_id: '', cantidad: '', factor_conversion: '1', precio_costo: '', numero_documento: '' }]); }
     function removeDetalle(i: number) { setDetalles(d => d.filter((_, idx) => idx !== i)); }
 
     function subtotal(d: DetalleRow): number {
@@ -119,6 +122,7 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id, unidad_medida_id: d.unidad_medida_id,
                 cantidad: d.cantidad, factor_conversion: d.factor_conversion, precio_costo: d.precio_costo,
+                numero_documento: d.numero_documento.trim() || null,
             })),
         }, {
             onSuccess: () => setProcessing(false),
@@ -203,49 +207,57 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                         <div className="col-span-2">Unidad</div>
                         <div className="col-span-2">Cantidad</div>
                         <div className="col-span-2">Precio costo</div>
-                        <div className="col-span-1 text-right">Factor</div>
-                        <div className="col-span-1 text-right">Cant. base</div>
+                        <div className="col-span-2">Factura</div>
                         <div className="col-span-1 text-right">Subtotal</div>
                     </div>
 
                     {detalles.map((d, i) => {
                         const unidades = unidadesDeProducto(d.producto_id);
                         return (
-                            <div key={i} className="grid grid-cols-12 gap-2 items-end rounded-xl p-3" style={{ backgroundColor: 'var(--color-bg)' }}>
-                                <div className="col-span-3">
-                                    <Select placeholder="Buscar producto..." value={d.producto_id}
-                                        onChange={v => setDetalle(i, 'producto_id', Number(v))}
-                                        options={productos.map(p => ({ value: p.id, label: p.codigo ? `[${p.codigo}] ${p.nombre}` : p.nombre }))}
-                                        error={(errors)[`detalles.${i}.producto_id`]} />
+                            <div key={i} className="rounded-xl p-3 space-y-2" style={{ backgroundColor: 'var(--color-bg)' }}>
+                                <div className="grid grid-cols-12 gap-2 items-end">
+                                    <div className="col-span-3">
+                                        <Select placeholder="Buscar producto..." value={d.producto_id}
+                                            onChange={v => setDetalle(i, 'producto_id', Number(v))}
+                                            options={productos.map(p => ({ value: p.id, label: p.codigo ? `[${p.codigo}] ${p.nombre}` : p.nombre }))}
+                                            error={(errors)[`detalles.${i}.producto_id`]} />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <Select placeholder="Unidad" value={d.unidad_medida_id}
+                                            onChange={v => setDetalle(i, 'unidad_medida_id', Number(v))}
+                                            options={unidades.map(u => ({
+                                                value: u.unidad_medida_id,
+                                                label: u.unidad_medida ? `${u.unidad_medida.abreviatura}${u.es_base ? ' (base)' : ''}` : String(u.unidad_medida_id),
+                                            }))} />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <Input placeholder="0" type="number" min="0" step="any"
+                                            value={d.cantidad} onChange={e => setDetalle(i, 'cantidad', e.target.value)} />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <Input placeholder="0.00" type="number" min="0" step="0.0001"
+                                            value={d.precio_costo} onChange={e => setDetalle(i, 'precio_costo', e.target.value)} />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <Input placeholder={nroDoc ? nroDoc : 'F001-...'}
+                                            value={d.numero_documento}
+                                            onChange={e => setDetalle(i, 'numero_documento', e.target.value)}
+                                            error={(errors)[`detalles.${i}.numero_documento`]} />
+                                    </div>
+                                    <div className="col-span-1 text-right flex items-end justify-end gap-1">
+                                        <p className="text-sm font-mono font-semibold pb-2" style={{ color: 'var(--color-text)' }}>S/ {subtotal(d).toFixed(2)}</p>
+                                        {detalles.length > 1 && (
+                                            <button type="button" onClick={() => removeDetalle(i)} className="mb-2 rounded p-0.5" style={{ color: 'var(--color-danger)' }}>
+                                                <Trash2 size={14} />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="col-span-2">
-                                    <Select placeholder="Unidad" value={d.unidad_medida_id}
-                                        onChange={v => setDetalle(i, 'unidad_medida_id', Number(v))}
-                                        options={unidades.map(u => ({
-                                            value: u.unidad_medida_id,
-                                            label: u.unidad_medida ? `${u.unidad_medida.abreviatura}${u.es_base ? ' (base)' : ''}` : String(u.unidad_medida_id),
-                                        }))} />
-                                </div>
-                                <div className="col-span-2">
-                                    <Input placeholder="0" type="number" min="0" step="any"
-                                        value={d.cantidad} onChange={e => setDetalle(i, 'cantidad', e.target.value)} />
-                                </div>
-                                <div className="col-span-2">
-                                    <Input placeholder="0.00" type="number" min="0" step="0.0001"
-                                        value={d.precio_costo} onChange={e => setDetalle(i, 'precio_costo', e.target.value)} />
-                                </div>
-                                <div className="col-span-1 text-right">
-                                    <p className="text-xs font-mono pb-1" style={{ color: 'var(--color-text-muted)' }}>×{d.factor_conversion}</p>
-                                </div>
-                                <div className="col-span-1 text-right">
-                                    <p className="text-xs font-mono pb-1" style={{ color: 'var(--color-text-muted)' }}>{cantidadBase(d).toFixed(4)}</p>
-                                </div>
-                                <div className="col-span-1 text-right flex items-end justify-end gap-1">
-                                    <p className="text-sm font-mono font-semibold pb-1" style={{ color: 'var(--color-text)' }}>S/ {subtotal(d).toFixed(2)}</p>
-                                    {detalles.length > 1 && (
-                                        <button type="button" onClick={() => removeDetalle(i)} className="mb-1 rounded p-0.5" style={{ color: 'var(--color-danger)' }}>
-                                            <Trash2 size={14} />
-                                        </button>
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs px-1" style={{ color: 'var(--color-text-muted)' }}>
+                                    <span className="font-mono">×{d.factor_conversion}</span>
+                                    <span className="font-mono">= {cantidadBase(d).toFixed(4)} base</span>
+                                    {!d.numero_documento.trim() && nroDoc && (
+                                        <span className="italic">Hereda factura {nroDoc}</span>
                                     )}
                                 </div>
                             </div>
