@@ -83,6 +83,9 @@ class EntradaController extends Controller
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
             'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
             'detalles.*.precio_costo'      => 'required|numeric|min:0',
+            // NULL = hereda numero_documento de la cabecera al mostrar; no se copia el valor
+            // para que cambiar la cabecera actualice los items que no tienen factura propia.
+            'detalles.*.numero_documento'  => 'nullable|string|max:50',
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
@@ -133,6 +136,7 @@ class EntradaController extends Controller
                     'cantidad_base'    => $cantidadBase,
                     'precio_costo'     => $d['precio_costo'],
                     'subtotal'         => $subtotal,
+                    'numero_documento' => $d['numero_documento'] ?? null,
                 ]);
             }
 
@@ -195,6 +199,9 @@ class EntradaController extends Controller
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
             'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
             'detalles.*.precio_costo'      => 'required|numeric|min:0',
+            // NULL = hereda numero_documento de la cabecera al mostrar; no se copia el valor
+            // para que cambiar la cabecera actualice los items que no tienen factura propia.
+            'detalles.*.numero_documento'  => 'nullable|string|max:50',
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
@@ -239,6 +246,7 @@ class EntradaController extends Controller
                     'cantidad_base'    => $cantidadBase,
                     'precio_costo'     => $d['precio_costo'],
                     'subtotal'         => $subtotal,
+                    'numero_documento' => $d['numero_documento'] ?? null,
                 ]);
             }
 

@@ -18,6 +18,7 @@ class EntradaDetalle extends Model
         'cantidad_base',
         'precio_costo',
         'subtotal',
+        'numero_documento',
     ];
 
     protected function casts(): array
