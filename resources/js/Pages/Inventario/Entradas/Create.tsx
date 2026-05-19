@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
-import { Plus, Trash2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Plus, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
+import Modal from '@/Components/UI/Modal';
 import type { PageProps } from '@/types';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
@@ -47,6 +49,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
     const [detalles, setDetalles]       = useState<DetalleRow[]>([emptyDetalle()]);
     const [errors, setErrors]           = useState<Record<string, string>>({});
     const [processing, setProcessing]   = useState(false);
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
 
     function unidadesDeProducto(productoId: number | ''): ProductoUnidad[] {
         if (!productoId) return [];
@@ -88,7 +91,78 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
 
     const total = detalles.reduce((sum, d) => sum + subtotal(d), 0);
 
-    function submit(confirmar: boolean) {
+    /**
+     * Valida el formulario en cliente ANTES de enviar al backend. La idea es que
+     * el usuario sepa exactamente qué le falta sin tener que scrollear y buscar
+     * los inputs marcados en rojo. Devuelve lista de mensajes humanos; si está
+     * vacía, todo OK.
+     */
+    function validar(): string[] {
+        const errs: string[] = [];
+        if (!almacenId) errs.push('Selecciona el almacén destino');
+        if (!tipo)      errs.push('Selecciona el tipo de entrada');
+        if (!fecha)     errs.push('Indica la fecha');
+
+        if (detalles.length === 0) {
+            errs.push('Agrega al menos un producto al detalle');
+        } else {
+            detalles.forEach((d, idx) => {
+                const n = idx + 1;
+                if (!d.producto_id)       errs.push(`Producto #${n}: falta seleccionar el producto`);
+                if (!d.unidad_medida_id)  errs.push(`Producto #${n}: falta seleccionar la unidad`);
+                const qty = parseFloat(d.cantidad);
+                if (!d.cantidad || isNaN(qty) || qty <= 0) {
+                    errs.push(`Producto #${n}: la cantidad debe ser mayor a 0`);
+                }
+                const cost = parseFloat(d.precio_costo);
+                if (d.precio_costo === '' || isNaN(cost) || cost < 0) {
+                    errs.push(`Producto #${n}: precio de costo inválido`);
+                }
+            });
+        }
+        return errs;
+    }
+
+    function mostrarErroresValidacion(errs: string[]) {
+        toast.error(
+            () => (
+                <div className="flex flex-col gap-1.5 max-w-xs">
+                    <div className="flex items-center gap-2 font-semibold text-sm">
+                        <AlertCircle size={15} />
+                        <span>Faltan datos para guardar</span>
+                    </div>
+                    <ul className="text-xs space-y-0.5 list-disc list-inside opacity-95">
+                        {errs.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+                        {errs.length > 5 && (
+                            <li className="opacity-70 list-none">…y {errs.length - 5} más</li>
+                        )}
+                    </ul>
+                </div>
+            ),
+            { duration: 5500 }
+        );
+    }
+
+    /**
+     * Punto de entrada de los botones. Valida primero; si todo OK:
+     * - borrador: envía directo
+     * - confirmar: abre el modal de confirmación (acción irreversible que mueve stock)
+     */
+    function intentarGuardar(confirmar: boolean) {
+        const errs = validar();
+        if (errs.length > 0) {
+            mostrarErroresValidacion(errs);
+            return;
+        }
+        if (confirmar) {
+            setShowConfirmModal(true);
+        } else {
+            enviar(false);
+        }
+    }
+
+    function enviar(confirmar: boolean) {
+        setShowConfirmModal(false);
         setProcessing(true);
         router.post(route('inventario.entradas.store'), {
             almacen_id:        almacenId,
@@ -108,7 +182,15 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
             })),
         }, {
             onSuccess: () => setProcessing(false),
-            onError: (e) => { setErrors(e); setProcessing(false); },
+            onError: (e) => {
+                setErrors(e);
+                setProcessing(false);
+                // Backend rechazó algo que el client-validate no atrapó (ej: regla de
+                // negocio del controller). Le avisamos al usuario con toast para que
+                // no se quede mirando un form aparentemente exitoso.
+                const first = Object.values(e)[0];
+                toast.error(typeof first === 'string' ? first : 'Revisa los campos marcados.');
+            },
         });
     }
 
@@ -348,18 +430,66 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                 </section>
 
                 {/* ── Acciones ── */}
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                     <Button type="button" variant="ghost" onClick={() => router.visit(route('inventario.entradas.index'))}>
                         Cancelar
                     </Button>
-                    <Button type="button" variant="secondary" loading={processing} onClick={() => submit(false)}>
+                    <Button type="button" variant="secondary" loading={processing} onClick={() => intentarGuardar(false)}>
                         Guardar borrador
                     </Button>
-                    <Button type="button" loading={processing} onClick={() => submit(true)}>
+                    <Button type="button" loading={processing} onClick={() => intentarGuardar(true)}>
                         Guardar y confirmar
                     </Button>
                 </div>
             </div>
+
+            {/* Modal: confirmar entrada (actualiza stock, irreversible) */}
+            <Modal
+                isOpen={showConfirmModal}
+                onClose={() => setShowConfirmModal(false)}
+                title="Confirmar entrada"
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setShowConfirmModal(false)} disabled={processing}>
+                            Cancelar
+                        </Button>
+                        <Button variant="success" loading={processing} onClick={() => enviar(true)}>
+                            <CheckCircle size={14} className="mr-1.5" />
+                            Sí, confirmar
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-3">
+                    <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                        Al confirmar se actualizará el stock automáticamente. Esta acción <strong>no se puede deshacer</strong>.
+                    </p>
+
+                    {/* Resumen para que el usuario verifique antes de comprometer el stock */}
+                    <div className="rounded-xl border p-3 space-y-1.5 text-sm"
+                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                        <div className="flex justify-between">
+                            <span style={{ color: 'var(--color-text-muted)' }}>Productos</span>
+                            <span className="font-medium" style={{ color: 'var(--color-text)' }}>{detalles.length}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span style={{ color: 'var(--color-text-muted)' }}>Tipo</span>
+                            <span className="font-medium capitalize" style={{ color: 'var(--color-text)' }}>{tipo}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span style={{ color: 'var(--color-text-muted)' }}>Fecha</span>
+                            <span className="font-medium" style={{ color: 'var(--color-text)' }}>{fecha}</span>
+                        </div>
+                        <div className="flex justify-between pt-1.5 border-t" style={{ borderColor: 'var(--color-border)' }}>
+                            <span style={{ color: 'var(--color-text-muted)' }}>Total</span>
+                            <span className="font-mono font-bold" style={{ color: 'var(--color-text)' }}>
+                                S/ {total.toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </Modal>
         </AppLayout>
     );
 }

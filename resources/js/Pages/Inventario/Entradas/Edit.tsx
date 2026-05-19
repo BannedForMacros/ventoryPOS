@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
-import { Plus, Trash2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Plus, Trash2, AlertCircle } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -114,7 +115,58 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
 
     const total = detalles.reduce((sum, d) => sum + subtotal(d), 0);
 
+    function validar(): string[] {
+        const errs: string[] = [];
+        if (!almacenId) errs.push('Selecciona el almacén destino');
+        if (!tipo)      errs.push('Selecciona el tipo de entrada');
+        if (!fecha)     errs.push('Indica la fecha');
+
+        if (detalles.length === 0) {
+            errs.push('Agrega al menos un producto al detalle');
+        } else {
+            detalles.forEach((d, idx) => {
+                const n = idx + 1;
+                if (!d.producto_id)       errs.push(`Producto #${n}: falta seleccionar el producto`);
+                if (!d.unidad_medida_id)  errs.push(`Producto #${n}: falta seleccionar la unidad`);
+                const qty = parseFloat(d.cantidad);
+                if (!d.cantidad || isNaN(qty) || qty <= 0) {
+                    errs.push(`Producto #${n}: la cantidad debe ser mayor a 0`);
+                }
+                const cost = parseFloat(d.precio_costo);
+                if (d.precio_costo === '' || isNaN(cost) || cost < 0) {
+                    errs.push(`Producto #${n}: precio de costo inválido`);
+                }
+            });
+        }
+        return errs;
+    }
+
+    function mostrarErroresValidacion(errs: string[]) {
+        toast.error(
+            () => (
+                <div className="flex flex-col gap-1.5 max-w-xs">
+                    <div className="flex items-center gap-2 font-semibold text-sm">
+                        <AlertCircle size={15} />
+                        <span>Faltan datos para guardar</span>
+                    </div>
+                    <ul className="text-xs space-y-0.5 list-disc list-inside opacity-95">
+                        {errs.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+                        {errs.length > 5 && (
+                            <li className="opacity-70 list-none">…y {errs.length - 5} más</li>
+                        )}
+                    </ul>
+                </div>
+            ),
+            { duration: 5500 }
+        );
+    }
+
     function submit() {
+        const errs = validar();
+        if (errs.length > 0) {
+            mostrarErroresValidacion(errs);
+            return;
+        }
         setProcessing(true);
         router.put(route('inventario.entradas.update', entrada.id), {
             almacen_id: almacenId, proveedor_id: proveedorId || null, numero_documento: nroDoc,
@@ -126,7 +178,12 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
             })),
         }, {
             onSuccess: () => setProcessing(false),
-            onError:   (e) => { setErrors(e); setProcessing(false); },
+            onError:   (e) => {
+                setErrors(e);
+                setProcessing(false);
+                const first = Object.values(e)[0];
+                toast.error(typeof first === 'string' ? first : 'Revisa los campos marcados.');
+            },
         });
     }
 
