@@ -138,7 +138,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                         </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {almacenes.length > 1 ? (
                             <Select
                                 label="Almacén destino"
@@ -225,10 +225,32 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                     {detalles.map((d, i) => {
                         const unidades = unidadesDeProducto(d.producto_id);
                         return (
-                            <div key={i} className="rounded-xl p-3 space-y-2"
+                            <div key={i} className="rounded-xl p-3 space-y-3 md:space-y-2"
                                 style={{ backgroundColor: 'var(--color-bg)' }}>
-                                <div className="grid grid-cols-12 gap-2 items-end">
-                                    <div className="col-span-3">
+                                {/* Header de item solo en mobile: numero + subtotal + remove arriba */}
+                                <div className="flex items-center justify-between md:hidden">
+                                    <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                                        Producto #{i + 1}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-base font-mono font-semibold" style={{ color: 'var(--color-text)' }}>
+                                            S/ {subtotal(d).toFixed(2)}
+                                        </span>
+                                        {detalles.length > 1 && (
+                                            <button type="button" onClick={() => removeDetalle(i)}
+                                                className="rounded-lg p-1.5" style={{ color: 'var(--color-danger)' }}>
+                                                <Trash2 size={15} />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Layout: stack vertical en mobile, grid 12-col en md+. */}
+                                {/* md:contents en pairs colapsa el wrapper en md+ para que sus hijos sean grid children. */}
+                                <div className="flex flex-col gap-3 md:grid md:grid-cols-12 md:gap-2 md:items-end md:space-y-0">
+                                    {/* Producto */}
+                                    <div className="md:col-span-3">
+                                        <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Producto</label>
                                         <Select
                                             placeholder="Buscar producto..."
                                             value={d.producto_id}
@@ -237,45 +259,59 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                                             error={(errors as Record<string, string>)[`detalles.${i}.producto_id`]}
                                         />
                                     </div>
-                                    <div className="col-span-2">
-                                        <Select
-                                            placeholder="Unidad"
-                                            value={d.unidad_medida_id}
-                                            onChange={v => setDetalle(i, 'unidad_medida_id', Number(v))}
-                                            options={unidades.map(u => ({
-                                                value: u.unidad_medida_id,
-                                                label: u.unidad_medida ? `${u.unidad_medida.abreviatura}${u.es_base ? ' (base)' : ''}` : String(u.unidad_medida_id),
-                                            }))}
-                                            error={(errors as Record<string, string>)[`detalles.${i}.unidad_medida_id`]}
-                                        />
+
+                                    {/* Pair: Unidad + Cantidad — 2-up en mobile */}
+                                    <div className="grid grid-cols-2 gap-2 md:contents">
+                                        <div className="md:col-span-2">
+                                            <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Unidad</label>
+                                            <Select
+                                                placeholder="Unidad"
+                                                value={d.unidad_medida_id}
+                                                onChange={v => setDetalle(i, 'unidad_medida_id', Number(v))}
+                                                options={unidades.map(u => ({
+                                                    value: u.unidad_medida_id,
+                                                    label: u.unidad_medida ? `${u.unidad_medida.abreviatura}${u.es_base ? ' (base)' : ''}` : String(u.unidad_medida_id),
+                                                }))}
+                                                error={(errors as Record<string, string>)[`detalles.${i}.unidad_medida_id`]}
+                                            />
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Cantidad</label>
+                                            <Input
+                                                placeholder="0"
+                                                type="number" min="0" step="any" inputMode="decimal"
+                                                value={d.cantidad}
+                                                onChange={e => setDetalle(i, 'cantidad', e.target.value)}
+                                                error={(errors as Record<string, string>)[`detalles.${i}.cantidad`]}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="col-span-2">
-                                        <Input
-                                            placeholder="0"
-                                            type="number" min="0" step="any"
-                                            value={d.cantidad}
-                                            onChange={e => setDetalle(i, 'cantidad', e.target.value)}
-                                            error={(errors as Record<string, string>)[`detalles.${i}.cantidad`]}
-                                        />
+
+                                    {/* Pair: Precio costo + Factura — 2-up en mobile */}
+                                    <div className="grid grid-cols-2 gap-2 md:contents">
+                                        <div className="md:col-span-2">
+                                            <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Precio costo</label>
+                                            <Input
+                                                placeholder="0.00"
+                                                type="number" min="0" step="0.0001" inputMode="decimal"
+                                                value={d.precio_costo}
+                                                onChange={e => setDetalle(i, 'precio_costo', e.target.value)}
+                                                error={(errors as Record<string, string>)[`detalles.${i}.precio_costo`]}
+                                            />
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Factura</label>
+                                            <Input
+                                                placeholder={nroDoc ? nroDoc : 'F001-...'}
+                                                value={d.numero_documento}
+                                                onChange={e => setDetalle(i, 'numero_documento', e.target.value)}
+                                                error={(errors as Record<string, string>)[`detalles.${i}.numero_documento`]}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="col-span-2">
-                                        <Input
-                                            placeholder="0.00"
-                                            type="number" min="0" step="0.0001"
-                                            value={d.precio_costo}
-                                            onChange={e => setDetalle(i, 'precio_costo', e.target.value)}
-                                            error={(errors as Record<string, string>)[`detalles.${i}.precio_costo`]}
-                                        />
-                                    </div>
-                                    <div className="col-span-2">
-                                        <Input
-                                            placeholder={nroDoc ? nroDoc : 'F001-...'}
-                                            value={d.numero_documento}
-                                            onChange={e => setDetalle(i, 'numero_documento', e.target.value)}
-                                            error={(errors as Record<string, string>)[`detalles.${i}.numero_documento`]}
-                                        />
-                                    </div>
-                                    <div className="col-span-1 text-right flex items-end justify-end gap-1">
+
+                                    {/* Subtotal + remove — solo md+. En mobile ya está arriba. */}
+                                    <div className="hidden md:flex md:col-span-1 md:text-right md:items-end md:justify-end md:gap-1">
                                         <p className="text-sm font-mono font-semibold pb-2" style={{ color: 'var(--color-text)' }}>
                                             S/ {subtotal(d).toFixed(2)}
                                         </p>
@@ -287,6 +323,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                                         )}
                                     </div>
                                 </div>
+
                                 {/* Meta-fila: factor + cant. base + hint herencia factura */}
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs px-1" style={{ color: 'var(--color-text-muted)' }}>
                                     <span className="font-mono">×{d.factor_conversion}</span>
