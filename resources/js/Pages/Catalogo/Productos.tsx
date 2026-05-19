@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
+import { Plus, Image as ImageIcon } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -23,6 +23,7 @@ interface Producto extends Record<string, unknown> {
     id: number; codigo: string | null; nombre: string;
     tipo: 'producto' | 'servicio'; tipo_precio: 'fijo' | 'referencial';
     precio_venta: string; activo: boolean;
+    imagen: string | null;
     categoria?: Categoria | null;
     unidad_base?: ProductoUnidad | null;
 }
@@ -30,6 +31,28 @@ interface Producto extends Record<string, unknown> {
 interface Props extends PageProps {
     productos: Producto[];
     categorias: Categoria[];
+}
+
+function ProductoThumbnail({ url, alt }: { url: string | null; alt: string }) {
+    const [failed, setFailed] = useState(false);
+    const showImg = !!url && !failed;
+    return (
+        <div
+            className="w-9 h-9 rounded-lg overflow-hidden border flex items-center justify-center flex-shrink-0"
+            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
+        >
+            {showImg ? (
+                <img
+                    src={url!}
+                    alt={alt}
+                    className="w-full h-full object-cover"
+                    onError={() => setFailed(true)}
+                />
+            ) : (
+                <ImageIcon size={14} style={{ color: 'var(--color-text-muted)', opacity: 0.4 }} />
+            )}
+        </div>
+    );
 }
 
 export default function Productos({ productos, categorias }: Props) {
@@ -63,7 +86,12 @@ export default function Productos({ productos, categorias }: Props) {
         },
         {
             key: 'nombre', label: 'Nombre', sortable: true,
-            render: (p) => <span className="font-medium">{p.nombre}</span>,
+            render: (p) => (
+                <div className="flex items-center gap-2.5">
+                    <ProductoThumbnail url={p.imagen} alt={p.nombre} />
+                    <span className="font-medium">{p.nombre}</span>
+                </div>
+            ),
         },
         {
             key: 'categoria', label: 'Categoría', sortable: true,

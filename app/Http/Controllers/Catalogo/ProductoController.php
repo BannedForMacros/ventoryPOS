@@ -63,6 +63,7 @@ class ProductoController extends Controller
                 'codigo'         => $data['codigo'] ?? null,
                 'nombre'         => $data['nombre'],
                 'descripcion'    => $data['descripcion'] ?? null,
+                'imagen'         => $data['imagen'] ?? null,
                 'tipo'           => $data['tipo'],
                 // Para productos físicos el precio real está en cada unidad; guardamos 0 como placeholder.
                 'tipo_precio'    => $esProducto ? 'fijo' : $data['tipo_precio'],
@@ -146,6 +147,7 @@ class ProductoController extends Controller
                 'codigo'         => $data['codigo'] ?? null,
                 'nombre'         => $data['nombre'],
                 'descripcion'    => $data['descripcion'] ?? null,
+                'imagen'         => $data['imagen'] ?? null,
                 'tipo'           => $data['tipo'],
                 'tipo_precio'    => $esProducto ? 'fijo' : $data['tipo_precio'],
                 'precio_venta'   => $esProducto ? 0 : $data['precio_venta'],

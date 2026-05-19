@@ -30,6 +30,7 @@ class ProductoRequest extends FormRequest
             ],
             'nombre'       => 'required|string|max:150',
             'descripcion'  => 'nullable|string',
+            'imagen'       => 'nullable|url|max:255',
             'tipo'         => 'required|in:producto,servicio',
             // tipo_precio y precio_venta solo son requeridos para servicios;
             // los productos los gestionan por unidad.

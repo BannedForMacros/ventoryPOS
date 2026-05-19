@@ -29,6 +29,7 @@ interface ProductoData {
     codigo: string | null;
     nombre: string;
     descripcion: string | null;
+    imagen: string | null;
     tipo: 'producto' | 'servicio';
     tipo_precio: 'fijo' | 'referencial';
     precio_venta: string;
@@ -45,6 +46,7 @@ interface FormData {
     codigo: string;
     nombre: string;
     descripcion: string;
+    imagen: string;
     tipo: 'producto' | 'servicio';
     tipo_precio: 'fijo' | 'referencial';
     precio_venta: string;
@@ -71,6 +73,7 @@ export default function Edit({ producto, categorias, unidades }: Props) {
         codigo:        producto.codigo ?? '',
         nombre:        producto.nombre,
         descripcion:   producto.descripcion ?? '',
+        imagen:        producto.imagen ?? '',
         tipo:          producto.tipo,
         tipo_precio:   producto.tipo_precio,
         precio_venta:  producto.precio_venta,
@@ -92,6 +95,7 @@ export default function Edit({ producto, categorias, unidades }: Props) {
 
     transform(d => ({
         ...d,
+        imagen: d.imagen.trim() || null,
         controla_stock: d.controla_stock === 'heredar' ? null : d.controla_stock === 'si',
     }));
 
@@ -164,6 +168,31 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                             style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
                             onFocus={e => e.currentTarget.style.borderColor = 'var(--color-primary)'}
                             onBlur={e => e.currentTarget.style.borderColor = 'var(--color-border)'} />
+                    </div>
+
+                    <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
+                        <Input
+                            label="Imagen (URL)"
+                            type="url"
+                            placeholder="https://ejemplo.com/imagen.jpg"
+                            value={data.imagen}
+                            onChange={e => setData('imagen', e.target.value)}
+                            error={errors.imagen}
+                            hint="Pega el enlace directo a una imagen ya hospedada (Imgur, Drive público, CDN, etc.). No se almacena ningún archivo en el servidor."
+                        />
+                        {data.imagen && (
+                            <div
+                                className="w-16 h-16 rounded-xl overflow-hidden border flex items-center justify-center flex-shrink-0"
+                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
+                            >
+                                <img
+                                    src={data.imagen}
+                                    alt="Vista previa"
+                                    className="w-full h-full object-cover"
+                                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                />
+                            </div>
+                        )}
                     </div>
 
                     {/* Precio: solo para servicios. Los productos manejan precio por unidad */}

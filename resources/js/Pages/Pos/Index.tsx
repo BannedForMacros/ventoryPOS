@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
+    Image as ImageIcon,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import PosLayout from '@/Layouts/PosLayout';
@@ -61,6 +62,34 @@ interface Props extends PageProps {
 type TipoComprobante = 'ticket' | 'boleta' | 'factura';
 
 function uid() { return Math.random().toString(36).slice(2); }
+
+/**
+ * Miniatura del producto en el grid del POS. Cae al icono placeholder si la
+ * URL no carga (link roto, CDN caido). Manejamos el estado de error por card
+ * para no penalizar al grid entero por una sola imagen mala.
+ */
+function ProductoThumbnail({ url, alt }: { url: string | null; alt: string }) {
+    const [failed, setFailed] = useState(false);
+    const showImg = !!url && !failed;
+    return (
+        <div
+            className="w-full aspect-square rounded-lg overflow-hidden mb-2 flex items-center justify-center"
+            style={{ backgroundColor: 'var(--color-bg)' }}
+        >
+            {showImg ? (
+                <img
+                    src={url!}
+                    alt={alt}
+                    loading="lazy"
+                    className="w-full h-full object-cover"
+                    onError={() => setFailed(true)}
+                />
+            ) : (
+                <ImageIcon size={28} style={{ color: 'var(--color-text-muted)', opacity: 0.35 }} />
+            )}
+        </div>
+    );
+}
 
 /**
  * Token unico de la venta-en-construccion. Se genera al abrir la confirmacion y
@@ -622,12 +651,13 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                     >
                                         {enCarrito && (
                                             <span
-                                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-white shadow-sm"
+                                                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-white shadow-sm z-10"
                                                 style={{ backgroundColor: 'var(--color-primary)' }}
                                             >
                                                 {enCarrito.cantidad}
                                             </span>
                                         )}
+                                        <ProductoThumbnail url={producto.imagen ?? null} alt={producto.nombre} />
                                         <div className="flex items-start justify-between gap-1">
                                             <p className="text-sm font-semibold leading-snug line-clamp-2" style={{ color: 'var(--color-text)' }}>
                                                 {producto.nombre}
