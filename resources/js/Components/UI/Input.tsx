@@ -6,16 +6,28 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
     hint?: string;
 }
 
-export default function Input({ label, error, hint, required, className = '', ...props }: InputProps) {
+export default function Input({ label, error, hint, required, className = '', onWheel, ...props }: InputProps) {
     const inputId = useId();
+
+    // Fix UX clasico de <input type="number">: cuando el cursor esta sobre el
+    // input y el usuario hace scroll de pagina, el browser incrementa/decrementa
+    // el valor (¡y suele perder los decimales!). Lo bloqueamos haciendo blur al
+    // input — asi el wheel pasa a scrollear la pagina, no a tocar el valor.
+    // Aplica solo a type="number" para no afectar otros inputs.
+    function handleWheel(e: React.WheelEvent<HTMLInputElement>) {
+        if (props.type === 'number') {
+            e.currentTarget.blur();
+        }
+        onWheel?.(e);
+    }
 
     return (
         <div className="flex flex-col gap-1.5 w-full">
             {/* Label */}
             {label && (
-                <label 
+                <label
                     htmlFor={inputId}
-                    className="text-sm font-medium transition-colors" 
+                    className="text-sm font-medium transition-colors"
                     style={{ color: error ? 'var(--color-danger)' : 'var(--color-text)' }}
                 >
                     {label}
@@ -28,7 +40,7 @@ export default function Input({ label, error, hint, required, className = '', ..
                 <input
                     id={inputId}
                     className={`
-                        w-full rounded-xl border-2 px-4 py-2.5 text-sm outline-none 
+                        w-full rounded-xl border-2 px-4 py-2.5 text-sm outline-none
                         transition-all duration-200 ease-in-out
                         disabled:cursor-not-allowed disabled:opacity-50
                         hover:opacity-90 hover:border-[var(--color-primary)]
@@ -42,6 +54,7 @@ export default function Input({ label, error, hint, required, className = '', ..
                     }}
                     required={required}
                     {...props}
+                    onWheel={handleWheel}
                 />
             </div>
 
