@@ -263,13 +263,23 @@ export default function SearchableSelect({
                             )}
                         </div>
 
-                        {/* Lista de opciones filtradas */}
+                        {/* Lista de opciones filtradas.
+                            Mobile fix: en touch, sin `touchAction: pan-y` el browser no
+                            sabe que esta area es scrolleable y manda el scroll a la pagina.
+                            `overscrollBehavior: contain` evita que al llegar al tope/fondo
+                            de la lista el scroll se "escape" hacia la pagina (scroll-chain).
+                            `WebkitOverflowScrolling: touch` recupera el momentum en iOS. */}
                         <ul
                             id="searchable-select-list"
                             ref={listRef}
                             role="listbox"
                             className="overflow-y-auto py-1"
-                            style={{ maxHeight: '240px' }}
+                            style={{
+                                maxHeight: '240px',
+                                touchAction: 'pan-y',
+                                overscrollBehavior: 'contain',
+                                WebkitOverflowScrolling: 'touch',
+                            }}
                         >
                             {filtered.length === 0 ? (
                                 <li className="px-3 py-3 text-sm text-center" style={{ color: 'var(--color-text-muted)' }}>

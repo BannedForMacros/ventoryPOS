@@ -125,7 +125,9 @@ export default function Select({
                 {/* Dropdown — aquí están las "opciones" o "items del listado" */}
                 {/* maxHeight + overflow-y-auto: si hay muchas opciones (categorias,
                     almacenes, presentaciones) la lista NO empuja el layout — scrollea
-                    dentro del dropdown. Mirror de SearchableSelect (240px). */}
+                    dentro del dropdown. Mirror de SearchableSelect (240px).
+                    Mobile: touchAction/overscrollBehavior para que el touch scrollee la
+                    lista en lugar de la pagina (sin estos props, el scroll se "escapa"). */}
                 {open && (
                     <ul
                         role="listbox"
@@ -136,6 +138,9 @@ export default function Select({
                             boxShadow: '0 8px 24px rgb(0 0 0 / 0.10)',
                             animation: 'selectFadeIn 0.12s ease',
                             maxHeight: '240px',
+                            touchAction: 'pan-y',
+                            overscrollBehavior: 'contain',
+                            WebkitOverflowScrolling: 'touch',
                         }}
                     >
                         {options.length === 0 ? (
