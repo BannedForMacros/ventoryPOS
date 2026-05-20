@@ -143,9 +143,7 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                 if (d.precio_costo === '' || isNaN(cost) || cost < 0) {
                     errs.push(`Producto #${n}: precio de costo inválido`);
                 }
-                if (facturaPorItem && !d.numero_documento.trim()) {
-                    errs.push(`Producto #${n}: falta el número de factura`);
-                }
+                // Factura/comprobante siempre OPCIONAL — no bloqueamos.
             });
         }
         return errs;

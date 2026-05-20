@@ -123,12 +123,9 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                 if (d.precio_costo === '' || isNaN(cost) || cost < 0) {
                     errs.push(`Producto #${n}: precio de costo inválido`);
                 }
-                // En modo "factura por producto" cada línea DEBE tener su número, no
-                // tiene sentido el modo si quedan en blanco — habría que volver al
-                // modo "factura única".
-                if (facturaPorItem && !d.numero_documento.trim()) {
-                    errs.push(`Producto #${n}: falta el número de factura`);
-                }
+                // El número de factura/comprobante es OPCIONAL siempre. Si el
+                // usuario activó el modo "por item" puede llenar las que tenga
+                // a la mano y dejar el resto en blanco — no lo bloqueamos.
             });
         }
         return errs;
