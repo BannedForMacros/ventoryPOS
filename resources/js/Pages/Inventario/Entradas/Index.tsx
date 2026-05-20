@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText } from 'lucide-react';
+import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -14,6 +14,8 @@ import type { PageProps } from '@/types';
 
 interface Almacen { id: number; nombre: string; local?: { nombre: string } | null; }
 interface UserItem { id: number; name: string; }
+interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
+interface MetodoPagoOpt { id: number; nombre: string; cuentas: CuentaMP[]; }
 interface Entrada extends Record<string, unknown> {
     id: number;
     fecha: string;
@@ -24,6 +26,11 @@ interface Entrada extends Record<string, unknown> {
     user: UserItem;
     total: string;
     estado: 'borrador' | 'confirmado';
+    estado_pago: 'pendiente' | 'pagado';
+    metodo_pago_id: number | null;
+    cuenta_id: number | null;
+    metodo_pago?: { id: number; nombre: string } | null;
+    cuenta?: { id: number; nombre: string } | null;
 }
 
 // M19: paginado server-side. El filtro de almacén/estado se mantiene client-side
@@ -34,6 +41,7 @@ interface Paginado<T> { data: T[]; total: number; current_page: number; last_pag
 interface Props extends PageProps {
     entradas: Paginado<Entrada>;
     almacenes: Almacen[];
+    metodosPago: MetodoPagoOpt[];
     mostrarSelector: boolean;
     filters: Record<string, string>;
 }
@@ -42,7 +50,7 @@ const TIPOS: Record<string, string> = {
     compra: 'Compra', ajuste: 'Ajuste', devolucion: 'Devolución', otro: 'Otro',
 };
 
-export default function EntradasIndex({ entradas, almacenes, mostrarSelector, filters }: Props) {
+export default function EntradasIndex({ entradas, almacenes, metodosPago, mostrarSelector, filters }: Props) {
     const { flash } = usePage<Props>().props;
     const [confirmId, setConfirmId]   = useState<number | null>(null);
     const [deleteId, setDeleteId]     = useState<number | null>(null);
@@ -51,6 +59,43 @@ export default function EntradasIndex({ entradas, almacenes, mostrarSelector, fi
     // Search vive a nivel de página para compartirse entre la vista de cards (mobile)
     // y la tabla (desktop). El Table interno recibe searchable=false para no duplicar.
     const [search, setSearch]             = useState('');
+
+    // Quick-pago modal: la entrada que se está editando + el form local.
+    const [pagoEntrada, setPagoEntrada]     = useState<Entrada | null>(null);
+    const [pagoForm, setPagoForm]           = useState<{ pagado: boolean; metodoId: number | ''; cuentaId: number | '' }>(
+        { pagado: false, metodoId: '', cuentaId: '' }
+    );
+    const [savingPago, setSavingPago]       = useState(false);
+
+    const metodoQuickSel = metodosPago.find(m => m.id === pagoForm.metodoId) ?? null;
+    const cuentasQuick   = metodoQuickSel?.cuentas ?? [];
+
+    function abrirPagoModal(e: Entrada) {
+        setPagoEntrada(e);
+        setPagoForm({
+            pagado:   e.estado_pago === 'pagado',
+            metodoId: e.metodo_pago_id ?? '',
+            cuentaId: e.cuenta_id ?? '',
+        });
+    }
+
+    function guardarPago() {
+        if (!pagoEntrada) return;
+        setSavingPago(true);
+        router.post(route('inventario.entradas.pago', pagoEntrada.id), {
+            estado_pago:    pagoForm.pagado ? 'pagado' : 'pendiente',
+            metodo_pago_id: pagoForm.pagado ? (pagoForm.metodoId || null) : null,
+            cuenta_id:      pagoForm.pagado ? (pagoForm.cuentaId || null) : null,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => { setSavingPago(false); setPagoEntrada(null); },
+            onError:   (errs) => {
+                setSavingPago(false);
+                const first = Object.values(errs)[0];
+                toast.error(typeof first === 'string' ? first : 'No se pudo guardar el pago.');
+            },
+        });
+    }
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);

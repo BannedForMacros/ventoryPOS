@@ -397,6 +397,65 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                     </div>
                 </section>
 
+                {/* ── Pago ── */}
+                <section
+                    className="rounded-2xl border p-6 space-y-5"
+                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+                >
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <Wallet size={16} style={{ color: 'var(--color-text-muted)' }} />
+                            <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                                Pago al proveedor
+                            </h2>
+                        </div>
+                        <Switch
+                            label={pagado ? 'Pagado' : 'Pendiente'}
+                            checked={pagado}
+                            onChange={v => {
+                                setPagado(v);
+                                if (!v) { setMetodoPagoId(''); setCuentaId(''); }
+                            }}
+                        />
+                    </div>
+
+                    {pagado ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <Select
+                                label="Método de pago"
+                                required
+                                placeholder="Seleccionar método"
+                                value={metodoPagoId}
+                                onChange={v => {
+                                    const newId = v === '' ? '' : Number(v);
+                                    setMetodoPagoId(newId);
+                                    setCuentaId('');
+                                }}
+                                options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                                error={errors.metodo_pago_id}
+                            />
+                            {cuentasDelMetodo.length > 0 && (
+                                <Select
+                                    label="Cuenta"
+                                    placeholder="(Opcional) elegir cuenta"
+                                    value={cuentaId}
+                                    onChange={v => setCuentaId(v === '' ? '' : Number(v))}
+                                    options={cuentasDelMetodo.map(c => ({
+                                        value: c.id,
+                                        label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
+                                    }))}
+                                    error={errors.cuenta_id}
+                                    hint="Útil si tienes varias cuentas del mismo método."
+                                />
+                            )}
+                        </div>
+                    ) : (
+                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            La entrada queda como deuda al proveedor. Puedes marcarla como pagada en cualquier momento.
+                        </p>
+                    )}
+                </section>
+
                 <div className="flex gap-3">
                     <Button type="button" variant="ghost" onClick={() => router.visit(route('inventario.entradas.index'))}>Cancelar</Button>
                     <Button type="button" loading={processing} onClick={submit}>Guardar cambios</Button>
