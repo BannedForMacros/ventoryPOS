@@ -70,6 +70,15 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
     const metodoQuickSel = metodosPago.find(m => m.id === pagoForm.metodoId) ?? null;
     const cuentasQuick   = metodoQuickSel?.cuentas ?? [];
 
+    // Detecta si el form cambió respecto al estado actual de la entrada. Si no
+    // cambió nada, no tiene sentido permitir "Guardar" — el botón se deshabilita
+    // y el usuario entiende que solo está viendo el estado, no editandolo.
+    const pagoFormDirty = !!pagoEntrada && (
+        pagoForm.pagado !== (pagoEntrada.estado_pago === 'pagado') ||
+        (pagoForm.metodoId || null) !== (pagoEntrada.metodo_pago_id ?? null) ||
+        (pagoForm.cuentaId || null) !== (pagoEntrada.cuenta_id ?? null)
+    );
+
     function abrirPagoModal(e: Entrada) {
         setPagoEntrada(e);
         setPagoForm({
@@ -88,13 +97,29 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
             cuenta_id:      pagoForm.pagado ? (pagoForm.cuentaId || null) : null,
         }, {
             preserveScroll: true,
-            onSuccess: () => { setSavingPago(false); setPagoEntrada(null); },
+            onSuccess: () => { setPagoEntrada(null); },
             onError:   (errs) => {
-                setSavingPago(false);
                 const first = Object.values(errs)[0];
                 toast.error(typeof first === 'string' ? first : 'No se pudo guardar el pago.');
+                // Eject info al console para diagnosticar si el toast no es claro.
+                console.error('[entradas.pago] errores backend:', errs);
             },
+            // onFinish dispara SIEMPRE (success, error, network failure, cancel).
+            // Garantiza que el loader nunca se quede colgado — el bug que reportaste
+            // venia de que ni onSuccess ni onError corrian (ej: 419 CSRF expirado).
+            onFinish: () => { setSavingPago(false); },
         });
+    }
+
+    /**
+     * Formatea fechas que el backend serializa como ISO (ej: "2026-05-20T00:00:00.000000Z")
+     * a algo legible: "20 May 2026". Si viene en formato corto (Y-m-d) tambien lo
+     * procesa sin romper.
+     */
+    function fmtFecha(iso: string): string {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return iso;
+        return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
     }
 
     useEffect(() => {
@@ -115,7 +140,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
     const columns: Column<Entrada>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
-            render: (e) => <span className="text-sm">{e.fecha}</span>,
+            render: (e) => <span className="text-sm">{fmtFecha(e.fecha)}</span>,
         },
         {
             key: 'tipo', label: 'Tipo', sortable: true,
@@ -324,7 +349,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <p className="text-xs uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                                    {e.fecha}
+                                    {fmtFecha(e.fecha)}
                                 </p>
                                 <p className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                     {TIPOS[e.tipo] ?? e.tipo}
@@ -500,10 +525,16 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                 size="sm"
                 footer={
                     <>
+                        {/* Hint a la izquierda explicando por qué Guardar puede estar deshabilitado */}
+                        {pagoEntrada && !pagoFormDirty && !savingPago && (
+                            <span className="text-xs mr-auto" style={{ color: 'var(--color-text-muted)' }}>
+                                Sin cambios
+                            </span>
+                        )}
                         <Button variant="ghost" onClick={() => setPagoEntrada(null)} disabled={savingPago}>
-                            Cancelar
+                            {pagoFormDirty ? 'Cancelar' : 'Cerrar'}
                         </Button>
-                        <Button onClick={guardarPago} loading={savingPago}>
+                        <Button onClick={guardarPago} loading={savingPago} disabled={!pagoFormDirty}>
                             Guardar
                         </Button>
                     </>
@@ -516,7 +547,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                             <div className="flex justify-between">
                                 <span style={{ color: 'var(--color-text-muted)' }}>Entrada</span>
                                 <span className="font-medium" style={{ color: 'var(--color-text)' }}>
-                                    {pagoEntrada.fecha} · {TIPOS[pagoEntrada.tipo] ?? pagoEntrada.tipo}
+                                    {fmtFecha(pagoEntrada.fecha)} · {TIPOS[pagoEntrada.tipo] ?? pagoEntrada.tipo}
                                 </span>
                             </div>
                             <div className="flex justify-between">
