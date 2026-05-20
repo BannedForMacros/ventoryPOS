@@ -148,7 +148,19 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
         },
         {
             key: 'total', label: 'Total', sortable: true,
-            render: (e) => <span className="font-mono text-sm">S/ {Number(e.total).toFixed(2)}</span>,
+            render: (e) => (
+                <div className="leading-tight">
+                    <span className="font-mono text-sm">S/ {Number(e.total).toFixed(2)}</span>
+                    {/* "Pendiente" inline en la misma columna del total — sin agregar otra
+                        columna. El tint amarillo en la fila ya hace de visual primario;
+                        este texto es la etiqueta clara para el usuario. */}
+                    {e.estado_pago === 'pendiente' && (
+                        <p className="text-[10px] font-medium mt-0.5 flex items-center gap-1" style={{ color: '#ca8a04' }}>
+                            <Wallet size={10} />pendiente
+                        </p>
+                    )}
+                </div>
+            ),
         },
         {
             key: 'estado', label: 'Estado', sortable: true,
@@ -173,6 +185,22 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                             <CheckCircle size={13} />Confirmar
                         </button>
                     )}
+                    {/* Pagar: disponible en cualquier estado (borrador o confirmado) porque
+                        el pago es independiente. Si ya está pagado, abre el mismo modal para
+                        editar (cambiar método o revertir a pendiente). */}
+                    <button
+                        type="button"
+                        onClick={() => abrirPagoModal(e)}
+                        className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors"
+                        style={
+                            e.estado_pago === 'pagado'
+                                ? { color: 'var(--color-text-muted)', backgroundColor: 'transparent' }
+                                : { color: '#ca8a04', backgroundColor: 'rgba(250,204,21,0.12)' }
+                        }
+                        title={e.estado_pago === 'pagado' ? 'Editar pago' : 'Marcar como pagado'}
+                    >
+                        <Wallet size={13} />{e.estado_pago === 'pagado' ? 'Pago' : 'Pagar'}
+                    </button>
                     <TableActions
                         onEdit={e.estado === 'borrador' ? () => router.visit(route('inventario.entradas.edit', e.id)) : undefined}
                         onDelete={e.estado === 'borrador' ? () => setDeleteId(e.id) : undefined}
@@ -286,7 +314,8 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                         </p>
                     </div>
                 ) : filtered.map(e => (
-                    <div key={e.id} className="rounded-2xl border p-4 space-y-3"
+                    <div key={e.id}
+                        className={`rounded-2xl border p-4 space-y-3 ${e.estado_pago === 'pendiente' ? 'pago-pendiente-card' : ''}`}
                         style={{
                             borderColor: e.estado === 'borrador' ? 'color-mix(in srgb, var(--color-warning) 35%, var(--color-border))' : 'var(--color-border)',
                             backgroundColor: 'var(--color-surface)',
@@ -305,6 +334,11 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                 <p className="text-lg font-bold font-mono leading-tight" style={{ color: 'var(--color-text)' }}>
                                     S/ {Number(e.total).toFixed(2)}
                                 </p>
+                                {e.estado_pago === 'pendiente' && (
+                                    <p className="text-[10px] font-medium mt-0.5 flex items-center justify-end gap-1" style={{ color: '#ca8a04' }}>
+                                        <Wallet size={10} />pago pendiente
+                                    </p>
+                                )}
                                 <Badge variant={e.estado === 'confirmado' ? 'success' : 'warning'}>
                                     {e.estado === 'confirmado' ? 'Confirmado' : 'Borrador'}
                                 </Badge>
@@ -336,16 +370,30 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
 
                         {/* Fila 3: acciones */}
                         <div className="flex items-center justify-between gap-2 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
-                            {e.estado === 'borrador' ? (
+                            <div className="flex items-center gap-2">
+                                {e.estado === 'borrador' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setConfirmId(e.id)}
+                                        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+                                        style={{ color: 'var(--color-success)', backgroundColor: 'color-mix(in srgb, var(--color-success) 12%, transparent)' }}
+                                    >
+                                        <CheckCircle size={13} />Confirmar
+                                    </button>
+                                )}
                                 <button
                                     type="button"
-                                    onClick={() => setConfirmId(e.id)}
+                                    onClick={() => abrirPagoModal(e)}
                                     className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
-                                    style={{ color: 'var(--color-success)', backgroundColor: 'color-mix(in srgb, var(--color-success) 12%, transparent)' }}
+                                    style={
+                                        e.estado_pago === 'pagado'
+                                            ? { color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg)' }
+                                            : { color: '#ca8a04', backgroundColor: 'rgba(250,204,21,0.15)' }
+                                    }
                                 >
-                                    <CheckCircle size={13} />Confirmar
+                                    <Wallet size={13} />{e.estado_pago === 'pagado' ? 'Pago' : 'Pagar'}
                                 </button>
-                            ) : <span />}
+                            </div>
                             <div className="flex items-center gap-1">
                                 {e.estado === 'borrador' && (
                                     <>
@@ -373,13 +421,15 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                 ))}
             </div>
 
-            {/* Desktop: tabla */}
+            {/* Desktop: tabla. Las filas con pago pendiente reciben tint amarillo
+                pulsante via rowClassName (estilos definidos en el <style> del final). */}
             <div className="hidden sm:block">
                 <Table
                     data={filtered}
                     columns={columns}
                     searchable={false}
                     emptyMessage="No hay entradas registradas"
+                    rowClassName={(e: Entrada) => e.estado_pago === 'pendiente' ? 'pago-pendiente-row' : ''}
                 />
             </div>
 
@@ -440,6 +490,115 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     Se eliminará la entrada en borrador. Esta acción no se puede deshacer.
                 </p>
             </Modal>
+
+            {/* Modal quick-pago: para actualizar el estado de pago sin entrar al form completo.
+                Funciona tanto en entradas borrador como confirmadas. */}
+            <Modal
+                isOpen={pagoEntrada !== null}
+                onClose={() => !savingPago && setPagoEntrada(null)}
+                title="Estado de pago"
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setPagoEntrada(null)} disabled={savingPago}>
+                            Cancelar
+                        </Button>
+                        <Button onClick={guardarPago} loading={savingPago}>
+                            Guardar
+                        </Button>
+                    </>
+                }
+            >
+                {pagoEntrada && (
+                    <div className="space-y-4">
+                        <div className="rounded-xl border p-3 text-sm space-y-1"
+                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                            <div className="flex justify-between">
+                                <span style={{ color: 'var(--color-text-muted)' }}>Entrada</span>
+                                <span className="font-medium" style={{ color: 'var(--color-text)' }}>
+                                    {pagoEntrada.fecha} · {TIPOS[pagoEntrada.tipo] ?? pagoEntrada.tipo}
+                                </span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span style={{ color: 'var(--color-text-muted)' }}>Total</span>
+                                <span className="font-mono font-bold" style={{ color: 'var(--color-text)' }}>
+                                    S/ {Number(pagoEntrada.total).toFixed(2)}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                                {pagoForm.pagado ? 'Pagado' : 'Pendiente de pago'}
+                            </p>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={pagoForm.pagado}
+                                    onChange={e => setPagoForm(f => ({
+                                        ...f, pagado: e.target.checked,
+                                        metodoId: e.target.checked ? f.metodoId : '',
+                                        cuentaId: e.target.checked ? f.cuentaId : '',
+                                    }))}
+                                />
+                                <div className="w-11 h-6 rounded-full transition-colors bg-[var(--color-border)] peer-checked:bg-[var(--color-primary)]" />
+                                <div className="absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5" />
+                            </label>
+                        </div>
+
+                        {pagoForm.pagado && (
+                            <div className="space-y-3">
+                                <Select
+                                    label="Método de pago"
+                                    placeholder="Seleccionar método"
+                                    value={pagoForm.metodoId}
+                                    onChange={v => setPagoForm(f => ({
+                                        ...f,
+                                        metodoId: v === '' ? '' : Number(v),
+                                        cuentaId: '',
+                                    }))}
+                                    options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                                />
+                                {cuentasQuick.length > 0 && (
+                                    <Select
+                                        label="Cuenta (opcional)"
+                                        placeholder="No especificada"
+                                        value={pagoForm.cuentaId}
+                                        onChange={v => setPagoForm(f => ({ ...f, cuentaId: v === '' ? '' : Number(v) }))}
+                                        options={cuentasQuick.map(c => ({
+                                            value: c.id,
+                                            label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
+                                        }))}
+                                    />
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </Modal>
+
+            {/* Animación pulse suave para filas/cards con pago pendiente.
+                Usamos box-shadow inset (en vez de background-color) para no
+                pelearnos con el hover de la tabla que también pinta el bg. */}
+            <style>{`
+                @keyframes pagoPendientePulse {
+                    0%, 100% { box-shadow: inset 0 0 0 9999px rgba(250, 204, 21, 0.06); }
+                    50%      { box-shadow: inset 0 0 0 9999px rgba(250, 204, 21, 0.14); }
+                }
+                .pago-pendiente-row {
+                    animation: pagoPendientePulse 3s ease-in-out infinite;
+                }
+                .pago-pendiente-card {
+                    animation: pagoPendientePulse 3s ease-in-out infinite;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .pago-pendiente-row, .pago-pendiente-card {
+                        animation: none;
+                        box-shadow: inset 0 0 0 9999px rgba(250, 204, 21, 0.10);
+                    }
+                }
+            `}</style>
         </AppLayout>
     );
 }
