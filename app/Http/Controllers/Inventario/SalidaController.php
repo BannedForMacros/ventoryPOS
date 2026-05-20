@@ -7,6 +7,7 @@ use App\Models\Almacen;
 use App\Models\Producto;
 use App\Models\Salida;
 use App\Models\SalidaTipo;
+use App\Models\Stock;
 use App\Models\Turno;
 use App\Services\LocalScopeService;
 use Illuminate\Http\Request;
@@ -47,8 +48,15 @@ class SalidaController extends Controller
 
     public function create(Request $request)
     {
-        $user      = $request->user();
-        $empresaId = $user->empresa_id;
+        $user       = $request->user();
+        $empresaId  = $user->empresa_id;
+        $almacenIds = $this->scope->almacenIdsVisibles($user);
+
+        // Stock disponible por (almacen, producto) — el frontend lo usa para mostrar
+        // "Disponible: X" al lado de cada producto y bloquear cantidades que excedan.
+        // Mejor traerlo todo aca que hacer N fetches via ajax desde el form.
+        $stocks = Stock::whereIn('almacen_id', $almacenIds)
+            ->get(['almacen_id', 'producto_id', 'cantidad']);
 
         return Inertia::render('Inventario/Salidas/Create', [
             'almacenes' => $this->scope->almacenesVisibles($user),
@@ -59,6 +67,7 @@ class SalidaController extends Controller
                 ->with(['unidades.unidadMedida'])
                 ->orderBy('nombre')
                 ->get(),
+            'stocks'    => $stocks,
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
         ]);
     }
