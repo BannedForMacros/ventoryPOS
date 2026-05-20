@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet } from 'lucide-react';
+import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet, Eye, Loader2 } from 'lucide-react';
+import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -16,6 +17,24 @@ interface Almacen { id: number; nombre: string; local?: { nombre: string } | nul
 interface UserItem { id: number; name: string; }
 interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
 interface MetodoPagoOpt { id: number; nombre: string; cuentas: CuentaMP[]; }
+
+interface DetalleItem {
+    id: number;
+    cantidad: string;
+    factor_conversion: string;
+    cantidad_base: string;
+    precio_costo: string;
+    subtotal: string;
+    numero_documento: string | null;
+    producto: { id: number; nombre: string; codigo: string | null } | null;
+    unidad_medida: { id: number; nombre: string; abreviatura: string } | null;
+}
+
+interface EntradaDetallada extends Entrada {
+    observacion: string | null;
+    detalles: DetalleItem[];
+    proveedor_rel?: { razon_social: string | null; nombre_comercial: string | null; numero_documento: string | null; tipo_documento: string } | null;
+}
 interface Entrada extends Record<string, unknown> {
     id: number;
     fecha: string;
@@ -50,6 +69,16 @@ const TIPOS: Record<string, string> = {
     compra: 'Compra', ajuste: 'Ajuste', devolucion: 'Devolución', otro: 'Otro',
 };
 
+/** Item de metadato label+valor para el modal Ver detalle. */
+function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+    return (
+        <div>
+            <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            <p className={`text-sm ${mono ? 'font-mono' : ''}`} style={{ color: 'var(--color-text)' }}>{value}</p>
+        </div>
+    );
+}
+
 export default function EntradasIndex({ entradas, almacenes, metodosPago, mostrarSelector, filters }: Props) {
     const { flash } = usePage<Props>().props;
     const [confirmId, setConfirmId]   = useState<number | null>(null);
@@ -59,6 +88,21 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
     // Search vive a nivel de página para compartirse entre la vista de cards (mobile)
     // y la tabla (desktop). El Table interno recibe searchable=false para no duplicar.
     const [search, setSearch]             = useState('');
+
+    // Modal Ver detalle: id de la entrada cuya info se está mostrando + payload del fetch.
+    const [verEntradaId, setVerEntradaId]   = useState<number | null>(null);
+    const [verDetalle, setVerDetalle]       = useState<EntradaDetallada | null>(null);
+    const [verLoading, setVerLoading]       = useState(false);
+
+    function abrirVerDetalle(id: number) {
+        setVerEntradaId(id);
+        setVerDetalle(null);
+        setVerLoading(true);
+        axios.get(route('inventario.entradas.detalle-json', id))
+            .then(res => setVerDetalle(res.data.entrada))
+            .catch(() => toast.error('No se pudo cargar el detalle.'))
+            .finally(() => setVerLoading(false));
+    }
 
     // Quick-pago modal: la entrada que se está editando + el form local.
     const [pagoEntrada, setPagoEntrada]     = useState<Entrada | null>(null);
@@ -227,7 +271,8 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                         <Wallet size={13} />{e.estado_pago === 'pagado' ? 'Pago' : 'Pagar'}
                     </button>
                     <TableActions
-                        onEdit={e.estado === 'borrador' ? () => router.visit(route('inventario.entradas.edit', e.id)) : undefined}
+                        onView={() => abrirVerDetalle(e.id)}
+                        onEdit={() => router.visit(route('inventario.entradas.edit', e.id))}
                         onDelete={e.estado === 'borrador' ? () => setDeleteId(e.id) : undefined}
                     />
                 </div>
@@ -420,25 +465,33 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                 </button>
                             </div>
                             <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => abrirVerDetalle(e.id)}
+                                    className="rounded-lg p-2"
+                                    style={{ color: 'var(--color-text-muted)' }}
+                                    aria-label="Ver detalle"
+                                >
+                                    <Eye size={15} />
+                                </button>
+                                <button
+                                    onClick={() => router.visit(route('inventario.entradas.edit', e.id))}
+                                    className="rounded-lg p-2"
+                                    style={{ color: 'var(--color-text-muted)' }}
+                                    aria-label="Editar"
+                                >
+                                    <Edit2 size={15} />
+                                </button>
+                                {/* Eliminar sigue siendo solo borrador — borrar una confirmada
+                                    requiere otro flujo (anulación) que aún no existe. */}
                                 {e.estado === 'borrador' && (
-                                    <>
-                                        <button
-                                            onClick={() => router.visit(route('inventario.entradas.edit', e.id))}
-                                            className="rounded-lg p-2"
-                                            style={{ color: 'var(--color-text-muted)' }}
-                                            aria-label="Editar"
-                                        >
-                                            <Edit2 size={15} />
-                                        </button>
-                                        <button
-                                            onClick={() => setDeleteId(e.id)}
-                                            className="rounded-lg p-2"
-                                            style={{ color: 'var(--color-danger)' }}
-                                            aria-label="Eliminar"
-                                        >
-                                            <Trash2 size={15} />
-                                        </button>
-                                    </>
+                                    <button
+                                        onClick={() => setDeleteId(e.id)}
+                                        className="rounded-lg p-2"
+                                        style={{ color: 'var(--color-danger)' }}
+                                        aria-label="Eliminar"
+                                    >
+                                        <Trash2 size={15} />
+                                    </button>
                                 )}
                             </div>
                         </div>
@@ -603,6 +656,139 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                         }))}
                                     />
                                 )}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </Modal>
+
+            {/* Modal Ver detalle: muestra entrada + items + pago + totales en read-only.
+                Disponible tanto en borrador como confirmado — sirve para revisar lo
+                que se compró sin tocar nada. */}
+            <Modal
+                isOpen={verEntradaId !== null}
+                onClose={() => setVerEntradaId(null)}
+                title="Detalle de entrada"
+                size="lg"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setVerEntradaId(null)}>Cerrar</Button>
+                        {/* Editar siempre disponible. Si la entrada está confirmada, el form
+                            mostrará un warning y el backend recalcula stock + CPP al guardar. */}
+                        {verDetalle && (
+                            <Button onClick={() => router.visit(route('inventario.entradas.edit', verDetalle.id))}>
+                                <Edit2 size={14} className="mr-1.5" />
+                                Editar
+                            </Button>
+                        )}
+                    </>
+                }
+            >
+                {verLoading ? (
+                    <div className="flex items-center justify-center py-12 gap-2" style={{ color: 'var(--color-text-muted)' }}>
+                        <Loader2 size={18} className="animate-spin" />
+                        <span className="text-sm">Cargando detalle...</span>
+                    </div>
+                ) : !verDetalle ? null : (
+                    <div className="space-y-5">
+                        {/* Badges arriba del todo — lo primero que ve el usuario al abrir.
+                            Estado de la entrada + estado de pago juntos para scaneo rápido. */}
+                        <div className="flex flex-wrap items-center gap-2 pb-3" style={{ borderBottom: '1px solid var(--color-border)' }}>
+                            <Badge variant={verDetalle.estado === 'confirmado' ? 'success' : 'warning'}>
+                                {verDetalle.estado === 'confirmado' ? 'Confirmado' : 'Borrador'}
+                            </Badge>
+                            {verDetalle.estado_pago === 'pagado' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                                    style={{ color: '#16a34a', backgroundColor: 'color-mix(in srgb, #16a34a 12%, transparent)' }}>
+                                    <Wallet size={11} />Pagado
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                                    style={{ color: '#ca8a04', backgroundColor: 'rgba(250,204,21,0.15)' }}>
+                                    <Wallet size={11} />Pago pendiente
+                                </span>
+                            )}
+                            <span className="ml-auto text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                                #{verDetalle.id}
+                            </span>
+                        </div>
+
+                        {/* Cabecera: metadatos clave en grid 2 col */}
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+                            <Meta label="Fecha" value={fmtFecha(verDetalle.fecha)} />
+                            <Meta label="Tipo" value={TIPOS[verDetalle.tipo] ?? verDetalle.tipo} />
+                            <Meta label="Almacén" value={`${verDetalle.almacen.nombre}${verDetalle.almacen.local ? ' · ' + verDetalle.almacen.local.nombre : ''}`} />
+                            <Meta label="Registrado por" value={verDetalle.user.name} />
+                            {verDetalle.proveedor && <Meta label="Proveedor" value={verDetalle.proveedor} />}
+                            {verDetalle.numero_documento && <Meta label="Nº documento" value={verDetalle.numero_documento} mono />}
+                        </div>
+
+                        {/* Items */}
+                        <div>
+                            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                                Productos ({verDetalle.detalles.length})
+                            </h3>
+                            <div className="rounded-xl border divide-y" style={{ borderColor: 'var(--color-border)', borderStyle: 'solid' }}>
+                                {verDetalle.detalles.map(d => (
+                                    <div key={d.id} className="px-3 py-2.5 text-sm">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                                                    {d.producto?.nombre ?? '—'}
+                                                </p>
+                                                <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {Number(d.cantidad).toFixed(2)} {d.unidad_medida?.abreviatura ?? ''}
+                                                    {parseFloat(d.factor_conversion) !== 1 && (
+                                                        <span> · ×{d.factor_conversion} = {Number(d.cantidad_base).toFixed(2)} base</span>
+                                                    )}
+                                                    {' · '}S/ {Number(d.precio_costo).toFixed(2)} c/u
+                                                </p>
+                                                {d.numero_documento && (
+                                                    <p className="text-xs mt-0.5 flex items-center gap-1 font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                                                        <FileText size={10} />{d.numero_documento}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <p className="text-sm font-mono font-semibold whitespace-nowrap" style={{ color: 'var(--color-text)' }}>
+                                                S/ {Number(d.subtotal).toFixed(2)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Total + pago: bloque destacado al cierre del detalle. Cuando
+                            esta pagado, el metodo+cuenta vive aca abajo del total —
+                            es donde el usuario espera ver "cómo se pagó esto". */}
+                        <div className="rounded-xl p-3" style={{ backgroundColor: 'var(--color-bg)' }}>
+                            <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>Total</span>
+                                <span className="text-lg font-bold font-mono" style={{ color: 'var(--color-text)' }}>
+                                    S/ {Number(verDetalle.total).toFixed(2)}
+                                </span>
+                            </div>
+                            {verDetalle.estado_pago === 'pagado' && verDetalle.metodo_pago && (
+                                <div className="flex justify-between items-center mt-2 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                                    <span className="text-xs flex items-center gap-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        <Wallet size={12} />Pagado con
+                                    </span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                                        {verDetalle.metodo_pago.nombre}
+                                        {verDetalle.cuenta && (
+                                            <span style={{ color: 'var(--color-text-muted)' }}> · {verDetalle.cuenta.nombre}</span>
+                                        )}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+
+                        {verDetalle.observacion && (
+                            <div>
+                                <p className="text-[10px] uppercase tracking-wide mb-1" style={{ color: 'var(--color-text-muted)' }}>Observación</p>
+                                <p className="text-sm rounded-xl border p-3" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
+                                    {verDetalle.observacion}
+                                </p>
                             </div>
                         )}
                     </div>

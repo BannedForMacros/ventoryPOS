@@ -40,6 +40,7 @@ interface EntradaData {
     numero_documento: string | null;
     tipo: string;
     fecha: string;
+    estado: 'borrador' | 'confirmado';
     observacion: string | null;
     estado_pago: 'pendiente' | 'pagado';
     metodo_pago_id: number | null;
@@ -216,9 +217,27 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
         <AppLayout title="Editar entrada">
             <PageHeader
                 title="Editar entrada"
-                subtitle="Solo puedes editar entradas en borrador"
+                subtitle={entrada.estado === 'confirmado' ? 'Entrada confirmada — cambios recalcularán stock y costo promedio' : 'Entrada en borrador — los cambios no afectan stock'}
                 backHref={route('inventario.entradas.index')}
             />
+
+            {entrada.estado === 'confirmado' && (
+                <div className="max-w-5xl mx-auto mb-5 rounded-2xl border p-4 flex items-start gap-3"
+                    style={{
+                        borderColor: 'color-mix(in srgb, var(--color-warning) 40%, var(--color-border))',
+                        backgroundColor: 'color-mix(in srgb, var(--color-warning) 8%, transparent)',
+                    }}>
+                    <AlertCircle size={18} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-warning)' }} />
+                    <div className="text-sm" style={{ color: 'var(--color-text)' }}>
+                        <p className="font-semibold mb-1">Esta entrada ya fue confirmada.</p>
+                        <p style={{ color: 'var(--color-text-muted)' }}>
+                            Al guardar: el stock se ajustará automáticamente con la diferencia y el <strong>costo promedio se recalculará</strong>.
+                            Si reduces la cantidad de un producto que ya tiene ventas o transferencias posteriores, el sistema bloqueará el cambio
+                            con un mensaje indicando la cantidad mínima permitida.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             <div className="max-w-5xl mx-auto space-y-8">
                 <section className="rounded-2xl border p-6 space-y-5"

@@ -112,6 +112,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:inventario.entradas,editar')->post('entradas/{entrada}/confirmar', [EntradaController::class, 'confirmar'])->name('entradas.confirmar');
         // Pago: independiente del estado de la entrada, por eso fuera del apiResource.
         Route::middleware('permiso:inventario.entradas,editar')->post('entradas/{entrada}/pago', [EntradaController::class, 'actualizarPago'])->name('entradas.pago');
+        // JSON para el modal "Ver detalle" del Index. Permiso ver porque no muta nada.
+        Route::middleware('permiso:inventario.entradas,ver')->get('entradas/{entrada}/detalle-json', [EntradaController::class, 'detalleJson'])->name('entradas.detalle-json');
         Route::middleware('permiso:inventario.entradas')->group(function () {
             Route::apiResource('entradas', EntradaController::class)->except(['show']);
         });

@@ -9,6 +9,7 @@ use App\Models\Entrada;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\Proveedor;
+use App\Models\Stock;
 use App\Services\LocalScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -176,7 +177,9 @@ class EntradaController extends Controller
 
     public function edit(Request $request, Entrada $entrada)
     {
-        abort_if($entrada->estado !== 'borrador', 403, 'Solo se pueden editar entradas en borrador.');
+        // M23: ahora tambien se pueden editar entradas confirmadas — los usuarios se
+        // equivocan (cantidad mal tipeada, precio con cero de mas, producto incorrecto)
+        // y necesitan corregirlas. update() recompone stock y CPP automaticamente.
         abort_unless($this->scope->puedeAccederAlmacen($request->user(), $entrada->almacen), 403);
 
         $user      = $request->user();
@@ -205,7 +208,6 @@ class EntradaController extends Controller
 
     public function update(Request $request, Entrada $entrada)
     {
-        abort_if($entrada->estado !== 'borrador', 403, 'Solo se pueden editar entradas en borrador.');
         abort_unless($this->scope->puedeAccederAlmacen($request->user(), $entrada->almacen), 403);
 
         $user = $request->user();
@@ -249,47 +251,156 @@ class EntradaController extends Controller
             $data['proveedor'] = $prov->razon_social ?: $prov->nombre_comercial;
         }
 
-        DB::transaction(function () use ($data, $entrada) {
-            $total = 0;
+        $eraConfirmada    = $entrada->estado === 'confirmado';
+        $almacenAnterior  = $entrada->almacen_id;
 
-            $estadoPago = $data['estado_pago'] ?? 'pendiente';
-            $entrada->update([
-                'almacen_id'       => $data['almacen_id'],
-                'proveedor_id'     => $data['proveedor_id'] ?? null,
-                'proveedor'        => $data['proveedor'] ?? null,
-                'numero_documento' => $data['numero_documento'] ?? null,
-                'tipo'             => $data['tipo'],
-                'fecha'            => $data['fecha'],
-                'observacion'      => $data['observacion'] ?? null,
-                'estado_pago'      => $estadoPago,
-                'metodo_pago_id'   => $estadoPago === 'pagado' ? ($data['metodo_pago_id'] ?? null) : null,
-                'cuenta_id'        => $estadoPago === 'pagado' ? ($data['cuenta_id'] ?? null) : null,
-            ]);
+        // ── Si era confirmada, validar ANTES que ninguna reduccion deje stock negativo.
+        // Esto cubre el caso "ya se vendieron / transfirieron unidades de esta entrada".
+        // Mejor fallar aqui con mensaje claro que reventar despues con InsufficientStock.
+        if ($eraConfirmada) {
+            $entrada->loadMissing('detalles');
 
-            $entrada->detalles()->delete();
+            // Sumar cantidad_base por producto en lo VIEJO (puede haber 2 lineas del mismo
+            // producto con presentaciones distintas, todas suman al stock del producto).
+            $viejosBase = $entrada->detalles->groupBy('producto_id')
+                ->map(fn ($g) => (float) $g->sum('cantidad_base'));
 
-            foreach ($data['detalles'] as $d) {
-                $cantidadBase = round((float) $d['cantidad'] * (float) $d['factor_conversion'], 4);
-                $subtotal     = round((float) $d['cantidad'] * (float) $d['precio_costo'], 2);
-                $total       += $subtotal;
+            // Y en lo NUEVO: convertir cantidad → cantidad_base con su factor.
+            $nuevosBase = collect($data['detalles'])
+                ->groupBy('producto_id')
+                ->map(fn ($g) => (float) $g->sum(fn ($d) =>
+                    round((float) $d['cantidad'] * (float) $d['factor_conversion'], 4)
+                ));
 
-                $entrada->detalles()->create([
-                    'producto_id'      => $d['producto_id'],
-                    'unidad_medida_id' => $d['unidad_medida_id'],
-                    'cantidad'         => $d['cantidad'],
-                    'factor_conversion'=> $d['factor_conversion'],
-                    'cantidad_base'    => $cantidadBase,
-                    'precio_costo'     => $d['precio_costo'],
-                    'subtotal'         => $subtotal,
-                    'numero_documento' => $d['numero_documento'] ?? null,
-                ]);
+            $errores = [];
+            foreach ($viejosBase as $productoId => $cantVieja) {
+                $cantNueva = (float) $nuevosBase->get($productoId, 0);
+                $delta     = $cantNueva - $cantVieja;
+                if ($delta >= 0) continue; // suma o igual: no hay riesgo
+
+                // Reduccion: chequear stock contra el almacen ORIGINAL (alli vivian los
+                // movimientos que generaba la entrada).
+                $stockActual = (float) (Stock::where('almacen_id', $almacenAnterior)
+                    ->where('producto_id', $productoId)
+                    ->value('cantidad') ?? 0);
+
+                if ($stockActual + $delta < 0) {
+                    $producto    = Producto::find($productoId);
+                    $consumido   = $cantVieja - $stockActual;          // unidades ya salidas (ventas/transfer/etc.)
+                    $minPermit   = max(0.0001, $cantVieja - $stockActual);
+                    $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
+
+                    $errores[] = sprintf(
+                        'No se puede reducir "%s": ya se generaron salidas (ventas / transferencias / etc.) por %s unidades base de esta entrada. La cantidad mínima permitida en esta línea es %s (base).',
+                        $producto?->nombre ?? "producto #$productoId",
+                        $fmt($consumido),
+                        $fmt($minPermit),
+                    );
+                }
             }
 
-            $entrada->update(['total' => $total]);
-        });
+            if (!empty($errores)) {
+                return back()->withErrors(['detalles' => implode("\n", $errores)])->withInput();
+            }
+        }
+
+        try {
+            DB::transaction(function () use ($data, $entrada, $eraConfirmada, $almacenAnterior) {
+                // 1) Si era confirmada, revertir el stock que aporto cada detalle viejo.
+                //    permitirNegativo=true porque es transitorio: al final reaplicamos
+                //    los nuevos. La validacion previa ya garantizo que el saldo final >= 0.
+                $productosAfectados = collect();
+                if ($eraConfirmada) {
+                    $entrada->loadMissing('detalles');
+                    foreach ($entrada->detalles as $d) {
+                        $productosAfectados->push($d->producto_id);
+                        Stock::ajustar(
+                            almacenId:        $almacenAnterior,
+                            productoId:       $d->producto_id,
+                            cantidadBase:     -1 * (float) $d->cantidad_base,
+                            permitirNegativo: true,
+                        );
+                    }
+                }
+
+                // 2) Update cabecera + reemplazo de detalles.
+                $estadoPago = $data['estado_pago'] ?? 'pendiente';
+                $entrada->update([
+                    'almacen_id'       => $data['almacen_id'],
+                    'proveedor_id'     => $data['proveedor_id'] ?? null,
+                    'proveedor'        => $data['proveedor'] ?? null,
+                    'numero_documento' => $data['numero_documento'] ?? null,
+                    'tipo'             => $data['tipo'],
+                    'fecha'            => $data['fecha'],
+                    'observacion'      => $data['observacion'] ?? null,
+                    'estado_pago'      => $estadoPago,
+                    'metodo_pago_id'   => $estadoPago === 'pagado' ? ($data['metodo_pago_id'] ?? null) : null,
+                    'cuenta_id'        => $estadoPago === 'pagado' ? ($data['cuenta_id'] ?? null) : null,
+                ]);
+
+                $entrada->detalles()->delete();
+
+                $total = 0;
+                foreach ($data['detalles'] as $d) {
+                    $cantidadBase = round((float) $d['cantidad'] * (float) $d['factor_conversion'], 4);
+                    $subtotal     = round((float) $d['cantidad'] * (float) $d['precio_costo'], 2);
+                    $total       += $subtotal;
+
+                    $entrada->detalles()->create([
+                        'producto_id'      => $d['producto_id'],
+                        'unidad_medida_id' => $d['unidad_medida_id'],
+                        'cantidad'         => $d['cantidad'],
+                        'factor_conversion'=> $d['factor_conversion'],
+                        'cantidad_base'    => $cantidadBase,
+                        'precio_costo'     => $d['precio_costo'],
+                        'subtotal'         => $subtotal,
+                        'numero_documento' => $d['numero_documento'] ?? null,
+                    ]);
+                    if ($eraConfirmada) {
+                        $productosAfectados->push($d['producto_id']);
+                    }
+                }
+
+                $entrada->update(['total' => $total]);
+
+                // 3) Si era confirmada, aplicar el stock nuevo y reconstruir CPP para
+                //    cada (almacen, producto) afectado. Reconstruir es necesario porque
+                //    Stock::ajustar negativo NO recalcula CPP — el CPP se reconstruye
+                //    desde el historial de entradas confirmadas.
+                if ($eraConfirmada) {
+                    $entrada->refresh()->loadMissing('detalles');
+                    foreach ($entrada->detalles as $d) {
+                        Stock::ajustar(
+                            almacenId:    $entrada->almacen_id,
+                            productoId:   $d->producto_id,
+                            cantidadBase: (float) $d->cantidad_base,
+                            costoNuevo:   (float) $d->precio_costo,
+                        );
+                    }
+
+                    // Reconstruir CPP en ambos almacenes (si cambio) para los productos
+                    // tocados — garantiza que el costo promedio quede correcto incluso si
+                    // hay otras entradas confirmadas posteriores en el historial.
+                    $almacenes = collect([$almacenAnterior, $entrada->almacen_id])->unique();
+                    foreach ($almacenes as $almId) {
+                        foreach ($productosAfectados->unique() as $pid) {
+                            Stock::reconstruir((int) $almId, (int) $pid);
+                        }
+                    }
+                }
+            });
+        } catch (\App\Exceptions\InsufficientStockException $e) {
+            // Red de seguridad: nuestra validacion previa deberia atrapar todos los
+            // casos, pero si algo se cuela (race condition con una venta concurrente),
+            // devolvemos un error legible en vez de un 500.
+            return back()->withErrors(['detalles' => $e->getMessage()])->withInput();
+        }
 
         return redirect()->route('inventario.entradas.index')
-            ->with('success', 'Entrada actualizada correctamente.');
+            ->with('success', $eraConfirmada
+                ? 'Entrada actualizada. Stock y costo promedio recalculados.'
+                : 'Entrada actualizada correctamente.'
+            );
     }
 
     public function confirmar(Request $request, Entrada $entrada)
@@ -299,6 +410,30 @@ class EntradaController extends Controller
         $entrada->confirmar();
 
         return redirect()->back()->with('success', 'Entrada confirmada. El stock ha sido actualizado.');
+    }
+
+    /**
+     * JSON con la entrada + detalles para alimentar el modal "Ver detalle" del Index.
+     * No usamos show() inertia (no hay pagina Show) — el modal vive en el Index y
+     * trae los datos via axios.get cuando el usuario abre. Esto evita cargar los
+     * detalles de TODAS las entradas en cada index (seria N+1 cuando la empresa
+     * tiene cientos de entradas con muchos items).
+     */
+    public function detalleJson(Request $request, Entrada $entrada)
+    {
+        abort_unless($this->scope->puedeAccederAlmacen($request->user(), $entrada->almacen), 403);
+
+        $entrada->load([
+            'almacen.local',
+            'user:id,name',
+            'proveedorRel:id,razon_social,nombre_comercial,numero_documento,tipo_documento',
+            'metodoPago:id,nombre',
+            'cuenta:id,nombre,banco,numero_cuenta',
+            'detalles.producto:id,nombre,codigo',
+            'detalles.unidadMedida:id,nombre,abreviatura',
+        ]);
+
+        return response()->json(['entrada' => $entrada]);
     }
 
     /**
