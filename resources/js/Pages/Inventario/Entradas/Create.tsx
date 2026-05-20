@@ -7,6 +7,8 @@ import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
+import SearchableSelect from '@/Components/UI/SearchableSelect';
+import Switch from '@/Components/UI/Switch';
 import Modal from '@/Components/UI/Modal';
 import type { PageProps } from '@/types';
 
@@ -50,6 +52,9 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
     const [errors, setErrors]           = useState<Record<string, string>>({});
     const [processing, setProcessing]   = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
+    // OFF (default) = una sola factura para toda la entrada (cabecera).
+    // ON = cada producto tiene su propia factura (input por línea); cabecera oculta.
+    const [facturaPorItem, setFacturaPorItem] = useState(false);
 
     function unidadesDeProducto(productoId: number | ''): ProductoUnidad[] {
         if (!productoId) return [];
@@ -118,6 +123,12 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                 if (d.precio_costo === '' || isNaN(cost) || cost < 0) {
                     errs.push(`Producto #${n}: precio de costo inválido`);
                 }
+                // En modo "factura por producto" cada línea DEBE tener su número, no
+                // tiene sentido el modo si quedan en blanco — habría que volver al
+                // modo "factura única".
+                if (facturaPorItem && !d.numero_documento.trim()) {
+                    errs.push(`Producto #${n}: falta el número de factura`);
+                }
             });
         }
         return errs;
@@ -167,7 +178,8 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
         router.post(route('inventario.entradas.store'), {
             almacen_id:        almacenId,
             proveedor_id:      proveedorId || null,
-            numero_documento:  nroDoc,
+            // En modo "factura por producto" la cabecera no tiene número (los items lo aportan).
+            numero_documento:  facturaPorItem ? null : (nroDoc || null),
             tipo,
             fecha,
             observacion,
@@ -178,7 +190,8 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                 cantidad:          d.cantidad,
                 factor_conversion: d.factor_conversion,
                 precio_costo:      d.precio_costo,
-                numero_documento:  d.numero_documento.trim() || null,
+                // En modo "factura única" el item siempre va null (hereda cabecera).
+                numero_documento:  facturaPorItem ? (d.numero_documento.trim() || null) : null,
             })),
         }, {
             onSuccess: () => setProcessing(false),
@@ -261,9 +274,21 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                             }))}
                             error={errors.proveedor_id}
                         />
-                        <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} placeholder="Ej: F001-0001234" />
+                        {/* Nro. documento solo aparece en modo "factura única". En modo "por item"
+                            cada línea del detalle aporta su número y la cabecera queda sin uno. */}
+                        {!facturaPorItem && (
+                            <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} placeholder="Ej: F001-0001234" />
+                        )}
                         <Input label="Fecha" required type="date" value={fecha} onChange={e => setFecha(e.target.value)} error={errors.fecha} />
                     </div>
+
+                    {/* Switch: modo factura. Decide dónde aparece el input de nro. documento. */}
+                    <Switch
+                        label="Cada producto tiene su propia factura"
+                        description="Útil cuando el proveedor entregó la mercadería con varias facturas distintas. Si está apagado, todos los productos comparten el número de la cabecera."
+                        checked={facturaPorItem}
+                        onChange={setFacturaPorItem}
+                    />
 
                     <div>
                         <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Observación</label>
@@ -293,14 +318,14 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                         <p className="text-sm" style={{ color: 'var(--color-danger)' }}>{errors.detalles}</p>
                     )}
 
-                    {/* Cabecera tabla */}
+                    {/* Cabecera tabla — la columna Factura solo aparece en modo "por item". */}
                     <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-semibold uppercase tracking-wide px-1"
                         style={{ color: 'var(--color-text-muted)' }}>
-                        <div className="col-span-3">Producto</div>
+                        <div className={facturaPorItem ? 'col-span-3' : 'col-span-5'}>Producto</div>
                         <div className="col-span-2">Unidad</div>
                         <div className="col-span-2">Cantidad</div>
                         <div className="col-span-2">Precio costo</div>
-                        <div className="col-span-2">Factura</div>
+                        {facturaPorItem && <div className="col-span-2">Factura</div>}
                         <div className="col-span-1 text-right">Subtotal</div>
                     </div>
 
@@ -330,11 +355,13 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                                 {/* Layout: stack vertical en mobile, grid 12-col en md+. */}
                                 {/* md:contents en pairs colapsa el wrapper en md+ para que sus hijos sean grid children. */}
                                 <div className="flex flex-col gap-3 md:grid md:grid-cols-12 md:gap-2 md:items-end md:space-y-0">
-                                    {/* Producto */}
-                                    <div className="md:col-span-3">
+                                    {/* Producto — col-span adapta al modo factura */}
+                                    <div className={facturaPorItem ? 'md:col-span-3' : 'md:col-span-5'}>
                                         <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Producto</label>
-                                        <Select
+                                        <SearchableSelect
                                             placeholder="Buscar producto..."
+                                            searchPlaceholder="Buscar por nombre o código..."
+                                            emptyMessage="No hay productos que coincidan"
                                             value={d.producto_id}
                                             onChange={v => setDetalle(i, 'producto_id', Number(v))}
                                             options={productos.map(p => ({ value: p.id, label: p.codigo ? `[${p.codigo}] ${p.nombre}` : p.nombre }))}
@@ -369,8 +396,8 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                                         </div>
                                     </div>
 
-                                    {/* Pair: Precio costo + Factura — 2-up en mobile */}
-                                    <div className="grid grid-cols-2 gap-2 md:contents">
+                                    {/* Pair: Precio + (Factura si modo por item). En modo único Precio queda solo. */}
+                                    <div className={`grid ${facturaPorItem ? 'grid-cols-2' : 'grid-cols-1'} gap-2 md:contents`}>
                                         <div className="md:col-span-2">
                                             <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Precio costo</label>
                                             <Input
@@ -381,15 +408,17 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                                                 error={(errors as Record<string, string>)[`detalles.${i}.precio_costo`]}
                                             />
                                         </div>
-                                        <div className="md:col-span-2">
-                                            <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Factura</label>
-                                            <Input
-                                                placeholder={nroDoc ? nroDoc : 'F001-...'}
-                                                value={d.numero_documento}
-                                                onChange={e => setDetalle(i, 'numero_documento', e.target.value)}
-                                                error={(errors as Record<string, string>)[`detalles.${i}.numero_documento`]}
-                                            />
-                                        </div>
+                                        {facturaPorItem && (
+                                            <div className="md:col-span-2">
+                                                <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Factura</label>
+                                                <Input
+                                                    placeholder="F001-..."
+                                                    value={d.numero_documento}
+                                                    onChange={e => setDetalle(i, 'numero_documento', e.target.value)}
+                                                    error={(errors as Record<string, string>)[`detalles.${i}.numero_documento`]}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Subtotal + remove — solo md+. En mobile ya está arriba. */}
@@ -406,13 +435,10 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                                     </div>
                                 </div>
 
-                                {/* Meta-fila: factor + cant. base + hint herencia factura */}
+                                {/* Meta-fila: factor + cant. base */}
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs px-1" style={{ color: 'var(--color-text-muted)' }}>
                                     <span className="font-mono">×{d.factor_conversion}</span>
                                     <span className="font-mono">= {cantidadBase(d).toFixed(4)} base</span>
-                                    {!d.numero_documento.trim() && nroDoc && (
-                                        <span className="italic">Hereda factura {nroDoc}</span>
-                                    )}
                                 </div>
                             </div>
                         );

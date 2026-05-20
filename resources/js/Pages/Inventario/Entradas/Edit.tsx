@@ -7,6 +7,8 @@ import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
+import SearchableSelect from '@/Components/UI/SearchableSelect';
+import Switch from '@/Components/UI/Switch';
 import type { PageProps } from '@/types';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
@@ -67,6 +69,11 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
     const [observacion, setObservacion] = useState(entrada.observacion ?? '');
     const [errors, setErrors]           = useState<Record<string, string>>({});
     const [processing, setProcessing]   = useState(false);
+    // Modo inicial: si la entrada original tiene algún item con factura propia,
+    // arrancamos en modo "por item" para no perder esos datos al renderizar.
+    const [facturaPorItem, setFacturaPorItem] = useState(
+        entrada.detalles.some(d => !!d.numero_documento)
+    );
 
     const [detalles, setDetalles] = useState<DetalleRow[]>(
         entrada.detalles.map(d => ({
@@ -136,6 +143,9 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                 if (d.precio_costo === '' || isNaN(cost) || cost < 0) {
                     errs.push(`Producto #${n}: precio de costo inválido`);
                 }
+                if (facturaPorItem && !d.numero_documento.trim()) {
+                    errs.push(`Producto #${n}: falta el número de factura`);
+                }
             });
         }
         return errs;
@@ -169,12 +179,13 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
         }
         setProcessing(true);
         router.put(route('inventario.entradas.update', entrada.id), {
-            almacen_id: almacenId, proveedor_id: proveedorId || null, numero_documento: nroDoc,
+            almacen_id: almacenId, proveedor_id: proveedorId || null,
+            numero_documento: facturaPorItem ? null : (nroDoc || null),
             tipo, fecha, observacion,
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id, unidad_medida_id: d.unidad_medida_id,
                 cantidad: d.cantidad, factor_conversion: d.factor_conversion, precio_costo: d.precio_costo,
-                numero_documento: d.numero_documento.trim() || null,
+                numero_documento: facturaPorItem ? (d.numero_documento.trim() || null) : null,
             })),
         }, {
             onSuccess: () => setProcessing(false),
@@ -237,9 +248,19 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                             }))}
                             error={errors.proveedor_id}
                         />
-                        <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} />
+                        {!facturaPorItem && (
+                            <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} />
+                        )}
                         <Input label="Fecha" required type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
                     </div>
+
+                    <Switch
+                        label="Cada producto tiene su propia factura"
+                        description="Útil cuando el proveedor entregó la mercadería con varias facturas distintas. Si está apagado, todos los productos comparten el número de la cabecera."
+                        checked={facturaPorItem}
+                        onChange={setFacturaPorItem}
+                    />
+
                     <div>
                         <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Observación</label>
                         <textarea rows={2} value={observacion} onChange={e => setObservacion(e.target.value)}
@@ -260,11 +281,11 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                     </div>
 
                     <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-semibold uppercase tracking-wide px-1" style={{ color: 'var(--color-text-muted)' }}>
-                        <div className="col-span-3">Producto</div>
+                        <div className={facturaPorItem ? 'col-span-3' : 'col-span-5'}>Producto</div>
                         <div className="col-span-2">Unidad</div>
                         <div className="col-span-2">Cantidad</div>
                         <div className="col-span-2">Precio costo</div>
-                        <div className="col-span-2">Factura</div>
+                        {facturaPorItem && <div className="col-span-2">Factura</div>}
                         <div className="col-span-1 text-right">Subtotal</div>
                     </div>
 
@@ -290,9 +311,13 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                                 </div>
 
                                 <div className="flex flex-col gap-3 md:grid md:grid-cols-12 md:gap-2 md:items-end md:space-y-0">
-                                    <div className="md:col-span-3">
+                                    <div className={facturaPorItem ? 'md:col-span-3' : 'md:col-span-5'}>
                                         <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Producto</label>
-                                        <Select placeholder="Buscar producto..." value={d.producto_id}
+                                        <SearchableSelect
+                                            placeholder="Buscar producto..."
+                                            searchPlaceholder="Buscar por nombre o código..."
+                                            emptyMessage="No hay productos que coincidan"
+                                            value={d.producto_id}
                                             onChange={v => setDetalle(i, 'producto_id', Number(v))}
                                             options={productos.map(p => ({ value: p.id, label: p.codigo ? `[${p.codigo}] ${p.nombre}` : p.nombre }))}
                                             error={(errors)[`detalles.${i}.producto_id`]} />
@@ -315,19 +340,21 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-2 md:contents">
+                                    <div className={`grid ${facturaPorItem ? 'grid-cols-2' : 'grid-cols-1'} gap-2 md:contents`}>
                                         <div className="md:col-span-2">
                                             <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Precio costo</label>
                                             <Input placeholder="0.00" type="number" min="0" step="0.0001" inputMode="decimal"
                                                 value={d.precio_costo} onChange={e => setDetalle(i, 'precio_costo', e.target.value)} />
                                         </div>
-                                        <div className="md:col-span-2">
-                                            <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Factura</label>
-                                            <Input placeholder={nroDoc ? nroDoc : 'F001-...'}
-                                                value={d.numero_documento}
-                                                onChange={e => setDetalle(i, 'numero_documento', e.target.value)}
-                                                error={(errors)[`detalles.${i}.numero_documento`]} />
-                                        </div>
+                                        {facturaPorItem && (
+                                            <div className="md:col-span-2">
+                                                <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Factura</label>
+                                                <Input placeholder="F001-..."
+                                                    value={d.numero_documento}
+                                                    onChange={e => setDetalle(i, 'numero_documento', e.target.value)}
+                                                    error={(errors)[`detalles.${i}.numero_documento`]} />
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="hidden md:flex md:col-span-1 md:text-right md:items-end md:justify-end md:gap-1">
@@ -343,9 +370,6 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs px-1" style={{ color: 'var(--color-text-muted)' }}>
                                     <span className="font-mono">×{d.factor_conversion}</span>
                                     <span className="font-mono">= {cantidadBase(d).toFixed(4)} base</span>
-                                    {!d.numero_documento.trim() && nroDoc && (
-                                        <span className="italic">Hereda factura {nroDoc}</span>
-                                    )}
                                 </div>
                             </div>
                         );

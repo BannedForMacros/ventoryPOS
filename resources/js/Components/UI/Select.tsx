@@ -123,15 +123,19 @@ export default function Select({
                 </button>
 
                 {/* Dropdown — aquí están las "opciones" o "items del listado" */}
+                {/* maxHeight + overflow-y-auto: si hay muchas opciones (categorias,
+                    almacenes, presentaciones) la lista NO empuja el layout — scrollea
+                    dentro del dropdown. Mirror de SearchableSelect (240px). */}
                 {open && (
                     <ul
                         role="listbox"
-                        className="absolute z-50 mt-1.5 w-full overflow-hidden rounded-xl border py-1"
+                        className="absolute z-50 mt-1.5 w-full overflow-y-auto rounded-xl border py-1"
                         style={{
                             borderColor: 'var(--color-border)',
                             backgroundColor: 'var(--color-surface)',
                             boxShadow: '0 8px 24px rgb(0 0 0 / 0.10)',
                             animation: 'selectFadeIn 0.12s ease',
+                            maxHeight: '240px',
                         }}
                     >
                         {options.length === 0 ? (
