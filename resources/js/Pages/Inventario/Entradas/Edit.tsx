@@ -72,7 +72,10 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
     const [proveedorId, setProveedorId] = useState<number | ''>(entrada.proveedor_id ?? '');
     const [nroDoc, setNroDoc]           = useState(entrada.numero_documento ?? '');
     const [tipo, setTipo]               = useState(entrada.tipo);
-    const [fecha, setFecha]             = useState(entrada.fecha);
+    // Misma trampa de zona horaria que en Index.fmtFecha: el backend manda ISO UTC.
+    // El <input type="date"> espera "YYYY-MM-DD" — extraemos solo la porción de fecha
+    // para evitar que se corra al día anterior en zonas con offset negativo.
+    const [fecha, setFecha]             = useState(entrada.fecha?.slice(0, 10) ?? '');
     const [observacion, setObservacion] = useState(entrada.observacion ?? '');
     const [errors, setErrors]           = useState<Record<string, string>>({});
     const [processing, setProcessing]   = useState(false);

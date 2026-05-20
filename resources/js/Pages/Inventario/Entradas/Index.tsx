@@ -156,14 +156,23 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
     }
 
     /**
-     * Formatea fechas que el backend serializa como ISO (ej: "2026-05-20T00:00:00.000000Z")
-     * a algo legible: "20 May 2026". Si viene en formato corto (Y-m-d) tambien lo
-     * procesa sin romper.
+     * Formatea fechas que el backend serializa como ISO. OJO con zona horaria:
+     * Laravel manda "2026-05-20T00:00:00.000000Z" (UTC midnight). Si lo pasas
+     * directo a `new Date()` y luego a `toLocaleDateString`, en zonas con offset
+     * negativo (Perú UTC-5) la fecha retrocede al dia anterior — el usuario crea
+     * la entrada el 20 y la ve como 19.
+     *
+     * Fix: para fechas "puras" (sin hora real) extraemos YYYY-MM-DD y construimos
+     * un Date local con los componentes — asi no hay conversion de zona horaria.
      */
     function fmtFecha(iso: string): string {
-        const d = new Date(iso);
-        if (isNaN(d.getTime())) return iso;
-        return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
+        if (!iso) return '';
+        const dateOnly = iso.slice(0, 10); // "2026-05-20"
+        const [y, m, d] = dateOnly.split('-').map(Number);
+        if (!y || !m || !d) return iso;
+        const date = new Date(y, m - 1, d);
+        if (isNaN(date.getTime())) return iso;
+        return date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
     }
 
     useEffect(() => {
