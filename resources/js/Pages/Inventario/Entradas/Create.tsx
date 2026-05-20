@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, CheckCircle, Wallet } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -17,11 +17,14 @@ interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolea
 interface Producto { id: number; codigo: string | null; nombre: string; unidades: ProductoUnidad[]; }
 interface Almacen  { id: number; nombre: string; tipo: string; }
 interface Proveedor { id: number; razon_social: string | null; nombre_comercial: string | null; numero_documento: string | null; tipo_documento: string; }
+interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
+interface MetodoPagoForm { id: number; nombre: string; cuentas: CuentaMP[]; }
 
 interface Props extends PageProps {
     almacenes: Almacen[];
     productos: Producto[];
     proveedores: Proveedor[];
+    metodosPago: MetodoPagoForm[];
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
 }
@@ -41,7 +44,7 @@ const emptyDetalle = (): DetalleRow => ({
     producto_id: '', unidad_medida_id: '', cantidad: '', factor_conversion: '1', precio_costo: '', numero_documento: '',
 });
 
-export default function EntradaCreate({ almacenes, productos, proveedores, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaCreate({ almacenes, productos, proveedores, metodosPago, mostrarSelector, modoAlmacen }: Props) {
     const [almacenId, setAlmacenId]     = useState<number | ''>(almacenes.length === 1 ? almacenes[0].id : '');
     const [proveedorId, setProveedorId] = useState<number | ''>('');
     const [nroDoc, setNroDoc]           = useState('');
@@ -55,6 +58,15 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
     // OFF (default) = una sola factura para toda la entrada (cabecera).
     // ON = cada producto tiene su propia factura (input por línea); cabecera oculta.
     const [facturaPorItem, setFacturaPorItem] = useState(false);
+
+    // Pago: por defecto la entrada arranca PENDIENTE. Si la marcas como pagada
+    // mostramos metodo + cuenta. Independiente del estado borrador/confirmado.
+    const [pagado, setPagado]               = useState(false);
+    const [metodoPagoId, setMetodoPagoId]   = useState<number | ''>('');
+    const [cuentaId, setCuentaId]           = useState<number | ''>('');
+
+    const metodoSeleccionado = metodosPago.find(m => m.id === metodoPagoId) ?? null;
+    const cuentasDelMetodo   = metodoSeleccionado?.cuentas ?? [];
 
     function unidadesDeProducto(productoId: number | ''): ProductoUnidad[] {
         if (!productoId) return [];
@@ -181,6 +193,9 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
             fecha,
             observacion,
             confirmar,
+            estado_pago:       pagado ? 'pagado' : 'pendiente',
+            metodo_pago_id:    pagado ? (metodoPagoId || null) : null,
+            cuenta_id:         pagado ? (cuentaId || null) : null,
             detalles: detalles.map(d => ({
                 producto_id:       d.producto_id,
                 unidad_medida_id:  d.unidad_medida_id,
@@ -450,6 +465,65 @@ export default function EntradaCreate({ almacenes, productos, proveedores, mostr
                             </p>
                         </div>
                     </div>
+                </section>
+
+                {/* ── Pago ── */}
+                <section
+                    className="rounded-2xl border p-6 space-y-5"
+                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+                >
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <Wallet size={16} style={{ color: 'var(--color-text-muted)' }} />
+                            <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                                Pago al proveedor
+                            </h2>
+                        </div>
+                        <Switch
+                            label={pagado ? 'Pagado' : 'Pendiente'}
+                            checked={pagado}
+                            onChange={v => {
+                                setPagado(v);
+                                if (!v) { setMetodoPagoId(''); setCuentaId(''); }
+                            }}
+                        />
+                    </div>
+
+                    {pagado ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <Select
+                                label="Método de pago"
+                                required
+                                placeholder="Seleccionar método"
+                                value={metodoPagoId}
+                                onChange={v => {
+                                    const newId = v === '' ? '' : Number(v);
+                                    setMetodoPagoId(newId);
+                                    setCuentaId(''); // limpia cuenta al cambiar de método
+                                }}
+                                options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                                error={errors.metodo_pago_id}
+                            />
+                            {cuentasDelMetodo.length > 0 && (
+                                <Select
+                                    label="Cuenta"
+                                    placeholder="(Opcional) elegir cuenta"
+                                    value={cuentaId}
+                                    onChange={v => setCuentaId(v === '' ? '' : Number(v))}
+                                    options={cuentasDelMetodo.map(c => ({
+                                        value: c.id,
+                                        label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
+                                    }))}
+                                    error={errors.cuenta_id}
+                                    hint="Útil si tienes varias cuentas del mismo método (ej: 2 Yapes distintos)."
+                                />
+                            )}
+                        </div>
+                    ) : (
+                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            La entrada queda registrada como deuda al proveedor. Puedes marcarla como pagada en cualquier momento desde el listado.
+                        </p>
+                    )}
                 </section>
 
                 {/* ── Acciones ── */}

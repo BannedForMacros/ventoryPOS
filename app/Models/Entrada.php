@@ -21,11 +21,24 @@ class Entrada extends Model
         'estado',
         'observacion',
         'total',
+        'estado_pago',
+        'metodo_pago_id',
+        'cuenta_id',
     ];
 
     public function proveedorRel(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Proveedor::class, 'proveedor_id');
+    }
+
+    public function metodoPago(): BelongsTo
+    {
+        return $this->belongsTo(MetodoPago::class, 'metodo_pago_id');
+    }
+
+    public function cuenta(): BelongsTo
+    {
+        return $this->belongsTo(Cuenta::class, 'cuenta_id');
     }
 
     protected function casts(): array
@@ -34,6 +47,11 @@ class Entrada extends Model
             'fecha' => 'date',
             'total' => 'decimal:2',
         ];
+    }
+
+    public function estaPagada(): bool
+    {
+        return $this->estado_pago === 'pagado';
     }
 
     public function empresa(): BelongsTo

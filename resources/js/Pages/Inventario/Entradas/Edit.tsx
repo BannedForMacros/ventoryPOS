@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, Wallet } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -29,6 +29,8 @@ interface EntradaDetalleData {
 }
 
 interface Proveedor { id: number; razon_social: string | null; nombre_comercial: string | null; numero_documento: string | null; tipo_documento: string; }
+interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
+interface MetodoPagoForm { id: number; nombre: string; cuentas: CuentaMP[]; }
 
 interface EntradaData {
     id: number;
@@ -39,6 +41,9 @@ interface EntradaData {
     tipo: string;
     fecha: string;
     observacion: string | null;
+    estado_pago: 'pendiente' | 'pagado';
+    metodo_pago_id: number | null;
+    cuenta_id: number | null;
     detalles: EntradaDetalleData[];
 }
 
@@ -47,6 +52,7 @@ interface Props extends PageProps {
     almacenes: Almacen[];
     productos: Producto[];
     proveedores: Proveedor[];
+    metodosPago: MetodoPagoForm[];
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
 }
@@ -60,7 +66,7 @@ interface DetalleRow {
     numero_documento: string;
 }
 
-export default function EntradaEdit({ entrada, almacenes, productos, proveedores, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaEdit({ entrada, almacenes, productos, proveedores, metodosPago, mostrarSelector, modoAlmacen }: Props) {
     const [almacenId, setAlmacenId]     = useState<number | ''>(entrada.almacen_id);
     const [proveedorId, setProveedorId] = useState<number | ''>(entrada.proveedor_id ?? '');
     const [nroDoc, setNroDoc]           = useState(entrada.numero_documento ?? '');
@@ -74,6 +80,13 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
     const [facturaPorItem, setFacturaPorItem] = useState(
         entrada.detalles.some(d => !!d.numero_documento)
     );
+
+    const [pagado, setPagado]               = useState(entrada.estado_pago === 'pagado');
+    const [metodoPagoId, setMetodoPagoId]   = useState<number | ''>(entrada.metodo_pago_id ?? '');
+    const [cuentaId, setCuentaId]           = useState<number | ''>(entrada.cuenta_id ?? '');
+
+    const metodoSeleccionado = metodosPago.find(m => m.id === metodoPagoId) ?? null;
+    const cuentasDelMetodo   = metodoSeleccionado?.cuentas ?? [];
 
     const [detalles, setDetalles] = useState<DetalleRow[]>(
         entrada.detalles.map(d => ({
@@ -180,6 +193,9 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
             almacen_id: almacenId, proveedor_id: proveedorId || null,
             numero_documento: facturaPorItem ? null : (nroDoc || null),
             tipo, fecha, observacion,
+            estado_pago:    pagado ? 'pagado' : 'pendiente',
+            metodo_pago_id: pagado ? (metodoPagoId || null) : null,
+            cuenta_id:      pagado ? (cuentaId || null) : null,
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id, unidad_medida_id: d.unidad_medida_id,
                 cantidad: d.cantidad, factor_conversion: d.factor_conversion, precio_costo: d.precio_costo,

@@ -110,6 +110,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:inventario.entradas,ver')->get('entradas/crear', [EntradaController::class, 'create'])->name('entradas.create');
         Route::middleware('permiso:inventario.entradas,editar')->get('entradas/{entrada}/editar', [EntradaController::class, 'edit'])->name('entradas.edit');
         Route::middleware('permiso:inventario.entradas,editar')->post('entradas/{entrada}/confirmar', [EntradaController::class, 'confirmar'])->name('entradas.confirmar');
+        // Pago: independiente del estado de la entrada, por eso fuera del apiResource.
+        Route::middleware('permiso:inventario.entradas,editar')->post('entradas/{entrada}/pago', [EntradaController::class, 'actualizarPago'])->name('entradas.pago');
         Route::middleware('permiso:inventario.entradas')->group(function () {
             Route::apiResource('entradas', EntradaController::class)->except(['show']);
         });
