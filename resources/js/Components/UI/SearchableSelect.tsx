@@ -71,23 +71,39 @@ export default function SearchableSelect({
         return options.filter(o => o.label.toLowerCase().includes(q));
     }, [query, options]);
 
-    // Cerrar al hacer click fuera
+    // Cerrar al hacer click/touch fuera. Escuchamos ambos eventos: mousedown
+    // cubre desktop; touchstart cubre mobile y dispara antes que el mousedown
+    // sintetico → cierre mas responsivo en touch.
     useEffect(() => {
-        function onClickOutside(e: MouseEvent) {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        function onPointerOutside(e: MouseEvent | TouchEvent) {
+            const target = e.target as Node;
+            if (containerRef.current && !containerRef.current.contains(target)) {
                 close();
             }
         }
-        document.addEventListener('mousedown', onClickOutside);
-        return () => document.removeEventListener('mousedown', onClickOutside);
+        document.addEventListener('mousedown', onPointerOutside);
+        document.addEventListener('touchstart', onPointerOutside, { passive: true });
+        return () => {
+            document.removeEventListener('mousedown', onPointerOutside);
+            document.removeEventListener('touchstart', onPointerOutside);
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Al abrir: focus al input + reset de highlight al item seleccionado (si esta en filtro)
     useEffect(() => {
         if (open) {
-            // microtask para que el input ya este montado
-            requestAnimationFrame(() => inputRef.current?.focus());
+            // En touch devices (mobile, tablet) NO autofocuseamos el input.
+            // Razon: el autofocus dispara el teclado virtual, lo que:
+            //   1) Reduce el viewport a la mitad → la lista queda casi invisible.
+            //   2) Con el input focuseado iOS/Android tratan el siguiente touch como
+            //      "dismiss keyboard" en vez de scrollear el contenedor que estas tocando.
+            // El usuario igual puede tocar el input manualmente cuando quiere buscar.
+            const esTouchDevice = typeof window !== 'undefined' &&
+                window.matchMedia('(pointer: coarse)').matches;
+            if (!esTouchDevice) {
+                requestAnimationFrame(() => inputRef.current?.focus());
+            }
             const idx = filtered.findIndex(o => o.value === value);
             setHighlightIdx(idx >= 0 ? idx : (filtered.length > 0 ? 0 : -1));
         }
