@@ -185,6 +185,14 @@ class EntradaController extends Controller
         $user      = $request->user();
         $empresaId = $user->empresa_id;
 
+        // Stock actual del almacen de la entrada — necesario en el form si la entrada
+        // esta confirmada para calcular las restricciones de reduccion (no se puede
+        // bajar cantidad de un producto que ya tuvo salidas).
+        $stocks = $entrada->estado === 'confirmado'
+            ? \App\Models\Stock::where('almacen_id', $entrada->almacen_id)
+                ->get(['almacen_id', 'producto_id', 'cantidad'])
+            : collect();
+
         return Inertia::render('Inventario/Entradas/Edit', [
             'entrada'   => $entrada->load(['detalles.producto', 'detalles.unidadMedida', 'proveedorRel', 'metodoPago', 'cuenta']),
             'almacenes' => $this->scope->almacenesParaCompras($user),
@@ -202,6 +210,7 @@ class EntradaController extends Controller
             'metodosPago' => MetodoPago::deEmpresa($empresaId)->activo()
                 ->with('cuentas:id,nombre,banco,numero_cuenta')
                 ->orderBy('nombre')->get(['id', 'nombre', 'tipo_id']),
+            'stocks'    => $stocks,
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
         ]);
     }

@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, AlertCircle, Wallet } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, AlertTriangle, Wallet } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -31,6 +31,7 @@ interface EntradaDetalleData {
 interface Proveedor { id: number; razon_social: string | null; nombre_comercial: string | null; numero_documento: string | null; tipo_documento: string; }
 interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
 interface MetodoPagoForm { id: number; nombre: string; cuentas: CuentaMP[]; }
+interface StockRow { almacen_id: number; producto_id: number; cantidad: string; }
 
 interface EntradaData {
     id: number;
@@ -54,6 +55,7 @@ interface Props extends PageProps {
     productos: Producto[];
     proveedores: Proveedor[];
     metodosPago: MetodoPagoForm[];
+    stocks: StockRow[];
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
 }
@@ -67,7 +69,7 @@ interface DetalleRow {
     numero_documento: string;
 }
 
-export default function EntradaEdit({ entrada, almacenes, productos, proveedores, metodosPago, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaEdit({ entrada, almacenes, productos, proveedores, metodosPago, stocks, mostrarSelector, modoAlmacen }: Props) {
     const [almacenId, setAlmacenId]     = useState<number | ''>(entrada.almacen_id);
     const [proveedorId, setProveedorId] = useState<number | ''>(entrada.proveedor_id ?? '');
     const [nroDoc, setNroDoc]           = useState(entrada.numero_documento ?? '');
@@ -139,6 +141,68 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
 
     const total = detalles.reduce((sum, d) => sum + subtotal(d), 0);
 
+    /**
+     * Restricciones: si la entrada estaba confirmada, calculamos para cada producto
+     * cuanto puede reducirse sin dejar stock negativo. Si la entrada original aporto
+     * 10 unidades base y el stock actual es 3, significa que ya se consumieron 7 ⇒
+     * el minimo total permitido es 7 (no se puede bajar de ahi).
+     *
+     * Devuelve: Map producto_id → { nombre, minimoBase, consumidoBase }
+     */
+    const restriccionesPorProducto = useMemo(() => {
+        const m = new Map<number, { nombre: string; minimoBase: number; consumidoBase: number; aportoOriginal: number }>();
+        if (entrada.estado !== 'confirmado') return m;
+
+        // Stock actual indexado por producto en el almacen de la entrada
+        const stockMap = new Map<number, number>();
+        stocks.forEach(s => stockMap.set(s.producto_id, parseFloat(s.cantidad)));
+
+        // Agrupar detalles originales por producto_id (puede haber varias lineas del mismo)
+        const originalPorProducto = new Map<number, number>();
+        entrada.detalles.forEach(d => {
+            const cantBase = Number(d.cantidad) * Number(d.factor_conversion);
+            originalPorProducto.set(d.producto_id, (originalPorProducto.get(d.producto_id) ?? 0) + cantBase);
+        });
+
+        originalPorProducto.forEach((aporto, prodId) => {
+            const stockAct = stockMap.get(prodId) ?? 0;
+            const consumido = Math.max(0, aporto - stockAct);
+            if (consumido > 0) {
+                const prod = productos.find(p => p.id === prodId);
+                m.set(prodId, {
+                    nombre:        prod?.nombre ?? `Producto #${prodId}`,
+                    minimoBase:    consumido,        // total mínimo permitido en cualquier estado
+                    consumidoBase: consumido,
+                    aportoOriginal: aporto,
+                });
+            }
+        });
+
+        return m;
+    }, [entrada, stocks, productos]);
+
+    /** Suma de cantidad_base por producto en el ESTADO ACTUAL del form (no el original). */
+    const sumaActualPorProducto = useMemo(() => {
+        const m = new Map<number, number>();
+        detalles.forEach(d => {
+            if (typeof d.producto_id !== 'number') return;
+            m.set(d.producto_id, (m.get(d.producto_id) ?? 0) + cantidadBase(d));
+        });
+        return m;
+    }, [detalles]);
+
+    /** Lista de productos cuya suma actual no cumple el mínimo. Vacio = todo OK. */
+    const violaciones = useMemo(() => {
+        const out: Array<{ nombre: string; minimo: number; actual: number }> = [];
+        restriccionesPorProducto.forEach((r, prodId) => {
+            const actual = sumaActualPorProducto.get(prodId) ?? 0;
+            if (actual + 0.0001 < r.minimoBase) {
+                out.push({ nombre: r.nombre, minimo: r.minimoBase, actual });
+            }
+        });
+        return out;
+    }, [restriccionesPorProducto, sumaActualPorProducto]);
+
     function validar(): string[] {
         const errs: string[] = [];
         if (!almacenId) errs.push('Selecciona el almacén destino');
@@ -190,6 +254,14 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
         const errs = validar();
         if (errs.length > 0) {
             mostrarErroresValidacion(errs);
+            return;
+        }
+        // Bloqueo explicito si hay violaciones de stock — backend tambien valida,
+        // pero atajamos aca para evitar el roundtrip y dar mensaje accionable.
+        if (violaciones.length > 0) {
+            mostrarErroresValidacion(violaciones.map(v =>
+                `${v.nombre}: tienes ${v.actual.toFixed(2)} base, debes mantener al menos ${v.minimo.toFixed(2)} base`
+            ));
             return;
         }
         setProcessing(true);
@@ -315,6 +387,40 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                             <Plus size={14} className="mr-1" />Agregar producto
                         </Button>
                     </div>
+
+                    {/* Banner de restricciones de stock (solo si la entrada original era confirmada
+                        y algunos productos ya tuvieron movimientos posteriores). Educa al usuario
+                        sobre por que no puede reducir esos productos por debajo del minimo. */}
+                    {restriccionesPorProducto.size > 0 && (
+                        <div className="rounded-xl border p-3 space-y-2"
+                            style={{
+                                borderColor: 'color-mix(in srgb, var(--color-warning) 40%, var(--color-border))',
+                                backgroundColor: 'color-mix(in srgb, var(--color-warning) 6%, transparent)',
+                            }}>
+                            <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                                <AlertTriangle size={15} style={{ color: 'var(--color-warning)' }} />
+                                Productos con movimientos posteriores
+                            </div>
+                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                Estos productos ya tuvieron salidas/ventas después de confirmar esta entrada. Puedes redistribuir entre líneas, pero la <strong>suma total por producto</strong> debe ser ≥ al mínimo indicado. Si necesitas quitar uno, agrega otra línea del mismo producto con la cantidad restante.
+                            </p>
+                            <ul className="text-xs space-y-1 mt-1">
+                                {[...restriccionesPorProducto.entries()].map(([prodId, r]) => {
+                                    const actual = sumaActualPorProducto.get(prodId) ?? 0;
+                                    const cumple = actual + 0.0001 >= r.minimoBase;
+                                    return (
+                                        <li key={prodId} className="flex items-center justify-between gap-2 px-2 py-1 rounded"
+                                            style={{ backgroundColor: cumple ? 'transparent' : 'color-mix(in srgb, var(--color-danger) 10%, transparent)' }}>
+                                            <span style={{ color: 'var(--color-text)' }}>{r.nombre}</span>
+                                            <span className="font-mono" style={{ color: cumple ? '#16a34a' : 'var(--color-danger)' }}>
+                                                {actual.toFixed(2)} / mín. {r.minimoBase.toFixed(2)} base
+                                            </span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </div>
+                    )}
 
                     <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-semibold uppercase tracking-wide px-1" style={{ color: 'var(--color-text-muted)' }}>
                         <div className={facturaPorItem ? 'col-span-3' : 'col-span-5'}>Producto</div>
