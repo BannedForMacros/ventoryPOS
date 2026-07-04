@@ -34,6 +34,12 @@ use App\Http\Controllers\Ventas\DescuentoConceptoController;
 use App\Http\Controllers\Ventas\DescuentoLogController;
 use App\Http\Controllers\Ventas\VentaController;
 use App\Http\Controllers\Ventas\WhatsappController;
+use App\Http\Controllers\Finanzas\AdelantoProveedorController;
+use App\Http\Controllers\Finanzas\AnticipoClienteController;
+use App\Http\Controllers\Finanzas\BalanceDiarioController;
+use App\Http\Controllers\Finanzas\CuentasPorCobrarController;
+use App\Http\Controllers\Finanzas\CuentasPorPagarController;
+use App\Http\Controllers\Finanzas\DeudaController;
 use App\Http\Controllers\Inventario\CierreInventarioController;
 use App\Http\Controllers\Inventario\EntradaController;
 use App\Http\Controllers\Inventario\SalidaController;
@@ -285,6 +291,44 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:agenda,editar')->post('/{cita}/no-asistio',         [AgendaController::class, 'noAsistio'])->name('no_asistio');
         // Completar = redirige a POS prellenado
         Route::middleware('permiso:agenda,editar')->post('/{cita}/completar',          [AgendaController::class, 'completar'])->name('completar');
+    });
+
+    // ── FINANZAS ─────────────────────────────────────────────────────────
+    // Módulo financiero del balance diario: cuentas por cobrar/pagar,
+    // anticipos de clientes, adelantos a proveedores, deudas y el balance.
+    Route::prefix('finanzas')->name('finanzas.')->group(function () {
+        // Cuentas por cobrar (ventas a crédito)
+        Route::middleware('permiso:finanzas.cuentas-por-cobrar,ver')->get('cuentas-por-cobrar', [CuentasPorCobrarController::class, 'index'])->name('cxc.index');
+        Route::middleware('permiso:finanzas.cuentas-por-cobrar,crear')->post('cuentas-por-cobrar/{venta}/abonar', [CuentasPorCobrarController::class, 'abonar'])->name('cxc.abonar');
+
+        // Cuentas por pagar (proveedores, con abonos parciales)
+        Route::middleware('permiso:finanzas.cuentas-por-pagar,ver')->get('cuentas-por-pagar', [CuentasPorPagarController::class, 'index'])->name('cxp.index');
+        Route::middleware('permiso:finanzas.cuentas-por-pagar,crear')->post('cuentas-por-pagar/{entrada}/abonar', [CuentasPorPagarController::class, 'abonar'])->name('cxp.abonar');
+
+        // Anticipos de clientes
+        Route::middleware('permiso:finanzas.anticipos,ver')->get('anticipos', [AnticipoClienteController::class, 'index'])->name('anticipos.index');
+        Route::middleware('permiso:finanzas.anticipos,crear')->post('anticipos', [AnticipoClienteController::class, 'store'])->name('anticipos.store');
+        Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/aplicar', [AnticipoClienteController::class, 'aplicar'])->name('anticipos.aplicar');
+        Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/anular', [AnticipoClienteController::class, 'anular'])->name('anticipos.anular');
+
+        // Adelantos a proveedores
+        Route::middleware('permiso:finanzas.adelantos,ver')->get('adelantos', [AdelantoProveedorController::class, 'index'])->name('adelantos.index');
+        Route::middleware('permiso:finanzas.adelantos,crear')->post('adelantos', [AdelantoProveedorController::class, 'store'])->name('adelantos.store');
+        Route::middleware('permiso:finanzas.adelantos,editar')->post('adelantos/{adelanto}/anular', [AdelantoProveedorController::class, 'anular'])->name('adelantos.anular');
+
+        // Deudas y préstamos
+        Route::middleware('permiso:finanzas.deudas,ver')->get('deudas', [DeudaController::class, 'index'])->name('deudas.index');
+        Route::middleware('permiso:finanzas.deudas,crear')->post('deudas', [DeudaController::class, 'store'])->name('deudas.store');
+        Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/pago', [DeudaController::class, 'registrarPago'])->name('deudas.pago');
+        Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/anular', [DeudaController::class, 'anular'])->name('deudas.anular');
+
+        // Balance diario
+        Route::middleware('permiso:finanzas.balance,ver')->get('balance', [BalanceDiarioController::class, 'index'])->name('balance.index');
+        Route::middleware('permiso:finanzas.balance,ver')->get('balance/{fecha}', [BalanceDiarioController::class, 'show'])->name('balance.show');
+        Route::middleware('permiso:finanzas.balance,editar')->put('balance/items/{item}', [BalanceDiarioController::class, 'actualizarItem'])->name('balance.items.update');
+        Route::middleware('permiso:finanzas.balance,editar')->post('balance/{balance}/items', [BalanceDiarioController::class, 'agregarItem'])->name('balance.items.store');
+        Route::middleware('permiso:finanzas.balance,editar')->delete('balance/items/{item}', [BalanceDiarioController::class, 'eliminarItem'])->name('balance.items.destroy');
+        Route::middleware('permiso:finanzas.balance,editar')->post('balance/{balance}/confirmar', [BalanceDiarioController::class, 'confirmar'])->name('balance.confirmar');
     });
 
     // ── REPORTES ─────────────────────────────────────────────────────────

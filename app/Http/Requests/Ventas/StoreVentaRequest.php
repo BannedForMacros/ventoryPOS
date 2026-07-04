@@ -29,6 +29,11 @@ class StoreVentaRequest extends FormRequest
             'tipo_comprobante'       => ['required', Rule::in(['ticket', 'boleta', 'factura'])],
             'observacion'            => ['nullable', 'string', 'max:500'],
             'descuento_total'        => ['nullable', 'numeric', 'min:0'],
+            // F1 — Venta a crédito: se entrega mercadería sin cobrar el total.
+            // Exige cliente identificado (se valida en withValidator) y permite
+            // pagos parciales o sin pago inicial.
+            'es_credito'             => ['nullable', 'boolean'],
+            'fecha_vencimiento'      => ['nullable', 'date', 'after_or_equal:today'],
             // Token unico generado por el frontend para prevenir duplicados por reintentos.
             // Si el cliente reenvia la misma venta (timeout, doble click, etc.) el backend
             // detecta el key y devuelve la venta ya creada en lugar de duplicarla.
@@ -65,7 +70,8 @@ class StoreVentaRequest extends FormRequest
             // Pagos: metodo activo y de la empresa.
             // cuenta_metodo_pago_id se valida cruzado en withValidator (debe pertenecer
             // al metodo Y a la empresa, y la cuenta debe estar activa).
-            'pagos'                              => ['required', 'array', 'min:1'],
+            // En venta a crédito los pagos son opcionales (pago inicial parcial o nada).
+            'pagos'                              => [$this->boolean('es_credito') ? 'nullable' : 'required', 'array', $this->boolean('es_credito') ? 'min:0' : 'min:1'],
             'pagos.*.metodo_pago_id'             => [
                 'required', 'integer',
                 Rule::exists('metodos_pago', 'id')
@@ -94,7 +100,16 @@ class StoreVentaRequest extends FormRequest
 
             $total = $this->calcularTotalEsperado($empresaId);
 
-            $this->validarTotalCubierto($validator, $total);
+            if ($this->boolean('es_credito')) {
+                // F1 — Crédito: los pagos NO necesitan cubrir el total, pero
+                // tampoco pueden excederlo (un sobrepago no es crédito) y el
+                // cliente debe estar identificado (no Cliente General: sin
+                // nombre no hay a quién cobrarle).
+                $this->validarVentaCredito($validator, $total, $empresaId);
+            } else {
+                $this->validarTotalCubierto($validator, $total);
+            }
+
             $this->validarSobrepagoNoEfectivo($validator, $total, $empresaId);
         });
     }
@@ -324,6 +339,46 @@ class StoreVentaRequest extends FormRequest
         // sin centavos de diferencia que provocarian "pagos no cubren".
         $igv = round($baseGravadaFinal * $tasa, 2);
         return round($baseGravadaFinal + $igv + $baseExonFinal, 2);
+    }
+
+    /**
+     * F1 — Reglas específicas de la venta a crédito.
+     */
+    private function validarVentaCredito($validator, float $total, int $empresaId): void
+    {
+        // Cliente obligatorio y distinto del Cliente General.
+        $clienteId = $this->input('cliente_id');
+        if (!$clienteId) {
+            $validator->errors()->add(
+                'cliente_id',
+                'Una venta a crédito requiere seleccionar un cliente identificado.',
+            );
+        } else {
+            $esGeneral = \App\Models\Cliente::where('id', $clienteId)
+                ->where('empresa_id', $empresaId)
+                ->value('es_cliente_general');
+            if ($esGeneral) {
+                $validator->errors()->add(
+                    'cliente_id',
+                    'No se puede vender a crédito al Cliente General. Selecciona un cliente con nombre.',
+                );
+            }
+        }
+
+        // El pago inicial no puede exceder el total (eso no sería crédito).
+        $totalPagado = round(collect($this->input('pagos', []))->sum(fn($p) => (float) ($p['monto'] ?? 0)), 2);
+        if ($totalPagado > $total + 0.01) {
+            $validator->errors()->add(
+                'pagos',
+                "En una venta a crédito el pago inicial ({$totalPagado}) no puede exceder el total ({$total}).",
+            );
+        }
+        if ($totalPagado >= $total - 0.01 && $totalPagado > 0) {
+            $validator->errors()->add(
+                'es_credito',
+                'El pago inicial cubre el total: registra la venta como contado, no como crédito.',
+            );
+        }
     }
 
     private function validarTotalCubierto($validator, float $total): void

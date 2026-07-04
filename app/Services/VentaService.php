@@ -54,6 +54,16 @@ class VentaService
                 ?? Cliente::generalDeEmpresa($user->empresa_id)?->id
                 ?? abort(422, 'No se encontró el Cliente General de la empresa.');
 
+            // F1 — Venta a crédito: defensa en profundidad (el FormRequest ya
+            // valida). El crédito exige cliente identificado.
+            $esCredito = !empty($data['es_credito']);
+            if ($esCredito) {
+                $cliente = Cliente::find($clienteId);
+                if (!$cliente || $cliente->es_cliente_general) {
+                    abort(422, 'Una venta a crédito requiere un cliente identificado.');
+                }
+            }
+
             // Cabecera de la venta — con retry contra dos races posibles:
             //   1) idempotency_key duplicado (mismo request dos veces)
             //   2) turno_id+numero duplicado (dos POS abriendo en el mismo turno
@@ -82,6 +92,8 @@ class VentaService
                         'igv'                   => 0,
                         'total'                 => 0,
                         'estado'                => 'completada',
+                        'es_credito'            => $esCredito,
+                        'fecha_vencimiento'     => $esCredito ? ($data['fecha_vencimiento'] ?? null) : null,
                         'observacion'           => $data['observacion'] ?? null,
                         'fecha_venta'           => now(),
                     ]);
@@ -184,14 +196,15 @@ class VentaService
             // + efectivo con vuelto (caso comun: el cliente paga tarjeta 80 + 30
             // efectivo para una venta de 100; el vuelto de 10 se persiste contra
             // la linea de efectivo).
-            $metodoIds = collect($data['pagos'])->pluck('metodo_pago_id')->unique()->all();
+            $pagos     = $data['pagos'] ?? []; // crédito puede venir sin pago inicial
+            $metodoIds = collect($pagos)->pluck('metodo_pago_id')->unique()->all();
             $metodos   = \App\Models\MetodoPago::whereIn('id', $metodoIds)->get()->keyBy('id');
 
-            $totalPagado    = collect($data['pagos'])->sum(fn($p) => (float) $p['monto']);
+            $totalPagado    = collect($pagos)->sum(fn($p) => (float) $p['monto']);
             $vueltoGlobal   = max(0, round($totalPagado - (float) $venta->total, 2));
             $vueltoAsignado = false;
 
-            foreach ($data['pagos'] as $pagoData) {
+            foreach ($pagos as $pagoData) {
                 $monto        = (float) $pagoData['monto'];
                 $metodo       = $metodos->get($pagoData['metodo_pago_id']);
                 $admiteVuelto = (bool) ($metodo?->admite_vuelto);
@@ -211,6 +224,14 @@ class VentaService
                     'vuelto'                => $vuelto,
                 ]);
             }
+
+            // F1 — Sincronizar cuenta por cobrar de la venta.
+            // monto_pagado = dinero que realmente quedó en caja (sin el vuelto).
+            $montoPagadoReal = round($totalPagado - $vueltoGlobal, 2);
+            $venta->update([
+                'monto_pagado'    => $esCredito ? $montoPagadoReal : (float) $venta->total,
+                'saldo_pendiente' => $esCredito ? max(0, round((float) $venta->total - $montoPagadoReal, 2)) : 0,
+            ]);
 
             return $venta->fresh(['items', 'pagos', 'cliente']);
         });
@@ -243,7 +264,8 @@ class VentaService
                 }
             }
 
-            $venta->update(['estado' => 'anulada']);
+            // F1 — Una venta anulada deja de ser cuenta por cobrar.
+            $venta->update(['estado' => 'anulada', 'saldo_pendiente' => 0]);
 
             \App\Services\AuditoriaService::log('venta.anulada', $venta, [
                 'numero'           => $venta->numero,
