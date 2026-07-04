@@ -56,7 +56,7 @@ interface Props extends PageProps {
 const hoy = () => new Date().toISOString().slice(0, 10);
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const nombreCliente = (c?: { nombres?: string; apellidos?: string; razon_social?: string } | null) =>
-    c?.razon_social ?? `${c?.nombres ?? ''} ${c?.apellidos ?? ''}`.trim() || '—';
+    c?.razon_social ?? (`${c?.nombres ?? ''} ${c?.apellidos ?? ''}`.trim() || '—');
 
 /** Pasivo actual del anticipo: material → cantidad pendiente × precio del día. */
 const valorHoy = (a: Anticipo) =>

@@ -49,7 +49,7 @@ interface Props extends PageProps {
 const hoy = () => new Date().toISOString().slice(0, 10);
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const nombreCliente = (v: VentaCxc) =>
-    v.cliente?.razon_social ?? `${v.cliente?.nombres ?? ''} ${v.cliente?.apellidos ?? ''}`.trim() || '—';
+    v.cliente?.razon_social ?? (`${v.cliente?.nombres ?? ''} ${v.cliente?.apellidos ?? ''}`.trim() || '—');
 
 export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metodosPago, cuentas }: Props) {
     const { flash } = usePage<Props>().props;

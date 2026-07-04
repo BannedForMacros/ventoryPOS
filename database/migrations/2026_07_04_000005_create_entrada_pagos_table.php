@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -24,6 +25,12 @@ return new class extends Migration {
         Schema::table('entradas', function (Blueprint $table) {
             $table->decimal('monto_pagado', 12, 2)->default(0)->after('total');
         });
+
+        // Backfill: las entradas ya marcadas 'pagado' (flag binario de M22)
+        // quedan con monto_pagado = total para que el saldo dé 0.
+        DB::table('entradas')->where('estado_pago', 'pagado')->update([
+            'monto_pagado' => DB::raw('total'),
+        ]);
 
         Schema::create('entrada_pagos', function (Blueprint $table) {
             $table->id();
