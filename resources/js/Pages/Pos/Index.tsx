@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon,
+    Image as ImageIcon, CreditCard,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import PosLayout from '@/Layouts/PosLayout';
@@ -191,6 +191,10 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [descuentoTotal, setDescuentoTotal]       = useState(0);
     const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(null);
     const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>('ticket');
+    // F1 — Venta a crédito: se entrega mercadería sin cobrar el total.
+    // Requiere cliente identificado; el saldo queda como cuenta por cobrar.
+    const [esCredito, setEsCredito]                 = useState(false);
+    const [fechaVencimiento, setFechaVencimiento]   = useState('');
     const [modalCliente, setModalCliente]   = useState(false);
     const [modalConfirm, setModalConfirm]   = useState(false);
     const [loading, setLoading]             = useState(false);
@@ -229,6 +233,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // El flag `admite_vuelto` se lee del método (BD).
     const efectivo = metodosPago.find(m => m.tipo?.slug === 'efectivo');
     useEffect(() => {
+        if (esCredito) return; // en crédito el pago inicial es opcional y manual
         if (carrito.length > 0 && pagos.length === 0 && efectivo) {
             setPagos([{
                 key:                   uid(),
@@ -245,6 +250,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // Auto-actualizar monto del pago si es el único y admite vuelto (efectivo
     // por defecto). Si no admite vuelto el monto debe ser exacto, lo dejamos.
     useEffect(() => {
+        if (esCredito) return; // no forzar el monto al total: puede ser pago parcial
         if (pagos.length === 1 && pagos[0].admite_vuelto && total > 0) {
             setPagos(prev => [{ ...prev[0], monto: parseFloat(total.toFixed(2)) }]);
         }
@@ -376,15 +382,36 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const itemsInactivos = carrito.filter(i => i.inactivo);
     const hayInactivos   = itemsInactivos.length > 0;
 
+    // F1 — Cliente General no puede llevar crédito: sin nombre no hay a quién cobrar.
+    const esClienteGeneralSel = !cliente
+        || (cliente as Cliente & { es_cliente_general?: boolean }).es_cliente_general
+        || cliente.numero_documento === '99999999';
+
     function confirmarVenta() {
         if (carrito.length === 0) { toast.error('El carrito está vacío.'); return; }
         if (hayInactivos) {
             toast.error(`Hay ${itemsInactivos.length} ítem(s) inactivo(s). Elimínalos del carrito antes de cobrar.`);
             return;
         }
-        if (pagos.length === 0) { toast.error('Agrega al menos un método de pago.'); return; }
         const totalPagado = pagos.reduce((s, p) => s + p.monto, 0);
-        if (totalPagado < total - 0.009) { toast.error(`Faltan S/ ${(total - totalPagado).toFixed(2)} por cubrir.`); return; }
+
+        if (esCredito) {
+            if (esClienteGeneralSel) {
+                toast.error('Una venta a crédito requiere seleccionar un cliente identificado.');
+                return;
+            }
+            if (totalPagado >= total - 0.009 && totalPagado > 0) {
+                toast.error('El pago inicial cubre el total: desactiva "Venta a crédito" y cóbrala al contado.');
+                return;
+            }
+            if (totalPagado > total + 0.009) {
+                toast.error('En una venta a crédito el pago inicial no puede exceder el total.');
+                return;
+            }
+        } else {
+            if (pagos.length === 0) { toast.error('Agrega al menos un método de pago.'); return; }
+            if (totalPagado < total - 0.009) { toast.error(`Faltan S/ ${(total - totalPagado).toFixed(2)} por cubrir.`); return; }
+        }
         setModalConfirm(true);
     }
 
@@ -401,6 +428,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             tipo_comprobante:      tipoComprobante,
             descuento_total:       descuentoTotal,
             descuento_concepto_id: descuentoConceptoId,
+            es_credito:            esCredito,
+            fecha_vencimiento:     esCredito && fechaVencimiento ? fechaVencimiento : null,
             // Se reenvia el mismo key en cada reintento. El backend desduplica.
             idempotency_key:       idempotencyKey,
             // Si vino de una cita, lo enviamos para que el backend la vincule.
@@ -771,6 +800,10 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         onConfirmar={confirmarVenta}
                         puedeVender={puedeVender}
                         razonNoVender={razonNoVender}
+                        esCredito={esCredito}
+                        fechaVencimiento={fechaVencimiento}
+                        onSetEsCredito={setEsCredito}
+                        onSetFechaVencimiento={setFechaVencimiento}
                     />
                 </div>
 
@@ -834,6 +867,10 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 onConfirmar={confirmarVenta}
                                 puedeVender={puedeVender}
                                 razonNoVender={razonNoVender}
+                                esCredito={esCredito}
+                                fechaVencimiento={fechaVencimiento}
+                                onSetEsCredito={setEsCredito}
+                                onSetFechaVencimiento={setFechaVencimiento}
                             />
                         </div>
                     </div>
@@ -975,6 +1012,11 @@ interface CarritoPanelProps {
     // A14: bandera de bloqueo del POS (admin sin local, almacén desactivado, etc.)
     puedeVender: boolean;
     razonNoVender: string | null;
+    // F1 — Venta a crédito
+    esCredito: boolean;
+    fechaVencimiento: string;
+    onSetEsCredito: (v: boolean) => void;
+    onSetFechaVencimiento: (v: string) => void;
 }
 
 function CarritoPanel({
@@ -985,6 +1027,7 @@ function CarritoPanel({
     onCambiarCantidad, onAplicarDescuentoItem, onEliminarItem,
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar,
     puedeVender, razonNoVender,
+    esCredito, fechaVencimiento, onSetEsCredito, onSetFechaVencimiento,
 }: CarritoPanelProps) {
     const hayInactivos = inactivosCount > 0;
 
@@ -1133,6 +1176,58 @@ function CarritoPanel({
                     onChange={onSetDescuento}
                 />
 
+                {/* F1 — Venta a crédito */}
+                <div
+                    className="rounded-xl px-3 py-2.5"
+                    style={{
+                        border: `1px solid ${esCredito ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                        backgroundColor: esCredito
+                            ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))'
+                            : 'var(--color-bg)',
+                    }}
+                >
+                    <label className="flex items-center justify-between gap-2 cursor-pointer select-none">
+                        <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                            <CreditCard size={15} style={{ color: esCredito ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
+                            Venta a crédito
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={esCredito}
+                            onChange={e => onSetEsCredito(e.target.checked)}
+                            className="h-4 w-4 accent-[var(--color-primary)]"
+                        />
+                    </label>
+                    {esCredito && (
+                        <div className="mt-2 space-y-1.5">
+                            {esClienteGeneral && (
+                                <p className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
+                                    Selecciona un cliente identificado para vender a crédito.
+                                </p>
+                            )}
+                            <div className="flex items-center gap-2">
+                                <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                    Vence (opcional)
+                                </span>
+                                <input
+                                    type="date"
+                                    value={fechaVencimiento}
+                                    onChange={e => onSetFechaVencimiento(e.target.value)}
+                                    className="flex-1 text-xs rounded-lg px-2 py-1.5 border outline-none"
+                                    style={{
+                                        borderColor: 'var(--color-border)',
+                                        backgroundColor: 'var(--color-bg)',
+                                        color: 'var(--color-text)',
+                                    }}
+                                />
+                            </div>
+                            <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                El pago inicial es opcional; el saldo queda como cuenta por cobrar.
+                            </p>
+                        </div>
+                    )}
+                </div>
+
                 {/* Pagos */}
                 <PanelPago
                     pagos={pagos}
@@ -1171,6 +1266,30 @@ function CarritoPanel({
                     <span>TOTAL</span>
                     <span>S/ {total.toFixed(2)}</span>
                 </div>
+
+                {/* F1 — Resumen del crédito: pago inicial vs saldo por cobrar */}
+                {esCredito && (
+                    <div
+                        className="rounded-xl px-3 py-2 space-y-1 text-xs"
+                        style={{
+                            border: '1px dashed var(--color-primary)',
+                            color: 'var(--color-text)',
+                        }}
+                    >
+                        <div className="flex justify-between">
+                            <span style={{ color: 'var(--color-text-muted)' }}>Pago inicial</span>
+                            <span className="font-semibold">
+                                S/ {pagos.reduce((s, p) => s + p.monto, 0).toFixed(2)}
+                            </span>
+                        </div>
+                        <div className="flex justify-between font-bold">
+                            <span style={{ color: 'var(--color-primary)' }}>Saldo a crédito</span>
+                            <span style={{ color: 'var(--color-primary)' }}>
+                                S/ {Math.max(0, total - pagos.reduce((s, p) => s + p.monto, 0)).toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+                )}
 
                 {/* A14: banner rojo cuando el backend dice que no puede vender */}
                 {!puedeVender && razonNoVender && (
