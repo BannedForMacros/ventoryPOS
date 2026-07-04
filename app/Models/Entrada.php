@@ -21,6 +21,7 @@ class Entrada extends Model
         'estado',
         'observacion',
         'total',
+        'monto_pagado',
         'estado_pago',
         'metodo_pago_id',
         'cuenta_id',
@@ -44,14 +45,40 @@ class Entrada extends Model
     protected function casts(): array
     {
         return [
-            'fecha' => 'date',
-            'total' => 'decimal:2',
+            'fecha'        => 'date',
+            'total'        => 'decimal:2',
+            'monto_pagado' => 'decimal:2',
         ];
     }
 
     public function estaPagada(): bool
     {
         return $this->estado_pago === 'pagado';
+    }
+
+    public function pagosParciales(): HasMany
+    {
+        return $this->hasMany(EntradaPago::class);
+    }
+
+    public function saldoPendiente(): float
+    {
+        return round((float) $this->total - (float) $this->monto_pagado, 2);
+    }
+
+    /**
+     * Registra un abono y sincroniza monto_pagado + estado_pago
+     * (pendiente → parcial → pagado). Llamar dentro de una transacción.
+     */
+    public function aplicarPago(float $monto): void
+    {
+        $pagado = round((float) $this->monto_pagado + $monto, 2);
+        $total  = (float) $this->total;
+
+        $this->update([
+            'monto_pagado' => $pagado,
+            'estado_pago'  => $pagado >= $total - 0.01 ? 'pagado' : ($pagado > 0 ? 'parcial' : 'pendiente'),
+        ]);
     }
 
     public function empresa(): BelongsTo

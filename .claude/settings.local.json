@@ -103,7 +103,11 @@
       "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Ventas tests/Feature/Clientes tests/Feature/Inventario tests/Feature/Reportes tests/Feature/Support --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Configuracion/RolTopeDescuentoTest.php --colors=never)",
       "Bash(vendor/bin/pest tests/Feature/Pos tests/Feature/Stock tests/Feature/Turnos tests/Feature/Devoluciones tests/Feature/Agenda tests/Feature/Igv tests/Feature/Ventas tests/Feature/Clientes tests/Feature/Inventario tests/Feature/Reportes tests/Feature/Configuracion tests/Feature/Support --colors=never)",
-      "PowerShell(Test-Path *)"
+      "PowerShell(Test-Path *)",
+      "PowerShell(git *)",
+      "PowerShell(Select-String -Path C:\\\\MacSoft\\\\ventoryPOS\\\\.env -Pattern '^\\(DB_|APP_ENV|APP_URL\\)' | ForEach-Object Line)",
+      "PowerShell(cd C:\\\\MacSoft\\\\ventoryPOS; php artisan tinker --execute=\"echo implode\\(PHP_EOL, array_map\\(fn\\(\\\\$t\\) => \\\\$t->tablename, DB::select\\(\\\\\"select tablename from pg_tables where schemaname='public' order by 1\\\\\"\\)\\)\\);\")",
+      "PowerShell(psql *)"
     ]
   }
 }

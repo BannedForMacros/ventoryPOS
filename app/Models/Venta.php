@@ -15,16 +15,21 @@ class Venta extends Model
         'numero', 'idempotency_key', 'tipo_comprobante',
         'subtotal', 'descuento_total', 'descuento_concepto_id', 'igv', 'total',
         'estado', 'observacion', 'fecha_venta',
+        'es_credito', 'monto_pagado', 'saldo_pendiente', 'fecha_vencimiento',
     ];
 
     protected function casts(): array
     {
         return [
-            'fecha_venta'     => 'datetime',
-            'subtotal'        => 'decimal:2',
-            'descuento_total' => 'decimal:2',
-            'igv'             => 'decimal:2',
-            'total'           => 'decimal:2',
+            'fecha_venta'       => 'datetime',
+            'subtotal'          => 'decimal:2',
+            'descuento_total'   => 'decimal:2',
+            'igv'               => 'decimal:2',
+            'total'             => 'decimal:2',
+            'es_credito'        => 'boolean',
+            'monto_pagado'      => 'decimal:2',
+            'saldo_pendiente'   => 'decimal:2',
+            'fecha_vencimiento' => 'date',
         ];
     }
 
@@ -37,11 +42,20 @@ class Venta extends Model
     public function descuentoConcepto(): BelongsTo { return $this->belongsTo(DescuentoConcepto::class); }
     public function items(): HasMany             { return $this->hasMany(VentaItem::class); }
     public function pagos(): HasMany             { return $this->hasMany(VentaPago::class); }
+    public function abonos(): HasMany            { return $this->hasMany(VentaAbono::class); }
     public function descuentosLog(): HasMany     { return $this->hasMany(DescuentoLog::class); }
 
     public function scopeCompletadas(Builder $q): Builder        { return $q->where('estado', 'completada'); }
     public function scopeAnuladas(Builder $q): Builder           { return $q->where('estado', 'anulada'); }
     public function scopeDeEmpresa(Builder $q, int $id): Builder { return $q->where('empresa_id', $id); }
+
+    /** Cuentas por cobrar: ventas a crédito completadas con saldo pendiente. */
+    public function scopeConSaldoPendiente(Builder $q): Builder
+    {
+        return $q->where('es_credito', true)
+                 ->where('estado', 'completada')
+                 ->where('saldo_pendiente', '>', 0);
+    }
 
     /**
      * Calcula y persiste totales separando base gravada (afecta IGV) de la base
