@@ -1,0 +1,304 @@
+import { useEffect, useState } from 'react';
+import { router, usePage } from '@inertiajs/react';
+import toast from 'react-hot-toast';
+import { Banknote, Eye } from 'lucide-react';
+import AppLayout from '@/Layouts/AppLayout';
+import PageHeader from '@/Components/UI/PageHeader';
+import Button from '@/Components/UI/Button';
+import Input from '@/Components/UI/Input';
+import Select from '@/Components/UI/Select';
+import Table, { Column } from '@/Components/UI/Table';
+import Badge from '@/Components/UI/Badge';
+import Modal from '@/Components/UI/Modal';
+import Tabs from '@/Components/UI/Tabs';
+import type { PageProps } from '@/types';
+
+interface Pago {
+    id: number;
+    fecha: string;
+    monto: string;
+    referencia: string | null;
+    proveedor_adelanto_id: number | null;
+    metodo_pago?: { nombre: string } | null;
+    cuenta?: { nombre: string } | null;
+    user?: { name: string } | null;
+}
+
+interface EntradaCxp extends Record<string, unknown> {
+    id: number;
+    fecha: string;
+    numero_documento: string | null;
+    proveedor: string | null;
+    proveedor_id: number | null;
+    total: string;
+    monto_pagado: string;
+    estado_pago: string;
+    proveedor_rel?: { id: number; razon_social?: string; nombre_comercial?: string } | null;
+    almacen?: { nombre: string } | null;
+    pagos_parciales: Pago[];
+}
+
+interface AdelantoMin { id: number; proveedor_id: number; saldo: string; }
+
+interface Paginado<T> { data: T[]; total: number; }
+
+interface Props extends PageProps {
+    entradas: Paginado<EntradaCxp>;
+    totalPendiente: number;
+    estado: string;
+    metodosPago: { id: number; nombre: string }[];
+    cuentas: { id: number; nombre: string }[];
+    adelantos: AdelantoMin[];
+}
+
+const hoy = () => new Date().toISOString().slice(0, 10);
+const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+const nombreProveedor = (e: EntradaCxp) =>
+    e.proveedor_rel?.razon_social ?? e.proveedor_rel?.nombre_comercial ?? e.proveedor ?? '—';
+const saldoDe = (e: EntradaCxp) => Math.max(0, Number(e.total) - Number(e.monto_pagado));
+
+export default function CuentasPorPagar({ entradas, totalPendiente, estado, metodosPago, cuentas, adelantos }: Props) {
+    const { flash } = usePage<Props>().props;
+    const [abonando, setAbonando] = useState<EntradaCxp | null>(null);
+    const [detalle, setDetalle]   = useState<EntradaCxp | null>(null);
+    const [saving, setSaving]     = useState(false);
+    const [errors, setErrors]     = useState<Record<string, string>>({});
+    const [usarAdelanto, setUsarAdelanto] = useState(false);
+    const [form, setForm] = useState({
+        monto: '', fecha: hoy(), metodo_pago_id: '', cuenta_id: '',
+        proveedor_adelanto_id: '', referencia: '', observacion: '',
+    });
+
+    useEffect(() => {
+        if (flash?.success) toast.success(flash.success as string);
+        if (flash?.error)   toast.error(flash.error as string);
+    }, [flash]);
+
+    const adelantosDisponibles = abonando
+        ? adelantos.filter(a => a.proveedor_id === abonando.proveedor_id && Number(a.saldo) > 0)
+        : [];
+
+    function abrirAbono(e: EntradaCxp) {
+        setAbonando(e);
+        setErrors({});
+        setUsarAdelanto(false);
+        setForm({
+            monto: saldoDe(e).toFixed(2), fecha: hoy(), metodo_pago_id: '', cuenta_id: '',
+            proveedor_adelanto_id: '', referencia: '', observacion: '',
+        });
+    }
+
+    function submitAbono() {
+        if (!abonando) return;
+        setSaving(true);
+        router.post(route('finanzas.cxp.abonar', abonando.id), {
+            ...form,
+            metodo_pago_id:        usarAdelanto ? null : (form.metodo_pago_id || null),
+            cuenta_id:             usarAdelanto ? null : (form.cuenta_id || null),
+            proveedor_adelanto_id: usarAdelanto ? (form.proveedor_adelanto_id || null) : null,
+        } as any, {
+            onSuccess: () => { setAbonando(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    const columns: Column<EntradaCxp>[] = [
+        {
+            key: 'fecha', label: 'Fecha', sortable: true,
+            render: (e) => <span className="text-sm">{new Date(e.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</span>,
+        },
+        { key: 'numero_documento', label: 'Documento', render: (e) => <span className="font-mono text-sm">{e.numero_documento ?? '—'}</span> },
+        { key: 'proveedor', label: 'Proveedor', render: (e) => <span className="font-medium">{nombreProveedor(e)}</span> },
+        { key: 'total', label: 'Total', render: (e) => <span>{money(e.total)}</span> },
+        { key: 'monto_pagado', label: 'Pagado', render: (e) => <span style={{ color: 'var(--color-success, #16a34a)' }}>{money(e.monto_pagado)}</span> },
+        {
+            key: 'saldo', label: 'Saldo',
+            render: (e) => saldoDe(e) > 0
+                ? <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(saldoDe(e))}</span>
+                : <Badge variant="success">Pagada</Badge>,
+        },
+        {
+            key: 'estado_pago', label: 'Estado',
+            render: (e) => (
+                <Badge variant={e.estado_pago === 'pagado' ? 'success' : e.estado_pago === 'parcial' ? 'warning' : 'secondary'}>
+                    {e.estado_pago === 'pagado' ? 'Pagado' : e.estado_pago === 'parcial' ? 'Parcial' : 'Pendiente'}
+                </Badge>
+            ),
+        },
+        {
+            key: 'acciones', label: 'Acciones',
+            render: (e) => (
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setDetalle(e)}
+                        className="p-1.5 rounded-lg hover:bg-black/5"
+                        title="Ver pagos"
+                        style={{ color: 'var(--color-text-muted)' }}
+                    >
+                        <Eye size={15} />
+                    </button>
+                    {saldoDe(e) > 0 && (
+                        <Button onClick={() => abrirAbono(e)}>
+                            <Banknote size={14} className="mr-1" />Pagar
+                        </Button>
+                    )}
+                </div>
+            ),
+        },
+    ];
+
+    return (
+        <AppLayout title="Cuentas por pagar">
+            <PageHeader
+                title="Cuentas por pagar"
+                subtitle="Deudas con proveedores y pagos parciales"
+                actions={
+                    <div
+                        className="px-4 py-2 rounded-xl text-right"
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, var(--color-bg))' }}
+                    >
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                            Total por pagar
+                        </p>
+                        <p className="text-lg font-bold" style={{ color: 'var(--color-danger)' }}>{money(totalPendiente)}</p>
+                    </div>
+                }
+            />
+
+            <div className="mb-5">
+                <Tabs
+                    tabs={[
+                        { value: 'pendientes', label: 'Con saldo pendiente' },
+                        { value: 'todas',      label: 'Todas las entradas' },
+                    ]}
+                    value={estado}
+                    onChange={(v) => router.get(route('finanzas.cxp.index'), { estado: v }, { preserveState: true, replace: true })}
+                />
+            </div>
+
+            <Table
+                data={entradas.data}
+                columns={columns}
+                searchPlaceholder="Buscar proveedor o documento..."
+                emptyMessage="No hay cuentas por pagar"
+            />
+
+            {/* Modal pagar */}
+            <Modal
+                isOpen={abonando !== null}
+                onClose={() => setAbonando(null)}
+                title={abonando ? `Pagar a ${nombreProveedor(abonando)}` : ''}
+                size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setAbonando(null)}>Cancelar</Button>
+                        <Button onClick={submitAbono} disabled={saving}>{saving ? 'Guardando...' : 'Registrar pago'}</Button>
+                    </>
+                }
+            >
+                {abonando && (
+                    <div className="space-y-4">
+                        <div className="flex justify-between text-sm px-1">
+                            <span style={{ color: 'var(--color-text-muted)' }}>Saldo pendiente</span>
+                            <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(saldoDe(abonando))}</span>
+                        </div>
+                        <Input label="Monto del pago" required type="number" min="0.01" step="0.01"
+                            value={form.monto}
+                            onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
+                            error={errors.monto}
+                        />
+                        <Input label="Fecha" required type="date"
+                            value={form.fecha}
+                            onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
+                            error={errors.fecha}
+                        />
+
+                        {adelantosDisponibles.length > 0 && (
+                            <label className="flex items-center gap-2 text-sm cursor-pointer select-none px-1">
+                                <input type="checkbox" checked={usarAdelanto}
+                                    onChange={e => setUsarAdelanto(e.target.checked)}
+                                    className="h-4 w-4 accent-[var(--color-primary)]"
+                                />
+                                <span style={{ color: 'var(--color-text)' }}>Pagar consumiendo un adelanto entregado al proveedor</span>
+                            </label>
+                        )}
+
+                        {usarAdelanto ? (
+                            <Select label="Adelanto a consumir" required
+                                options={adelantosDisponibles.map(a => ({ value: a.id, label: `Adelanto #${a.id} — saldo ${money(a.saldo)}` }))}
+                                value={form.proveedor_adelanto_id}
+                                onChange={v => setForm(f => ({ ...f, proveedor_adelanto_id: String(v) }))}
+                                placeholder="— Seleccionar —"
+                                error={errors.proveedor_adelanto_id}
+                            />
+                        ) : (
+                            <>
+                                <Select label="Método de pago"
+                                    options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                                    value={form.metodo_pago_id}
+                                    onChange={v => setForm(f => ({ ...f, metodo_pago_id: String(v) }))}
+                                    placeholder="— Seleccionar —"
+                                    error={errors.metodo_pago_id}
+                                />
+                                <Select label="Cuenta origen"
+                                    options={cuentas.map(c => ({ value: c.id, label: c.nombre }))}
+                                    value={form.cuenta_id}
+                                    onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
+                                    placeholder="— Seleccionar —"
+                                    error={errors.cuenta_id}
+                                />
+                            </>
+                        )}
+
+                        <Input label="Referencia (operación, voucher...)"
+                            value={form.referencia}
+                            onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))}
+                        />
+                        <Input label="Observación"
+                            value={form.observacion}
+                            onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
+                        />
+                    </div>
+                )}
+            </Modal>
+
+            {/* Modal historial de pagos */}
+            <Modal
+                isOpen={detalle !== null}
+                onClose={() => setDetalle(null)}
+                title={detalle ? `Pagos — ${nombreProveedor(detalle)}` : ''}
+                size="md"
+                footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
+            >
+                {detalle && (
+                    <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                            <div><p style={{ color: 'var(--color-text-muted)' }}>Total</p><p className="font-bold">{money(detalle.total)}</p></div>
+                            <div><p style={{ color: 'var(--color-text-muted)' }}>Pagado</p><p className="font-bold">{money(detalle.monto_pagado)}</p></div>
+                            <div><p style={{ color: 'var(--color-text-muted)' }}>Saldo</p><p className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(saldoDe(detalle))}</p></div>
+                        </div>
+                        {detalle.pagos_parciales.length === 0 ? (
+                            <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Sin pagos registrados</p>
+                        ) : (
+                            <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                                {detalle.pagos_parciales.map(p => (
+                                    <div key={p.id} className="py-2 flex justify-between items-start text-sm">
+                                        <div>
+                                            <p className="font-medium">{new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</p>
+                                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                                {p.proveedor_adelanto_id
+                                                    ? `Consumió adelanto #${p.proveedor_adelanto_id}`
+                                                    : [p.metodo_pago?.nombre, p.cuenta?.nombre, p.referencia, p.user?.name].filter(Boolean).join(' · ') || '—'}
+                                            </p>
+                                        </div>
+                                        <span className="font-bold">{money(p.monto)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </Modal>
+        </AppLayout>
+    );
+}

@@ -49,6 +49,9 @@ class CuentasPorPagarController extends Controller
             'estado'         => $request->input('estado', 'pendientes'),
             'metodosPago'    => MetodoPago::deEmpresa($user->empresa_id)->activo()->orderBy('nombre')->get(['id', 'nombre']),
             'cuentas'        => Cuenta::deEmpresa($user->empresa_id)->activo()->orderBy('nombre')->get(['id', 'nombre']),
+            // Adelantos con saldo para ofrecer "pagar consumiendo adelanto".
+            'adelantos'      => ProveedorAdelanto::deEmpresa($user->empresa_id)->activo()
+                ->where('saldo', '>', 0)->get(['id', 'proveedor_id', 'saldo']),
         ]);
     }
 
