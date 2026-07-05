@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, History, Search, UserRound } from 'lucide-react';
+import { ChevronDown, History, Search, UserRound } from 'lucide-react';
+import Collapse from '@/Components/UI/Collapse';
 
 /**
  * F11 — Componente NORMALIZADO para los detalles financieros.
@@ -162,8 +163,9 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                 >
                                     <span className="col-span-7 flex items-center gap-2 min-w-0">
                                         {desplegable
-                                            ? (abierto ? <ChevronDown size={16} className="flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
-                                                       : <ChevronRight size={16} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />)
+                                            ? <ChevronDown size={16}
+                                                className={`flex-shrink-0 transition-transform duration-300 ${abierto ? '' : '-rotate-90'}`}
+                                                style={{ color: abierto ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
                                             : <span className="w-4 flex-shrink-0" />}
                                         <span className="min-w-0">
                                             <span className="block text-sm font-semibold capitalize truncate" style={{ color: 'var(--color-text)' }}>
@@ -183,7 +185,8 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                 </button>
 
                                 {/* Sub-tabla del detalle: columnas A MEDIDA de la categoría */}
-                                {abierto && desplegable && (
+                                {desplegable && (
+                                    <Collapse open={abierto}>
                                     <div className="overflow-x-auto"
                                         style={{ backgroundColor: 'color-mix(in srgb, var(--color-surface) 60%, var(--color-bg))', borderTop: '1px dashed var(--color-border)' }}>
                                         <table className="w-full text-sm">
@@ -225,9 +228,8 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                                                         >
                                                                             <History size={11} className="flex-shrink-0" />
                                                                             Historial ({it.historial!.length})
-                                                                            {histAbiertos.has(`${g.id}-${i}`)
-                                                                                ? <ChevronDown size={11} className="flex-shrink-0" />
-                                                                                : <ChevronRight size={11} className="flex-shrink-0" />}
+                                                                            <ChevronDown size={11}
+                                                                                className={`flex-shrink-0 transition-transform duration-300 ${histAbiertos.has(`${g.id}-${i}`) ? '' : '-rotate-90'}`} />
                                                                         </button>
                                                                     )}
                                                                 </td>
@@ -250,11 +252,12 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                                             </td>
                                                         </tr>
 
-                                                        {/* Mini-historial (abonos/pagos) — desplegable, tabla simétrica */}
-                                                        {(it.historial?.length ?? 0) > 0 && histAbiertos.has(`${g.id}-${i}`) && (
+                                                        {/* Mini-historial (abonos/pagos) — desplegable animado, tabla simétrica */}
+                                                        {(it.historial?.length ?? 0) > 0 && (
                                                             <tr>
-                                                                <td colSpan={cols.length + (hayUsuarios ? 2 : 1)} className="px-3 pb-2 pl-14 pt-0">
-                                                                    <div className="rounded-lg px-3 py-1.5 space-y-1"
+                                                                <td colSpan={cols.length + (hayUsuarios ? 2 : 1)} className="p-0">
+                                                                    <Collapse open={histAbiertos.has(`${g.id}-${i}`)}>
+                                                                    <div className="mx-3 mb-2 ml-14 rounded-lg px-3 py-1.5 space-y-1"
                                                                         style={{ backgroundColor: 'var(--color-bg)', border: '1px dashed var(--color-border)' }}>
                                                                         {/* Cabecera de columnas del historial */}
                                                                         <div className="grid grid-cols-[78px_1fr_minmax(90px,auto)_96px] gap-2 text-[10px] font-bold uppercase tracking-wider pb-1"
@@ -286,6 +289,7 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                                                             </div>
                                                                         ))}
                                                                     </div>
+                                                                    </Collapse>
                                                                 </td>
                                                             </tr>
                                                         )}
@@ -294,6 +298,7 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                             </tbody>
                                         </table>
                                     </div>
+                                    </Collapse>
                                 )}
                             </div>
                         );
