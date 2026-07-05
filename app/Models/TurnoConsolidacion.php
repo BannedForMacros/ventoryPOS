@@ -33,6 +33,7 @@ class TurnoConsolidacion extends Model
     public function turno(): BelongsTo   { return $this->belongsTo(Turno::class); }
     public function empresa(): BelongsTo { return $this->belongsTo(Empresa::class); }
     public function user(): BelongsTo    { return $this->belongsTo(User::class); }
+    public function items(): \Illuminate\Database\Eloquent\Relations\HasMany { return $this->hasMany(TurnoConsolidacionItem::class); }
 
     public function scopeDeEmpresa(Builder $q, int $id): Builder { return $q->where('empresa_id', $id); }
 }
