@@ -5,9 +5,17 @@ namespace App\Http\Controllers\Finanzas;
 use App\Http\Controllers\Controller;
 use App\Models\BalanceDiario;
 use App\Models\BalanceDiarioItem;
+use App\Models\ClienteAnticipo;
+use App\Models\CuentaMovimiento;
+use App\Models\Deuda;
+use App\Models\Entrada;
 use App\Models\Gasto;
+use App\Models\ProveedorAdelanto;
+use App\Models\Venta;
 use App\Services\BalanceDiarioService;
+use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -68,6 +76,191 @@ class BalanceDiarioController extends Controller
             'balance' => $balance,
             'gastos'  => $gastos,
         ]);
+    }
+
+    /**
+     * F9 — Detalle de una línea del balance (JSON para el modal).
+     * Cada monto del balance debe poder explicarse: de dónde sale, sol por sol.
+     */
+    public function detalleItem(Request $request, string $fecha, string $categoria)
+    {
+        $user = $request->user();
+        abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha), 404);
+
+        $empresaId = $user->empresa_id;
+        $refId     = $request->integer('ref_id') ?: null;
+
+        switch ($categoria) {
+            // ── Efectivo / cuenta bancaria: movimientos de tesorería ────
+            case 'efectivo':
+            case 'cuenta_bancaria': {
+                $cuentaId = $refId ?? TesoreriaService::efectivo($empresaId)->id;
+                // Rango por defecto: la última semana hasta la fecha del balance.
+                $hasta = min($request->input('hasta', $fecha), $fecha);
+                $desde = $request->input('desde', date('Y-m-d', strtotime($hasta . ' -6 days')));
+
+                $movimientos = CuentaMovimiento::deEmpresa($empresaId)
+                    ->where('cuenta_id', $cuentaId)
+                    ->whereBetween('fecha', [$desde, $hasta])
+                    ->with('user:id,name')
+                    ->orderByDesc('fecha')->orderByDesc('id')
+                    ->limit(300)
+                    ->get(['id', 'fecha', 'tipo', 'monto', 'descripcion', 'ref_tipo', 'user_id']);
+
+                // Resumen por día (responde "¿de dónde salió el efectivo de tal día?")
+                $porDia = CuentaMovimiento::deEmpresa($empresaId)
+                    ->where('cuenta_id', $cuentaId)
+                    ->whereBetween('fecha', [$desde, $hasta])
+                    ->selectRaw("fecha,
+                        SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE 0 END) as ingresos,
+                        SUM(CASE WHEN tipo = 'egreso'  THEN monto ELSE 0 END) as egresos")
+                    ->groupBy('fecha')->orderByDesc('fecha')->get();
+
+                return response()->json([
+                    'tipo'        => 'movimientos',
+                    'saldo'       => app(TesoreriaService::class)->saldo($cuentaId, $fecha),
+                    'desde'       => $desde,
+                    'hasta'       => $hasta,
+                    'porDia'      => $porDia,
+                    'movimientos' => $movimientos,
+                ]);
+            }
+
+            // ── Stock valorizado: producto por producto ─────────────────
+            case 'stock': {
+                $filas = DB::table('stock')
+                    ->join('productos', 'productos.id', '=', 'stock.producto_id')
+                    ->where('productos.empresa_id', $empresaId)
+                    ->where('productos.activo', true)
+                    ->where('stock.cantidad', '!=', 0)
+                    ->selectRaw('productos.nombre, SUM(stock.cantidad) as cantidad, productos.precio_costo,
+                                 SUM(stock.cantidad * productos.precio_costo) as valor')
+                    ->groupBy('productos.id', 'productos.nombre', 'productos.precio_costo')
+                    ->orderByDesc('valor')
+                    ->limit(300)
+                    ->get();
+
+                return response()->json([
+                    'tipo'  => 'stock',
+                    'total' => round((float) $filas->sum('valor'), 2),
+                    'filas' => $filas,
+                ]);
+            }
+
+            // ── Deudas por cobrar: venta a venta ────────────────────────
+            case 'cxc': {
+                $filas = Venta::deEmpresa($empresaId)->conSaldoPendiente()
+                    ->with('cliente:id,nombres,apellidos,razon_social')
+                    ->orderByDesc('saldo_pendiente')
+                    ->limit(300)
+                    ->get(['id', 'numero', 'fecha_venta', 'fecha_vencimiento', 'cliente_id', 'total', 'monto_pagado', 'saldo_pendiente'])
+                    ->map(fn ($v) => [
+                        'fecha'   => $v->fecha_venta?->format('Y-m-d'),
+                        'numero'  => $v->numero,
+                        'cliente' => $v->cliente?->razon_social ?? trim(($v->cliente?->nombres ?? '') . ' ' . ($v->cliente?->apellidos ?? '')),
+                        'total'   => (float) $v->total,
+                        'pagado'  => (float) $v->monto_pagado,
+                        'saldo'   => (float) $v->saldo_pendiente,
+                        'vence'   => $v->fecha_vencimiento?->format('Y-m-d'),
+                    ]);
+
+                return response()->json(['tipo' => 'cxc', 'total' => round((float) $filas->sum('saldo'), 2), 'filas' => $filas]);
+            }
+
+            // ── Proveedores por pagar: entrada por entrada ──────────────
+            case 'cxp': {
+                $filas = Entrada::deEmpresa($empresaId)->confirmado()
+                    ->where('estado_pago', '!=', 'pagado')
+                    ->whereRaw('total - monto_pagado > 0.01')
+                    ->with('proveedorRel:id,razon_social,nombre_comercial')
+                    ->orderByRaw('total - monto_pagado desc')
+                    ->limit(300)
+                    ->get()
+                    ->map(fn ($e) => [
+                        'fecha'     => $e->fecha?->format('Y-m-d'),
+                        'documento' => $e->numero_documento,
+                        'proveedor' => $e->proveedorRel?->razon_social ?? $e->proveedorRel?->nombre_comercial ?? $e->proveedor,
+                        'total'     => (float) $e->total,
+                        'pagado'    => (float) $e->monto_pagado,
+                        'saldo'     => $e->saldoPendiente(),
+                    ]);
+
+                return response()->json(['tipo' => 'cxp', 'total' => round((float) $filas->sum('saldo'), 2), 'filas' => $filas]);
+            }
+
+            // ── Anticipos de clientes: valorizado a precio del día ──────
+            case 'anticipo_cliente': {
+                $filas = ClienteAnticipo::deEmpresa($empresaId)->activo()
+                    ->with(['cliente:id,nombres,apellidos,razon_social', 'producto:id,nombre,precio_venta'])
+                    ->orderByDesc('fecha')
+                    ->limit(300)
+                    ->get()
+                    ->map(fn ($a) => [
+                        'fecha'     => $a->fecha?->format('Y-m-d'),
+                        'cliente'   => $a->cliente?->razon_social ?? trim(($a->cliente?->nombres ?? '') . ' ' . ($a->cliente?->apellidos ?? '')),
+                        'modalidad' => $a->tipo_valorizacion === 'material'
+                            ? "{$a->producto?->nombre} × " . (float) $a->cantidad_pendiente . " a S/" . (float) ($a->producto?->precio_venta ?? 0)
+                            : 'Dinero',
+                        'recibido'  => (float) $a->monto,
+                        'valor_hoy' => $a->valorPasivoHoy(),
+                    ]);
+
+                return response()->json(['tipo' => 'anticipos', 'total' => round((float) $filas->sum('valor_hoy'), 2), 'filas' => $filas]);
+            }
+
+            // ── Adelanto a proveedor puntual: sus aplicaciones ──────────
+            case 'adelanto_proveedor': {
+                $adelanto = ProveedorAdelanto::deEmpresa($empresaId)
+                    ->with(['proveedor:id,razon_social,nombre_comercial', 'aplicaciones.entrada:id,numero_documento', 'aplicaciones.user:id,name'])
+                    ->findOrFail($refId);
+
+                return response()->json([
+                    'tipo'     => 'adelanto',
+                    'cabecera' => [
+                        'proveedor' => $adelanto->proveedor?->razon_social ?? $adelanto->proveedor?->nombre_comercial,
+                        'fecha'     => $adelanto->fecha?->format('Y-m-d'),
+                        'monto'     => (float) $adelanto->monto,
+                        'saldo'     => (float) $adelanto->saldo,
+                    ],
+                    'filas' => $adelanto->aplicaciones->map(fn ($ap) => [
+                        'fecha'   => $ap->fecha?->format('Y-m-d'),
+                        'detalle' => $ap->entrada ? "Aplicado a entrada {$ap->entrada->numero_documento}" : ($ap->observacion ?? 'Aplicación'),
+                        'monto'   => (float) $ap->monto,
+                        'user'    => $ap->user?->name,
+                    ]),
+                ]);
+            }
+
+            // ── Deuda / préstamo puntual: historial de movimientos ──────
+            case 'deuda':
+            case 'personal':
+            case 'prestamo_otorgado': {
+                $deuda = Deuda::deEmpresa($empresaId)
+                    ->with(['pagos.metodoPago:id,nombre', 'pagos.cuenta:id,nombre', 'pagos.user:id,name'])
+                    ->findOrFail($refId);
+
+                return response()->json([
+                    'tipo'     => 'deuda',
+                    'cabecera' => [
+                        'nombre'    => $deuda->nombre,
+                        'direccion' => $deuda->direccion,
+                        'original'  => (float) $deuda->monto_original,
+                        'saldo'     => (float) $deuda->saldo,
+                        'inicio'    => $deuda->fecha_inicio?->format('Y-m-d'),
+                    ],
+                    'filas' => $deuda->pagos->sortByDesc('fecha')->values()->map(fn ($p) => [
+                        'fecha'   => $p->fecha?->format('Y-m-d'),
+                        'detalle' => ($p->tipo === 'amortizacion' ? 'Amortización' : 'Incremento')
+                            . ($p->cuenta ? " · {$p->cuenta->nombre}" : '')
+                            . ($p->observacion ? " · {$p->observacion}" : ''),
+                        'monto'   => (float) $p->monto * ($p->tipo === 'amortizacion' ? -1 : 1),
+                        'user'    => $p->user?->name,
+                    ]),
+                ]);
+            }
+        }
+
+        abort(404, 'Esta línea no tiene detalle.');
     }
 
     /**

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw, Search, ZoomIn } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
@@ -15,6 +15,7 @@ interface Item {
     seccion: 'favor' | 'contra';
     categoria: string;
     descripcion: string;
+    ref_id: number | null;
     monto: string;
     es_manual: boolean;
     conciliado: boolean;
@@ -50,6 +51,17 @@ interface Props extends PageProps {
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 
+/** Categorías cuyo monto se puede "abrir" para ver de dónde sale. */
+const CON_DETALLE = new Set([
+    'efectivo', 'cuenta_bancaria', 'stock', 'cxc', 'cxp',
+    'anticipo_cliente', 'adelanto_proveedor', 'deuda', 'personal', 'prestamo_otorgado',
+]);
+
+interface DetalleData {
+    tipo: 'movimientos' | 'stock' | 'cxc' | 'cxp' | 'anticipos' | 'adelanto' | 'deuda';
+    [k: string]: any;
+}
+
 const CATEGORIA_LABEL: Record<string, string> = {
     cuenta_bancaria:    'Cuenta',
     efectivo:           'Efectivo',
@@ -76,6 +88,51 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
     const [formLinea, setFormLinea]       = useState({ descripcion: '', monto: '' });
     // Montos en edición local (se envían al perder foco / Enter)
     const [montosEdit, setMontosEdit]     = useState<Record<number, string>>({});
+
+    // F9 — Modal de detalle de una línea ("¿de dónde sale este monto?")
+    const [detalleDe, setDetalleDe]       = useState<Item | null>(null);
+    const [detalleData, setDetalleData]   = useState<DetalleData | null>(null);
+    const [detalleCargando, setDetalleCargando] = useState(false);
+    const [rango, setRango]               = useState({ desde: '', hasta: '' });
+    const [busqueda, setBusqueda]         = useState('');
+
+    async function cargarDetalle(item: Item, desde?: string, hasta?: string) {
+        setDetalleCargando(true);
+        try {
+            const params = new URLSearchParams();
+            if (item.ref_id) params.set('ref_id', String(item.ref_id));
+            if (desde) params.set('desde', desde);
+            if (hasta) params.set('hasta', hasta);
+            const url = route('finanzas.balance.detalle', { fecha: balance.fecha.slice(0, 10), categoria: item.categoria })
+                + (params.toString() ? `?${params.toString()}` : '');
+            const res = await fetch(url, { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+            if (!res.ok) throw new Error('No se pudo cargar el detalle');
+            const data = await res.json();
+            setDetalleData(data);
+            if (data.tipo === 'movimientos') setRango({ desde: data.desde, hasta: data.hasta });
+        } catch {
+            toast.error('No se pudo cargar el detalle de esta línea.');
+            setDetalleDe(null);
+        } finally {
+            setDetalleCargando(false);
+        }
+    }
+
+    function abrirDetalle(item: Item) {
+        if (!CON_DETALLE.has(item.categoria)) return;
+        setDetalleDe(item);
+        setDetalleData(null);
+        setBusqueda('');
+        void cargarDetalle(item);
+    }
+
+    // Filtro de texto client-side para stock/cxc/cxp/anticipos
+    const filasFiltradas = useMemo(() => {
+        const filas: any[] = detalleData?.filas ?? [];
+        if (!busqueda.trim()) return filas;
+        const q = busqueda.toLowerCase();
+        return filas.filter(f => JSON.stringify(f).toLowerCase().includes(q));
+    }, [detalleData, busqueda]);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -167,12 +224,31 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
                             </button>
 
                             <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
-                                    {item.descripcion}
-                                </p>
-                                <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                                    {CATEGORIA_LABEL[item.categoria] ?? item.categoria}{item.es_manual ? ' · manual' : ' · automático'}
-                                </p>
+                                {CON_DETALLE.has(item.categoria) ? (
+                                    <button
+                                        onClick={() => abrirDetalle(item)}
+                                        className="block w-full text-left group"
+                                        title="Ver de dónde sale este monto"
+                                    >
+                                        <p className="text-sm font-medium truncate flex items-center gap-1 group-hover:underline"
+                                            style={{ color: 'var(--color-primary)' }}>
+                                            {item.descripcion}
+                                            <ZoomIn size={12} className="flex-shrink-0 opacity-50" />
+                                        </p>
+                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                            {CATEGORIA_LABEL[item.categoria] ?? item.categoria}{item.es_manual ? ' · manual' : ' · automático'} · clic para detalle
+                                        </p>
+                                    </button>
+                                ) : (
+                                    <>
+                                        <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                                            {item.descripcion}
+                                        </p>
+                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                            {CATEGORIA_LABEL[item.categoria] ?? item.categoria}{item.es_manual ? ' · manual' : ' · automático'}
+                                        </p>
+                                    </>
+                                )}
                             </div>
 
                             {item.es_manual && editable ? (
