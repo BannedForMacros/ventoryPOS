@@ -47,6 +47,7 @@ interface Gasto {
 interface Props extends PageProps {
     balance: Balance;
     gastos: Gasto[];
+    salidasDia: { label: string; monto: number }[];
 }
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
@@ -77,7 +78,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
     otro_contra:        'Otro',
 };
 
-export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
+export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Props) {
     const { flash } = usePage<Props>().props;
     const editable = balance.estado === 'borrador';
 
@@ -284,6 +285,24 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
                     )}
                 </div>
 
+                {/* Salidas de dinero del día — viven en el card EN CONTRA.
+                    Informativas: ya están descontadas de las cuentas A FAVOR,
+                    por eso no se suman al total EN CONTRA (sería doble). */}
+                {!esFavor && salidasDia.length > 0 && (
+                    <div className="px-3 py-2 space-y-1"
+                        style={{ borderTop: '2px dashed var(--color-border)', backgroundColor: 'color-mix(in srgb, var(--color-danger) 5%, var(--color-bg))' }}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-danger)' }}>
+                            Salidas de dinero de hoy (ya descontadas de las cuentas)
+                        </p>
+                        {salidasDia.map((s, i) => (
+                            <div key={i} className="flex justify-between text-sm pl-2">
+                                <span>{s.label}</span>
+                                <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>−{money(s.monto)}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
                 {editable && (
                     <div className="px-3 py-2 flex items-center justify-between gap-2" style={{ borderTop: '1px solid var(--color-border)' }}>
                         <button
@@ -407,6 +426,44 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
                 </div>
             </div>
 
+            {/* Card consolidador: todo A FAVOR, todo EN CONTRA, gastos y el balance */}
+            <div className="mt-4 rounded-2xl overflow-hidden"
+                style={{ border: '2px solid var(--color-primary)', backgroundColor: 'var(--color-surface)' }}>
+                <div className="px-4 py-2" style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, var(--color-bg))' }}>
+                    <p className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
+                        Consolidado del día
+                    </p>
+                </div>
+                <div className="px-4 py-3 grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Total a favor</p>
+                        <p className="text-xl font-bold" style={{ color: 'var(--color-success)' }}>{money(balance.total_favor)}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Total en contra</p>
+                        <p className="text-xl font-bold" style={{ color: 'var(--color-danger)' }}>−{money(balance.total_contra)}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Gastos del día</p>
+                        <p className="text-xl font-bold" style={{ color: 'var(--color-warning)' }}>{money(balance.gastos_dia)}</p>
+                        <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>ya descontados del efectivo</p>
+                    </div>
+                    <div className="rounded-xl px-3 py-2 -my-1"
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, var(--color-bg))' }}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
+                            BALANCE = a favor − en contra
+                        </p>
+                        <p className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>{money(balance.balance_neto)}</p>
+                        {balance.utilidad_real !== null && (
+                            <p className="text-xs font-semibold"
+                                style={{ color: Number(balance.utilidad_real) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                Utilidad real: {Number(balance.utilidad_real) >= 0 ? '+' : ''}{money(balance.utilidad_real)}
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </div>
+
             {/* Modal agregar línea manual */}
             <Modal isOpen={agregandoEn !== null} onClose={() => setAgregandoEn(null)}
                 title={`Nueva línea ${agregandoEn === 'favor' ? 'A FAVOR' : 'EN CONTRA'}`} size="sm"
@@ -508,58 +565,6 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
                                 <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Sin ingresos en el rango</p>
                             )}
                         </div>
-
-                        {/* Salidas del período en NETO por concepto (historial de los "menos") */}
-                        {(() => {
-                            const porDia: any[] = detalleData.porDia ?? [];
-                            const totIng = porDia.reduce((s, d) => s + Number(d.ingresos), 0);
-                            const totEgr = porDia.reduce((s, d) => s + Number(d.egresos), 0);
-                            const salidas = new Map<string, number>();
-                            porDia.forEach(d => (d.conceptos ?? []).forEach((c: any) => {
-                                if (c.tipo === 'egreso') salidas.set(c.label, (salidas.get(c.label) ?? 0) + Number(c.monto));
-                            }));
-                            return (
-                                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
-                                    {salidas.size > 0 && (
-                                        <div className="px-3 py-2 space-y-1"
-                                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 6%, var(--color-bg))' }}>
-                                            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-danger)' }}>
-                                                Salidas del período (neto)
-                                            </p>
-                                            {Array.from(salidas.entries()).map(([label, monto]) => (
-                                                <div key={label} className="flex justify-between text-sm pl-2">
-                                                    <span>{label}</span>
-                                                    <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>−{money(monto)}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {/* La resta final: así se llega al saldo */}
-                                    <div className="px-3 py-2 space-y-1 text-sm"
-                                        style={{ borderTop: salidas.size > 0 ? '1px solid var(--color-border)' : 'none', backgroundColor: 'var(--color-surface)' }}>
-                                        {Number(detalleData.saldoAnterior) !== 0 && (
-                                            <div className="flex justify-between" style={{ color: 'var(--color-text-muted)' }}>
-                                                <span>Saldo anterior al {rango.desde}</span>
-                                                <span>{money(detalleData.saldoAnterior)}</span>
-                                            </div>
-                                        )}
-                                        <div className="flex justify-between">
-                                            <span>Total ingresado</span>
-                                            <span className="font-semibold" style={{ color: 'var(--color-success)' }}>+{money(totIng)}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span>Total salidas</span>
-                                            <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>−{money(totEgr)}</span>
-                                        </div>
-                                        <div className="flex justify-between pt-1 text-base font-bold"
-                                            style={{ borderTop: '1px dashed var(--color-border)' }}>
-                                            <span>SALDO al {balance.fecha.slice(0, 10)}</span>
-                                            <span>{money(detalleData.saldo)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })()}
 
                         <div className="flex items-center justify-end">
                             <Button variant="ghost" onClick={() => router.visit(route('finanzas.tesoreria.index'))}>

@@ -72,9 +72,36 @@ class BalanceDiarioController extends Controller
             ->orderBy('id')
             ->get();
 
+        // Salidas de dinero del día (para el card EN CONTRA, informativas:
+        // ya están descontadas de las cuentas, no se suman al total).
+        // Se excluyen los gastos porque tienen su propio panel.
+        $labels = [
+            'entrada_pago'                  => 'Pagos a proveedores',
+            'entrada'                       => 'Pagos a proveedores',
+            'proveedor_adelanto'            => 'Adelantos a proveedores',
+            'deuda_pago'                    => 'Cuotas de deudas/préstamos',
+            'devolucion'                    => 'Reembolsos a clientes',
+            'cliente_anticipo_devolucion'   => 'Devolución de anticipos',
+            'cierre_turno'                  => 'Faltantes de cierre de caja',
+            'turno_consolidacion'           => 'Faltantes consolidados',
+            'ajuste'                        => 'Ajustes de saldo',
+        ];
+        $salidasDia = CuentaMovimiento::deEmpresa($user->empresa_id)
+            ->where('fecha', $fecha)
+            ->where('tipo', 'egreso')
+            ->where(fn ($q) => $q->whereNull('ref_tipo')->orWhere('ref_tipo', '!=', 'gasto'))
+            ->selectRaw('ref_tipo, SUM(monto) as monto')
+            ->groupBy('ref_tipo')
+            ->get()
+            ->map(fn ($r) => [
+                'label' => $labels[$r->ref_tipo] ?? ($r->ref_tipo ?? 'Otros'),
+                'monto' => round((float) $r->monto, 2),
+            ])->values();
+
         return Inertia::render('Finanzas/BalanceDiarioDetalle', [
-            'balance' => $balance,
-            'gastos'  => $gastos,
+            'balance'    => $balance,
+            'gastos'     => $gastos,
+            'salidasDia' => $salidasDia,
         ]);
     }
 
