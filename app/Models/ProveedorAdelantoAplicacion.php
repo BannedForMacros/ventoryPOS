@@ -17,7 +17,7 @@ class ProveedorAdelantoAplicacion extends Model
     protected function casts(): array
     {
         return [
-            'fecha' => 'date',
+            'fecha' => 'date:Y-m-d',
             'monto' => 'decimal:2',
         ];
     }

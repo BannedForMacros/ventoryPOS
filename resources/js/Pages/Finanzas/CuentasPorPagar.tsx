@@ -53,6 +53,8 @@ interface Props extends PageProps {
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+// Normaliza fechas del backend ("2026-07-04" o "2026-07-04T00:00:00.000000Z")
+const fdate = (s: string) => new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE');
 const nombreProveedor = (e: EntradaCxp) =>
     e.proveedor_rel?.razon_social ?? e.proveedor_rel?.nombre_comercial ?? e.proveedor ?? '—';
 const saldoDe = (e: EntradaCxp) => Math.max(0, Number(e.total) - Number(e.monto_pagado));
@@ -105,7 +107,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
     const columns: Column<EntradaCxp>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
-            render: (e) => <span className="text-sm">{new Date(e.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</span>,
+            render: (e) => <span className="text-sm">{fdate(e.fecha)}</span>,
         },
         { key: 'numero_documento', label: 'Documento', render: (e) => <span className="font-mono text-sm">{e.numero_documento ?? '—'}</span> },
         { key: 'proveedor', label: 'Proveedor', render: (e) => <span className="font-medium">{nombreProveedor(e)}</span> },
@@ -284,7 +286,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
                                 {detalle.pagos_parciales.map(p => (
                                     <div key={p.id} className="py-2 flex justify-between items-start text-sm">
                                         <div>
-                                            <p className="font-medium">{new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</p>
+                                            <p className="font-medium">{fdate(p.fecha)}</p>
                                             <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                                                 {p.proveedor_adelanto_id
                                                     ? `Consumió adelanto #${p.proveedor_adelanto_id}`

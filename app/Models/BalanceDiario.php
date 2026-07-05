@@ -21,7 +21,9 @@ class BalanceDiario extends Model
     protected function casts(): array
     {
         return [
-            'fecha'            => 'date',
+            // Y-m-d: la fecha viaja al frontend como "2026-07-04" (sin hora),
+            // porque se usa como parámetro de ruta /finanzas/balance/{fecha}.
+            'fecha'            => 'date:Y-m-d',
             'total_favor'      => 'decimal:2',
             'total_contra'     => 'decimal:2',
             'balance_neto'     => 'decimal:2',

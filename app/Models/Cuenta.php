@@ -16,14 +16,21 @@ class Cuenta extends Model
         'banco',
         'cci',
         'titular',
+        'es_efectivo',
         'activo',
     ];
 
     protected function casts(): array
     {
         return [
-            'activo' => 'boolean',
+            'activo'      => 'boolean',
+            'es_efectivo' => 'boolean',
         ];
+    }
+
+    public function movimientos(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(CuentaMovimiento::class);
     }
 
     public function empresa(): BelongsTo

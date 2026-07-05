@@ -29,7 +29,7 @@ class Venta extends Model
             'es_credito'        => 'boolean',
             'monto_pagado'      => 'decimal:2',
             'saldo_pendiente'   => 'decimal:2',
-            'fecha_vencimiento' => 'date',
+            'fecha_vencimiento' => 'date:Y-m-d',
         ];
     }
 

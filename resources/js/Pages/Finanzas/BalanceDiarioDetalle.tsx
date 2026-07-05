@@ -82,7 +82,7 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
-    const fechaLabel = new Date(balance.fecha + 'T00:00:00')
+    const fechaLabel = new Date(balance.fecha.slice(0, 10) + 'T00:00:00')
         .toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 
     function guardarMonto(item: Item) {

@@ -21,8 +21,8 @@ class Deuda extends Model
     protected function casts(): array
     {
         return [
-            'fecha_inicio'      => 'date',
-            'fecha_vencimiento' => 'date',
+            'fecha_inicio'      => 'date:Y-m-d',
+            'fecha_vencimiento' => 'date:Y-m-d',
             'monto_original'    => 'decimal:2',
             'saldo'             => 'decimal:2',
         ];

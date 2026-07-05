@@ -20,6 +20,7 @@ class VentaService
     public function __construct(
         private LocalScopeService $scope,
         private ConfiguracionOperacionService $config,
+        private TesoreriaService $tesoreria,
     ) {}
 
     /**
@@ -223,6 +224,19 @@ class VentaService
                     'referencia'            => $pagoData['referencia'] ?? null,
                     'vuelto'                => $vuelto,
                 ]);
+
+                // F7 — Tesorería: cada pago ingresa a su cuenta (neto de vuelto).
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $this->tesoreria->resolverCuenta($user->empresa_id, $pagoData['cuenta_metodo_pago_id'] ?? null, $pagoData['metodo_pago_id']),
+                    $user,
+                    now()->toDateString(),
+                    'ingreso',
+                    round($monto - $vuelto, 2),
+                    "Venta {$venta->numero} — " . ($metodo?->nombre ?? 'pago'),
+                    'venta',
+                    $venta->id,
+                );
             }
 
             // F1 — Sincronizar cuenta por cobrar de la venta.
@@ -266,6 +280,12 @@ class VentaService
 
             // F1 — Una venta anulada deja de ser cuenta por cobrar.
             $venta->update(['estado' => 'anulada', 'saldo_pendiente' => 0]);
+
+            // F7 — Revertir los ingresos de tesorería de esta venta y sus abonos.
+            $this->tesoreria->revertir('venta', $venta->id);
+            foreach ($venta->abonos()->pluck('id') as $abonoId) {
+                $this->tesoreria->revertir('venta_abono', (int) $abonoId);
+            }
 
             \App\Services\AuditoriaService::log('venta.anulada', $venta, [
                 'numero'           => $venta->numero,

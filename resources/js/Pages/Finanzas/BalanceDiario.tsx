@@ -51,7 +51,7 @@ export default function BalanceDiario({ balances, hoy }: Props) {
     const columns: Column<Balance>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
-            render: (b) => <span className="font-medium">{new Date(b.fecha + 'T00:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</span>,
+            render: (b) => <span className="font-medium">{new Date(b.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</span>,
         },
         {
             key: 'estado', label: 'Estado',
@@ -76,7 +76,7 @@ export default function BalanceDiario({ balances, hoy }: Props) {
         {
             key: 'acciones', label: '',
             render: (b) => (
-                <Button variant="ghost" onClick={() => router.visit(route('finanzas.balance.show', b.fecha))}>
+                <Button variant="ghost" onClick={() => router.visit(route('finanzas.balance.show', b.fecha.slice(0, 10)))}>
                     Abrir<ArrowRight size={14} className="ml-1" />
                 </Button>
             ),

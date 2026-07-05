@@ -107,7 +107,13 @@
       "PowerShell(git *)",
       "PowerShell(Select-String -Path C:\\\\MacSoft\\\\ventoryPOS\\\\.env -Pattern '^\\(DB_|APP_ENV|APP_URL\\)' | ForEach-Object Line)",
       "PowerShell(cd C:\\\\MacSoft\\\\ventoryPOS; php artisan tinker --execute=\"echo implode\\(PHP_EOL, array_map\\(fn\\(\\\\$t\\) => \\\\$t->tablename, DB::select\\(\\\\\"select tablename from pg_tables where schemaname='public' order by 1\\\\\"\\)\\)\\);\")",
-      "PowerShell(psql *)"
+      "PowerShell(psql *)",
+      "PowerShell(cd C:\\\\MacSoft\\\\ventoryPOS; php artisan tinker --execution-timeout=30 --execute=\"foreach \\(\\\\App\\\\Models\\\\User::with\\('rol','local'\\)->get\\(\\) as \\\\$u\\) { echo \\\\$u->id.' | '.\\\\$u->name.' | '.\\\\$u->email.' | rol: '.\\(\\\\$u->rol->nombre ?? '-'\\).' \\(admin: '.\\(\\(\\\\$u->rol->es_admin ?? false\\) ? 'si' : 'no'\\).'\\) | local: '.\\(\\\\$u->local->nombre ?? 'todos'\\).PHP_EOL; }\" 2>$null)",
+      "PowerShell(cd C:\\\\MacSoft\\\\ventoryPOS; php artisan tinker --execute=\"foreach \\(\\\\App\\\\Models\\\\User::with\\('rol','local'\\)->get\\(\\) as \\\\$u\\) { echo \\\\$u->id.' | '.\\\\$u->name.' | '.\\\\$u->email.' | rol: '.\\(\\\\$u->rol->nombre ?? '-'\\).' \\(admin: '.\\(\\(\\\\$u->rol->es_admin ?? false\\) ? 'si' : 'no'\\).'\\) | local: '.\\(\\\\$u->local->nombre ?? 'todos'\\).PHP_EOL; }\" 2>$null)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/login)",
+      "Bash(curl -s -o /dev/null -w \"POST cxp/abonar -> %{http_code}\\\\n\" -X POST http://127.0.0.1:8000/finanzas/cuentas-por-pagar/1/abonar)",
+      "Bash(curl -s -o /dev/null -w \"GET cxp -> %{http_code}\\\\n\" http://127.0.0.1:8000/finanzas/cuentas-por-pagar)",
+      "Bash(curl -s -o /dev/null -w \"GET balance -> %{http_code}\\\\n\" http://127.0.0.1:8000/finanzas/balance)"
     ]
   }
 }
