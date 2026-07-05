@@ -105,9 +105,22 @@ class BalanceDiarioController extends Controller
         ]);
     }
 
+
     /**
-     * F9 — Detalle de una línea del balance (JSON para el modal).
-     * Cada monto del balance debe poder explicarse: de dónde sale, sol por sol.
+     * F9/F11 — Detalle NORMALIZADO de una línea del balance (JSON).
+     *
+     * Todas las categorías devuelven la misma estructura para el componente
+     * <DetalleAgrupado/>: cards de resumen + grupos por FECHA desplegables,
+     * y cada fila con su AUDITORÍA (quién la registró). Trazabilidad total.
+     *
+     * {
+     *   tipo: 'grupos',
+     *   cards:  [{label, valor, color?}],
+     *   desde?, hasta?,            // solo categorías con filtro de fechas
+     *   grupos: [{id, titulo, subtitulo?, monto, tipo?, items: [
+     *       {descripcion, extra?, monto, tipo?, user?}
+     *   ]}],
+     * }
      */
     public function detalleItem(Request $request, string $fecha, string $categoria)
     {
@@ -117,70 +130,59 @@ class BalanceDiarioController extends Controller
         $empresaId = $user->empresa_id;
         $refId     = $request->integer('ref_id') ?: null;
 
+        $fmtDia = fn (string $f) => substr($f, 0, 10);
+        $nombreCliente = fn ($c) => $c?->razon_social ?? trim(($c?->nombres ?? '') . ' ' . ($c?->apellidos ?? ''));
+
         switch ($categoria) {
-            // ── Efectivo / cuenta bancaria: movimientos de tesorería ────
+            // ── Efectivo / cuenta bancaria: INGRESOS por día (bruto) ────
+            // ── Gastos emitidos: EGRESOS por día ────────────────────────
             case 'efectivo':
-            case 'cuenta_bancaria': {
-                $cuentaId = $refId ?? TesoreriaService::efectivo($empresaId)->id;
-                // Rango por defecto: 3 meses hacia atrás (el cliente definirá
-                // una fecha de corte más adelante; mientras tanto que se vea todo).
+            case 'cuenta_bancaria':
+            case 'gastos_emitidos': {
+                $esEgreso = $categoria === 'gastos_emitidos';
                 $hasta = min($request->input('hasta', $fecha), $fecha);
                 $desde = $request->input('desde', date('Y-m-d', strtotime($hasta . ' -3 months')));
 
-                // Saldo ANTERIOR al rango: así la vista cuadra como un estado
-                // de cuenta bancario (anterior + movimientos = saldo final).
-                $saldoAnterior = app(TesoreriaService::class)
-                    ->saldo($cuentaId, date('Y-m-d', strtotime($desde . ' -1 day')));
-
-                // Detalle POR DÍA y POR CONCEPTO (no documento por documento):
-                // "el lunes las ventas generaron X, salieron Y en gastos..."
-                $labels = [
-                    'venta'                         => 'Ventas del día',
-                    'venta_abono'                   => 'Cobros de créditos',
-                    'cliente_anticipo'              => 'Anticipos de clientes',
-                    'cliente_anticipo_devolucion'   => 'Devolución de anticipos',
-                    'gasto'                         => 'Gastos',
-                    'entrada_pago'                  => 'Pagos a proveedores',
-                    'entrada'                       => 'Pagos a proveedores',
-                    'proveedor_adelanto'            => 'Adelantos a proveedores',
-                    'proveedor_adelanto_devolucion' => 'Devolución de adelantos',
-                    'deuda_pago'                    => 'Deudas y préstamos',
-                    'devolucion'                    => 'Reembolsos a clientes',
-                    'cierre_turno'                  => 'Sobrante/Faltante de cierre',
-                    'turno_consolidacion'           => 'Sobrante/Faltante consolidado',
-                    'ajuste'                        => 'Ajustes de saldo',
-                ];
-
-                $porDia = CuentaMovimiento::deEmpresa($empresaId)
-                    ->where('cuenta_id', $cuentaId)
+                $q = CuentaMovimiento::deEmpresa($empresaId)
                     ->whereBetween('fecha', [$desde, $hasta])
-                    ->selectRaw('fecha, ref_tipo, tipo, SUM(monto) as monto')
-                    ->groupBy('fecha', 'ref_tipo', 'tipo')
-                    ->orderByDesc('fecha')
-                    ->get()
-                    ->groupBy(fn ($r) => substr((string) $r->fecha, 0, 10))
-                    ->map(function ($rows, $f) use ($labels) {
-                        return [
-                            'fecha'     => $f,
-                            'ingresos'  => round((float) $rows->where('tipo', 'ingreso')->sum('monto'), 2),
-                            'egresos'   => round((float) $rows->where('tipo', 'egreso')->sum('monto'), 2),
-                            'conceptos' => $rows
-                                ->sortBy(fn ($r) => $r->tipo === 'ingreso' ? 0 : 1)
-                                ->map(fn ($r) => [
-                                    'label' => $labels[$r->ref_tipo] ?? ($r->ref_tipo ?? 'Otros'),
-                                    'tipo'  => $r->tipo,
-                                    'monto' => round((float) $r->monto, 2),
-                                ])->values(),
-                        ];
-                    })->values();
+                    ->where('tipo', $esEgreso ? 'egreso' : 'ingreso')
+                    ->with(['user:id,name', 'cuenta:id,nombre']);
+
+                if (!$esEgreso) {
+                    $q->where('cuenta_id', $refId ?? TesoreriaService::efectivo($empresaId)->id);
+                }
+
+                $movs = $q->orderByDesc('fecha')->orderByDesc('id')->limit(1000)->get();
+
+                $grupos = $movs->groupBy(fn ($m) => $fmtDia((string) $m->fecha))
+                    ->map(fn ($rows, $f) => [
+                        'id'       => $f,
+                        'titulo'   => $f,
+                        'esFecha'  => true,
+                        'monto'    => round((float) $rows->sum('monto'), 2),
+                        'tipo'     => $esEgreso ? 'egreso' : 'ingreso',
+                        'items'    => $rows->map(fn ($m) => [
+                            'descripcion' => $m->descripcion,
+                            'extra'       => $esEgreso ? ($m->cuenta?->nombre ? "desde {$m->cuenta->nombre}" : null) : null,
+                            'monto'       => (float) $m->monto,
+                            'tipo'        => $m->tipo,
+                            'user'        => $m->user?->name,
+                        ])->values(),
+                    ])->values();
+
+                $total = round((float) $movs->sum('monto'), 2);
 
                 return response()->json([
-                    'tipo'          => 'movimientos',
-                    'saldo'         => app(TesoreriaService::class)->saldo($cuentaId, $fecha),
-                    'saldoAnterior' => $saldoAnterior,
-                    'desde'         => $desde,
-                    'hasta'         => $hasta,
-                    'porDia'        => $porDia,
+                    'tipo'   => 'grupos',
+                    'desde'  => $desde,
+                    'hasta'  => $hasta,
+                    'cards'  => [
+                        ['label' => $esEgreso ? 'Total salidas (período)' : 'Total ingresado (período)',
+                         'valor' => $total, 'color' => $esEgreso ? 'danger' : 'success'],
+                        ['label' => 'Días con movimiento', 'valor' => $grupos->count(), 'esNumero' => true],
+                        ['label' => 'Operaciones', 'valor' => $movs->count(), 'esNumero' => true],
+                    ],
+                    'grupos' => $grupos,
                 ]);
             }
 
@@ -195,134 +197,162 @@ class BalanceDiarioController extends Controller
                                  SUM(stock.cantidad * productos.precio_costo) as valor')
                     ->groupBy('productos.id', 'productos.nombre', 'productos.precio_costo')
                     ->orderByDesc('valor')
-                    ->limit(300)
+                    ->limit(500)
                     ->get();
 
                 return response()->json([
-                    'tipo'  => 'stock',
-                    'total' => round((float) $filas->sum('valor'), 2),
-                    'filas' => $filas,
+                    'tipo'  => 'grupos',
+                    'cards' => [
+                        ['label' => 'Valor total del inventario', 'valor' => round((float) $filas->sum('valor'), 2), 'color' => 'success'],
+                        ['label' => 'Productos con stock', 'valor' => $filas->count(), 'esNumero' => true],
+                    ],
+                    'grupos' => $filas->map(fn ($f, $i) => [
+                        'id'        => (string) $i,
+                        'titulo'    => $f->nombre,
+                        'subtitulo' => rtrim(rtrim(number_format((float) $f->cantidad, 2), '0'), '.') . ' und × S/' . number_format((float) $f->precio_costo, 2) . ' (costo del día)',
+                        'monto'     => round((float) $f->valor, 2),
+                        'items'     => [],
+                    ])->values(),
                 ]);
             }
 
-            // ── Deudas por cobrar: venta a venta ────────────────────────
+            // ── Deudas por cobrar: por fecha de venta, con vendedor ─────
             case 'cxc': {
-                $filas = Venta::deEmpresa($empresaId)->conSaldoPendiente()
-                    ->with('cliente:id,nombres,apellidos,razon_social')
-                    ->orderByDesc('saldo_pendiente')
-                    ->limit(300)
-                    ->get(['id', 'numero', 'fecha_venta', 'fecha_vencimiento', 'cliente_id', 'total', 'monto_pagado', 'saldo_pendiente'])
-                    ->map(fn ($v) => [
-                        'fecha'   => $v->fecha_venta?->format('Y-m-d'),
-                        'numero'  => $v->numero,
-                        'cliente' => $v->cliente?->razon_social ?? trim(($v->cliente?->nombres ?? '') . ' ' . ($v->cliente?->apellidos ?? '')),
-                        'total'   => (float) $v->total,
-                        'pagado'  => (float) $v->monto_pagado,
-                        'saldo'   => (float) $v->saldo_pendiente,
-                        'vence'   => $v->fecha_vencimiento?->format('Y-m-d'),
-                    ]);
+                $ventas = Venta::deEmpresa($empresaId)->conSaldoPendiente()
+                    ->with(['cliente:id,nombres,apellidos,razon_social', 'user:id,name'])
+                    ->orderByDesc('fecha_venta')
+                    ->limit(500)
+                    ->get();
 
-                return response()->json(['tipo' => 'cxc', 'total' => round((float) $filas->sum('saldo'), 2), 'filas' => $filas]);
+                $grupos = $ventas->groupBy(fn ($v) => $v->fecha_venta->format('Y-m-d'))
+                    ->map(fn ($rows, $f) => [
+                        'id'      => $f,
+                        'titulo'  => $f,
+                        'esFecha' => true,
+                        'monto'   => round((float) $rows->sum('saldo_pendiente'), 2),
+                        'tipo'    => 'neutro',
+                        'items'   => $rows->map(fn ($v) => [
+                            'descripcion' => "{$v->numero} — " . $nombreCliente($v->cliente),
+                            'extra'       => 'total S/' . number_format((float) $v->total, 2)
+                                . ' · pagado S/' . number_format((float) $v->monto_pagado, 2)
+                                . ($v->fecha_vencimiento ? ' · vence ' . $v->fecha_vencimiento->format('d/m/Y') : ''),
+                            'monto'       => (float) $v->saldo_pendiente,
+                            'user'        => $v->user?->name,
+                        ])->values(),
+                    ])->values();
+
+                return response()->json([
+                    'tipo'  => 'grupos',
+                    'cards' => [
+                        ['label' => 'Total por cobrar', 'valor' => round((float) $ventas->sum('saldo_pendiente'), 2), 'color' => 'danger'],
+                        ['label' => 'Ventas a crédito con saldo', 'valor' => $ventas->count(), 'esNumero' => true],
+                    ],
+                    'grupos' => $grupos,
+                ]);
             }
 
-            // ── Proveedores por pagar: entrada por entrada ──────────────
+            // ── Proveedores por pagar: por fecha, con quién registró ────
             case 'cxp': {
-                $filas = Entrada::deEmpresa($empresaId)->confirmado()
+                $entradas = Entrada::deEmpresa($empresaId)->confirmado()
                     ->where('estado_pago', '!=', 'pagado')
                     ->whereRaw('total - monto_pagado > 0.01')
-                    ->with('proveedorRel:id,razon_social,nombre_comercial')
-                    ->orderByRaw('total - monto_pagado desc')
-                    ->limit(300)
-                    ->get()
-                    ->map(fn ($e) => [
-                        'fecha'     => $e->fecha?->format('Y-m-d'),
-                        'documento' => $e->numero_documento,
-                        'proveedor' => $e->proveedorRel?->razon_social ?? $e->proveedorRel?->nombre_comercial ?? $e->proveedor,
-                        'total'     => (float) $e->total,
-                        'pagado'    => (float) $e->monto_pagado,
-                        'saldo'     => $e->saldoPendiente(),
-                    ]);
+                    ->with(['proveedorRel:id,razon_social,nombre_comercial', 'user:id,name'])
+                    ->orderByDesc('fecha')
+                    ->limit(500)
+                    ->get();
 
-                return response()->json(['tipo' => 'cxp', 'total' => round((float) $filas->sum('saldo'), 2), 'filas' => $filas]);
+                $grupos = $entradas->groupBy(fn ($e) => $e->fecha->format('Y-m-d'))
+                    ->map(fn ($rows, $f) => [
+                        'id'      => $f,
+                        'titulo'  => $f,
+                        'esFecha' => true,
+                        'monto'   => round((float) $rows->sum(fn ($e) => $e->saldoPendiente()), 2),
+                        'tipo'    => 'egreso',
+                        'items'   => $rows->map(fn ($e) => [
+                            'descripcion' => ($e->proveedorRel?->razon_social ?? $e->proveedorRel?->nombre_comercial ?? $e->proveedor ?? 'Proveedor')
+                                . ($e->numero_documento ? " ({$e->numero_documento})" : ''),
+                            'extra'       => 'total S/' . number_format((float) $e->total, 2)
+                                . ' · pagado S/' . number_format((float) $e->monto_pagado, 2),
+                            'monto'       => $e->saldoPendiente(),
+                            'user'        => $e->user?->name,
+                        ])->values(),
+                    ])->values();
+
+                return response()->json([
+                    'tipo'  => 'grupos',
+                    'cards' => [
+                        ['label' => 'Total por pagar', 'valor' => round((float) $entradas->sum(fn ($e) => $e->saldoPendiente()), 2), 'color' => 'danger'],
+                        ['label' => 'Compras con saldo', 'valor' => $entradas->count(), 'esNumero' => true],
+                    ],
+                    'grupos' => $grupos,
+                ]);
             }
 
-            // ── Anticipos de clientes: valorizado a precio del día ──────
+            // ── Anticipos de clientes: por fecha, valorizados hoy ───────
             case 'anticipo_cliente': {
-                $filas = ClienteAnticipo::deEmpresa($empresaId)->activo()
-                    ->with(['cliente:id,nombres,apellidos,razon_social', 'producto:id,nombre,precio_venta'])
+                $anticipos = ClienteAnticipo::deEmpresa($empresaId)->activo()
+                    ->with(['cliente:id,nombres,apellidos,razon_social', 'producto:id,nombre,precio_venta', 'user:id,name'])
                     ->orderByDesc('fecha')
-                    ->limit(300)
-                    ->get()
-                    ->map(fn ($a) => [
-                        'fecha'     => $a->fecha?->format('Y-m-d'),
-                        'cliente'   => $a->cliente?->razon_social ?? trim(($a->cliente?->nombres ?? '') . ' ' . ($a->cliente?->apellidos ?? '')),
-                        'modalidad' => $a->tipo_valorizacion === 'material'
-                            ? "{$a->producto?->nombre} × " . (float) $a->cantidad_pendiente . " a S/" . (float) ($a->producto?->precio_venta ?? 0)
-                            : 'Dinero',
-                        'recibido'  => (float) $a->monto,
-                        'valor_hoy' => $a->valorPasivoHoy(),
-                    ]);
+                    ->limit(500)
+                    ->get();
 
-                return response()->json(['tipo' => 'anticipos', 'total' => round((float) $filas->sum('valor_hoy'), 2), 'filas' => $filas]);
+                $grupos = $anticipos->groupBy(fn ($a) => $a->fecha->format('Y-m-d'))
+                    ->map(fn ($rows, $f) => [
+                        'id'      => $f,
+                        'titulo'  => $f,
+                        'esFecha' => true,
+                        'monto'   => round((float) $rows->sum(fn ($a) => $a->valorPasivoHoy()), 2),
+                        'tipo'    => 'egreso',
+                        'items'   => $rows->map(fn ($a) => [
+                            'descripcion' => $nombreCliente($a->cliente),
+                            'extra'       => ($a->tipo_valorizacion === 'material'
+                                    ? "{$a->producto?->nombre} × " . (float) $a->cantidad_pendiente . ' a S/' . number_format((float) ($a->producto?->precio_venta ?? 0), 2) . ' del día'
+                                    : 'Dinero')
+                                . ' · recibió S/' . number_format((float) $a->monto, 2),
+                            'monto'       => $a->valorPasivoHoy(),
+                            'user'        => $a->user?->name,
+                        ])->values(),
+                    ])->values();
+
+                return response()->json([
+                    'tipo'  => 'grupos',
+                    'cards' => [
+                        ['label' => 'Pasivo a precio del día', 'valor' => round((float) $anticipos->sum(fn ($a) => $a->valorPasivoHoy()), 2), 'color' => 'danger'],
+                        ['label' => 'Anticipos activos', 'valor' => $anticipos->count(), 'esNumero' => true],
+                    ],
+                    'grupos' => $grupos,
+                ]);
             }
 
             // ── Adelanto a proveedor puntual: sus aplicaciones ──────────
             case 'adelanto_proveedor': {
                 $adelanto = ProveedorAdelanto::deEmpresa($empresaId)
-                    ->with(['proveedor:id,razon_social,nombre_comercial', 'aplicaciones.entrada:id,numero_documento', 'aplicaciones.user:id,name'])
+                    ->with(['proveedor:id,razon_social,nombre_comercial', 'aplicaciones.entrada:id,numero_documento', 'aplicaciones.user:id,name', 'user:id,name'])
                     ->findOrFail($refId);
 
+                $grupos = $adelanto->aplicaciones->groupBy(fn ($ap) => $ap->fecha->format('Y-m-d'))
+                    ->map(fn ($rows, $f) => [
+                        'id'      => $f,
+                        'titulo'  => $f,
+                        'esFecha' => true,
+                        'monto'   => round((float) $rows->sum('monto'), 2),
+                        'tipo'    => 'egreso',
+                        'items'   => $rows->map(fn ($ap) => [
+                            'descripcion' => $ap->entrada ? "Aplicado a compra {$ap->entrada->numero_documento}" : ($ap->observacion ?? 'Aplicación'),
+                            'monto'       => (float) $ap->monto,
+                            'user'        => $ap->user?->name,
+                        ])->values(),
+                    ])->values();
+
                 return response()->json([
-                    'tipo'     => 'adelanto',
-                    'cabecera' => [
-                        'proveedor' => $adelanto->proveedor?->razon_social ?? $adelanto->proveedor?->nombre_comercial,
-                        'fecha'     => $adelanto->fecha?->format('Y-m-d'),
-                        'monto'     => (float) $adelanto->monto,
-                        'saldo'     => (float) $adelanto->saldo,
+                    'tipo'  => 'grupos',
+                    'cards' => [
+                        ['label' => 'Proveedor', 'valor' => $adelanto->proveedor?->razon_social ?? $adelanto->proveedor?->nombre_comercial ?? '—', 'esTexto' => true],
+                        ['label' => 'Entregado (por ' . ($adelanto->user?->name ?? '—') . ')', 'valor' => (float) $adelanto->monto],
+                        ['label' => 'Saldo a favor', 'valor' => (float) $adelanto->saldo, 'color' => 'success'],
                     ],
-                    'filas' => $adelanto->aplicaciones->map(fn ($ap) => [
-                        'fecha'   => $ap->fecha?->format('Y-m-d'),
-                        'detalle' => $ap->entrada ? "Aplicado a entrada {$ap->entrada->numero_documento}" : ($ap->observacion ?? 'Aplicación'),
-                        'monto'   => (float) $ap->monto,
-                        'user'    => $ap->user?->name,
-                    ]),
+                    'grupos' => $grupos,
                 ]);
-            }
-
-            // ── Gastos emitidos: todas las salidas de dinero por concepto ──
-            case 'gastos_emitidos': {
-                $labels = [
-                    'venta'                         => 'Vueltos/ajustes de ventas',
-                    'gasto'                         => 'Gastos operativos',
-                    'entrada_pago'                  => 'Pagos a proveedores',
-                    'entrada'                       => 'Pagos a proveedores',
-                    'proveedor_adelanto'            => 'Adelantos a proveedores',
-                    'proveedor_adelanto_devolucion' => 'Devolución de adelantos',
-                    'cliente_anticipo_devolucion'   => 'Devolución de anticipos',
-                    'deuda_pago'                    => 'Cuotas de deudas/préstamos',
-                    'devolucion'                    => 'Reembolsos a clientes',
-                    'cierre_turno'                  => 'Faltantes de caja',
-                    'turno_consolidacion'           => 'Faltantes de caja',
-                    'ajuste'                        => 'Ajustes de saldo',
-                ];
-
-                $filas = CuentaMovimiento::deEmpresa($empresaId)
-                    ->where('fecha', '<=', $fecha)
-                    ->where('tipo', 'egreso')
-                    ->selectRaw('ref_tipo, SUM(monto) as monto')
-                    ->groupBy('ref_tipo')
-                    ->orderByDesc(DB::raw('SUM(monto)'))
-                    ->get()
-                    ->map(fn ($r) => [
-                        'nombre' => $labels[$r->ref_tipo] ?? ($r->ref_tipo ?? 'Otros'),
-                        'monto'  => round((float) $r->monto, 2),
-                    ])
-                    // Unificar etiquetas repetidas (ej. faltantes de cierre + consolidados)
-                    ->groupBy('nombre')
-                    ->map(fn ($g, $nombre) => ['nombre' => $nombre, 'monto' => round((float) collect($g)->sum('monto'), 2)])
-                    ->values();
-
-                return response()->json(['tipo' => 'salidas', 'total' => round((float) $filas->sum('monto'), 2), 'filas' => $filas]);
             }
 
             // ── Deuda / préstamo puntual: historial de movimientos ──────
@@ -330,26 +360,35 @@ class BalanceDiarioController extends Controller
             case 'personal':
             case 'prestamo_otorgado': {
                 $deuda = Deuda::deEmpresa($empresaId)
-                    ->with(['pagos.metodoPago:id,nombre', 'pagos.cuenta:id,nombre', 'pagos.user:id,name'])
+                    ->with(['pagos.metodoPago:id,nombre', 'pagos.cuenta:id,nombre', 'pagos.user:id,name', 'user:id,name'])
                     ->findOrFail($refId);
 
+                $grupos = $deuda->pagos->sortByDesc('fecha')->groupBy(fn ($p) => $p->fecha->format('Y-m-d'))
+                    ->map(fn ($rows, $f) => [
+                        'id'      => $f,
+                        'titulo'  => $f,
+                        'esFecha' => true,
+                        'monto'   => round((float) $rows->sum('monto'), 2),
+                        'tipo'    => 'neutro',
+                        'items'   => $rows->map(fn ($p) => [
+                            'descripcion' => ($p->tipo === 'amortizacion' ? 'Amortización' : 'Incremento')
+                                . ($p->cuenta ? " · {$p->cuenta->nombre}" : ''),
+                            'extra'       => $p->observacion,
+                            'monto'       => (float) $p->monto,
+                            'tipo'        => $p->tipo === 'amortizacion' ? 'ingreso' : 'egreso',
+                            'user'        => $p->user?->name,
+                        ])->values(),
+                    ])->values();
+
                 return response()->json([
-                    'tipo'     => 'deuda',
-                    'cabecera' => [
-                        'nombre'    => $deuda->nombre,
-                        'direccion' => $deuda->direccion,
-                        'original'  => (float) $deuda->monto_original,
-                        'saldo'     => (float) $deuda->saldo,
-                        'inicio'    => $deuda->fecha_inicio?->format('Y-m-d'),
+                    'tipo'  => 'grupos',
+                    'cards' => [
+                        ['label' => 'Deuda (registrada por ' . ($deuda->user?->name ?? '—') . ')', 'valor' => $deuda->nombre, 'esTexto' => true],
+                        ['label' => 'Monto original', 'valor' => (float) $deuda->monto_original],
+                        ['label' => 'Saldo actual', 'valor' => (float) $deuda->saldo,
+                         'color' => $deuda->direccion === 'por_cobrar' ? 'success' : 'danger'],
                     ],
-                    'filas' => $deuda->pagos->sortByDesc('fecha')->values()->map(fn ($p) => [
-                        'fecha'   => $p->fecha?->format('Y-m-d'),
-                        'detalle' => ($p->tipo === 'amortizacion' ? 'Amortización' : 'Incremento')
-                            . ($p->cuenta ? " · {$p->cuenta->nombre}" : '')
-                            . ($p->observacion ? " · {$p->observacion}" : ''),
-                        'monto'   => (float) $p->monto * ($p->tipo === 'amortizacion' ? -1 : 1),
-                        'user'    => $p->user?->name,
-                    ]),
+                    'grupos' => $grupos,
                 ]);
             }
         }
