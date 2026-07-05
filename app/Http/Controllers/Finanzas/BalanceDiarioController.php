@@ -95,34 +95,65 @@ class BalanceDiarioController extends Controller
             case 'efectivo':
             case 'cuenta_bancaria': {
                 $cuentaId = $refId ?? TesoreriaService::efectivo($empresaId)->id;
-                // Rango por defecto: la última semana hasta la fecha del balance.
+                // Rango por defecto: 3 meses hacia atrás (el cliente definirá
+                // una fecha de corte más adelante; mientras tanto que se vea todo).
                 $hasta = min($request->input('hasta', $fecha), $fecha);
-                $desde = $request->input('desde', date('Y-m-d', strtotime($hasta . ' -6 days')));
+                $desde = $request->input('desde', date('Y-m-d', strtotime($hasta . ' -3 months')));
 
-                $movimientos = CuentaMovimiento::deEmpresa($empresaId)
-                    ->where('cuenta_id', $cuentaId)
-                    ->whereBetween('fecha', [$desde, $hasta])
-                    ->with('user:id,name')
-                    ->orderByDesc('fecha')->orderByDesc('id')
-                    ->limit(300)
-                    ->get(['id', 'fecha', 'tipo', 'monto', 'descripcion', 'ref_tipo', 'user_id']);
+                // Saldo ANTERIOR al rango: así la vista cuadra como un estado
+                // de cuenta bancario (anterior + movimientos = saldo final).
+                $saldoAnterior = app(TesoreriaService::class)
+                    ->saldo($cuentaId, date('Y-m-d', strtotime($desde . ' -1 day')));
 
-                // Resumen por día (responde "¿de dónde salió el efectivo de tal día?")
+                // Detalle POR DÍA y POR CONCEPTO (no documento por documento):
+                // "el lunes las ventas generaron X, salieron Y en gastos..."
+                $labels = [
+                    'venta'                         => 'Ventas del día',
+                    'venta_abono'                   => 'Cobros de créditos',
+                    'cliente_anticipo'              => 'Anticipos de clientes',
+                    'cliente_anticipo_devolucion'   => 'Devolución de anticipos',
+                    'gasto'                         => 'Gastos',
+                    'entrada_pago'                  => 'Pagos a proveedores',
+                    'entrada'                       => 'Pagos a proveedores',
+                    'proveedor_adelanto'            => 'Adelantos a proveedores',
+                    'proveedor_adelanto_devolucion' => 'Devolución de adelantos',
+                    'deuda_pago'                    => 'Deudas y préstamos',
+                    'devolucion'                    => 'Reembolsos a clientes',
+                    'cierre_turno'                  => 'Sobrante/Faltante de cierre',
+                    'turno_consolidacion'           => 'Sobrante/Faltante consolidado',
+                    'ajuste'                        => 'Ajustes de saldo',
+                ];
+
                 $porDia = CuentaMovimiento::deEmpresa($empresaId)
                     ->where('cuenta_id', $cuentaId)
                     ->whereBetween('fecha', [$desde, $hasta])
-                    ->selectRaw("fecha,
-                        SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE 0 END) as ingresos,
-                        SUM(CASE WHEN tipo = 'egreso'  THEN monto ELSE 0 END) as egresos")
-                    ->groupBy('fecha')->orderByDesc('fecha')->get();
+                    ->selectRaw('fecha, ref_tipo, tipo, SUM(monto) as monto')
+                    ->groupBy('fecha', 'ref_tipo', 'tipo')
+                    ->orderByDesc('fecha')
+                    ->get()
+                    ->groupBy(fn ($r) => substr((string) $r->fecha, 0, 10))
+                    ->map(function ($rows, $f) use ($labels) {
+                        return [
+                            'fecha'     => $f,
+                            'ingresos'  => round((float) $rows->where('tipo', 'ingreso')->sum('monto'), 2),
+                            'egresos'   => round((float) $rows->where('tipo', 'egreso')->sum('monto'), 2),
+                            'conceptos' => $rows
+                                ->sortBy(fn ($r) => $r->tipo === 'ingreso' ? 0 : 1)
+                                ->map(fn ($r) => [
+                                    'label' => $labels[$r->ref_tipo] ?? ($r->ref_tipo ?? 'Otros'),
+                                    'tipo'  => $r->tipo,
+                                    'monto' => round((float) $r->monto, 2),
+                                ])->values(),
+                        ];
+                    })->values();
 
                 return response()->json([
-                    'tipo'        => 'movimientos',
-                    'saldo'       => app(TesoreriaService::class)->saldo($cuentaId, $fecha),
-                    'desde'       => $desde,
-                    'hasta'       => $hasta,
-                    'porDia'      => $porDia,
-                    'movimientos' => $movimientos,
+                    'tipo'          => 'movimientos',
+                    'saldo'         => app(TesoreriaService::class)->saldo($cuentaId, $fecha),
+                    'saldoAnterior' => $saldoAnterior,
+                    'desde'         => $desde,
+                    'hasta'         => $hasta,
+                    'porDia'        => $porDia,
                 ]);
             }
 

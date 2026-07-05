@@ -439,6 +439,246 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
                 </div>
             </Modal>
 
+            {/* F9 — Modal detalle de línea: de dónde sale el monto */}
+            <Modal isOpen={detalleDe !== null} onClose={() => setDetalleDe(null)}
+                title={detalleDe ? `Detalle — ${detalleDe.descripcion} (${money(detalleDe.monto)})` : ''} size="lg"
+                footer={<Button variant="ghost" onClick={() => setDetalleDe(null)}>Cerrar</Button>}
+            >
+                {detalleCargando && (
+                    <p className="text-sm text-center py-8" style={{ color: 'var(--color-text-muted)' }}>Cargando detalle...</p>
+                )}
+
+                {!detalleCargando && detalleData?.tipo === 'movimientos' && (
+                    <div className="space-y-4">
+                        {/* Filtro de fechas */}
+                        <div className="flex flex-wrap items-end gap-2">
+                            <div>
+                                <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--color-text-muted)' }}>Desde</label>
+                                <input type="date" value={rango.desde} max={rango.hasta}
+                                    onChange={e => setRango(r => ({ ...r, desde: e.target.value }))}
+                                    className="text-sm rounded-lg px-2 py-1.5 border outline-none"
+                                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} />
+                            </div>
+                            <div>
+                                <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--color-text-muted)' }}>Hasta</label>
+                                <input type="date" value={rango.hasta} max={balance.fecha.slice(0, 10)}
+                                    onChange={e => setRango(r => ({ ...r, hasta: e.target.value }))}
+                                    className="text-sm rounded-lg px-2 py-1.5 border outline-none"
+                                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} />
+                            </div>
+                            <Button onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta)}>Filtrar</Button>
+                            <div className="ml-auto text-right">
+                                <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Ingresado en el período</p>
+                                <p className="font-bold" style={{ color: 'var(--color-success)' }}>
+                                    +{money((detalleData.porDia ?? []).reduce((s: number, d: any) => s + Number(d.ingresos), 0))}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* A FAVOR = solo lo que ENTRÓ, por día y por concepto.
+                            Las salidas viven en Tesorería / EN CONTRA / Gastos. */}
+                        <div className="max-h-96 overflow-y-auto space-y-3 pr-1">
+                            {(detalleData.porDia ?? [])
+                                .filter((d: any) => Number(d.ingresos) > 0)
+                                .map((d: any) => {
+                                    const ingresos = (d.conceptos ?? []).filter((c: any) => c.tipo === 'ingreso');
+                                    return (
+                                        <div key={d.fecha} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                            <div className="flex items-center justify-between px-3 py-2"
+                                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-success, #16a34a) 8%, var(--color-surface))' }}>
+                                                <span className="text-sm font-bold capitalize" style={{ color: 'var(--color-text)' }}>
+                                                    {new Date(String(d.fecha).slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'long' })}
+                                                </span>
+                                                <span className="text-sm font-bold" style={{ color: 'var(--color-success)' }}>
+                                                    +{money(d.ingresos)} ingresó
+                                                </span>
+                                            </div>
+                                            <div className="px-3 py-2 space-y-1">
+                                                {ingresos.map((c: any, i: number) => (
+                                                    <div key={i} className="flex justify-between text-sm pl-2">
+                                                        <span>{c.label}</span>
+                                                        <span className="font-semibold" style={{ color: 'var(--color-success)' }}>+{money(c.monto)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            {(detalleData.porDia ?? []).filter((d: any) => Number(d.ingresos) > 0).length === 0 && (
+                                <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Sin ingresos en el rango</p>
+                            )}
+                        </div>
+
+                        {/* Salidas del período en NETO por concepto (historial de los "menos") */}
+                        {(() => {
+                            const porDia: any[] = detalleData.porDia ?? [];
+                            const totIng = porDia.reduce((s, d) => s + Number(d.ingresos), 0);
+                            const totEgr = porDia.reduce((s, d) => s + Number(d.egresos), 0);
+                            const salidas = new Map<string, number>();
+                            porDia.forEach(d => (d.conceptos ?? []).forEach((c: any) => {
+                                if (c.tipo === 'egreso') salidas.set(c.label, (salidas.get(c.label) ?? 0) + Number(c.monto));
+                            }));
+                            return (
+                                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                    {salidas.size > 0 && (
+                                        <div className="px-3 py-2 space-y-1"
+                                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 6%, var(--color-bg))' }}>
+                                            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-danger)' }}>
+                                                Salidas del período (neto)
+                                            </p>
+                                            {Array.from(salidas.entries()).map(([label, monto]) => (
+                                                <div key={label} className="flex justify-between text-sm pl-2">
+                                                    <span>{label}</span>
+                                                    <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>−{money(monto)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {/* La resta final: así se llega al saldo */}
+                                    <div className="px-3 py-2 space-y-1 text-sm"
+                                        style={{ borderTop: salidas.size > 0 ? '1px solid var(--color-border)' : 'none', backgroundColor: 'var(--color-surface)' }}>
+                                        {Number(detalleData.saldoAnterior) !== 0 && (
+                                            <div className="flex justify-between" style={{ color: 'var(--color-text-muted)' }}>
+                                                <span>Saldo anterior al {rango.desde}</span>
+                                                <span>{money(detalleData.saldoAnterior)}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between">
+                                            <span>Total ingresado</span>
+                                            <span className="font-semibold" style={{ color: 'var(--color-success)' }}>+{money(totIng)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Total salidas</span>
+                                            <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>−{money(totEgr)}</span>
+                                        </div>
+                                        <div className="flex justify-between pt-1 text-base font-bold"
+                                            style={{ borderTop: '1px dashed var(--color-border)' }}>
+                                            <span>SALDO al {balance.fecha.slice(0, 10)}</span>
+                                            <span>{money(detalleData.saldo)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        <div className="flex items-center justify-end">
+                            <Button variant="ghost" onClick={() => router.visit(route('finanzas.tesoreria.index'))}>
+                                Ver historial completo en Tesorería
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {!detalleCargando && detalleData && ['stock', 'cxc', 'cxp', 'anticipos'].includes(detalleData.tipo) && (
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
+                                <input
+                                    value={busqueda}
+                                    onChange={e => setBusqueda(e.target.value)}
+                                    placeholder="Filtrar..."
+                                    className="w-full text-sm rounded-lg pl-8 pr-3 py-1.5 border outline-none"
+                                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                                />
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Total</p>
+                                <p className="font-bold">{money(detalleData.total)}</p>
+                            </div>
+                        </div>
+
+                        <div className="max-h-96 overflow-y-auto divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                            {filasFiltradas.map((f: any, i: number) => (
+                                <div key={i} className="py-1.5 flex items-center justify-between gap-2 text-sm">
+                                    <div className="min-w-0">
+                                        {detalleData.tipo === 'stock' && (
+                                            <>
+                                                <p className="truncate font-medium">{f.nombre}</p>
+                                                <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {Number(f.cantidad)} und × S/{Number(f.precio_costo).toFixed(2)} (costo del día)
+                                                </p>
+                                            </>
+                                        )}
+                                        {detalleData.tipo === 'cxc' && (
+                                            <>
+                                                <p className="truncate font-medium">{f.cliente || '—'}</p>
+                                                <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                    Venta {f.numero} · {f.fecha} · total {money(f.total)} · pagado {money(f.pagado)}{f.vence ? ` · vence ${f.vence}` : ''}
+                                                </p>
+                                            </>
+                                        )}
+                                        {detalleData.tipo === 'cxp' && (
+                                            <>
+                                                <p className="truncate font-medium">{f.proveedor || '—'}</p>
+                                                <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {f.documento ?? 'sin doc.'} · {f.fecha} · total {money(f.total)} · pagado {money(f.pagado)}
+                                                </p>
+                                            </>
+                                        )}
+                                        {detalleData.tipo === 'anticipos' && (
+                                            <>
+                                                <p className="truncate font-medium">{f.cliente || '—'}</p>
+                                                <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {f.fecha} · {f.modalidad} · recibió {money(f.recibido)}
+                                                </p>
+                                            </>
+                                        )}
+                                    </div>
+                                    <span className="font-bold whitespace-nowrap">
+                                        {money(f.valor ?? f.saldo ?? f.valor_hoy)}
+                                    </span>
+                                </div>
+                            ))}
+                            {filasFiltradas.length === 0 && (
+                                <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>Sin resultados</p>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {!detalleCargando && detalleData && ['adelanto', 'deuda'].includes(detalleData.tipo) && (
+                    <div className="space-y-3">
+                        <div className="rounded-xl px-3 py-2 grid grid-cols-3 gap-2 text-center text-sm"
+                            style={{ border: '1px solid var(--color-border)' }}>
+                            <div>
+                                <p className="text-[10px] uppercase" style={{ color: 'var(--color-text-muted)' }}>
+                                    {detalleData.tipo === 'deuda' ? 'Deuda' : 'Proveedor'}
+                                </p>
+                                <p className="font-bold truncate">{detalleData.cabecera?.nombre ?? detalleData.cabecera?.proveedor}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase" style={{ color: 'var(--color-text-muted)' }}>
+                                    {detalleData.tipo === 'deuda' ? 'Original' : 'Entregado'}
+                                </p>
+                                <p className="font-bold">{money(detalleData.cabecera?.original ?? detalleData.cabecera?.monto)}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase" style={{ color: 'var(--color-text-muted)' }}>Saldo</p>
+                                <p className="font-bold">{money(detalleData.cabecera?.saldo)}</p>
+                            </div>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                            {(detalleData.filas ?? []).map((f: any, i: number) => (
+                                <div key={i} className="py-1.5 flex items-center justify-between gap-2 text-sm">
+                                    <div className="min-w-0">
+                                        <p className="truncate">{f.detalle}</p>
+                                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{f.fecha} · {f.user ?? '—'}</p>
+                                    </div>
+                                    <span className="font-bold whitespace-nowrap"
+                                        style={{ color: Number(f.monto) < 0 ? 'var(--color-success)' : 'var(--color-text)' }}>
+                                        {money(Math.abs(Number(f.monto)))}
+                                    </span>
+                                </div>
+                            ))}
+                            {(detalleData.filas ?? []).length === 0 && (
+                                <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>Sin movimientos registrados</p>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
             {/* Modal confirmar */}
             <Modal isOpen={confirmando} onClose={() => setConfirmando(false)} title="Confirmar balance del día" size="sm"
                 footer={
