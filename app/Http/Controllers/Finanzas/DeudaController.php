@@ -7,6 +7,7 @@ use App\Models\Cuenta;
 use App\Models\Deuda;
 use App\Models\MetodoPago;
 use App\Services\AuditoriaService;
+use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -19,6 +20,8 @@ use Inertia\Inertia;
  */
 class DeudaController extends Controller
 {
+    public function __construct(private TesoreriaService $tesoreria) {}
+
     public function index(Request $request)
     {
         $user = $request->user();

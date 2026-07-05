@@ -115,7 +115,27 @@ class AdelantoProveedorController extends Controller
             'motivo' => ['required', 'string', 'min:5', 'max:500'],
         ]);
 
-        $adelanto->update(['estado' => $data['accion']]);
+        DB::transaction(function () use ($adelanto, $user, $data) {
+            $adelanto->update(['estado' => $data['accion']]);
+
+            // F7 — Tesorería: devuelto = el dinero vuelve (ingreso por el
+            // saldo); anulado = registro erróneo, se revierte el egreso.
+            if ($data['accion'] === 'devuelto') {
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $adelanto->cuenta_id,
+                    $user,
+                    now()->toDateString(),
+                    'ingreso',
+                    (float) $adelanto->saldo,
+                    "Devolución de adelanto #{$adelanto->id}: {$data['motivo']}",
+                    'proveedor_adelanto_devolucion',
+                    $adelanto->id,
+                );
+            } else {
+                $this->tesoreria->revertir('proveedor_adelanto', $adelanto->id);
+            }
+        });
 
         AuditoriaService::log('adelanto_proveedor.' . $data['accion'], $adelanto, [
             'motivo' => $data['motivo'],
