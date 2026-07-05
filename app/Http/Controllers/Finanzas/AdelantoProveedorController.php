@@ -8,7 +8,9 @@ use App\Models\MetodoPago;
 use App\Models\Proveedor;
 use App\Models\ProveedorAdelanto;
 use App\Services\AuditoriaService;
+use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -22,6 +24,8 @@ use Inertia\Inertia;
  */
 class AdelantoProveedorController extends Controller
 {
+    public function __construct(private TesoreriaService $tesoreria) {}
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -63,12 +67,31 @@ class AdelantoProveedorController extends Controller
             'observacion'    => ['nullable', 'string', 'max:500'],
         ]);
 
-        $adelanto = ProveedorAdelanto::create($data + [
-            'empresa_id' => $user->empresa_id,
-            'user_id'    => $user->id,
-            'saldo'      => $data['monto'],
-            'estado'     => 'activo',
-        ]);
+        $adelanto = DB::transaction(function () use ($data, $user) {
+            $adelanto = ProveedorAdelanto::create($data + [
+                'empresa_id' => $user->empresa_id,
+                'user_id'    => $user->id,
+                'saldo'      => $data['monto'],
+                'estado'     => 'activo',
+            ]);
+
+            // F7 — El adelanto sale de tesorería al momento de entregarlo.
+            $adelanto->load('proveedor');
+            $prov = $adelanto->proveedor?->razon_social ?? $adelanto->proveedor?->nombre_comercial ?? 'proveedor';
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                $user,
+                $data['fecha'],
+                'egreso',
+                (float) $data['monto'],
+                "Adelanto a proveedor — {$prov}",
+                'proveedor_adelanto',
+                $adelanto->id,
+            );
+
+            return $adelanto;
+        });
 
         AuditoriaService::log('adelanto_proveedor.creado', $adelanto, [
             'proveedor_id' => $adelanto->proveedor_id,

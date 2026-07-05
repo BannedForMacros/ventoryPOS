@@ -9,6 +9,7 @@ use App\Models\Cuenta;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Services\AuditoriaService;
+use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -23,6 +24,8 @@ use Inertia\Inertia;
  */
 class AnticipoClienteController extends Controller
 {
+    public function __construct(private TesoreriaService $tesoreria) {}
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -71,13 +74,33 @@ class AnticipoClienteController extends Controller
             'observacion'       => ['nullable', 'string', 'max:500'],
         ]);
 
-        $anticipo = ClienteAnticipo::create($data + [
-            'empresa_id'         => $user->empresa_id,
-            'user_id'            => $user->id,
-            'saldo'              => $data['monto'],
-            'cantidad_pendiente' => $data['tipo_valorizacion'] === 'material' ? $data['cantidad'] : null,
-            'estado'             => 'activo',
-        ]);
+        $anticipo = DB::transaction(function () use ($data, $user) {
+            $anticipo = ClienteAnticipo::create($data + [
+                'empresa_id'         => $user->empresa_id,
+                'user_id'            => $user->id,
+                'saldo'              => $data['monto'],
+                'cantidad_pendiente' => $data['tipo_valorizacion'] === 'material' ? $data['cantidad'] : null,
+                'estado'             => 'activo',
+            ]);
+
+            // F7 — El dinero del anticipo ingresa a tesorería.
+            $anticipo->load('cliente');
+            $nombre = $anticipo->cliente?->razon_social
+                ?? trim(($anticipo->cliente?->nombres ?? '') . ' ' . ($anticipo->cliente?->apellidos ?? ''));
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                $user,
+                $data['fecha'],
+                'ingreso',
+                (float) $data['monto'],
+                "Anticipo de cliente — {$nombre}",
+                'cliente_anticipo',
+                $anticipo->id,
+            );
+
+            return $anticipo;
+        });
 
         AuditoriaService::log('anticipo_cliente.creado', $anticipo, [
             'cliente_id' => $anticipo->cliente_id,
@@ -154,7 +177,27 @@ class AnticipoClienteController extends Controller
             'motivo' => ['required', 'string', 'min:5', 'max:500'],
         ]);
 
-        $anticipo->update(['estado' => $data['accion']]);
+        DB::transaction(function () use ($anticipo, $user, $data) {
+            $anticipo->update(['estado' => $data['accion']]);
+
+            // F7 — Tesorería: si se devuelve el dinero, egreso por el saldo
+            // restante; si fue un registro erróneo, se revierte el ingreso.
+            if ($data['accion'] === 'devuelto') {
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $anticipo->cuenta_id,
+                    $user,
+                    now()->toDateString(),
+                    'egreso',
+                    (float) $anticipo->saldo,
+                    "Devolución de anticipo #{$anticipo->id}: {$data['motivo']}",
+                    'cliente_anticipo_devolucion',
+                    $anticipo->id,
+                );
+            } else {
+                $this->tesoreria->revertir('cliente_anticipo', $anticipo->id);
+            }
+        });
 
         AuditoriaService::log('anticipo_cliente.' . $data['accion'], $anticipo, [
             'motivo' => $data['motivo'],

@@ -9,6 +9,7 @@ use App\Models\EntradaPago;
 use App\Models\MetodoPago;
 use App\Models\ProveedorAdelanto;
 use App\Services\AuditoriaService;
+use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -20,6 +21,8 @@ use Inertia\Inertia;
  */
 class CuentasPorPagarController extends Controller
 {
+    public function __construct(private TesoreriaService $tesoreria) {}
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -103,7 +106,25 @@ class CuentasPorPagarController extends Controller
                 ]);
             }
 
-            EntradaPago::create($data + ['entrada_id' => $entrada->id, 'user_id' => $user->id]);
+            $pago = EntradaPago::create($data + ['entrada_id' => $entrada->id, 'user_id' => $user->id]);
+
+            // F7 — Egreso de tesorería SOLO si sale dinero nuevo. Cuando el
+            // pago consume un adelanto no hay salida de caja (el dinero ya
+            // salió cuando se entregó el adelanto).
+            if (empty($data['proveedor_adelanto_id'])) {
+                $prov = $entrada->proveedorRel?->razon_social ?? $entrada->proveedor ?? 'proveedor';
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                    $user,
+                    $data['fecha'],
+                    'egreso',
+                    (float) $data['monto'],
+                    "Pago a proveedor {$prov}" . ($entrada->numero_documento ? " ({$entrada->numero_documento})" : ''),
+                    'entrada_pago',
+                    $pago->id,
+                );
+            }
 
             $entrada->aplicarPago((float) $data['monto']);
 

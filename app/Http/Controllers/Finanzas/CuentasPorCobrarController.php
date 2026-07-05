@@ -8,6 +8,7 @@ use App\Models\MetodoPago;
 use App\Models\Venta;
 use App\Models\VentaAbono;
 use App\Services\AuditoriaService;
+use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -19,6 +20,8 @@ use Inertia\Inertia;
  */
 class CuentasPorCobrarController extends Controller
 {
+    public function __construct(private TesoreriaService $tesoreria) {}
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -70,7 +73,22 @@ class CuentasPorCobrarController extends Controller
         ]);
 
         DB::transaction(function () use ($venta, $user, $data) {
-            VentaAbono::create($data + ['venta_id' => $venta->id, 'user_id' => $user->id]);
+            $abono = VentaAbono::create($data + ['venta_id' => $venta->id, 'user_id' => $user->id]);
+
+            // F7 — El cobro ingresa a tesorería con su origen.
+            $clienteNombre = $venta->cliente?->razon_social
+                ?? trim(($venta->cliente?->nombres ?? '') . ' ' . ($venta->cliente?->apellidos ?? ''));
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                $user,
+                $data['fecha'],
+                'ingreso',
+                (float) $data['monto'],
+                "Abono venta {$venta->numero} — {$clienteNombre}",
+                'venta_abono',
+                $abono->id,
+            );
 
             $pagado = round((float) $venta->monto_pagado + (float) $data['monto'], 2);
             $venta->update([
