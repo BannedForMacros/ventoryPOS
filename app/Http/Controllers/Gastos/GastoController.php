@@ -9,12 +9,17 @@ use App\Models\GastoTipo;
 use App\Models\Local;
 use App\Models\Turno;
 use App\Services\LocalScopeService;
+use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class GastoController extends Controller
 {
-    public function __construct(private LocalScopeService $scope) {}
+    public function __construct(
+        private LocalScopeService $scope,
+        private TesoreriaService $tesoreria,
+    ) {}
 
     public function index(Request $request)
     {
@@ -92,17 +97,33 @@ class GastoController extends Controller
             }
         }
 
-        Gasto::create([
-            'empresa_id'        => $user->empresa_id,
-            'local_id'          => $localId,
-            'user_id'           => $user->id,
-            'turno_id'          => $turnoId,
-            'gasto_tipo_id'     => $request->input('gasto_tipo_id'),
-            'gasto_concepto_id' => $request->input('gasto_concepto_id'),
-            'monto'             => $request->input('monto'),
-            'fecha'             => $request->input('fecha'),
-            'comentario'        => $request->input('comentario'),
-        ]);
+        DB::transaction(function () use ($request, $user, $localId, $turnoId) {
+            $gasto = Gasto::create([
+                'empresa_id'        => $user->empresa_id,
+                'local_id'          => $localId,
+                'user_id'           => $user->id,
+                'turno_id'          => $turnoId,
+                'gasto_tipo_id'     => $request->input('gasto_tipo_id'),
+                'gasto_concepto_id' => $request->input('gasto_concepto_id'),
+                'monto'             => $request->input('monto'),
+                'fecha'             => $request->input('fecha'),
+                'comentario'        => $request->input('comentario'),
+            ]);
+
+            // F7 — Tesorería: el gasto sale de caja (efectivo por defecto).
+            $gasto->load('concepto');
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $gasto->cuenta_id, // null → efectivo
+                $user,
+                $request->input('fecha'),
+                'egreso',
+                (float) $request->input('monto'),
+                'Gasto — ' . ($gasto->concepto?->nombre ?? 'operativo'),
+                'gasto',
+                $gasto->id,
+            );
+        });
 
         return redirect()->back()->with('success', 'Gasto registrado correctamente.');
     }
@@ -120,7 +141,11 @@ class GastoController extends Controller
             abort_if(!$request->user()->rol->es_admin, 403);
         }
 
-        $gasto->delete();
+        DB::transaction(function () use ($gasto) {
+            // F7 — Revertir el egreso de tesorería del gasto eliminado.
+            $this->tesoreria->revertir('gasto', $gasto->id);
+            $gasto->delete();
+        });
 
         return redirect()->back()->with('success', 'Gasto eliminado correctamente.');
     }

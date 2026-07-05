@@ -108,7 +108,27 @@ class DeudaController extends Controller
         $data = $request->validate($rules);
 
         DB::transaction(function () use ($deuda, $user, $data) {
-            $deuda->pagos()->create($data + ['user_id' => $user->id]);
+            $pago = $deuda->pagos()->create($data + ['user_id' => $user->id]);
+
+            // F7 — Tesorería. La dirección del dinero depende de quién debe:
+            //   por_pagar  + amortización → pagamos cuota        → EGRESO
+            //   por_pagar  + incremento   → nos desembolsan más   → INGRESO
+            //   por_cobrar + amortización → nos pagan la cuota    → INGRESO
+            //     (ej. el trabajador paga su cuota semanal de la moto)
+            //   por_cobrar + incremento   → prestamos más dinero  → EGRESO
+            $esIngreso = ($deuda->direccion === Deuda::DIRECCION_POR_PAGAR) === ($data['tipo'] === 'incremento');
+            $verbo     = $data['tipo'] === 'amortizacion' ? 'Cuota' : 'Incremento';
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                $user,
+                $data['fecha'],
+                $esIngreso ? 'ingreso' : 'egreso',
+                (float) $data['monto'],
+                "{$verbo} de deuda — {$deuda->nombre}",
+                'deuda_pago',
+                $pago->id,
+            );
 
             $nuevoSaldo = $data['tipo'] === 'amortizacion'
                 ? round((float) $deuda->saldo - (float) $data['monto'], 2)
