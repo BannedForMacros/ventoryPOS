@@ -48,8 +48,8 @@ class AdelantoProveedorController extends Controller
             'estado'      => $request->input('estado', 'activos'),
             'proveedores' => Proveedor::where('empresa_id', $user->empresa_id)->where('activo', true)
                 ->orderBy('razon_social')->get(['id', 'razon_social', 'nombre_comercial']),
-            'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->orderBy('nombre')->get(['id', 'nombre']),
-            'cuentas'     => Cuenta::deEmpresa($user->empresa_id)->activo()->orderBy('nombre')->get(['id', 'nombre']),
+            'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
+            'cuentas'     => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
         ]);
     }
 

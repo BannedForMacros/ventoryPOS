@@ -177,7 +177,7 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
             >
                 <div className="space-y-4">
                     <Select label="Trabajador" required
-                        options={trabajadores.map(t => ({ value: t.id, label: t.name }))}
+                        options={trabajadores.map(t => ({ value: String(t.id), label: t.name }))}
                         value={form.user_id}
                         onChange={v => setForm(f => ({ ...f, user_id: String(v) }))}
                         placeholder="— Seleccionar —"

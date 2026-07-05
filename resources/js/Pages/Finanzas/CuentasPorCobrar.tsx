@@ -42,8 +42,8 @@ interface Props extends PageProps {
     ventas: Paginado<VentaCxc>;
     totalPendiente: number;
     estado: string;
-    metodosPago: { id: number; nombre: string }[];
-    cuentas: { id: number; nombre: string }[];
+    metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
+    cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
 }
 
 const hoy = () => new Date().toISOString().slice(0, 10);
@@ -65,6 +65,15 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    /** Cuentas válidas para el método elegido (vinculadas; efectivo → caja Efectivo). */
+    function cuentasDeMetodo(mid: string) {
+        const m = metodosPago.find(x => String(x.id) === mid);
+        if (!m) return cuentas;
+        if (m.cuentas?.length) return m.cuentas;
+        if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
+        return cuentas;
+    }
 
     function abrirAbono(v: VentaCxc) {
         setAbonando(v);
@@ -180,7 +189,11 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAbonando(null)}>Cancelar</Button>
-                        <Button onClick={submitAbono} disabled={saving}>{saving ? 'Guardando...' : 'Registrar abono'}</Button>
+                        <Button onClick={submitAbono}
+                            disabled={saving || form.monto === '' || Number(form.monto) <= 0
+                                || Number(form.monto) > Number(abonando?.saldo_pendiente ?? 0) + 0.009}>
+                            {saving ? 'Guardando...' : 'Registrar abono'}
+                        </Button>
                     </>
                 }
             >
@@ -191,27 +204,60 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
                             <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(abonando.saldo_pendiente)}</span>
                         </div>
                         <Input label="Monto del abono" required type="number" min="0.01" step="0.01"
+                            max={Number(abonando.saldo_pendiente)}
                             value={form.monto}
                             onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
                             error={errors.monto}
                         />
+
+                        {/* Nuevo saldo en vivo + validación de tope */}
+                        {form.monto !== '' && Number(form.monto) > 0 && (() => {
+                            const saldo = Number(abonando.saldo_pendiente);
+                            const montoNum = Number(form.monto);
+                            const nuevo = Math.round((saldo - montoNum) * 100) / 100;
+                            if (montoNum > saldo + 0.009) {
+                                return (
+                                    <div className="rounded-xl px-3 py-2 text-sm font-semibold"
+                                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, var(--color-bg))', color: 'var(--color-danger)' }}>
+                                        ⚠ El abono ({money(montoNum)}) no puede superar el saldo pendiente ({money(saldo)}).
+                                    </div>
+                                );
+                            }
+                            return (
+                                <div className="flex justify-between items-center rounded-xl px-3 py-2 text-sm"
+                                    style={{ backgroundColor: nuevo <= 0.009
+                                        ? 'color-mix(in srgb, var(--color-success, #16a34a) 12%, var(--color-bg))'
+                                        : 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))' }}>
+                                    <span style={{ color: 'var(--color-text)' }}>
+                                        {nuevo <= 0.009 ? '✓ Con este abono la venta queda SALDADA' : 'Nuevo saldo pendiente'}
+                                    </span>
+                                    <strong style={{ color: nuevo <= 0.009 ? 'var(--color-success)' : 'var(--color-primary)' }}>
+                                        {money(Math.max(0, nuevo))}
+                                    </strong>
+                                </div>
+                            );
+                        })()}
                         <Input label="Fecha" required type="date"
                             value={form.fecha}
                             onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
                             error={errors.fecha}
                         />
                         <Select label="Método de pago"
-                            options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                            options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                             value={form.metodo_pago_id}
-                            onChange={v => setForm(f => ({ ...f, metodo_pago_id: String(v) }))}
+                            onChange={v => {
+                                const cts = cuentasDeMetodo(String(v));
+                                setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' }));
+                            }}
                             placeholder="— Seleccionar —"
                             error={errors.metodo_pago_id}
                         />
                         <Select label="Cuenta destino"
-                            options={cuentas.map(c => ({ value: c.id, label: c.nombre }))}
+                            options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
                             value={form.cuenta_id}
                             onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
                             placeholder="— Seleccionar —"
+                            hint={form.metodo_pago_id ? 'Solo las cuentas vinculadas al método elegido' : undefined}
                             error={errors.cuenta_id}
                         />
                         <Input label="Referencia (operación, voucher...)"

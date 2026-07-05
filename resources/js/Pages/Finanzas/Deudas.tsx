@@ -44,8 +44,8 @@ interface Props extends PageProps {
     deudas: Paginado<Deuda>;
     totales: { por_pagar: number; por_cobrar: number };
     estado: string;
-    metodosPago: { id: number; nombre: string }[];
-    cuentas: { id: number; nombre: string }[];
+    metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
+    cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
 }
 
 const hoy = () => new Date().toISOString().slice(0, 10);
@@ -76,6 +76,15 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    /** Cuentas validas para el metodo elegido (vinculadas; efectivo -> caja Efectivo). */
+    function cuentasDeMetodo(mid: string) {
+        const m = metodosPago.find(x => String(x.id) === mid);
+        if (!m) return cuentas;
+        if (m.cuentas?.length) return m.cuentas;
+        if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
+        return cuentas;
+    }
 
     function submitNuevo() {
         setSaving(true);
@@ -280,13 +289,13 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
                                 onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
                         </div>
                         <Select label="Método de pago"
-                            options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                            options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                             value={formPago.metodo_pago_id}
-                            onChange={v => setFormPago(f => ({ ...f, metodo_pago_id: String(v) }))}
+                            onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormPago(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
                             placeholder="— Seleccionar —"
                         />
                         <Select label="Cuenta"
-                            options={cuentas.map(c => ({ value: c.id, label: c.nombre }))}
+                            options={cuentasDeMetodo(formPago.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
                             value={formPago.cuenta_id}
                             onChange={v => setFormPago(f => ({ ...f, cuenta_id: String(v) }))}
                             placeholder="— Seleccionar —"

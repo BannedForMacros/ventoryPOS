@@ -49,8 +49,8 @@ interface Props extends PageProps {
     estado: string;
     clientes: { id: number; nombres?: string; apellidos?: string; razon_social?: string }[];
     productos: { id: number; nombre: string; precio_venta: string }[];
-    metodosPago: { id: number; nombre: string }[];
-    cuentas: { id: number; nombre: string }[];
+    metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
+    cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
 }
 
 const hoy = () => new Date().toISOString().slice(0, 10);
@@ -85,6 +85,15 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    /** Cuentas validas para el metodo elegido (vinculadas; efectivo -> caja Efectivo). */
+    function cuentasDeMetodo(mid: string) {
+        const m = metodosPago.find(x => String(x.id) === mid);
+        if (!m) return cuentas;
+        if (m.cuentas?.length) return m.cuentas;
+        if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
+        return cuentas;
+    }
 
     function submitNuevo() {
         setSaving(true);
@@ -227,7 +236,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
             >
                 <div className="space-y-4">
                     <SearchableSelect label="Cliente" required
-                        options={clientes.map(c => ({ value: c.id, label: nombreCliente(c) }))}
+                        options={clientes.map(c => ({ value: String(c.id), label: nombreCliente(c) }))}
                         value={form.cliente_id}
                         onChange={v => setForm(f => ({ ...f, cliente_id: String(v) }))}
                         placeholder="— Seleccionar cliente —"
@@ -240,13 +249,13 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                             onChange={e => setForm(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
                     </div>
                     <Select label="Método de pago"
-                        options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                        options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                         value={form.metodo_pago_id}
-                        onChange={v => setForm(f => ({ ...f, metodo_pago_id: String(v) }))}
+                        onChange={v => { const cts = cuentasDeMetodo(String(v)); setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
                         placeholder="— Seleccionar —"
                     />
                     <Select label="Cuenta destino"
-                        options={cuentas.map(c => ({ value: c.id, label: c.nombre }))}
+                        options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
                         value={form.cuenta_id}
                         onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
                         placeholder="— Seleccionar —"
@@ -263,7 +272,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                     {form.tipo_valorizacion === 'material' && (
                         <>
                             <SearchableSelect label="Producto comprometido" required
-                                options={productos.map(p => ({ value: p.id, label: `${p.nombre} (venta: ${money(p.precio_venta)})` }))}
+                                options={productos.map(p => ({ value: String(p.id), label: `${p.nombre} (venta: ${money(p.precio_venta)})` }))}
                                 value={form.producto_id}
                                 onChange={v => setForm(f => ({ ...f, producto_id: String(v) }))}
                                 placeholder="— Seleccionar producto —"
