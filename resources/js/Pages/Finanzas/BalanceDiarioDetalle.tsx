@@ -292,7 +292,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                     <div className="px-3 py-2 space-y-1"
                         style={{ borderTop: '2px dashed var(--color-border)', backgroundColor: 'color-mix(in srgb, var(--color-danger) 5%, var(--color-bg))' }}>
                         <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-danger)' }}>
-                            Salidas de dinero de hoy (ya descontadas de las cuentas)
+                            Salidas de dinero del período (ya descontadas de las cuentas)
                         </p>
                         {salidasDia.map((s, i) => (
                             <div key={i} className="flex justify-between text-sm pl-2">

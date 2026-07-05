@@ -87,7 +87,7 @@ class BalanceDiarioController extends Controller
             'ajuste'                        => 'Ajustes de saldo',
         ];
         $salidasDia = CuentaMovimiento::deEmpresa($user->empresa_id)
-            ->where('fecha', $fecha)
+            ->whereBetween('fecha', [date('Y-m-d', strtotime($fecha . ' -3 months')), $fecha])
             ->where('tipo', 'egreso')
             ->where(fn ($q) => $q->whereNull('ref_tipo')->orWhere('ref_tipo', '!=', 'gasto'))
             ->selectRaw('ref_tipo, SUM(monto) as monto')
