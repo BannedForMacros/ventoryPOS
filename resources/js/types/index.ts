@@ -17,6 +17,7 @@ export interface Empresa extends Record<string, unknown> {
     modo_cierre_inventario: ModoCierreInventario;
     usa_fondos_iniciales: boolean;
     fondos_iniciales_en_declaracion: boolean;
+    requiere_consolidacion_caja: boolean;
     permite_devoluciones: boolean;
     dias_max_devolucion: number;
     requiere_aprobacion_devolucion: boolean;

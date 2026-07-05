@@ -33,6 +33,7 @@ type FormData = {
     modo_cierre_inventario: ModoInventario;
     usa_fondos_iniciales: boolean;
     fondos_iniciales_en_declaracion: boolean;
+    requiere_consolidacion_caja: boolean;
     permite_devoluciones: boolean;
     dias_max_devolucion: number | '';
     requiere_aprobacion_devolucion: boolean;
@@ -54,6 +55,7 @@ const emptyForm: FormData = {
     modo_cierre_inventario: 'por_venta',
     usa_fondos_iniciales: true,
     fondos_iniciales_en_declaracion: false,
+    requiere_consolidacion_caja: false,
     permite_devoluciones: true,
     dias_max_devolucion: 0,
     requiere_aprobacion_devolucion: false,
@@ -96,6 +98,7 @@ export default function Empresas({ empresas }: Props) {
             modo_cierre_inventario: (emp.modo_cierre_inventario as ModoInventario) ?? 'por_venta',
             usa_fondos_iniciales: emp.usa_fondos_iniciales ?? true,
             fondos_iniciales_en_declaracion: emp.fondos_iniciales_en_declaracion ?? false,
+            requiere_consolidacion_caja: emp.requiere_consolidacion_caja ?? false,
             permite_devoluciones: emp.permite_devoluciones ?? true,
             dias_max_devolucion: emp.dias_max_devolucion ?? 0,
             requiere_aprobacion_devolucion: emp.requiere_aprobacion_devolucion ?? false,
@@ -437,6 +440,24 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </label>
                         )}
+                    </div>
+
+                    {/* ── Sección: Consolidación de caja ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Consolidación de caja</p>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.requiere_consolidacion_caja}
+                                onChange={e => setData('requiere_consolidacion_caja', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Requiere consolidación de caja para el balance diario</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, tras el cierre de la cajera un supervisor debe contar el efectivo (Finanzas → Consolidación de caja) y SU conteo es el que asienta el sobrante/faltante en tesorería y alimenta el balance. Si está inactivo, el conteo de la cajera al cierre es el que manda.
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text)' }}>
