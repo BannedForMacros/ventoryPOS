@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Search, UserRound } from 'lucide-react';
+import { ChevronDown, ChevronRight, History, Search, UserRound } from 'lucide-react';
 
 /**
  * F11 — Componente NORMALIZADO para los detalles financieros.
@@ -69,6 +69,16 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
     const cols: DetalleCol[] = itemCols?.length ? itemCols : [{ campo: 'descripcion', label: 'Descripción' }];
     const [q, setQ] = useState('');
     const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
+    // Historiales colapsados por defecto (imagina 100 ventas: solo abres el que te interesa)
+    const [histAbiertos, setHistAbiertos] = useState<Set<string>>(new Set());
+
+    function toggleHist(key: string) {
+        setHistAbiertos(prev => {
+            const n = new Set(prev);
+            n.has(key) ? n.delete(key) : n.add(key);
+            return n;
+        });
+    }
 
     const filtrados = useMemo(() => {
         if (!q.trim()) return grupos;
@@ -232,13 +242,22 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                                                             Historial de abonos
                                                                         </p>
                                                                         {it.historial!.map((h, hi) => (
-                                                                            <div key={hi} className="flex items-center justify-between gap-2 text-[12px]">
-                                                                                <span style={{ color: 'var(--color-text)' }}>
-                                                                                    <span style={{ color: 'var(--color-text-muted)' }}>{h.fecha}</span>
-                                                                                    {' · '}{h.descripcion}
-                                                                                    {h.user && <span style={{ color: 'var(--color-text-muted)' }}> · 👤 {h.user}</span>}
+                                                                            <div key={hi}
+                                                                                className="grid grid-cols-[78px_1fr_minmax(90px,auto)_96px] gap-2 items-center text-[12px]"
+                                                                                style={{ borderTop: hi > 0 ? '1px dashed var(--color-border)' : 'none', paddingTop: hi > 0 ? 4 : 0 }}>
+                                                                                <span className="whitespace-nowrap font-medium" style={{ color: 'var(--color-text-muted)' }}>{h.fecha}</span>
+                                                                                <span className="min-w-0 truncate" title={h.descripcion} style={{ color: 'var(--color-text)' }}>{h.descripcion}</span>
+                                                                                <span className="min-w-0">
+                                                                                    {h.user ? (
+                                                                                        <span className="inline-flex items-center gap-1 max-w-full text-[11px] px-1.5 py-0.5 rounded-full"
+                                                                                            title={`Registrado por ${h.user}`}
+                                                                                            style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
+                                                                                            <UserRound size={10} className="flex-shrink-0" />
+                                                                                            <span className="truncate">{h.user}</span>
+                                                                                        </span>
+                                                                                    ) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
                                                                                 </span>
-                                                                                <span className="font-semibold whitespace-nowrap" style={{ color: 'var(--color-success)' }}>
+                                                                                <span className="font-semibold whitespace-nowrap text-right" style={{ color: 'var(--color-success)' }}>
                                                                                     +{money(h.monto)}
                                                                                 </span>
                                                                             </div>

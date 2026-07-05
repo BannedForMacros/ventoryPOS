@@ -28,46 +28,76 @@ export default function Timeline({ items, emptyMessage = 'Sin movimientos regist
         return <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>{emptyMessage}</p>;
     }
 
-    return (
-        <div className="relative pl-4">
-            {/* Línea vertical */}
-            <span className="absolute left-[5px] top-2 bottom-2 w-px" style={{ backgroundColor: 'var(--color-border)' }} />
+    const hayUsuarios = items.some(i => i.user);
+    // Columnas FIJAS para lectura simétrica: punto | fecha | tipo | detalle | usuario | monto
+    const gridCols = hayUsuarios
+        ? 'grid-cols-[14px_78px_100px_1fr_minmax(90px,auto)_96px]'
+        : 'grid-cols-[14px_78px_100px_1fr_96px]';
 
-            <div className="space-y-3">
+    return (
+        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+            {/* Cabecera de columnas */}
+            <div className={`grid ${gridCols} gap-2 items-center px-3 py-2 text-[10px] font-bold uppercase tracking-wider`}
+                style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)' }}>
+                <span />
+                <span>Fecha</span>
+                <span>Tipo</span>
+                <span>Detalle</span>
+                {hayUsuarios && <span>Usuario</span>}
+                <span className="text-right">Monto</span>
+            </div>
+
+            <div className="relative">
+                {/* Línea vertical que une los puntos */}
+                <span className="absolute left-[18px] top-3 bottom-3 w-px" style={{ backgroundColor: 'var(--color-border)' }} />
+
                 {items.map((it, i) => {
                     const color = it.tipo === 'ingreso' ? 'var(--color-success, #16a34a)'
                         : it.tipo === 'egreso' ? 'var(--color-danger)'
                         : 'var(--color-text)';
                     return (
-                        <div key={i} className="relative flex items-start gap-3">
-                            {/* Punto */}
-                            <span className="absolute -left-4 top-1.5 h-[9px] w-[9px] rounded-full ring-2"
+                        <div key={i}
+                            className={`grid ${gridCols} gap-2 items-center px-3 py-2`}
+                            style={{ borderTop: i > 0 ? '1px dashed var(--color-border)' : 'none' }}>
+                            {/* Punto sobre la línea */}
+                            <span className="relative z-10 h-[9px] w-[9px] rounded-full justify-self-center ring-2"
                                 style={{ backgroundColor: color, ['--tw-ring-color' as any]: 'var(--color-surface)' } as React.CSSProperties} />
 
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm leading-snug" style={{ color: 'var(--color-text)' }}>
-                                    <span className="font-medium" style={{ color: 'var(--color-text-muted)' }}>{it.fecha}</span>
-                                    {it.badge && <span className="ml-1.5 align-middle"><Badge variant={it.badge.variant}>{it.badge.texto}</Badge></span>}
-                                    {it.titulo && <span className="ml-1.5">{it.titulo}</span>}
-                                </p>
-                                {(it.detalle || it.user) && (
-                                    <p className="text-[12px] mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--color-text-muted)' }}>
-                                        {it.detalle}
-                                        {it.user && (
-                                            <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full"
-                                                style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
-                                                <UserRound size={10} />{it.user}
-                                            </span>
-                                        )}
-                                    </p>
-                                )}
-                            </div>
+                            <span className="text-[12px] font-medium whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>
+                                {it.fecha}
+                            </span>
 
-                            {it.monto !== undefined && (
-                                <span className="text-sm font-bold whitespace-nowrap" style={{ color }}>
-                                    {it.tipo === 'ingreso' ? '+' : it.tipo === 'egreso' ? '−' : ''}{money(it.monto)}
+                            <span>
+                                {it.badge
+                                    ? <Badge variant={it.badge.variant}>{it.badge.texto}</Badge>
+                                    : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+                            </span>
+
+                            <span className="min-w-0 text-[13px] truncate"
+                                title={typeof it.detalle === 'string' ? it.detalle : undefined}
+                                style={{ color: 'var(--color-text)' }}>
+                                {it.titulo}{it.titulo && it.detalle ? ' · ' : ''}
+                                <span style={{ color: 'var(--color-text-muted)' }}>{it.detalle ?? (it.titulo ? '' : '—')}</span>
+                            </span>
+
+                            {hayUsuarios && (
+                                <span className="min-w-0">
+                                    {it.user ? (
+                                        <span className="inline-flex items-center gap-1 max-w-full text-[11px] px-1.5 py-0.5 rounded-full"
+                                            title={`Registrado por ${it.user}`}
+                                            style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
+                                            <UserRound size={10} className="flex-shrink-0" />
+                                            <span className="truncate">{it.user}</span>
+                                        </span>
+                                    ) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
                                 </span>
                             )}
+
+                            <span className="text-sm font-bold whitespace-nowrap text-right" style={{ color }}>
+                                {it.monto !== undefined
+                                    ? <>{it.tipo === 'ingreso' ? '+' : it.tipo === 'egreso' ? '−' : ''}{money(it.monto)}</>
+                                    : '—'}
+                            </span>
                         </div>
                     );
                 })}

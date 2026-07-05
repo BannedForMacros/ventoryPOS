@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ClipboardCheck, AlertTriangle, Coins, CreditCard } from 'lucide-react';
+import { ClipboardCheck, AlertTriangle, Coins, CreditCard, Check } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -293,9 +293,11 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requ
                                             placeholder="0.00"
                                         />
                                     </div>
-                                    <span className="col-span-2 text-right text-sm font-bold"
+                                    <span className="col-span-2 inline-flex items-center justify-end gap-1 text-right text-sm font-bold"
                                         style={{ color: dif === null ? 'var(--color-text-muted)' : Math.abs(dif) < 0.01 ? 'var(--color-success)' : dif < 0 ? 'var(--color-danger)' : 'var(--color-warning)' }}>
-                                        {dif === null ? '—' : Math.abs(dif) < 0.01 ? '✓ OK' : `${dif > 0 ? '+' : ''}${dif.toFixed(2)}`}
+                                        {dif === null ? '—' : Math.abs(dif) < 0.01
+                                            ? <><Check size={14} className="flex-shrink-0" />OK</>
+                                            : `${dif > 0 ? '+' : ''}${dif.toFixed(2)}`}
                                     </span>
                                 </div>
                             );
@@ -337,9 +339,11 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requ
                                         esperaba {i.esperado !== null ? money(i.esperado) : '—'}
                                     </span>
                                     <span className="col-span-3 text-right font-bold">{money(i.contado)}</span>
-                                    <span className="col-span-2 text-right font-bold"
+                                    <span className="col-span-2 inline-flex items-center justify-end gap-1 text-right font-bold"
                                         style={{ color: dif === null || Math.abs(dif) < 0.01 ? 'var(--color-success)' : dif < 0 ? 'var(--color-danger)' : 'var(--color-warning)' }}>
-                                        {dif === null ? '—' : Math.abs(dif) < 0.01 ? '✓' : `${dif > 0 ? '+' : ''}${dif.toFixed(2)}`}
+                                        {dif === null ? '—' : Math.abs(dif) < 0.01
+                                            ? <Check size={14} className="flex-shrink-0" />
+                                            : `${dif > 0 ? '+' : ''}${dif.toFixed(2)}`}
                                     </span>
                                 </div>
                             );
