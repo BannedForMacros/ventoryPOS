@@ -38,6 +38,7 @@ class Turno extends Model
     public function arqueo(): HasMany           { return $this->hasMany(TurnoArqueo::class); }
     public function arqueoMetodos(): HasMany    { return $this->hasMany(TurnoArqueoMetodo::class); }
     public function cierreProductos(): HasMany  { return $this->hasMany(TurnoCierreProducto::class); }
+    public function consolidacion(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(TurnoConsolidacion::class); }
     public function gastos(): HasMany           { return $this->hasMany(Gasto::class); }
     public function ventas(): HasMany           { return $this->hasMany(\App\Models\Venta::class); }
 

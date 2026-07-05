@@ -139,6 +139,16 @@ class TurnoController extends Controller
             $turno->arqueo()->delete();
             $turno->arqueoMetodos()->delete();
 
+            // F8 — Revertir el asiento de sobrante/faltante del cierre y la
+            // consolidación (si existía): el turno vuelve a estar abierto y
+            // se volverán a generar en el próximo cierre.
+            $tesoreria = app(\App\Services\TesoreriaService::class);
+            $tesoreria->revertir('cierre_turno', $turno->id);
+            if ($turno->consolidacion) {
+                $tesoreria->revertir('turno_consolidacion', $turno->consolidacion->id);
+                $turno->consolidacion->delete();
+            }
+
             // A8 — Anular el cierre de inventario asociado al turno (si existe).
             // Si no se anula, el cierre confirmado anterior queda "huerfano"
             // y los reportes posteriores cuentan el inventario dos veces cuando
@@ -334,6 +344,29 @@ class TurnoController extends Controller
 
             // Snapshot de productos vendidos en el turno (para reportes históricos)
             $turno->poblarSnapshotProductos();
+
+            // F8 — Si la empresa NO exige consolidación, el conteo de la
+            // cajera es el que manda: el sobrante/faltante del turno
+            // (declarado − esperado) se asienta en tesorería con origen
+            // trazable. Si la empresa SÍ exige consolidación, el asiento se
+            // hará cuando el consolidador registre SU conteo.
+            $empresa = $turno->empresa;
+            if (!$empresa?->requiere_consolidacion_caja
+                && $turno->diferencia !== null
+                && abs((float) $turno->diferencia) >= 0.01) {
+                $dif = (float) $turno->diferencia;
+                app(\App\Services\TesoreriaService::class)->registrar(
+                    $turno->empresa_id,
+                    null, // efectivo
+                    $request->user(),
+                    now()->toDateString(),
+                    $dif > 0 ? 'ingreso' : 'egreso',
+                    abs($dif),
+                    ($dif > 0 ? 'Sobrante' : 'Faltante') . " de caja — cierre turno #{$turno->id} ({$turno->user?->name})",
+                    'cierre_turno',
+                    $turno->id,
+                );
+            }
         });
 
         $turno->refresh();

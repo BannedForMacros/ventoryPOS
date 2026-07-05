@@ -84,6 +84,11 @@ class BalanceDiarioService
 
         $balance->items()->where('es_manual', false)->delete();
 
+        // Legado F7: antes las cuentas/efectivo eran líneas manuales; ahora
+        // son automáticas desde tesorería. Purgar las viejas para no duplicar.
+        $balance->items()->where('es_manual', true)
+            ->whereIn('categoria', ['cuenta_bancaria', 'efectivo'])->delete();
+
         $orden = 0;
         $items = [];
 
