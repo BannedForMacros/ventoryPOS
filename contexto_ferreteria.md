@@ -1,0 +1,118 @@
+# Contexto: Ferretería HYC Ferromateriales — Balance Financiero Diario
+
+> Documento de contexto para retomar el trabajo en cualquier sesión.
+> Última actualización: 2026-07-05.
+
+---
+
+## 1. El cliente y su Excel
+
+Cliente real: **HYC Ferromateriales SRL** (ferretería, vende ladrillo, fierro, cemento, etc.).
+Lleva su control en 2 Excel que están en la raíz del repo:
+
+- `BALANCE FERRETERIA H&C.xlsx` — hoja `BALANCE`: balance patrimonial, empezó semanal (abril) y pasó a **DIARIO**.
+- `STOCK DE LADRILLOO 111.xlsx` — kardex semanal de ladrillos: INGRESO / SALIDA / PÉRDIDA por tipo, y `SALDO × "punitario actual"` (precio unitario del día) = stock valorizado.
+
+### Estructura del balance del Excel
+
+```
+BALANCE HOY   = Σ(A FAVOR) − Σ(EN CONTRA)
+UTILIDAD REAL = (BALANCE HOY − BALANCE AYER) + GASTOS DEL DÍA
+```
+
+**A FAVOR (activos):**
+- Cuenta BCP Soles, Cuenta BBVA Soles, Efectivo (saldos reales del día, los conciliaba a mano con "OK")
+- Stock (inventario) **valorizado a precio del día**
+- Deudas por cobrar (ventas a crédito, ~S/80-120k — su activo más grande)
+- Adelantos a proveedores (dinero pagado SIN recibir aún el material: Uyustools, Ardiles, Prodac, Cofesa)
+- Préstamos otorgados a terceros
+
+**EN CONTRA (pasivos):**
+- Proveedores por pagar (paga en abonos)
+- Clientes anticipos — **valorizados a precio del día** (si deben material y el ladrillo sube, la deuda vale más)
+- Deudas bancarias (DEUDA BCP 1 - 7630, DEUDA BCP 2 - 5557)
+- Deudas personales (Jeiner, Jordin, Inversiones JH...) y al personal
+- Material comprometido en especie
+
+**GASTOS DEL DÍA:** lista lateral (combustible, SUNAT, personal...) que se suma de vuelta para la utilidad real (un gasto baja el balance pero no es pérdida operativa).
+
+### Exigencias claves del cliente (aprendidas en iteraciones)
+1. **Trazabilidad 100%**: nada de montos "de la nada"; todo con fecha, monto, origen y QUIÉN lo registró.
+2. **Nada manual sin origen**: el efectivo/cuentas NO se digitan — se calculan de las operaciones; los ajustes requieren motivo y quedan auditados.
+3. **Mostrar BRUTO**: en el balance, las cuentas A FAVOR muestran TODO lo ingresado; las salidas van EN CONTRA como "Gastos emitidos (salidas de dinero)" que SÍ suma. El neto sale de la resta (favor − contra) — igual resultado, más transparencia.
+4. **Todo por método de pago**: cada canal (Efectivo, Yape, Tarjeta, BCP...) es su propia cuenta. Si un método no tiene cuenta vinculada, el sistema **crea automáticamente** una cuenta con el nombre del método (el dinero de Yape NUNCA cae a Efectivo).
+5. **Pago a proveedores = costo ya emitido, NO gasto del día** (el costo nació con la compra/CxP; el pago solo cancela la deuda). Se muestran como "Gastos emitidos" en el card EN CONTRA con separador.
+6. Detalles **por día y por concepto** ("las ventas del lunes generaron X"), no documento por documento; y cada fila desplegable para ver el historial.
+
+---
+
+## 2. Módulos implementados (2026-07-04 y 05)
+
+Stack: Laravel 12 + Inertia + React TS + Tailwind + Postgres. Menú/permisos vía tablas `modulos`/`permisos` (seeder `ModulosFinanzasSeeder`, idempotente).
+
+### Finanzas (menú lateral)
+| Módulo | Ruta | Qué hace |
+|---|---|---|
+| Balance diario | `/finanzas/balance` | Foto patrimonial: genera líneas automáticas, líneas manuales auditadas, confirmar = snapshot inmutable ("balance ayer" del día siguiente). Card consolidador abajo (favor/contra/gastos/balance). Cada línea clickeable → modal de detalle. |
+| Tesorería | `/finanzas/tesoreria` | Libro de movimientos por cuenta (`cuenta_movimientos`). Cada sol con origen (`ref_tipo`/`ref_id`). "Ajustar saldo" = diferencia con motivo, auditada. |
+| Consolidación de caja | `/finanzas/consolidacion` | Segundo conteo del supervisor sobre cada cierre de turno: verifica EFECTIVO **y cada método** (grilla declarado/esperado/contado por línea). Su conteo manda; la diferencia asienta por cuenta. Faltante total → descuento de planilla opcional. |
+| Cuentas por cobrar | `/finanzas/cuentas-por-cobrar` | Ventas a crédito + abonos (con "nuevo saldo pendiente" en vivo y tope validado). Detalle = pago inicial del POS + abonos. |
+| Cuentas por pagar | `/finanzas/cuentas-por-pagar` | Compras con saldo, abonos parciales (pendiente→parcial→pagado), pagar consumiendo adelanto (no mueve caja). |
+| Anticipos de clientes | `/finanzas/anticipos` | Modalidad 'monto' o 'material' (valorizada a precio de venta DEL DÍA: `valorPasivoHoy()`). Aplicar entregas, devolver/anular. |
+| Adelantos a proveedores | `/finanzas/adelantos` | Activo a favor; se consume desde CxP o se devuelve. |
+| Deudas y préstamos | `/finanzas/deudas` | direccion por_pagar/por_cobrar, tipo bancaria/personal/trabajador/otro. Amortización/incremento con dirección de caja correcta. Caso "moto del trabajador" = deuda por_cobrar tipo trabajador; cuota semanal entra sola a caja. |
+| Descuentos de planilla | `/finanzas/descuentos-planilla` | Faltantes de caja u otros cargos por trabajador; pendiente→aplicado/anulado. NO mueve tesorería. |
+
+### POS
+- Toggle **"Venta a crédito"**: exige cliente identificado (no Cliente General), pago inicial opcional/parcial, muestra "Saldo a crédito" en vivo. `ventas.es_credito/monto_pagado/saldo_pendiente/fecha_vencimiento`.
+- Gastos: campo **"Se paga con"** (cuenta; default Efectivo).
+
+### Tesorería — la única fuente de verdad del dinero
+`TesoreriaService` registra ingreso/egreso con origen desde TODOS los flujos:
+ventas (neto de vuelto), anulación (revierte), abonos CxC, pagos CxP, anticipos (+devolución), adelantos (+devolución), cuotas de deudas (dirección según por_pagar/por_cobrar × amortización/incremento), gastos (store/destroy), reembolsos de devoluciones (completar/anular), sobrante/faltante de cierre de turno (`cierre_turno`) o de consolidación (`turno_consolidacion`), ajustes manuales.
+`resolverCuenta()`: pivot elegido → cuentas del método → tipo efectivo → **auto-crea cuenta con nombre del método** y la vincula.
+Reabrir turno revierte los asientos del cierre/consolidación.
+
+### Configuración
+- `empresas.requiere_consolidacion_caja` (checkbox en Configuración→Empresas): ON = el balance toma el conteo del CONSOLIDADOR (el cierre no asienta hasta consolidar); OFF = el cierre de la cajera asienta directo.
+- El consolidador VE lo declarado (decisión del cliente, no conteo ciego).
+
+### Balance diario — detalle técnico
+- `BalanceDiarioService::generar()`: regenera líneas automáticas (es_manual=false) y purga legado; confirmado = inmutable.
+- Cuentas A FAVOR en **BRUTO** (Σ ingresos hasta la fecha); línea EN CONTRA `gastos_emitidos` = Σ egresos (SÍ suma al total). Neto = mismo saldo real.
+- Stock = Σ stock.cantidad × productos.precio_costo (precio del día).
+- CxC = Σ saldo_pendiente; anticipos = Σ valorPasivoHoy(); deudas línea por línea.
+- Detalle de líneas: endpoint `finanzas/balance/{fecha}/detalle/{categoria}` — respuesta NORMALIZADA `{tipo:'grupos', cards, itemCols (columnas a medida por categoría), montoLabel, grupos[{fecha, items[{...campos, sub, user, historial[]}]}]}`. Rango default 3 meses (pendiente: "fecha de corte" a definir con el cliente).
+
+### Kit UI (reglas de diseño de modales)
+- `Components/UI/Callout` — única caja de feedback (info/success/danger/warning/neutral, icono lucide).
+- `Components/UI/StatGrid` — cifras clave SIEMPRE arriba del modal (card destacada para la protagonista).
+- `Components/UI/Timeline` — historiales con columnas FIJAS simétricas (punto | fecha 78px | tipo badge 100px | detalle | usuario chip | monto 96px derecha).
+- `Components/UI/Collapse` — TODO desplegable anima 300ms (grid-rows 0fr→1fr); chevrons rotan.
+- `Components/Finanzas/DetalleAgrupado` — modal normalizado: cards + buscador propio + tabla Fecha/Operaciones/Monto desplegable → sub-tabla con columnas a medida + botón "Historial (N)" **colapsado por defecto**.
+- Reglas: modales grandes (`size="5xl"`, Modal soporta hasta 5xl), acciones de tabla SOLO íconos lucide con tooltip `title` (nada de botones con texto ni emojis/caracteres de teclado), montos con `money()`, fechas es-PE.
+
+---
+
+## 3. Gotchas / decisiones técnicas
+- Fechas: casts `date:Y-m-d` en modelos nuevos (la serialización con hora rompía rutas `/balance/{fecha}` → 404) y `.slice(0,10)` defensivo en el front.
+- `Select`/`SearchableSelect` comparan con `===` estricto → los values de options SIEMPRE `String(id)`.
+- No usar PowerShell `Get-Content`+`Set-Content` para reensamblar archivos (rompe UTF-8/acentos); usar python con encoding utf-8.
+- La tabla pivote `cuenta_metodo_pago` NO tiene timestamps.
+- Tests de Auth/Profile (Breeze) fallan desde antes (UserFactory sin empresa_id) — no son regresiones.
+- Migraciones base (productos, entradas, etc.) NO están en el repo (BD dev ya creada); las nuestras empiezan en `2026_07_04_*` y `2026_07_05_*`.
+- Backfill histórico: `TesoreriaBackfillSeeder` (borra movimientos con origen ≠ 'ajuste' y regenera).
+
+## 4. Datos de prueba (BD dev)
+- Usuarios: `jesus@gmail.com` / `12345678` (admin) · `cajera@gmail.com` / `12345678` (cajera). Empresa 1, local "Tienda Chiclayo".
+- Demo persistente: turno #203 (Cajera) con ventas V-0001 (S/150 efectivo) y V-0002 (S/300 crédito, inicial S/50), cerrado con faltante y consolidado por el usuario; ajuste demo de efectivo a S/1,000 (se puede eliminar el movimiento 'ajuste' y hacer el ajuste real).
+- Correr servidores: `php artisan serve` + `npm run dev`.
+- Pruebas E2E: se hicieron con scripts transaccionales (BEGIN...ROLLBACK) llamando controladores reales — patrón útil: `Request::create` + `setUserResolver` + `setLaravelSession`; FormRequests con `setContainer`+`setRedirector`+route param+`validateResolved()`.
+
+## 5. Pendientes / próximos pasos
+- [ ] **Fecha de corte** por empresa (inicio de operaciones): congela historia previa en un saldo inicial; acota los "3 meses" por defecto de los detalles.
+- [ ] Cliente debe **vincular métodos a sus cuentas reales** (Configuración → Métodos de pago) o dejar que se auto-creen (Yape, Tarjeta ya se auto-crean).
+- [ ] Reporte de faltantes por cajera (los datos ya existen: consolidaciones + descuentos planilla).
+- [ ] Kardex de ladrillo estilo Excel (ingreso/salida/pérdida semanal por producto) — fase futura.
+- [ ] Normalizar íconos de teclado (✓, ⚠) en páginas antiguas (Agenda, Turnos, Stock, Devoluciones).
+- [ ] Valorizar la línea de stock del balance con opción precio_costo vs precio_venta (hoy: precio_costo).
