@@ -154,6 +154,17 @@ class BalanceDiarioController extends Controller
 
                 $movs = $q->orderByDesc('fecha')->orderByDesc('id')->limit(1000)->get();
 
+                // Origen legible del movimiento (columna propia, no "raya")
+                $origenes = [
+                    'venta' => 'Venta', 'venta_abono' => 'Cobro de crédito',
+                    'cliente_anticipo' => 'Anticipo de cliente', 'cliente_anticipo_devolucion' => 'Devolución de anticipo',
+                    'gasto' => 'Gasto', 'entrada_pago' => 'Pago a proveedor', 'entrada' => 'Pago a proveedor',
+                    'proveedor_adelanto' => 'Adelanto a proveedor', 'proveedor_adelanto_devolucion' => 'Devolución de adelanto',
+                    'deuda_pago' => 'Deuda/préstamo', 'devolucion' => 'Reembolso',
+                    'cierre_turno' => 'Cierre de caja', 'turno_consolidacion' => 'Consolidación',
+                    'ajuste' => 'Ajuste de saldo',
+                ];
+
                 $grupos = $movs->groupBy(fn ($m) => $fmtDia((string) $m->fecha))
                     ->map(fn ($rows, $f) => [
                         'id'       => $f,
@@ -163,7 +174,8 @@ class BalanceDiarioController extends Controller
                         'tipo'     => $esEgreso ? 'egreso' : 'ingreso',
                         'items'    => $rows->map(fn ($m) => [
                             'descripcion' => $m->descripcion,
-                            'extra'       => $esEgreso ? ($m->cuenta?->nombre ? "desde {$m->cuenta->nombre}" : null) : null,
+                            'origen'      => $origenes[$m->ref_tipo] ?? ($m->ref_tipo ?? '—'),
+                            'cuenta'      => $m->cuenta?->nombre ?? '—',
                             'monto'       => (float) $m->monto,
                             'tipo'        => $m->tipo,
                             'user'        => $m->user?->name,
@@ -171,6 +183,11 @@ class BalanceDiarioController extends Controller
                     ])->values();
 
                 $total = round((float) $movs->sum('monto'), 2);
+
+                $itemCols = [['campo' => 'descripcion', 'label' => 'Descripción'], ['campo' => 'origen', 'label' => 'Origen']];
+                if ($esEgreso) {
+                    $itemCols[] = ['campo' => 'cuenta', 'label' => 'Desde cuenta'];
+                }
 
                 return response()->json([
                     'tipo'   => 'grupos',
@@ -182,7 +199,9 @@ class BalanceDiarioController extends Controller
                         ['label' => 'Días con movimiento', 'valor' => $grupos->count(), 'esNumero' => true],
                         ['label' => 'Operaciones', 'valor' => $movs->count(), 'esNumero' => true],
                     ],
-                    'grupos' => $grupos,
+                    'itemCols'   => $itemCols,
+                    'montoLabel' => 'Monto',
+                    'grupos'     => $grupos,
                 ]);
             }
 
@@ -219,7 +238,8 @@ class BalanceDiarioController extends Controller
             // ── Deudas por cobrar: por fecha de venta, con vendedor ─────
             case 'cxc': {
                 $ventas = Venta::deEmpresa($empresaId)->conSaldoPendiente()
-                    ->with(['cliente:id,nombres,apellidos,razon_social', 'user:id,name'])
+                    ->with(['cliente:id,nombres,apellidos,razon_social', 'user:id,name',
+                            'abonos.metodoPago:id,nombre', 'abonos.cuenta:id,nombre', 'abonos.user:id,name'])
                     ->orderByDesc('fecha_venta')
                     ->limit(500)
                     ->get();
@@ -233,11 +253,22 @@ class BalanceDiarioController extends Controller
                         'tipo'    => 'neutro',
                         'items'   => $rows->map(fn ($v) => [
                             'descripcion' => "{$v->numero} — " . $nombreCliente($v->cliente),
-                            'extra'       => 'total S/' . number_format((float) $v->total, 2)
-                                . ' · pagado S/' . number_format((float) $v->monto_pagado, 2)
-                                . ($v->fecha_vencimiento ? ' · vence ' . $v->fecha_vencimiento->format('d/m/Y') : ''),
+                            'sub'         => 'Vendida el ' . $v->fecha_venta->format('d/m/Y h:i a'),
+                            'total'       => 'S/ ' . number_format((float) $v->total, 2),
+                            'pagado'      => 'S/ ' . number_format((float) $v->monto_pagado, 2),
+                            'vence'       => $v->fecha_vencimiento?->format('d/m/Y') ?? '—',
                             'monto'       => (float) $v->saldo_pendiente,
                             'user'        => $v->user?->name,
+                            // Trazabilidad: cada abono realizado a esta venta.
+                            'historial'   => $v->abonos->sortBy('fecha')->values()->map(fn ($a) => [
+                                'fecha'       => $a->fecha->format('d/m/Y'),
+                                'descripcion' => 'Abono'
+                                    . ($a->metodoPago ? " · {$a->metodoPago->nombre}" : '')
+                                    . ($a->cuenta ? " → {$a->cuenta->nombre}" : '')
+                                    . ($a->referencia ? " · ref. {$a->referencia}" : ''),
+                                'monto'       => (float) $a->monto,
+                                'user'        => $a->user?->name,
+                            ]),
                         ])->values(),
                     ])->values();
 
@@ -247,6 +278,13 @@ class BalanceDiarioController extends Controller
                         ['label' => 'Total por cobrar', 'valor' => round((float) $ventas->sum('saldo_pendiente'), 2), 'color' => 'danger'],
                         ['label' => 'Ventas a crédito con saldo', 'valor' => $ventas->count(), 'esNumero' => true],
                     ],
+                    'itemCols' => [
+                        ['campo' => 'descripcion', 'label' => 'Venta / Cliente'],
+                        ['campo' => 'total',       'label' => 'Total'],
+                        ['campo' => 'pagado',      'label' => 'Pagado'],
+                        ['campo' => 'vence',       'label' => 'Vence'],
+                    ],
+                    'montoLabel' => 'Saldo',
                     'grupos' => $grupos,
                 ]);
             }
@@ -256,7 +294,8 @@ class BalanceDiarioController extends Controller
                 $entradas = Entrada::deEmpresa($empresaId)->confirmado()
                     ->where('estado_pago', '!=', 'pagado')
                     ->whereRaw('total - monto_pagado > 0.01')
-                    ->with(['proveedorRel:id,razon_social,nombre_comercial', 'user:id,name'])
+                    ->with(['proveedorRel:id,razon_social,nombre_comercial', 'user:id,name',
+                            'pagosParciales.metodoPago:id,nombre', 'pagosParciales.cuenta:id,nombre', 'pagosParciales.user:id,name'])
                     ->orderByDesc('fecha')
                     ->limit(500)
                     ->get();
@@ -269,12 +308,23 @@ class BalanceDiarioController extends Controller
                         'monto'   => round((float) $rows->sum(fn ($e) => $e->saldoPendiente()), 2),
                         'tipo'    => 'egreso',
                         'items'   => $rows->map(fn ($e) => [
-                            'descripcion' => ($e->proveedorRel?->razon_social ?? $e->proveedorRel?->nombre_comercial ?? $e->proveedor ?? 'Proveedor')
-                                . ($e->numero_documento ? " ({$e->numero_documento})" : ''),
-                            'extra'       => 'total S/' . number_format((float) $e->total, 2)
-                                . ' · pagado S/' . number_format((float) $e->monto_pagado, 2),
+                            'descripcion' => $e->proveedorRel?->razon_social ?? $e->proveedorRel?->nombre_comercial ?? $e->proveedor ?? 'Proveedor',
+                            'sub'         => 'Compra del ' . $e->fecha->format('d/m/Y')
+                                . ($e->numero_documento ? " · Doc. {$e->numero_documento}" : ''),
+                            'total'       => 'S/ ' . number_format((float) $e->total, 2),
+                            'pagado'      => 'S/ ' . number_format((float) $e->monto_pagado, 2),
                             'monto'       => $e->saldoPendiente(),
                             'user'        => $e->user?->name,
+                            // Trazabilidad: cada pago realizado a esta compra.
+                            'historial'   => $e->pagosParciales->sortBy('fecha')->values()->map(fn ($p) => [
+                                'fecha'       => $p->fecha->format('d/m/Y'),
+                                'descripcion' => ($p->proveedor_adelanto_id ? "Consumo de adelanto #{$p->proveedor_adelanto_id}" : 'Pago')
+                                    . ($p->metodoPago ? " · {$p->metodoPago->nombre}" : '')
+                                    . ($p->cuenta ? " ← {$p->cuenta->nombre}" : '')
+                                    . ($p->referencia ? " · ref. {$p->referencia}" : ''),
+                                'monto'       => (float) $p->monto,
+                                'user'        => $p->user?->name,
+                            ]),
                         ])->values(),
                     ])->values();
 
@@ -284,6 +334,12 @@ class BalanceDiarioController extends Controller
                         ['label' => 'Total por pagar', 'valor' => round((float) $entradas->sum(fn ($e) => $e->saldoPendiente()), 2), 'color' => 'danger'],
                         ['label' => 'Compras con saldo', 'valor' => $entradas->count(), 'esNumero' => true],
                     ],
+                    'itemCols' => [
+                        ['campo' => 'descripcion', 'label' => 'Proveedor'],
+                        ['campo' => 'total',       'label' => 'Total compra'],
+                        ['campo' => 'pagado',      'label' => 'Pagado'],
+                    ],
+                    'montoLabel' => 'Saldo',
                     'grupos' => $grupos,
                 ]);
             }
@@ -291,7 +347,8 @@ class BalanceDiarioController extends Controller
             // ── Anticipos de clientes: por fecha, valorizados hoy ───────
             case 'anticipo_cliente': {
                 $anticipos = ClienteAnticipo::deEmpresa($empresaId)->activo()
-                    ->with(['cliente:id,nombres,apellidos,razon_social', 'producto:id,nombre,precio_venta', 'user:id,name'])
+                    ->with(['cliente:id,nombres,apellidos,razon_social', 'producto:id,nombre,precio_venta', 'user:id,name',
+                            'aplicaciones.user:id,name'])
                     ->orderByDesc('fecha')
                     ->limit(500)
                     ->get();
@@ -305,12 +362,22 @@ class BalanceDiarioController extends Controller
                         'tipo'    => 'egreso',
                         'items'   => $rows->map(fn ($a) => [
                             'descripcion' => $nombreCliente($a->cliente),
-                            'extra'       => ($a->tipo_valorizacion === 'material'
-                                    ? "{$a->producto?->nombre} × " . (float) $a->cantidad_pendiente . ' a S/' . number_format((float) ($a->producto?->precio_venta ?? 0), 2) . ' del día'
-                                    : 'Dinero')
-                                . ' · recibió S/' . number_format((float) $a->monto, 2),
+                            'sub'         => 'Recibido el ' . $a->fecha->format('d/m/Y'),
+                            'modalidad'   => $a->tipo_valorizacion === 'material'
+                                ? "{$a->producto?->nombre} × " . (float) $a->cantidad_pendiente . ' a S/' . number_format((float) ($a->producto?->precio_venta ?? 0), 2) . ' del día'
+                                : 'Dinero',
+                            'recibido'    => 'S/ ' . number_format((float) $a->monto, 2),
                             'monto'       => $a->valorPasivoHoy(),
                             'user'        => $a->user?->name,
+                            // Trazabilidad: entregas de material / usos del anticipo.
+                            'historial'   => $a->aplicaciones->sortBy('fecha')->values()->map(fn ($ap) => [
+                                'fecha'       => $ap->fecha->format('d/m/Y'),
+                                'descripcion' => 'Entrega'
+                                    . ($ap->cantidad ? ' de ' . (float) $ap->cantidad . ' und' : '')
+                                    . ($ap->observacion ? " · {$ap->observacion}" : ''),
+                                'monto'       => (float) $ap->monto,
+                                'user'        => $ap->user?->name,
+                            ]),
                         ])->values(),
                     ])->values();
 
@@ -320,6 +387,12 @@ class BalanceDiarioController extends Controller
                         ['label' => 'Pasivo a precio del día', 'valor' => round((float) $anticipos->sum(fn ($a) => $a->valorPasivoHoy()), 2), 'color' => 'danger'],
                         ['label' => 'Anticipos activos', 'valor' => $anticipos->count(), 'esNumero' => true],
                     ],
+                    'itemCols' => [
+                        ['campo' => 'descripcion', 'label' => 'Cliente'],
+                        ['campo' => 'modalidad',   'label' => 'Modalidad / Material'],
+                        ['campo' => 'recibido',    'label' => 'Recibido'],
+                    ],
+                    'montoLabel' => 'Pasivo hoy',
                     'grupos' => $grupos,
                 ]);
             }
@@ -351,6 +424,8 @@ class BalanceDiarioController extends Controller
                         ['label' => 'Entregado (por ' . ($adelanto->user?->name ?? '—') . ')', 'valor' => (float) $adelanto->monto],
                         ['label' => 'Saldo a favor', 'valor' => (float) $adelanto->saldo, 'color' => 'success'],
                     ],
+                    'itemCols'   => [['campo' => 'descripcion', 'label' => 'Aplicación']],
+                    'montoLabel' => 'Monto',
                     'grupos' => $grupos,
                 ]);
             }
@@ -371,9 +446,9 @@ class BalanceDiarioController extends Controller
                         'monto'   => round((float) $rows->sum('monto'), 2),
                         'tipo'    => 'neutro',
                         'items'   => $rows->map(fn ($p) => [
-                            'descripcion' => ($p->tipo === 'amortizacion' ? 'Amortización' : 'Incremento')
-                                . ($p->cuenta ? " · {$p->cuenta->nombre}" : ''),
-                            'extra'       => $p->observacion,
+                            'descripcion' => $p->tipo === 'amortizacion' ? 'Amortización' : 'Incremento',
+                            'cuenta'      => $p->cuenta?->nombre ?? '—',
+                            'observacion' => $p->observacion ?? '—',
                             'monto'       => (float) $p->monto,
                             'tipo'        => $p->tipo === 'amortizacion' ? 'ingreso' : 'egreso',
                             'user'        => $p->user?->name,
@@ -388,6 +463,12 @@ class BalanceDiarioController extends Controller
                         ['label' => 'Saldo actual', 'valor' => (float) $deuda->saldo,
                          'color' => $deuda->direccion === 'por_cobrar' ? 'success' : 'danger'],
                     ],
+                    'itemCols' => [
+                        ['campo' => 'descripcion', 'label' => 'Movimiento'],
+                        ['campo' => 'cuenta',      'label' => 'Cuenta'],
+                        ['campo' => 'observacion', 'label' => 'Observación'],
+                    ],
+                    'montoLabel' => 'Monto',
                     'grupos' => $grupos,
                 ]);
             }

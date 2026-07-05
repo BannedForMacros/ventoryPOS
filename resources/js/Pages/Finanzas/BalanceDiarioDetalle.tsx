@@ -507,6 +507,8 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                         <DetalleAgrupado
                             cards={detalleData.cards ?? []}
                             grupos={detalleData.grupos ?? []}
+                            itemCols={detalleData.itemCols}
+                            montoLabel={detalleData.montoLabel}
                             emptyMessage="Sin datos en el período"
                         />
                     </div>

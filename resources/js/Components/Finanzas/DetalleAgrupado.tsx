@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Search, UserRound } from 'lucide-react';
 
 /**
@@ -22,10 +22,19 @@ export interface DetalleCard {
 
 export interface DetalleItem {
     descripcion: string;
-    extra?: string | null;
+    sub?: string | null;   // línea secundaria bajo la primera columna (ej. fecha)
     monto: number;
     tipo?: 'ingreso' | 'egreso' | string | null;
     user?: string | null;
+    /** Mini-historial (ej. abonos de la venta) para trazabilidad perfecta. */
+    historial?: { fecha: string; descripcion: string; monto: number; user?: string | null }[];
+    [campo: string]: any; // columnas a medida por categoría (itemCols)
+}
+
+/** Columnas propias de cada categoría (las define el backend). */
+export interface DetalleCol {
+    campo: string;
+    label: string;
 }
 
 export interface DetalleGrupo {
@@ -41,6 +50,8 @@ export interface DetalleGrupo {
 interface Props {
     cards: DetalleCard[];
     grupos: DetalleGrupo[];
+    itemCols?: DetalleCol[];   // columnas del detalle, a medida por categoría
+    montoLabel?: string;       // "Monto", "Saldo", "Pasivo hoy"...
     emptyMessage?: string;
 }
 
@@ -54,7 +65,8 @@ const colorDe = (tipo?: string | null) =>
 
 const cardColor = (c?: DetalleCard['color']) => c ? `var(--color-${c})` : 'var(--color-text)';
 
-export default function DetalleAgrupado({ cards, grupos, emptyMessage = 'Sin datos' }: Props) {
+export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 'Monto', emptyMessage = 'Sin datos' }: Props) {
+    const cols: DetalleCol[] = itemCols?.length ? itemCols : [{ campo: 'descripcion', label: 'Descripción' }];
     const [q, setQ] = useState('');
     const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
 
@@ -64,13 +76,13 @@ export default function DetalleAgrupado({ cards, grupos, emptyMessage = 'Sin dat
         return grupos
             .map(g => {
                 const items = g.items.filter(i =>
-                    `${i.descripcion} ${i.extra ?? ''} ${i.user ?? ''}`.toLowerCase().includes(t));
+                    (cols.map(c => String(i[c.campo] ?? '')).join(' ') + ' ' + (i.user ?? '')).toLowerCase().includes(t));
                 const grupoMatch = `${g.titulo} ${g.subtitulo ?? ''}`.toLowerCase().includes(t);
                 if (!grupoMatch && items.length === 0) return null;
                 return { ...g, items: grupoMatch ? g.items : items };
             })
             .filter(Boolean) as DetalleGrupo[];
-    }, [grupos, q]);
+    }, [grupos, q, cols]);
 
     function toggle(id: string) {
         setAbiertos(prev => {
@@ -160,43 +172,85 @@ export default function DetalleAgrupado({ cards, grupos, emptyMessage = 'Sin dat
                                     </span>
                                 </button>
 
-                                {/* Sub-tabla del detalle: Descripción | Detalle | Usuario | Monto */}
+                                {/* Sub-tabla del detalle: columnas A MEDIDA de la categoría */}
                                 {abierto && desplegable && (
-                                    <div style={{ backgroundColor: 'color-mix(in srgb, var(--color-surface) 60%, var(--color-bg))' }}>
-                                        <div className={`grid ${hayUsuarios ? 'grid-cols-12' : 'grid-cols-10'} gap-2 px-4 py-1.5 pl-10 text-[10px] font-bold uppercase tracking-wider`}
-                                            style={{ color: 'var(--color-text-muted)', borderTop: '1px dashed var(--color-border)' }}>
-                                            <span className="col-span-4">Descripción</span>
-                                            <span className="col-span-3">Detalle</span>
-                                            {hayUsuarios && <span className="col-span-2">Usuario</span>}
-                                            <span className="col-span-3 text-right">Monto</span>
-                                        </div>
-                                        {g.items.map((it, i) => (
-                                            <div key={i}
-                                                className={`grid ${hayUsuarios ? 'grid-cols-12' : 'grid-cols-10'} gap-2 items-center px-4 py-2 pl-10`}
-                                                style={{ borderTop: '1px dashed var(--color-border)' }}>
-                                                <span className="col-span-4 text-sm truncate" title={it.descripcion} style={{ color: 'var(--color-text)' }}>
-                                                    {it.descripcion}
-                                                </span>
-                                                <span className="col-span-3 text-[12px] truncate" title={it.extra ?? ''} style={{ color: 'var(--color-text-muted)' }}>
-                                                    {it.extra ?? '—'}
-                                                </span>
-                                                {hayUsuarios && (
-                                                    <span className="col-span-2 min-w-0">
-                                                        {it.user ? (
-                                                            <span className="inline-flex items-center gap-1 max-w-full text-[11px] px-1.5 py-0.5 rounded-full truncate"
-                                                                title={`Registrado por ${it.user}`}
-                                                                style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
-                                                                <UserRound size={11} className="flex-shrink-0" />
-                                                                <span className="truncate">{it.user}</span>
-                                                            </span>
-                                                        ) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
-                                                    </span>
-                                                )}
-                                                <span className="col-span-3 text-right text-sm font-semibold" style={{ color: colorDe(it.tipo) }}>
-                                                    {it.tipo === 'ingreso' ? '+' : it.tipo === 'egreso' ? '−' : ''}{money(it.monto)}
-                                                </span>
-                                            </div>
-                                        ))}
+                                    <div className="overflow-x-auto"
+                                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-surface) 60%, var(--color-bg))', borderTop: '1px dashed var(--color-border)' }}>
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="text-[10px] font-bold uppercase tracking-wider"
+                                                    style={{ color: 'var(--color-text-muted)' }}>
+                                                    {cols.map(c => (
+                                                        <th key={c.campo} className="text-left font-bold px-3 py-1.5 first:pl-10">{c.label}</th>
+                                                    ))}
+                                                    {hayUsuarios && <th className="text-left font-bold px-3 py-1.5">Usuario</th>}
+                                                    <th className="text-right font-bold px-3 py-1.5 pr-4">{montoLabel}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {g.items.map((it, i) => (
+                                                    <Fragment key={i}>
+                                                        <tr style={{ borderTop: '1px dashed var(--color-border)' }}>
+                                                            {cols.map((c, ci) => (
+                                                                <td key={c.campo}
+                                                                    className={`px-3 py-2 first:pl-10 align-top whitespace-normal break-words ${ci === 0 ? '' : 'text-[12px]'}`}
+                                                                    style={{ color: ci === 0 ? 'var(--color-text)' : 'var(--color-text-muted)' }}>
+                                                                    {it[c.campo] ?? '—'}
+                                                                    {/* Sub-línea (fecha, contexto) bajo la primera columna */}
+                                                                    {ci === 0 && it.sub && (
+                                                                        <span className="block text-[11px] mt-0.5 font-normal" style={{ color: 'var(--color-text-muted)' }}>
+                                                                            {it.sub}
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                            ))}
+                                                            {hayUsuarios && (
+                                                                <td className="px-3 py-2 align-top">
+                                                                    {it.user ? (
+                                                                        <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full"
+                                                                            title={`Registrado por ${it.user}`}
+                                                                            style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
+                                                                            <UserRound size={11} className="flex-shrink-0" />
+                                                                            <span className="truncate max-w-[90px]">{it.user}</span>
+                                                                        </span>
+                                                                    ) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+                                                                </td>
+                                                            )}
+                                                            <td className="px-3 py-2 pr-4 text-right font-semibold whitespace-nowrap align-top"
+                                                                style={{ color: colorDe(it.tipo) }}>
+                                                                {it.tipo === 'ingreso' ? '+' : it.tipo === 'egreso' ? '−' : ''}{money(it.monto)}
+                                                            </td>
+                                                        </tr>
+
+                                                        {/* Mini-historial (abonos/pagos) — trazabilidad perfecta */}
+                                                        {(it.historial?.length ?? 0) > 0 && (
+                                                            <tr>
+                                                                <td colSpan={cols.length + (hayUsuarios ? 2 : 1)} className="px-3 pb-2 pl-14 pt-0">
+                                                                    <div className="rounded-lg px-3 py-1.5 space-y-1"
+                                                                        style={{ backgroundColor: 'var(--color-bg)', border: '1px dashed var(--color-border)' }}>
+                                                                        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
+                                                                            Historial de abonos
+                                                                        </p>
+                                                                        {it.historial!.map((h, hi) => (
+                                                                            <div key={hi} className="flex items-center justify-between gap-2 text-[12px]">
+                                                                                <span style={{ color: 'var(--color-text)' }}>
+                                                                                    <span style={{ color: 'var(--color-text-muted)' }}>{h.fecha}</span>
+                                                                                    {' · '}{h.descripcion}
+                                                                                    {h.user && <span style={{ color: 'var(--color-text-muted)' }}> · 👤 {h.user}</span>}
+                                                                                </span>
+                                                                                <span className="font-semibold whitespace-nowrap" style={{ color: 'var(--color-success)' }}>
+                                                                                    +{money(h.monto)}
+                                                                                </span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </Fragment>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 )}
                             </div>
