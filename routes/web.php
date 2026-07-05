@@ -40,6 +40,7 @@ use App\Http\Controllers\Finanzas\BalanceDiarioController;
 use App\Http\Controllers\Finanzas\CuentasPorCobrarController;
 use App\Http\Controllers\Finanzas\CuentasPorPagarController;
 use App\Http\Controllers\Finanzas\DeudaController;
+use App\Http\Controllers\Finanzas\TesoreriaController;
 use App\Http\Controllers\Inventario\CierreInventarioController;
 use App\Http\Controllers\Inventario\EntradaController;
 use App\Http\Controllers\Inventario\SalidaController;
@@ -321,6 +322,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.deudas,crear')->post('deudas', [DeudaController::class, 'store'])->name('deudas.store');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/pago', [DeudaController::class, 'registrarPago'])->name('deudas.pago');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/anular', [DeudaController::class, 'anular'])->name('deudas.anular');
+
+        // Tesorería (movimientos por cuenta + ajuste auditado)
+        Route::middleware('permiso:finanzas.tesoreria,ver')->get('tesoreria', [TesoreriaController::class, 'index'])->name('tesoreria.index');
+        Route::middleware('permiso:finanzas.tesoreria,editar')->post('tesoreria/ajustar', [TesoreriaController::class, 'ajustar'])->name('tesoreria.ajustar');
 
         // Balance diario
         Route::middleware('permiso:finanzas.balance,ver')->get('balance', [BalanceDiarioController::class, 'index'])->name('balance.index');
