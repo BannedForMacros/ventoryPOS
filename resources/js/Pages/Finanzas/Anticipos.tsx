@@ -92,7 +92,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
         if (!m) return cuentas;
         if (m.cuentas?.length) return m.cuentas;
         if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
-        return cuentas;
+        return []; // electronico sin cuenta vinculada: se crea sola con el nombre del metodo
     }
 
     function submitNuevo() {
@@ -254,12 +254,20 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                         onChange={v => { const cts = cuentasDeMetodo(String(v)); setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
                         placeholder="— Seleccionar —"
                     />
-                    <Select label="Cuenta destino"
-                        options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                        value={form.cuenta_id}
-                        onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
-                        placeholder="— Seleccionar —"
-                    />
+                    {cuentasDeMetodo(form.metodo_pago_id).length > 0 ? (
+                        <Select label="Cuenta destino"
+                            options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                            value={form.cuenta_id}
+                            onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
+                            placeholder="— Seleccionar —"
+                        />
+                    ) : (
+                        <div className="rounded-xl px-3 py-2 text-sm"
+                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))', color: 'var(--color-text)' }}>
+                            El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
+                            que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
+                        </div>
+                    )}
                     <Select label="Modalidad" required
                         options={[
                             { value: 'monto',    label: 'Dinero (el pasivo es el saldo en soles)' },

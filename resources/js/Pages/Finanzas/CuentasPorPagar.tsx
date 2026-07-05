@@ -86,7 +86,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
         if (!m) return cuentas;
         if (m.cuentas?.length) return m.cuentas;
         if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
-        return cuentas;
+        return []; // electronico sin cuenta vinculada: se crea sola con el nombre del metodo
     }
 
     function abrirAbono(e: EntradaCxp) {
@@ -149,9 +149,14 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
                         <Eye size={15} />
                     </button>
                     {saldoDe(e) > 0 && (
-                        <Button onClick={() => abrirAbono(e)}>
-                            <Banknote size={14} className="mr-1" />Pagar
-                        </Button>
+                        <button
+                            onClick={() => abrirAbono(e)}
+                            className="p-1.5 rounded-lg hover:bg-black/5"
+                            title="Pagar"
+                            style={{ color: 'var(--color-success)' }}
+                        >
+                            <Banknote size={15} />
+                        </button>
                     )}
                 </div>
             ),
@@ -287,14 +292,22 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
                                     placeholder="— Seleccionar —"
                                     error={errors.metodo_pago_id}
                                 />
-                                <Select label="Cuenta origen"
-                                    options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                                    value={form.cuenta_id}
-                                    onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
-                                    placeholder="— Seleccionar —"
-                                    hint={form.metodo_pago_id ? 'Solo las cuentas vinculadas al método elegido' : undefined}
-                                    error={errors.cuenta_id}
-                                />
+                                {cuentasDeMetodo(form.metodo_pago_id).length > 0 ? (
+                                    <Select label="Cuenta origen"
+                                        options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                                        value={form.cuenta_id}
+                                        onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
+                                        placeholder="— Seleccionar —"
+                                        hint={form.metodo_pago_id ? 'Solo las cuentas vinculadas al método elegido' : undefined}
+                                        error={errors.cuenta_id}
+                                    />
+                                ) : (
+                                    <div className="rounded-xl px-3 py-2 text-sm"
+                                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))', color: 'var(--color-text)' }}>
+                                        El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
+                                        que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
+                                    </div>
+                                )}
                             </>
                         )}
 

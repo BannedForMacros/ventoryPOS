@@ -239,6 +239,7 @@ class BalanceDiarioController extends Controller
             case 'cxc': {
                 $ventas = Venta::deEmpresa($empresaId)->conSaldoPendiente()
                     ->with(['cliente:id,nombres,apellidos,razon_social', 'user:id,name',
+                            'pagos.metodoPago:id,nombre',
                             'abonos.metodoPago:id,nombre', 'abonos.cuenta:id,nombre', 'abonos.user:id,name'])
                     ->orderByDesc('fecha_venta')
                     ->limit(500)
@@ -259,16 +260,25 @@ class BalanceDiarioController extends Controller
                             'vence'       => $v->fecha_vencimiento?->format('d/m/Y') ?? '—',
                             'monto'       => (float) $v->saldo_pendiente,
                             'user'        => $v->user?->name,
-                            // Trazabilidad: cada abono realizado a esta venta.
-                            'historial'   => $v->abonos->sortBy('fecha')->values()->map(fn ($a) => [
-                                'fecha'       => $a->fecha->format('d/m/Y'),
-                                'descripcion' => 'Abono'
-                                    . ($a->metodoPago ? " · {$a->metodoPago->nombre}" : '')
-                                    . ($a->cuenta ? " → {$a->cuenta->nombre}" : '')
-                                    . ($a->referencia ? " · ref. {$a->referencia}" : ''),
-                                'monto'       => (float) $a->monto,
-                                'user'        => $a->user?->name,
-                            ]),
+                            // Trazabilidad: pago inicial del POS + cada abono posterior.
+                            'historial'   => $v->pagos
+                                ->filter(fn ($p) => (float) $p->monto - (float) $p->vuelto > 0)
+                                ->map(fn ($p) => [
+                                    'fecha'       => $v->fecha_venta->format('d/m/Y'),
+                                    'descripcion' => 'Pago inicial (en la venta)'
+                                        . ($p->metodoPago ? " · {$p->metodoPago->nombre}" : ''),
+                                    'monto'       => round((float) $p->monto - (float) $p->vuelto, 2),
+                                    'user'        => $v->user?->name,
+                                ])
+                                ->concat($v->abonos->sortBy('fecha')->values()->map(fn ($a) => [
+                                    'fecha'       => $a->fecha->format('d/m/Y'),
+                                    'descripcion' => 'Abono'
+                                        . ($a->metodoPago ? " · {$a->metodoPago->nombre}" : '')
+                                        . ($a->cuenta ? " → {$a->cuenta->nombre}" : '')
+                                        . ($a->referencia ? " · ref. {$a->referencia}" : ''),
+                                    'monto'       => (float) $a->monto,
+                                    'user'        => $a->user?->name,
+                                ]))->values(),
                         ])->values(),
                     ])->values();
 

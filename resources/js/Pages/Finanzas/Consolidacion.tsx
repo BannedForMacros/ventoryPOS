@@ -191,9 +191,14 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requ
         {
             key: 'acciones', label: '',
             render: (t) => !t.consolidacion && (
-                <Button onClick={() => abrir(t)}>
-                    <ClipboardCheck size={14} className="mr-1" />Consolidar
-                </Button>
+                <button
+                    onClick={() => abrir(t)}
+                    className="p-1.5 rounded-lg hover:bg-black/5"
+                    title="Consolidar"
+                    style={{ color: 'var(--color-primary)' }}
+                >
+                    <ClipboardCheck size={15} />
+                </button>
             ),
         },
     ];

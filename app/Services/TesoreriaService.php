@@ -28,8 +28,12 @@ class TesoreriaService
     /**
      * Resuelve a qué cuenta va un pago del POS/módulos:
      *  1. El pivot cuenta_metodo_pago elegido en el pago.
-     *  2. Si el método tiene UNA sola cuenta vinculada, esa.
-     *  3. Efectivo (fallback: dinero físico en caja).
+     *  2. Si el método tiene cuenta(s) vinculada(s), la primera.
+     *  3. Método tipo efectivo → caja Efectivo.
+     *  4. Método electrónico SIN cuenta (Yape sin configurar, etc.) →
+     *     se CREA automáticamente una cuenta con el nombre del método y
+     *     se vincula. El dinero de Yape nunca cae a "Efectivo": no es
+     *     billete físico, y el cliente no tiene por qué configurar nada.
      */
     public function resolverCuenta(int $empresaId, ?int $cuentaMetodoPagoId, ?int $metodoPagoId): int
     {
@@ -40,7 +44,25 @@ class TesoreriaService
 
         if ($metodoPagoId) {
             $cuentas = DB::table('cuenta_metodo_pago')->where('metodo_pago_id', $metodoPagoId)->pluck('cuenta_id');
-            if ($cuentas->count() === 1) return (int) $cuentas->first();
+            if ($cuentas->count() >= 1) return (int) $cuentas->first();
+
+            $metodo = \App\Models\MetodoPago::with('tipo:id,slug')->find($metodoPagoId);
+            if ($metodo && $metodo->tipo?->slug !== 'efectivo') {
+                // Auto-crear la cuenta del método y vincularla (una sola vez).
+                $cuenta = Cuenta::firstOrCreate(
+                    ['empresa_id' => $empresaId, 'nombre' => $metodo->nombre],
+                    ['activo' => true, 'es_efectivo' => false],
+                );
+                $yaVinculada = DB::table('cuenta_metodo_pago')
+                    ->where('cuenta_id', $cuenta->id)->where('metodo_pago_id', $metodo->id)->exists();
+                if (!$yaVinculada) {
+                    DB::table('cuenta_metodo_pago')->insert([
+                        'cuenta_id' => $cuenta->id, 'metodo_pago_id' => $metodo->id,
+                    ]);
+                }
+
+                return $cuenta->id;
+            }
         }
 
         return self::efectivo($empresaId)->id;

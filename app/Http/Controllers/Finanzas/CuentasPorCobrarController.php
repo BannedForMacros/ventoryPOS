@@ -29,7 +29,7 @@ class CuentasPorCobrarController extends Controller
         $query = Venta::deEmpresa($user->empresa_id)
             ->where('es_credito', true)
             ->where('estado', 'completada')
-            ->with(['cliente', 'abonos.metodoPago', 'abonos.cuenta', 'abonos.user'])
+            ->with(['cliente', 'abonos.metodoPago', 'abonos.cuenta', 'abonos.user', 'pagos.metodoPago', 'user:id,name'])
             ->when($request->input('cliente_id'), fn ($q, $v) => $q->where('cliente_id', $v))
             ->when($request->input('fecha_desde'), fn ($q, $v) => $q->whereDate('fecha_venta', '>=', $v))
             ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->whereDate('fecha_venta', '<=', $v));

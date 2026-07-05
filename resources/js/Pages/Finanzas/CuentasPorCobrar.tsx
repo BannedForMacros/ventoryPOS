@@ -24,6 +24,13 @@ interface Abono {
     user?: { name: string } | null;
 }
 
+interface PagoInicial {
+    id: number;
+    monto: string;
+    vuelto: string;
+    metodo_pago?: { nombre: string } | null;
+}
+
 interface VentaCxc extends Record<string, unknown> {
     id: number;
     numero: string | null;
@@ -33,7 +40,9 @@ interface VentaCxc extends Record<string, unknown> {
     monto_pagado: string;
     saldo_pendiente: string;
     cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string } | null;
+    user?: { name: string } | null;
     abonos: Abono[];
+    pagos: PagoInicial[];
 }
 
 interface Paginado<T> { data: T[]; total: number; }
@@ -72,7 +81,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
         if (!m) return cuentas;
         if (m.cuentas?.length) return m.cuentas;
         if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
-        return cuentas;
+        return []; // electronico sin cuenta vinculada: se crea sola con el nombre del metodo
     }
 
     function abrirAbono(v: VentaCxc) {
@@ -135,9 +144,14 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
                         <Eye size={15} />
                     </button>
                     {Number(v.saldo_pendiente) > 0 && (
-                        <Button onClick={() => abrirAbono(v)}>
-                            <HandCoins size={14} className="mr-1" />Abonar
-                        </Button>
+                        <button
+                            onClick={() => abrirAbono(v)}
+                            className="p-1.5 rounded-lg hover:bg-black/5"
+                            title="Abonar"
+                            style={{ color: 'var(--color-success)' }}
+                        >
+                            <HandCoins size={15} />
+                        </button>
                     )}
                 </div>
             ),
@@ -252,14 +266,22 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
                             placeholder="— Seleccionar —"
                             error={errors.metodo_pago_id}
                         />
-                        <Select label="Cuenta destino"
-                            options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                            value={form.cuenta_id}
-                            onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
-                            placeholder="— Seleccionar —"
-                            hint={form.metodo_pago_id ? 'Solo las cuentas vinculadas al método elegido' : undefined}
-                            error={errors.cuenta_id}
-                        />
+                        {cuentasDeMetodo(form.metodo_pago_id).length > 0 ? (
+                            <Select label="Cuenta destino"
+                                options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                                value={form.cuenta_id}
+                                onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
+                                placeholder="— Seleccionar —"
+                                hint={form.metodo_pago_id ? 'Solo las cuentas vinculadas al método elegido' : undefined}
+                                error={errors.cuenta_id}
+                            />
+                        ) : (
+                            <div className="rounded-xl px-3 py-2 text-sm"
+                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))', color: 'var(--color-text)' }}>
+                                El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
+                                que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
+                            </div>
+                        )}
                         <Input label="Referencia (operación, voucher...)"
                             value={form.referencia}
                             onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))}
@@ -287,23 +309,43 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
                             <div><p style={{ color: 'var(--color-text-muted)' }}>Pagado</p><p className="font-bold">{money(detalle.monto_pagado)}</p></div>
                             <div><p style={{ color: 'var(--color-text-muted)' }}>Saldo</p><p className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(detalle.saldo_pendiente)}</p></div>
                         </div>
-                        {detalle.abonos.length === 0 ? (
-                            <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Sin abonos registrados</p>
-                        ) : (
-                            <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-                                {detalle.abonos.map(a => (
-                                    <div key={a.id} className="py-2 flex justify-between items-start text-sm">
-                                        <div>
-                                            <p className="font-medium">{new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</p>
-                                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                {[a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia, a.user?.name].filter(Boolean).join(' · ') || '—'}
-                                            </p>
-                                        </div>
-                                        <span className="font-bold">{money(a.monto)}</span>
+                        <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                            {/* Pago inicial hecho en el POS al momento de la venta */}
+                            {detalle.pagos.filter(p => Number(p.monto) - Number(p.vuelto) > 0).map(p => (
+                                <div key={`ini-${p.id}`} className="py-2 flex justify-between items-start text-sm">
+                                    <div>
+                                        <p className="font-medium">
+                                            {new Date(detalle.fecha_venta).toLocaleDateString('es-PE')}{' '}
+                                            <Badge variant="primary">Pago inicial</Badge>
+                                        </p>
+                                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                            {[p.metodo_pago?.nombre, 'al momento de la venta', detalle.user?.name].filter(Boolean).join(' · ')}
+                                        </p>
                                     </div>
-                                ))}
-                            </div>
-                        )}
+                                    <span className="font-bold">{money(Number(p.monto) - Number(p.vuelto))}</span>
+                                </div>
+                            ))}
+
+                            {/* Abonos posteriores */}
+                            {detalle.abonos.map(a => (
+                                <div key={a.id} className="py-2 flex justify-between items-start text-sm">
+                                    <div>
+                                        <p className="font-medium">
+                                            {new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE')}{' '}
+                                            <Badge variant="success">Abono</Badge>
+                                        </p>
+                                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                            {[a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia, a.user?.name].filter(Boolean).join(' · ') || '—'}
+                                        </p>
+                                    </div>
+                                    <span className="font-bold">{money(a.monto)}</span>
+                                </div>
+                            ))}
+
+                            {detalle.abonos.length === 0 && detalle.pagos.filter(p => Number(p.monto) - Number(p.vuelto) > 0).length === 0 && (
+                                <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Sin pagos registrados</p>
+                            )}
+                        </div>
                     </div>
                 )}
             </Modal>
