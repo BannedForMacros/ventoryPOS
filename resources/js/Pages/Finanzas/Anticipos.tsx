@@ -12,6 +12,9 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
+import Callout from '@/Components/UI/Callout';
+import StatGrid from '@/Components/UI/StatGrid';
+import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
 interface Aplicacion {
@@ -262,11 +265,10 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                             placeholder="— Seleccionar —"
                         />
                     ) : (
-                        <div className="rounded-xl px-3 py-2 text-sm"
-                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))', color: 'var(--color-text)' }}>
+                        <Callout variant="info">
                             El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
                             que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
-                        </div>
+                        </Callout>
                     )}
                     <Select label="Modalidad" required
                         options={[
@@ -307,13 +309,11 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
             >
                 {aplicando && (
                     <div className="space-y-4">
-                        <div className="flex justify-between text-sm px-1">
-                            <span style={{ color: 'var(--color-text-muted)' }}>
-                                {aplicando.tipo_valorizacion === 'material'
-                                    ? `Pendiente: ${Number(aplicando.cantidad_pendiente ?? 0)} und de ${aplicando.producto?.nombre}`
-                                    : `Saldo del anticipo: ${money(aplicando.saldo)}`}
-                            </span>
-                        </div>
+                        <StatGrid stats={[
+                            aplicando.tipo_valorizacion === 'material'
+                                ? { label: `Pendiente de ${aplicando.producto?.nombre ?? 'material'}`, valor: `${Number(aplicando.cantidad_pendiente ?? 0)} und`, color: 'warning', destacado: true }
+                                : { label: 'Saldo del anticipo', valor: money(aplicando.saldo), color: 'danger', destacado: true },
+                        ]} />
                         <Input label="Fecha" required type="date" value={formAplicar.fecha}
                             onChange={e => setFormAplicar(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
                         <Input label="Monto aplicado (S/)" required type="number" min="0.01" step="0.01" value={formAplicar.monto}
@@ -358,23 +358,17 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (
-                    detalle.aplicaciones.length === 0
-                        ? <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Sin aplicaciones registradas</p>
-                        : (
-                            <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-                                {detalle.aplicaciones.map(ap => (
-                                    <div key={ap.id} className="py-2 flex justify-between items-start text-sm">
-                                        <div>
-                                            <p className="font-medium">{new Date(ap.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</p>
-                                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                {[ap.cantidad ? `${Number(ap.cantidad)} und` : null, ap.venta?.numero ? `Venta ${ap.venta.numero}` : null, ap.user?.name, ap.observacion].filter(Boolean).join(' · ') || '—'}
-                                            </p>
-                                        </div>
-                                        <span className="font-bold">{money(ap.monto)}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )
+                    <Timeline
+                        emptyMessage="Sin aplicaciones registradas"
+                        items={detalle.aplicaciones.map(ap => ({
+                            fecha: new Date(ap.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
+                            badge: { texto: 'Entrega', variant: 'success' as const },
+                            tipo: 'neutro' as const,
+                            detalle: [ap.cantidad ? `${Number(ap.cantidad)} und` : null, ap.venta?.numero ? `Venta ${ap.venta.numero}` : null, ap.observacion].filter(Boolean).join(' · ') || undefined,
+                            user: ap.user?.name,
+                            monto: Number(ap.monto),
+                        }))}
+                    />
                 )}
             </Modal>
         </AppLayout>

@@ -11,6 +11,9 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
+import Callout from '@/Components/UI/Callout';
+import StatGrid from '@/Components/UI/StatGrid';
+import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
 interface Pago {
@@ -218,16 +221,24 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
             >
                 {abonando && (
                     <div className="space-y-4">
-                        <div className="flex justify-between text-sm px-1">
-                            <span style={{ color: 'var(--color-text-muted)' }}>Saldo pendiente</span>
-                            <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(saldoDe(abonando))}</span>
+                        <StatGrid stats={[
+                            { label: 'Total compra', valor: money(abonando.total) },
+                            { label: 'Pagado', valor: money(abonando.monto_pagado), color: 'success' },
+                            { label: 'Saldo', valor: money(saldoDe(abonando)), color: 'danger', destacado: true },
+                        ]} />
+                        <div className="grid grid-cols-2 gap-3">
+                            <Input label="Monto del pago" required type="number" min="0.01" step="0.01"
+                                max={saldoDe(abonando)}
+                                value={form.monto}
+                                onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
+                                error={errors.monto}
+                            />
+                            <Input label="Fecha" required type="date"
+                                value={form.fecha}
+                                onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
+                                error={errors.fecha}
+                            />
                         </div>
-                        <Input label="Monto del pago" required type="number" min="0.01" step="0.01"
-                            max={saldoDe(abonando)}
-                            value={form.monto}
-                            onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
-                            error={errors.monto}
-                        />
 
                         {/* Nuevo saldo en vivo + validación de tope */}
                         {form.monto !== '' && Number(form.monto) > 0 && (() => {
@@ -236,40 +247,26 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
                             const nuevo = Math.round((saldo - montoNum) * 100) / 100;
                             if (montoNum > saldo + 0.009) {
                                 return (
-                                    <div className="rounded-xl px-3 py-2 text-sm font-semibold"
-                                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, var(--color-bg))', color: 'var(--color-danger)' }}>
-                                        ⚠ El pago ({money(montoNum)}) no puede superar el saldo pendiente ({money(saldo)}).
-                                    </div>
+                                    <Callout variant="danger">
+                                        El pago ({money(montoNum)}) no puede superar el saldo pendiente ({money(saldo)}).
+                                    </Callout>
                                 );
                             }
-                            return (
-                                <div className="flex justify-between items-center rounded-xl px-3 py-2 text-sm"
-                                    style={{ backgroundColor: nuevo <= 0.009
-                                        ? 'color-mix(in srgb, var(--color-success, #16a34a) 12%, var(--color-bg))'
-                                        : 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))' }}>
-                                    <span style={{ color: 'var(--color-text)' }}>
-                                        {nuevo <= 0.009 ? '✓ Con este pago la compra queda PAGADA' : 'Nuevo saldo pendiente'}
-                                    </span>
-                                    <strong style={{ color: nuevo <= 0.009 ? 'var(--color-success)' : 'var(--color-primary)' }}>
-                                        {money(Math.max(0, nuevo))}
-                                    </strong>
-                                </div>
-                            );
+                            return nuevo <= 0.009
+                                ? <Callout variant="success" title="Con este pago la compra queda PAGADA" />
+                                : <Callout variant="info" title="Nuevo saldo pendiente" aside={money(nuevo)} />;
                         })()}
-                        <Input label="Fecha" required type="date"
-                            value={form.fecha}
-                            onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
-                            error={errors.fecha}
-                        />
 
                         {adelantosDisponibles.length > 0 && (
-                            <label className="flex items-center gap-2 text-sm cursor-pointer select-none px-1">
-                                <input type="checkbox" checked={usarAdelanto}
-                                    onChange={e => setUsarAdelanto(e.target.checked)}
-                                    className="h-4 w-4 accent-[var(--color-primary)]"
-                                />
-                                <span style={{ color: 'var(--color-text)' }}>Pagar consumiendo un adelanto entregado al proveedor</span>
-                            </label>
+                            <Callout variant="info">
+                                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                                    <input type="checkbox" checked={usarAdelanto}
+                                        onChange={e => setUsarAdelanto(e.target.checked)}
+                                        className="h-4 w-4 accent-[var(--color-primary)]"
+                                    />
+                                    <span style={{ color: 'var(--color-text)' }}>Pagar consumiendo un adelanto entregado al proveedor</span>
+                                </label>
+                            </Callout>
                         )}
 
                         {usarAdelanto ? (
@@ -302,11 +299,10 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
                                         error={errors.cuenta_id}
                                     />
                                 ) : (
-                                    <div className="rounded-xl px-3 py-2 text-sm"
-                                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))', color: 'var(--color-text)' }}>
+                                    <Callout variant="info">
                                         El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
                                         que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
-                                    </div>
+                                    </Callout>
                                 )}
                             </>
                         )}
@@ -332,31 +328,27 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (
-                    <div className="space-y-3">
-                        <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                            <div><p style={{ color: 'var(--color-text-muted)' }}>Total</p><p className="font-bold">{money(detalle.total)}</p></div>
-                            <div><p style={{ color: 'var(--color-text-muted)' }}>Pagado</p><p className="font-bold">{money(detalle.monto_pagado)}</p></div>
-                            <div><p style={{ color: 'var(--color-text-muted)' }}>Saldo</p><p className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(saldoDe(detalle))}</p></div>
-                        </div>
-                        {detalle.pagos_parciales.length === 0 ? (
-                            <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Sin pagos registrados</p>
-                        ) : (
-                            <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-                                {detalle.pagos_parciales.map(p => (
-                                    <div key={p.id} className="py-2 flex justify-between items-start text-sm">
-                                        <div>
-                                            <p className="font-medium">{fdate(p.fecha)}</p>
-                                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                {p.proveedor_adelanto_id
-                                                    ? `Consumió adelanto #${p.proveedor_adelanto_id}`
-                                                    : [p.metodo_pago?.nombre, p.cuenta?.nombre, p.referencia, p.user?.name].filter(Boolean).join(' · ') || '—'}
-                                            </p>
-                                        </div>
-                                        <span className="font-bold">{money(p.monto)}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                    <div className="space-y-4">
+                        <StatGrid stats={[
+                            { label: 'Total', valor: money(detalle.total) },
+                            { label: 'Pagado', valor: money(detalle.monto_pagado), color: 'success' },
+                            { label: 'Saldo', valor: money(saldoDe(detalle)), color: 'danger' },
+                        ]} />
+                        <Timeline
+                            emptyMessage="Sin pagos registrados"
+                            items={detalle.pagos_parciales.map(p => ({
+                                fecha: fdate(p.fecha),
+                                badge: p.proveedor_adelanto_id
+                                    ? { texto: 'Adelanto', variant: 'warning' as const }
+                                    : { texto: 'Pago', variant: 'success' as const },
+                                tipo: 'egreso' as const,
+                                detalle: p.proveedor_adelanto_id
+                                    ? `Consumió adelanto #${p.proveedor_adelanto_id}`
+                                    : [p.metodo_pago?.nombre, p.cuenta?.nombre, p.referencia].filter(Boolean).join(' · ') || undefined,
+                                user: p.user?.name,
+                                monto: Number(p.monto),
+                            }))}
+                        />
                     </div>
                 )}
             </Modal>

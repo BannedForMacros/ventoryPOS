@@ -117,7 +117,8 @@
       "Bash(curl -s -o /dev/null -w \"Laravel: %{http_code}\\\\n\" http://127.0.0.1:8000/login)",
       "PowerShell(cd C:\\\\MacSoft\\\\ventoryPOS; $c = Get-Content resources\\\\js\\\\Pages\\\\Finanzas\\\\BalanceDiarioDetalle.tsx; \"line672: $\\($c[671]\\)\"; \"line673: $\\($c[672]\\)\"; \"line674: $\\($c[673]\\)\")",
       "Bash(python -c ' *)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "PowerShell(npx tsc --noEmit)"
     ]
   }
 }

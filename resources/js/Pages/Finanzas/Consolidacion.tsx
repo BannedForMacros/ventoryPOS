@@ -10,6 +10,7 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
+import Callout from '@/Components/UI/Callout';
 import type { PageProps } from '@/types';
 
 interface ArqueoMetodo {
@@ -251,10 +252,10 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requ
             >
                 {consolidando && (
                     <div className="space-y-4">
-                        <p className="text-xs px-1" style={{ color: 'var(--color-text-muted)' }}>
+                        <Callout variant="neutral">
                             Caja chica entregada: <strong>{money(consolidando.monto_caja_chica)}</strong> (inclúyela en el efectivo si tu empresa la cuenta en el cierre).
                             Verifica los métodos electrónicos contra la app del banco / billetera.
-                        </p>
+                        </Callout>
 
                         {/* Cabecera de la grilla */}
                         <div className="grid grid-cols-12 gap-2 px-1 text-[11px] font-semibold uppercase tracking-wider"
@@ -301,12 +302,8 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requ
                         })}
 
                         {faltanteTotal >= 0.01 && (
-                            <div className="rounded-xl px-3 py-2 space-y-2"
-                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, var(--color-bg))' }}>
-                                <p className="text-sm font-bold" style={{ color: 'var(--color-danger)' }}>
-                                    FALTANTE TOTAL: {money(faltanteTotal)}
-                                </p>
-                                <label className="flex items-start gap-2 text-sm cursor-pointer select-none">
+                            <Callout variant="danger" title={`FALTANTE TOTAL: ${money(faltanteTotal)}`}>
+                                <label className="flex items-start gap-2 text-sm cursor-pointer select-none mt-1">
                                     <input type="checkbox" checked={genDescuento}
                                         onChange={e => setGenDescuento(e.target.checked)}
                                         className="h-4 w-4 mt-0.5 accent-[var(--color-danger)]"
@@ -315,7 +312,7 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requ
                                         Generar <strong>descuento de planilla</strong> a {consolidando.user?.name} por {money(faltanteTotal)}
                                     </span>
                                 </label>
-                            </div>
+                            </Callout>
                         )}
 
                         <Input label="Observación" value={obs} onChange={e => setObs(e.target.value)} />

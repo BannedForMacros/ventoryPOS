@@ -12,6 +12,8 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
+import Callout from '@/Components/UI/Callout';
+import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
 interface Aplicacion {
@@ -221,11 +223,10 @@ export default function Adelantos({ adelantos, totalActivo, estado, proveedores,
                             placeholder="— Seleccionar —"
                         />
                     ) : (
-                        <div className="rounded-xl px-3 py-2 text-sm"
-                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))', color: 'var(--color-text)' }}>
+                        <Callout variant="info">
                             El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
                             que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
-                        </div>
+                        </Callout>
                     )}
                     <Input label="Referencia (operación, voucher...)" value={form.referencia}
                         onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))} />
@@ -264,23 +265,17 @@ export default function Adelantos({ adelantos, totalActivo, estado, proveedores,
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (
-                    detalle.aplicaciones.length === 0
-                        ? <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Aún no se aplicó contra ninguna entrada</p>
-                        : (
-                            <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-                                {detalle.aplicaciones.map(ap => (
-                                    <div key={ap.id} className="py-2 flex justify-between items-start text-sm">
-                                        <div>
-                                            <p className="font-medium">{new Date(ap.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</p>
-                                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                {[ap.entrada ? `Entrada ${ap.entrada.numero_documento ?? '#' + ap.entrada.id}` : null, ap.user?.name, ap.observacion].filter(Boolean).join(' · ') || '—'}
-                                            </p>
-                                        </div>
-                                        <span className="font-bold">{money(ap.monto)}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )
+                    <Timeline
+                        emptyMessage="Aún no se aplicó contra ninguna entrada"
+                        items={detalle.aplicaciones.map(ap => ({
+                            fecha: new Date(ap.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
+                            badge: { texto: 'Aplicación', variant: 'primary' as const },
+                            tipo: 'egreso' as const,
+                            detalle: [ap.entrada ? `Entrada ${ap.entrada.numero_documento ?? '#' + ap.entrada.id}` : null, ap.observacion].filter(Boolean).join(' · ') || undefined,
+                            user: ap.user?.name,
+                            monto: Number(ap.monto),
+                        }))}
+                    />
                 )}
             </Modal>
         </AppLayout>

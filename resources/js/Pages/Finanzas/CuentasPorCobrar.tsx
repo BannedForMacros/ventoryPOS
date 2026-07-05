@@ -11,6 +11,9 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
+import Callout from '@/Components/UI/Callout';
+import StatGrid from '@/Components/UI/StatGrid';
+import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
 interface Abono {
@@ -213,16 +216,24 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
             >
                 {abonando && (
                     <div className="space-y-4">
-                        <div className="flex justify-between text-sm px-1">
-                            <span style={{ color: 'var(--color-text-muted)' }}>Saldo pendiente</span>
-                            <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(abonando.saldo_pendiente)}</span>
+                        <StatGrid stats={[
+                            { label: 'Total', valor: money(abonando.total) },
+                            { label: 'Pagado', valor: money(abonando.monto_pagado), color: 'success' },
+                            { label: 'Saldo pendiente', valor: money(abonando.saldo_pendiente), color: 'danger', destacado: true },
+                        ]} />
+                        <div className="grid grid-cols-2 gap-3">
+                            <Input label="Monto del abono" required type="number" min="0.01" step="0.01"
+                                max={Number(abonando.saldo_pendiente)}
+                                value={form.monto}
+                                onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
+                                error={errors.monto}
+                            />
+                            <Input label="Fecha" required type="date"
+                                value={form.fecha}
+                                onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
+                                error={errors.fecha}
+                            />
                         </div>
-                        <Input label="Monto del abono" required type="number" min="0.01" step="0.01"
-                            max={Number(abonando.saldo_pendiente)}
-                            value={form.monto}
-                            onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
-                            error={errors.monto}
-                        />
 
                         {/* Nuevo saldo en vivo + validación de tope */}
                         {form.monto !== '' && Number(form.monto) > 0 && (() => {
@@ -231,31 +242,15 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
                             const nuevo = Math.round((saldo - montoNum) * 100) / 100;
                             if (montoNum > saldo + 0.009) {
                                 return (
-                                    <div className="rounded-xl px-3 py-2 text-sm font-semibold"
-                                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, var(--color-bg))', color: 'var(--color-danger)' }}>
-                                        ⚠ El abono ({money(montoNum)}) no puede superar el saldo pendiente ({money(saldo)}).
-                                    </div>
+                                    <Callout variant="danger">
+                                        El abono ({money(montoNum)}) no puede superar el saldo pendiente ({money(saldo)}).
+                                    </Callout>
                                 );
                             }
-                            return (
-                                <div className="flex justify-between items-center rounded-xl px-3 py-2 text-sm"
-                                    style={{ backgroundColor: nuevo <= 0.009
-                                        ? 'color-mix(in srgb, var(--color-success, #16a34a) 12%, var(--color-bg))'
-                                        : 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))' }}>
-                                    <span style={{ color: 'var(--color-text)' }}>
-                                        {nuevo <= 0.009 ? '✓ Con este abono la venta queda SALDADA' : 'Nuevo saldo pendiente'}
-                                    </span>
-                                    <strong style={{ color: nuevo <= 0.009 ? 'var(--color-success)' : 'var(--color-primary)' }}>
-                                        {money(Math.max(0, nuevo))}
-                                    </strong>
-                                </div>
-                            );
+                            return nuevo <= 0.009
+                                ? <Callout variant="success" title="Con este abono la venta queda SALDADA" />
+                                : <Callout variant="info" title="Nuevo saldo pendiente" aside={money(nuevo)} />;
                         })()}
-                        <Input label="Fecha" required type="date"
-                            value={form.fecha}
-                            onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
-                            error={errors.fecha}
-                        />
                         <Select label="Método de pago"
                             options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                             value={form.metodo_pago_id}
@@ -276,11 +271,10 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
                                 error={errors.cuenta_id}
                             />
                         ) : (
-                            <div className="rounded-xl px-3 py-2 text-sm"
-                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))', color: 'var(--color-text)' }}>
+                            <Callout variant="info">
                                 El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
                                 que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
-                            </div>
+                            </Callout>
                         )}
                         <Input label="Referencia (operación, voucher...)"
                             value={form.referencia}
@@ -303,49 +297,35 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (
-                    <div className="space-y-3">
-                        <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                            <div><p style={{ color: 'var(--color-text-muted)' }}>Total</p><p className="font-bold">{money(detalle.total)}</p></div>
-                            <div><p style={{ color: 'var(--color-text-muted)' }}>Pagado</p><p className="font-bold">{money(detalle.monto_pagado)}</p></div>
-                            <div><p style={{ color: 'var(--color-text-muted)' }}>Saldo</p><p className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(detalle.saldo_pendiente)}</p></div>
-                        </div>
-                        <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-                            {/* Pago inicial hecho en el POS al momento de la venta */}
-                            {detalle.pagos.filter(p => Number(p.monto) - Number(p.vuelto) > 0).map(p => (
-                                <div key={`ini-${p.id}`} className="py-2 flex justify-between items-start text-sm">
-                                    <div>
-                                        <p className="font-medium">
-                                            {new Date(detalle.fecha_venta).toLocaleDateString('es-PE')}{' '}
-                                            <Badge variant="primary">Pago inicial</Badge>
-                                        </p>
-                                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                            {[p.metodo_pago?.nombre, 'al momento de la venta', detalle.user?.name].filter(Boolean).join(' · ')}
-                                        </p>
-                                    </div>
-                                    <span className="font-bold">{money(Number(p.monto) - Number(p.vuelto))}</span>
-                                </div>
-                            ))}
-
-                            {/* Abonos posteriores */}
-                            {detalle.abonos.map(a => (
-                                <div key={a.id} className="py-2 flex justify-between items-start text-sm">
-                                    <div>
-                                        <p className="font-medium">
-                                            {new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE')}{' '}
-                                            <Badge variant="success">Abono</Badge>
-                                        </p>
-                                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                            {[a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia, a.user?.name].filter(Boolean).join(' · ') || '—'}
-                                        </p>
-                                    </div>
-                                    <span className="font-bold">{money(a.monto)}</span>
-                                </div>
-                            ))}
-
-                            {detalle.abonos.length === 0 && detalle.pagos.filter(p => Number(p.monto) - Number(p.vuelto) > 0).length === 0 && (
-                                <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Sin pagos registrados</p>
-                            )}
-                        </div>
+                    <div className="space-y-4">
+                        <StatGrid stats={[
+                            { label: 'Total', valor: money(detalle.total) },
+                            { label: 'Pagado', valor: money(detalle.monto_pagado), color: 'success' },
+                            { label: 'Saldo', valor: money(detalle.saldo_pendiente), color: 'danger' },
+                        ]} />
+                        <Timeline
+                            emptyMessage="Sin pagos registrados"
+                            items={[
+                                // Pago inicial hecho en el POS al momento de la venta
+                                ...detalle.pagos.filter(p => Number(p.monto) - Number(p.vuelto) > 0).map(p => ({
+                                    fecha: new Date(detalle.fecha_venta).toLocaleDateString('es-PE'),
+                                    badge: { texto: 'Pago inicial', variant: 'primary' as const },
+                                    tipo: 'ingreso' as const,
+                                    detalle: [p.metodo_pago?.nombre, 'al momento de la venta'].filter(Boolean).join(' · '),
+                                    user: detalle.user?.name,
+                                    monto: Number(p.monto) - Number(p.vuelto),
+                                })),
+                                // Abonos posteriores
+                                ...detalle.abonos.map(a => ({
+                                    fecha: new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
+                                    badge: { texto: 'Abono', variant: 'success' as const },
+                                    tipo: 'ingreso' as const,
+                                    detalle: [a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || undefined,
+                                    user: a.user?.name,
+                                    monto: Number(a.monto),
+                                })),
+                            ]}
+                        />
                     </div>
                 )}
             </Modal>

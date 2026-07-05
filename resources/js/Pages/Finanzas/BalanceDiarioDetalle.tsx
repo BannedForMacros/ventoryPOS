@@ -8,6 +8,8 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
+import Callout from '@/Components/UI/Callout';
+import StatGrid from '@/Components/UI/StatGrid';
 import DetalleAgrupado from '@/Components/Finanzas/DetalleAgrupado';
 import type { PageProps } from '@/types';
 
@@ -451,14 +453,13 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                 }
             >
                 <div className="space-y-4">
-                    <div className="rounded-xl px-3 py-2 text-xs leading-relaxed"
-                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 10%, var(--color-bg))', color: 'var(--color-text)' }}>
-                        <strong>Usa esto solo para casos puntuales.</strong> Lo recurrente debe ir en su módulo
+                    <Callout variant="warning" title="Usa esto solo para casos puntuales.">
+                        Lo recurrente debe ir en su módulo
                         para no perder trazabilidad: préstamos y cuotas (ej. la moto de un trabajador) →
                         <em> Deudas y préstamos</em>; dinero adelantado → <em>Anticipos/Adelantos</em>;
                         dinero en cuentas → <em>Tesorería</em>. Esta línea quedará registrada en auditoría
                         con tu usuario.
-                    </div>
+                    </Callout>
                     <Input label="Descripción" required placeholder='Ej: "Depósito Oscar Alberto", "16 fierros 3/4"'
                         value={formLinea.descripcion}
                         onChange={e => setFormLinea(f => ({ ...f, descripcion: e.target.value }))}
@@ -524,20 +525,16 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                     </>
                 }
             >
-                <div className="space-y-2 text-sm" style={{ color: 'var(--color-text)' }}>
+                <div className="space-y-3 text-sm" style={{ color: 'var(--color-text)' }}>
                     <p>Al confirmar, el balance queda <strong>inmutable</strong> y será la referencia ("balance de ayer") para el siguiente día.</p>
-                    <div className="rounded-xl px-3 py-2 space-y-1"
-                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))' }}>
-                        <div className="flex justify-between"><span>Balance del día</span><strong>{money(balance.balance_neto)}</strong></div>
-                        {balance.utilidad_real !== null && (
-                            <div className="flex justify-between">
-                                <span>Utilidad real</span>
-                                <strong style={{ color: Number(balance.utilidad_real) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                    {money(balance.utilidad_real)}
-                                </strong>
-                            </div>
-                        )}
-                    </div>
+                    <StatGrid stats={[
+                        { label: 'Balance del día', valor: money(balance.balance_neto), color: 'primary', destacado: true },
+                        {
+                            label: 'Utilidad real',
+                            valor: balance.utilidad_real !== null ? money(balance.utilidad_real) : '—',
+                            color: balance.utilidad_real !== null && Number(balance.utilidad_real) < 0 ? 'danger' : 'success',
+                        },
+                    ]} />
                 </div>
             </Modal>
         </AppLayout>

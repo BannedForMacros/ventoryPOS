@@ -9,6 +9,8 @@ import Input from '@/Components/UI/Input';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
+import Callout from '@/Components/UI/Callout';
+import StatGrid from '@/Components/UI/StatGrid';
 import type { PageProps } from '@/types';
 
 interface CuentaSaldo {
@@ -173,25 +175,24 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos }: Props) {
                 }
             >
                 <div className="space-y-4">
-                    <div className="rounded-xl px-3 py-2 text-sm"
-                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 10%, var(--color-bg))', color: 'var(--color-text)' }}>
-                        Saldo según el sistema: <strong>{money(cuentaActiva?.saldo)}</strong>.
+                    <StatGrid stats={[
+                        { label: 'Saldo según sistema', valor: money(cuentaActiva?.saldo), destacado: true },
+                    ]} />
+                    <Callout variant="warning">
                         Ingresa el saldo REAL contado y el sistema registrará la diferencia como
                         movimiento de ajuste, con tu usuario y motivo en auditoría.
-                    </div>
+                    </Callout>
                     <Input label="Fecha" required type="date" value={form.fecha}
                         onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
                     <Input label="Saldo real contado (S/)" required type="number" min="0" step="0.01" value={form.saldo_real}
                         onChange={e => setForm(f => ({ ...f, saldo_real: e.target.value }))} error={errors.saldo_real} />
-                    {form.saldo_real !== '' && cuentaActiva && (
-                        <p className="text-sm px-1" style={{ color: 'var(--color-text-muted)' }}>
-                            Diferencia a registrar:{' '}
-                            <strong style={{ color: Number(form.saldo_real) - cuentaActiva.saldo >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                {Number(form.saldo_real) - cuentaActiva.saldo >= 0 ? '+' : ''}
-                                {money(Number(form.saldo_real) - cuentaActiva.saldo)}
-                            </strong>
-                        </p>
-                    )}
+                    {form.saldo_real !== '' && cuentaActiva && (() => {
+                        const dif = Number(form.saldo_real) - cuentaActiva.saldo;
+                        return (
+                            <Callout variant={dif >= 0 ? 'success' : 'danger'} title="Diferencia a registrar"
+                                aside={`${dif >= 0 ? '+' : ''}${money(dif)}`} />
+                        );
+                    })()}
                     <Input label="Motivo (obligatorio)" required
                         placeholder='Ej: "Saldo inicial al implementar el sistema", "Sencillo no registrado"'
                         value={form.motivo}

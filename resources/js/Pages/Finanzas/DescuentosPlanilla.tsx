@@ -11,6 +11,7 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
+import Callout from '@/Components/UI/Callout';
 import type { PageProps } from '@/types';
 
 interface Descuento extends Record<string, unknown> {
@@ -207,9 +208,9 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
             >
                 {aplicando && (
                     <div className="space-y-4">
-                        <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-                            Confirmas que el descuento de <strong>{money(aplicando.monto)}</strong> ya se aplicó en la planilla pagada a <strong>{aplicando.trabajador?.name}</strong>.
-                        </p>
+                        <Callout variant="success" title="Confirmar aplicación" aside={money(aplicando.monto)}>
+                            Confirmas que el descuento ya se aplicó en la planilla pagada a <strong>{aplicando.trabajador?.name}</strong>.
+                        </Callout>
                         <Input label="Fecha de aplicación" required type="date" value={fechaAplicacion}
                             onChange={e => setFechaAplicacion(e.target.value)} />
                     </div>

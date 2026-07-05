@@ -11,6 +11,9 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
+import Callout from '@/Components/UI/Callout';
+import StatGrid from '@/Components/UI/StatGrid';
+import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
 interface Pago {
@@ -270,10 +273,9 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
             >
                 {pagando && (
                     <div className="space-y-4">
-                        <div className="flex justify-between text-sm px-1">
-                            <span style={{ color: 'var(--color-text-muted)' }}>Saldo actual</span>
-                            <span className="font-bold">{money(pagando.saldo)}</span>
-                        </div>
+                        <StatGrid stats={[
+                            { label: 'Saldo actual', valor: money(pagando.saldo), destacado: true },
+                        ]} />
                         <Select label="Tipo de movimiento" required
                             options={[
                                 { value: 'amortizacion', label: pagando.direccion === 'por_pagar' ? 'Pago de cuota (baja el saldo)' : 'Nos abonaron (baja el saldo)' },
@@ -302,11 +304,10 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
                                 placeholder="— Seleccionar —"
                             />
                         ) : (
-                            <div className="rounded-xl px-3 py-2 text-sm"
-                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))', color: 'var(--color-text)' }}>
+                            <Callout variant="info">
                                 El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === formPago.metodo_pago_id)?.nombre}»</strong>,
                                 que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
-                            </div>
+                            </Callout>
                         )}
                         <Input label="Observación" value={formPago.observacion}
                             onChange={e => setFormPago(f => ({ ...f, observacion: e.target.value }))} />
@@ -334,30 +335,19 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (
-                    detalle.pagos.length === 0
-                        ? <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Sin movimientos registrados</p>
-                        : (
-                            <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-                                {detalle.pagos.map(p => (
-                                    <div key={p.id} className="py-2 flex justify-between items-start text-sm">
-                                        <div>
-                                            <p className="font-medium">
-                                                {new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-PE')}{' '}
-                                                <Badge variant={p.tipo === 'amortizacion' ? 'success' : 'warning'}>
-                                                    {p.tipo === 'amortizacion' ? 'Amortización' : 'Incremento'}
-                                                </Badge>
-                                            </p>
-                                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                {[p.metodo_pago?.nombre, p.cuenta?.nombre, p.user?.name, p.observacion].filter(Boolean).join(' · ') || '—'}
-                                            </p>
-                                        </div>
-                                        <span className="font-bold" style={{ color: p.tipo === 'amortizacion' ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                            {p.tipo === 'amortizacion' ? '−' : '+'}{money(p.monto)}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        )
+                    <Timeline
+                        emptyMessage="Sin movimientos registrados"
+                        items={detalle.pagos.map(p => ({
+                            fecha: new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
+                            badge: p.tipo === 'amortizacion'
+                                ? { texto: 'Amortización', variant: 'success' as const }
+                                : { texto: 'Incremento', variant: 'warning' as const },
+                            tipo: p.tipo === 'amortizacion' ? 'ingreso' as const : 'egreso' as const,
+                            detalle: [p.metodo_pago?.nombre, p.cuenta?.nombre, p.observacion].filter(Boolean).join(' · ') || undefined,
+                            user: p.user?.name,
+                            monto: Number(p.monto),
+                        }))}
+                    />
                 )}
             </Modal>
         </AppLayout>
