@@ -25,6 +25,8 @@ class StoreGastoRequest extends FormRequest
                 Rule::exists('gasto_conceptos', 'id')->where('empresa_id', $empresaId),
             ],
             'monto'      => ['required', 'numeric', 'min:0.01'],
+            // F7 — cuenta de la que sale el dinero (null = efectivo)
+            'cuenta_id'  => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $empresaId)],
             'fecha'      => ['required', 'date'],
             'comentario' => ['nullable', 'string', 'max:500'],
             'turno_id'   => ['nullable', 'integer', 'exists:turnos,id'],

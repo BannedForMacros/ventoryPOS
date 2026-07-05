@@ -94,20 +94,25 @@ class BalanceDiarioService
 
         // ── A FAVOR ──────────────────────────────────────────────────────
 
-        // F7 — Efectivo y cuentas bancarias: saldo AUTOMÁTICO desde el libro
-        // de tesorería (ingresos − egresos hasta la fecha del balance). Ya no
-        // se digitan a mano; si el dinero físico no cuadra, se registra un
-        // ajuste con motivo en Tesorería y aquí se refleja.
+        // F7/F10 — Efectivo y cuentas bancarias EN BRUTO (pedido del cliente):
+        // A FAVOR muestra TODO lo ingresado a cada cuenta hasta la fecha;
+        // las salidas van como línea "Gastos emitidos" EN CONTRA. El neto
+        // (favor − contra) da el mismo saldo real, pero cada lado muestra
+        // su monto completo, como en su Excel.
         $fechaCorte = $balance->fecha->toDateString();
         Cuenta::deEmpresa($empresaId)->activo()
             ->orderByDesc('es_efectivo')->orderBy('nombre')->get()
             ->each(function (Cuenta $c) use (&$items, &$orden, $fechaCorte) {
+                $ingresosBrutos = (float) \App\Models\CuentaMovimiento::where('cuenta_id', $c->id)
+                    ->where('fecha', '<=', $fechaCorte)
+                    ->where('tipo', 'ingreso')
+                    ->sum('monto');
                 $items[] = [
                     'seccion'     => 'favor',
                     'categoria'   => $c->es_efectivo ? 'efectivo' : 'cuenta_bancaria',
                     'descripcion' => $c->nombre,
                     'ref_tipo'    => 'cuenta', 'ref_id' => $c->id,
-                    'monto'       => $this->tesoreria->saldo($c->id, $fechaCorte),
+                    'monto'       => round($ingresosBrutos, 2),
                     'orden'       => ++$orden,
                 ];
             });
@@ -173,6 +178,20 @@ class BalanceDiarioService
             'seccion' => 'contra', 'categoria' => 'cxp',
             'descripcion' => 'Proveedores por pagar',
             'monto' => round($cxp, 2), 'orden' => ++$orden,
+        ];
+
+        // F10 — Gastos emitidos: TODAS las salidas de dinero hasta la fecha
+        // (pagos a proveedores, gastos, cuotas, faltantes...). Contraparte
+        // EN CONTRA de las cuentas en bruto: favor(bruto) − esta línea = neto real.
+        $gastosEmitidos = (float) \App\Models\CuentaMovimiento::deEmpresa($empresaId)
+            ->where('fecha', '<=', $fechaCorte)
+            ->where('tipo', 'egreso')
+            ->sum('monto');
+
+        $items[] = [
+            'seccion' => 'contra', 'categoria' => 'gastos_emitidos',
+            'descripcion' => 'Gastos emitidos (salidas de dinero)',
+            'monto' => round($gastosEmitidos, 2), 'orden' => ++$orden,
         ];
 
         // Anticipos de clientes valorizados A PRECIO DEL DÍA.

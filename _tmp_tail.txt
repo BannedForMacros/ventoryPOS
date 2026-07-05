@@ -1,0 +1,118 @@
+﻿    }
+
+    /**
+     * Actualiza una lÃ­nea manual (monto) o su check de conciliaciÃ³n ("OK").
+     */
+    public function actualizarItem(Request $request, BalanceDiarioItem $item)
+    {
+        $user    = $request->user();
+        $balance = $item->balance;
+
+        abort_if($balance->empresa_id !== $user->empresa_id, 403);
+        abort_unless($balance->esBorrador(), 422, 'El balance ya fue confirmado.');
+
+        $data = $request->validate([
+            'monto'      => ['nullable', 'numeric'],
+            'conciliado' => ['nullable', 'boolean'],
+        ]);
+
+        // Solo las lÃ­neas manuales aceptan cambio de monto; el check de
+        // conciliaciÃ³n aplica a cualquiera (es la marca "OK" del Excel).
+        $update = [];
+        if (array_key_exists('monto', $data) && $data['monto'] !== null) {
+            abort_unless($item->es_manual, 422, 'Esta lÃ­nea se calcula automÃ¡ticamente.');
+            $update['monto'] = round((float) $data['monto'], 2);
+        }
+        if (array_key_exists('conciliado', $data) && $data['conciliado'] !== null) {
+            $update['conciliado'] = $data['conciliado'];
+        }
+
+        if ($update) {
+            $item->update($update);
+            $balance->recalcularTotales();
+        }
+
+        return back();
+    }
+
+    /**
+     * Agrega una lÃ­nea manual extra (los "OSCAR ALBERTO - DEPÃ“SITO...",
+     * "16 FIERRO 3/4", etc. del Excel).
+     */
+    public function agregarItem(Request $request, BalanceDiario $balance)
+    {
+        $user = $request->user();
+        abort_if($balance->empresa_id !== $user->empresa_id, 403);
+        abort_unless($balance->esBorrador(), 422, 'El balance ya fue confirmado.');
+
+        $data = $request->validate([
+            'seccion'     => ['required', Rule::in(['favor', 'contra'])],
+            'descripcion' => ['required', 'string', 'max:250'],
+            'monto'       => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $maxOrden = (int) $balance->items()->where('seccion', $data['seccion'])->max('orden');
+
+        $item = $balance->items()->create([
+            'seccion'     => $data['seccion'],
+            'categoria'   => $data['seccion'] === 'favor' ? 'otro_favor' : 'otro_contra',
+            'descripcion' => $data['descripcion'],
+            'monto'       => round((float) $data['monto'], 2),
+            'es_manual'   => true,
+            'conciliado'  => false,
+            'orden'       => $maxOrden + 1,
+        ]);
+
+        // Trazabilidad: toda lÃ­nea manual queda en auditorÃ­a con autor,
+        // fecha y monto. (Lo recurrente debe registrarse en su mÃ³dulo:
+        // deudas, anticipos, adelantos... no como lÃ­nea suelta.)
+        \App\Services\AuditoriaService::log('balance.linea_manual', $item, [
+            'balance_fecha' => $balance->fecha->toDateString(),
+            'seccion'       => $data['seccion'],
+            'descripcion'   => $data['descripcion'],
+            'monto'         => (float) $data['monto'],
+        ], $user);
+
+        $balance->recalcularTotales();
+
+        return back()->with('success', 'LÃ­nea agregada.');
+    }
+
+    /**
+     * Elimina una lÃ­nea manual.
+     */
+    public function eliminarItem(Request $request, BalanceDiarioItem $item)
+    {
+        $user    = $request->user();
+        $balance = $item->balance;
+
+        abort_if($balance->empresa_id !== $user->empresa_id, 403);
+        abort_unless($balance->esBorrador(), 422, 'El balance ya fue confirmado.');
+        abort_unless($item->es_manual, 422, 'Las lÃ­neas automÃ¡ticas no se pueden eliminar.');
+
+        \App\Services\AuditoriaService::log('balance.linea_manual_eliminada', $item, [
+            'balance_fecha' => $balance->fecha->toDateString(),
+            'descripcion'   => $item->descripcion,
+            'monto'         => (float) $item->monto,
+        ], $user);
+
+        $item->delete();
+        $balance->recalcularTotales();
+
+        return back()->with('success', 'LÃ­nea eliminada.');
+    }
+
+    /**
+     * Confirma el balance del dÃ­a: snapshot inmutable que servirÃ¡ de
+     * "BALANCE AYER" para el siguiente.
+     */
+    public function confirmar(Request $request, BalanceDiario $balance)
+    {
+        $user = $request->user();
+        abort_if($balance->empresa_id !== $user->empresa_id, 403);
+
+        $this->service->confirmar($balance, $user);
+
+        return back()->with('success', 'Balance confirmado. Ya es la referencia para el dÃ­a siguiente.');
+    }
+}

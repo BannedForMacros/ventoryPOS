@@ -15,6 +15,7 @@ export interface GastoForm {
     comentario:         string;
     turno_id:           number | null;
     local_id:           number | '';
+    cuenta_id:          number | '';
 }
 
 export const emptyGasto = (turnoId: number | null = null): GastoForm => ({
@@ -25,6 +26,7 @@ export const emptyGasto = (turnoId: number | null = null): GastoForm => ({
     comentario:        '',
     turno_id:          turnoId,
     local_id:          '',
+    cuenta_id:         '',
 });
 
 interface Props {
@@ -35,9 +37,10 @@ interface Props {
     locales:          Local[];
     esAdmin:          boolean;
     turnosAbiertos:   Turno[];
+    cuentas?:         { id: number; nombre: string; es_efectivo?: boolean }[];
 }
 
-export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos }: Props) {
+export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos, cuentas = [] }: Props) {
     const [form, setForm]     = useState<GastoForm>(emptyGasto(turnoActivo?.id ?? null));
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
@@ -173,6 +176,19 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     error={errors.fecha}
                     disabled={saving}
                 />
+
+                {/* F7 — De qué cuenta sale el dinero (default: Efectivo) */}
+                {cuentas.length > 0 && (
+                    <Select
+                        label="Se paga con"
+                        value={form.cuenta_id}
+                        onChange={v => setForm(f => ({ ...f, cuenta_id: Number(v) || '' }))}
+                        options={cuentas.map(c => ({ value: c.id, label: c.nombre }))}
+                        placeholder="Efectivo (por defecto)"
+                        error={errors.cuenta_id}
+                        disabled={saving}
+                    />
+                )}
 
                 {/* Local — solo para gastos administrativos cuando es admin */}
                 {!esTurnogasto && esAdmin && (

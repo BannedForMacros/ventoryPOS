@@ -82,8 +82,8 @@ class BalanceDiarioController extends Controller
             'deuda_pago'                    => 'Cuotas de deudas/préstamos',
             'devolucion'                    => 'Reembolsos a clientes',
             'cliente_anticipo_devolucion'   => 'Devolución de anticipos',
-            'cierre_turno'                  => 'Faltantes de cierre de caja',
-            'turno_consolidacion'           => 'Faltantes consolidados',
+            'cierre_turno'                  => 'Faltantes de caja',
+            'turno_consolidacion'           => 'Faltantes de caja',
             'ajuste'                        => 'Ajustes de saldo',
         ];
         $salidasDia = CuentaMovimiento::deEmpresa($user->empresa_id)
@@ -287,6 +287,42 @@ class BalanceDiarioController extends Controller
                         'user'    => $ap->user?->name,
                     ]),
                 ]);
+            }
+
+            // ── Gastos emitidos: todas las salidas de dinero por concepto ──
+            case 'gastos_emitidos': {
+                $labels = [
+                    'venta'                         => 'Vueltos/ajustes de ventas',
+                    'gasto'                         => 'Gastos operativos',
+                    'entrada_pago'                  => 'Pagos a proveedores',
+                    'entrada'                       => 'Pagos a proveedores',
+                    'proveedor_adelanto'            => 'Adelantos a proveedores',
+                    'proveedor_adelanto_devolucion' => 'Devolución de adelantos',
+                    'cliente_anticipo_devolucion'   => 'Devolución de anticipos',
+                    'deuda_pago'                    => 'Cuotas de deudas/préstamos',
+                    'devolucion'                    => 'Reembolsos a clientes',
+                    'cierre_turno'                  => 'Faltantes de caja',
+                    'turno_consolidacion'           => 'Faltantes de caja',
+                    'ajuste'                        => 'Ajustes de saldo',
+                ];
+
+                $filas = CuentaMovimiento::deEmpresa($empresaId)
+                    ->where('fecha', '<=', $fecha)
+                    ->where('tipo', 'egreso')
+                    ->selectRaw('ref_tipo, SUM(monto) as monto')
+                    ->groupBy('ref_tipo')
+                    ->orderByDesc(DB::raw('SUM(monto)'))
+                    ->get()
+                    ->map(fn ($r) => [
+                        'nombre' => $labels[$r->ref_tipo] ?? ($r->ref_tipo ?? 'Otros'),
+                        'monto'  => round((float) $r->monto, 2),
+                    ])
+                    // Unificar etiquetas repetidas (ej. faltantes de cierre + consolidados)
+                    ->groupBy('nombre')
+                    ->map(fn ($g, $nombre) => ['nombre' => $nombre, 'monto' => round((float) collect($g)->sum('monto'), 2)])
+                    ->values();
+
+                return response()->json(['tipo' => 'salidas', 'total' => round((float) $filas->sum('monto'), 2), 'filas' => $filas]);
             }
 
             // ── Deuda / préstamo puntual: historial de movimientos ──────

@@ -54,12 +54,12 @@ const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 
 /** Categorías cuyo monto se puede "abrir" para ver de dónde sale. */
 const CON_DETALLE = new Set([
-    'efectivo', 'cuenta_bancaria', 'stock', 'cxc', 'cxp',
+    'efectivo', 'cuenta_bancaria', 'stock', 'cxc', 'cxp', 'gastos_emitidos',
     'anticipo_cliente', 'adelanto_proveedor', 'deuda', 'personal', 'prestamo_otorgado',
 ]);
 
 interface DetalleData {
-    tipo: 'movimientos' | 'stock' | 'cxc' | 'cxp' | 'anticipos' | 'adelanto' | 'deuda';
+    tipo: 'movimientos' | 'stock' | 'cxc' | 'cxp' | 'anticipos' | 'adelanto' | 'deuda' | 'salidas';
     [k: string]: any;
 }
 
@@ -72,6 +72,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
     prestamo_otorgado:  'Préstamo otorgado',
     otro_favor:         'Otro',
     cxp:                'Proveedores',
+    gastos_emitidos:    'Ya pagados',
     anticipo_cliente:   'Anticipos',
     deuda:              'Deuda',
     personal:           'Personal',
@@ -285,23 +286,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                     )}
                 </div>
 
-                {/* Salidas de dinero del día — viven en el card EN CONTRA.
-                    Informativas: ya están descontadas de las cuentas A FAVOR,
-                    por eso no se suman al total EN CONTRA (sería doble). */}
-                {!esFavor && salidasDia.length > 0 && (
-                    <div className="px-3 py-2 space-y-1"
-                        style={{ borderTop: '2px dashed var(--color-border)', backgroundColor: 'color-mix(in srgb, var(--color-danger) 5%, var(--color-bg))' }}>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-danger)' }}>
-                            Salidas de dinero del período (ya descontadas de las cuentas)
-                        </p>
-                        {salidasDia.map((s, i) => (
-                            <div key={i} className="flex justify-between text-sm pl-2">
-                                <span>{s.label}</span>
-                                <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>−{money(s.monto)}</span>
-                            </div>
-                        ))}
-                    </div>
-                )}
+
 
                 {editable && (
                     <div className="px-3 py-2 flex items-center justify-between gap-2" style={{ borderTop: '1px solid var(--color-border)' }}>
@@ -395,7 +380,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                 {renderSeccion('favor')}
                 {renderSeccion('contra')}
 
-                {/* Panel gastos del día */}
+                {/* Panel GASTOS DEL DÍA (solo, como acordado) */}
                 <div className="w-full lg:w-72 flex-shrink-0 rounded-2xl overflow-hidden"
                     style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
                     <div className="flex items-center justify-between px-4 py-3"
@@ -574,7 +559,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                     </div>
                 )}
 
-                {!detalleCargando && detalleData && ['stock', 'cxc', 'cxp', 'anticipos'].includes(detalleData.tipo) && (
+                {!detalleCargando && detalleData && ['stock', 'cxc', 'cxp', 'anticipos', 'salidas'].includes(detalleData.tipo) && (
                     <div className="space-y-3">
                         <div className="flex items-center gap-2">
                             <div className="relative flex-1">
@@ -621,6 +606,9 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                                                 </p>
                                             </>
                                         )}
+                                        {detalleData.tipo === 'salidas' && (
+                                            <p className="truncate font-medium">{f.nombre}</p>
+                                        )}
                                         {detalleData.tipo === 'anticipos' && (
                                             <>
                                                 <p className="truncate font-medium">{f.cliente || '—'}</p>
@@ -631,7 +619,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                                         )}
                                     </div>
                                     <span className="font-bold whitespace-nowrap">
-                                        {money(f.valor ?? f.saldo ?? f.valor_hoy)}
+                                        {money(f.valor ?? f.saldo ?? f.valor_hoy ?? f.monto)}
                                     </span>
                                 </div>
                             ))}

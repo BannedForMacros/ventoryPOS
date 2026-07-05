@@ -27,6 +27,7 @@ interface Props extends PageProps {
     locales:         Local[];
     turnosAbiertos:  Turno[];
     esAdmin:         boolean;
+    cuentas:         { id: number; nombre: string; es_efectivo?: boolean }[];
 }
 
 const ALL_TABS = [
@@ -34,7 +35,7 @@ const ALL_TABS = [
     { value: 'administrativo' as Scope, label: 'Gastos administrativos' },
 ];
 
-export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbiertos, esAdmin }: Props) {
+export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbiertos, esAdmin, cuentas }: Props) {
     const { flash, turno_activo } = usePage<Props>().props;
     const [tab, setTab]                 = useState<Scope>(scope);
     const [modalGasto, setModalGasto]   = useState(false);
@@ -153,6 +154,7 @@ export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbier
                 locales={locales}
                 esAdmin={esAdmin}
                 turnosAbiertos={turnosAbiertos ?? []}
+                cuentas={cuentas ?? []}
             />
 
             {/* Confirmar eliminar */}

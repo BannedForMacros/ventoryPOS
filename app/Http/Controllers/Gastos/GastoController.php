@@ -74,6 +74,9 @@ class GastoController extends Controller
             'locales'         => $locales,
             'turnosAbiertos'  => $turnosAbiertos,
             'esAdmin'         => $esAdmin,
+            // F7 — de qué cuenta sale el dinero del gasto (default efectivo)
+            'cuentas'         => \App\Models\Cuenta::deEmpresa($user->empresa_id)->activo()
+                ->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
         ]);
     }
 
@@ -106,6 +109,7 @@ class GastoController extends Controller
                 'gasto_tipo_id'     => $request->input('gasto_tipo_id'),
                 'gasto_concepto_id' => $request->input('gasto_concepto_id'),
                 'monto'             => $request->input('monto'),
+                'cuenta_id'         => $request->input('cuenta_id') ?: null,
                 'fecha'             => $request->input('fecha'),
                 'comentario'        => $request->input('comentario'),
             ]);
