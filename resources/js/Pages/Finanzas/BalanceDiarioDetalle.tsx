@@ -209,7 +209,7 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
                 </div>
 
                 {editable && (
-                    <div className="px-3 py-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                    <div className="px-3 py-2 flex items-center justify-between gap-2" style={{ borderTop: '1px solid var(--color-border)' }}>
                         <button
                             onClick={() => { setErrors({}); setFormLinea({ descripcion: '', monto: '' }); setAgregandoEn(seccion); }}
                             className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg hover:bg-black/5"
@@ -217,6 +217,16 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
                         >
                             <Plus size={13} />Agregar línea manual
                         </button>
+                        {esFavor && (
+                            <button
+                                onClick={() => router.visit(route('finanzas.tesoreria.index'))}
+                                className="text-[11px] underline hover:opacity-80"
+                                style={{ color: 'var(--color-text-muted)' }}
+                                title="El efectivo y las cuentas se calculan solos; si no cuadran, registra un ajuste con motivo"
+                            >
+                                ¿Efectivo no cuadra? Ajustar en Tesorería
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -332,6 +342,14 @@ export default function BalanceDiarioDetalle({ balance, gastos }: Props) {
                 }
             >
                 <div className="space-y-4">
+                    <div className="rounded-xl px-3 py-2 text-xs leading-relaxed"
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 10%, var(--color-bg))', color: 'var(--color-text)' }}>
+                        <strong>Usa esto solo para casos puntuales.</strong> Lo recurrente debe ir en su módulo
+                        para no perder trazabilidad: préstamos y cuotas (ej. la moto de un trabajador) →
+                        <em> Deudas y préstamos</em>; dinero adelantado → <em>Anticipos/Adelantos</em>;
+                        dinero en cuentas → <em>Tesorería</em>. Esta línea quedará registrada en auditoría
+                        con tu usuario.
+                    </div>
                     <Input label="Descripción" required placeholder='Ej: "Depósito Oscar Alberto", "16 fierros 3/4"'
                         value={formLinea.descripcion}
                         onChange={e => setFormLinea(f => ({ ...f, descripcion: e.target.value }))}
