@@ -212,6 +212,24 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                                                             {it.sub}
                                                                         </span>
                                                                     )}
+                                                                    {/* Botón desplegable del historial (colapsado por defecto) */}
+                                                                    {ci === 0 && (it.historial?.length ?? 0) > 0 && (
+                                                                        <button
+                                                                            onClick={() => toggleHist(`${g.id}-${i}`)}
+                                                                            className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full transition-colors hover:opacity-80"
+                                                                            style={{
+                                                                                color: 'var(--color-primary)',
+                                                                                backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))',
+                                                                                border: '1px solid color-mix(in srgb, var(--color-primary) 25%, transparent)',
+                                                                            }}
+                                                                        >
+                                                                            <History size={11} className="flex-shrink-0" />
+                                                                            Historial ({it.historial!.length})
+                                                                            {histAbiertos.has(`${g.id}-${i}`)
+                                                                                ? <ChevronDown size={11} className="flex-shrink-0" />
+                                                                                : <ChevronRight size={11} className="flex-shrink-0" />}
+                                                                        </button>
+                                                                    )}
                                                                 </td>
                                                             ))}
                                                             {hayUsuarios && (
@@ -232,15 +250,20 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                                             </td>
                                                         </tr>
 
-                                                        {/* Mini-historial (abonos/pagos) — trazabilidad perfecta */}
-                                                        {(it.historial?.length ?? 0) > 0 && (
+                                                        {/* Mini-historial (abonos/pagos) — desplegable, tabla simétrica */}
+                                                        {(it.historial?.length ?? 0) > 0 && histAbiertos.has(`${g.id}-${i}`) && (
                                                             <tr>
                                                                 <td colSpan={cols.length + (hayUsuarios ? 2 : 1)} className="px-3 pb-2 pl-14 pt-0">
                                                                     <div className="rounded-lg px-3 py-1.5 space-y-1"
                                                                         style={{ backgroundColor: 'var(--color-bg)', border: '1px dashed var(--color-border)' }}>
-                                                                        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
-                                                                            Historial de abonos
-                                                                        </p>
+                                                                        {/* Cabecera de columnas del historial */}
+                                                                        <div className="grid grid-cols-[78px_1fr_minmax(90px,auto)_96px] gap-2 text-[10px] font-bold uppercase tracking-wider pb-1"
+                                                                            style={{ color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)' }}>
+                                                                            <span>Fecha</span>
+                                                                            <span>Detalle</span>
+                                                                            <span>Usuario</span>
+                                                                            <span className="text-right">Monto</span>
+                                                                        </div>
                                                                         {it.historial!.map((h, hi) => (
                                                                             <div key={hi}
                                                                                 className="grid grid-cols-[78px_1fr_minmax(90px,auto)_96px] gap-2 items-center text-[12px]"
