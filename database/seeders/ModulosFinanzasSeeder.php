@@ -32,6 +32,8 @@ class ModulosFinanzasSeeder extends Seeder
         $hijos = [
             ['slug' => 'finanzas.balance',           'nombre' => 'Balance diario',       'icono' => 'Scale',          'ruta' => '/finanzas/balance',            'orden' => 1],
             ['slug' => 'finanzas.tesoreria',         'nombre' => 'Tesorería',            'icono' => 'Coins',          'ruta' => '/finanzas/tesoreria',          'orden' => 2],
+            ['slug' => 'finanzas.consolidacion',     'nombre' => 'Consolidación de caja','icono' => 'ClipboardCheck', 'ruta' => '/finanzas/consolidacion',      'orden' => 3],
+            ['slug' => 'finanzas.planilla-descuentos','nombre' => 'Descuentos de planilla','icono' => 'UserMinus',    'ruta' => '/finanzas/descuentos-planilla','orden' => 8],
             ['slug' => 'finanzas.cuentas-por-cobrar','nombre' => 'Cuentas por cobrar',   'icono' => 'HandCoins',      'ruta' => '/finanzas/cuentas-por-cobrar', 'orden' => 2],
             ['slug' => 'finanzas.cuentas-por-pagar', 'nombre' => 'Cuentas por pagar',    'icono' => 'Banknote',       'ruta' => '/finanzas/cuentas-por-pagar',  'orden' => 3],
             ['slug' => 'finanzas.anticipos',         'nombre' => 'Anticipos de clientes','icono' => 'PiggyBank',      'ruta' => '/finanzas/anticipos',          'orden' => 4],

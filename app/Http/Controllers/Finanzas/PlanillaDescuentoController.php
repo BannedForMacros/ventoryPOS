@@ -1,0 +1,117 @@
+<?php
+
+namespace App\Http\Controllers\Finanzas;
+
+use App\Http\Controllers\Controller;
+use App\Models\PlanillaDescuento;
+use App\Models\User;
+use App\Services\AuditoriaService;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+
+/**
+ * F8 — Descuentos de planilla: cargos al trabajador (faltantes de caja
+ * detectados en consolidación, u otros) que se descuentan cuando se paga
+ * la planilla. NO mueven tesorería: el pago de planilla en sí es un gasto;
+ * el descuento solo reduce cuánto se le paga al trabajador.
+ */
+class PlanillaDescuentoController extends Controller
+{
+    public function index(Request $request)
+    {
+        $user = $request->user();
+
+        $query = PlanillaDescuento::deEmpresa($user->empresa_id)
+            ->with(['trabajador', 'registradoPor', 'aplicadoPor'])
+            ->when($request->input('user_id'), fn ($q, $v) => $q->where('user_id', $v));
+
+        if ($request->input('estado', 'pendientes') === 'pendientes') {
+            $query->pendiente();
+        }
+
+        $descuentos = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25)->withQueryString();
+
+        // Total pendiente por trabajador (para descontar al pagar planilla).
+        $porTrabajador = PlanillaDescuento::deEmpresa($user->empresa_id)->pendiente()
+            ->selectRaw('user_id, SUM(monto) as total')
+            ->groupBy('user_id')
+            ->with('trabajador:id,name')
+            ->get()
+            ->map(fn ($r) => ['user_id' => $r->user_id, 'nombre' => $r->trabajador?->name, 'total' => (float) $r->total]);
+
+        return Inertia::render('Finanzas/DescuentosPlanilla', [
+            'descuentos'    => $descuentos,
+            'porTrabajador' => $porTrabajador,
+            'estado'        => $request->input('estado', 'pendientes'),
+            'trabajadores'  => User::where('empresa_id', $user->empresa_id)->orderBy('name')->get(['id', 'name']),
+        ]);
+    }
+
+    /** Descuento manual (no nacido de una consolidación). */
+    public function store(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'user_id' => ['required', 'integer', Rule::exists('users', 'id')->where('empresa_id', $user->empresa_id)],
+            'fecha'   => ['required', 'date'],
+            'monto'   => ['required', 'numeric', 'min:0.01'],
+            'motivo'  => ['required', 'string', 'min:5', 'max:250'],
+        ]);
+
+        $descuento = PlanillaDescuento::create($data + [
+            'empresa_id'     => $user->empresa_id,
+            'registrado_por' => $user->id,
+            'estado'         => 'pendiente',
+        ]);
+
+        AuditoriaService::log('planilla_descuento.creado', $descuento, [
+            'trabajador_id' => $descuento->user_id,
+            'monto'         => (float) $descuento->monto,
+            'motivo'        => $descuento->motivo,
+        ], $user);
+
+        return back()->with('success', 'Descuento registrado.');
+    }
+
+    /** Marca el descuento como aplicado (ya se descontó en la planilla pagada). */
+    public function aplicar(Request $request, PlanillaDescuento $descuento)
+    {
+        $user = $request->user();
+        abort_if($descuento->empresa_id !== $user->empresa_id, 403);
+        abort_unless($descuento->estado === 'pendiente', 422, 'El descuento no está pendiente.');
+
+        $descuento->update([
+            'estado'           => 'aplicado',
+            'aplicado_por'     => $user->id,
+            'fecha_aplicacion' => $request->input('fecha_aplicacion', now()->toDateString()),
+        ]);
+
+        AuditoriaService::log('planilla_descuento.aplicado', $descuento, [
+            'trabajador_id' => $descuento->user_id,
+            'monto'         => (float) $descuento->monto,
+        ], $user);
+
+        return back()->with('success', 'Descuento marcado como aplicado en planilla.');
+    }
+
+    public function anular(Request $request, PlanillaDescuento $descuento)
+    {
+        $user = $request->user();
+        abort_if($descuento->empresa_id !== $user->empresa_id, 403);
+        abort_unless($descuento->estado === 'pendiente', 422, 'Solo se anulan descuentos pendientes.');
+
+        $data = $request->validate(['motivo' => ['required', 'string', 'min:5', 'max:500']]);
+
+        $descuento->update(['estado' => 'anulado', 'observacion' => $data['motivo']]);
+
+        AuditoriaService::log('planilla_descuento.anulado', $descuento, [
+            'trabajador_id' => $descuento->user_id,
+            'monto'         => (float) $descuento->monto,
+            'motivo'        => $data['motivo'],
+        ], $user);
+
+        return back()->with('success', 'Descuento anulado.');
+    }
+}

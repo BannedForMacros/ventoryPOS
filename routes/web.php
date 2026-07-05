@@ -40,6 +40,8 @@ use App\Http\Controllers\Finanzas\BalanceDiarioController;
 use App\Http\Controllers\Finanzas\CuentasPorCobrarController;
 use App\Http\Controllers\Finanzas\CuentasPorPagarController;
 use App\Http\Controllers\Finanzas\DeudaController;
+use App\Http\Controllers\Finanzas\ConsolidacionController;
+use App\Http\Controllers\Finanzas\PlanillaDescuentoController;
 use App\Http\Controllers\Finanzas\TesoreriaController;
 use App\Http\Controllers\Inventario\CierreInventarioController;
 use App\Http\Controllers\Inventario\EntradaController;
@@ -322,6 +324,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.deudas,crear')->post('deudas', [DeudaController::class, 'store'])->name('deudas.store');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/pago', [DeudaController::class, 'registrarPago'])->name('deudas.pago');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/anular', [DeudaController::class, 'anular'])->name('deudas.anular');
+
+        // Consolidación de caja (segundo conteo del supervisor por turno)
+        Route::middleware('permiso:finanzas.consolidacion,ver')->get('consolidacion', [ConsolidacionController::class, 'index'])->name('consolidacion.index');
+        Route::middleware('permiso:finanzas.consolidacion,crear')->post('consolidacion/{turno}', [ConsolidacionController::class, 'consolidar'])->name('consolidacion.consolidar');
+
+        // Descuentos de planilla (faltantes de caja y otros cargos al trabajador)
+        Route::middleware('permiso:finanzas.planilla-descuentos,ver')->get('descuentos-planilla', [PlanillaDescuentoController::class, 'index'])->name('planilla-descuentos.index');
+        Route::middleware('permiso:finanzas.planilla-descuentos,crear')->post('descuentos-planilla', [PlanillaDescuentoController::class, 'store'])->name('planilla-descuentos.store');
+        Route::middleware('permiso:finanzas.planilla-descuentos,editar')->post('descuentos-planilla/{descuento}/aplicar', [PlanillaDescuentoController::class, 'aplicar'])->name('planilla-descuentos.aplicar');
+        Route::middleware('permiso:finanzas.planilla-descuentos,editar')->post('descuentos-planilla/{descuento}/anular', [PlanillaDescuentoController::class, 'anular'])->name('planilla-descuentos.anular');
 
         // Tesorería (movimientos por cuenta + ajuste auditado)
         Route::middleware('permiso:finanzas.tesoreria,ver')->get('tesoreria', [TesoreriaController::class, 'index'])->name('tesoreria.index');
