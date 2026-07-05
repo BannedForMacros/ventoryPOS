@@ -10,7 +10,7 @@ class Gasto extends Model
     protected $fillable = [
         'empresa_id', 'local_id', 'user_id', 'turno_id',
         'gasto_tipo_id', 'gasto_concepto_id',
-        'monto', 'fecha', 'comentario',
+        'monto', 'cuenta_id', 'fecha', 'comentario',
     ];
 
     protected function casts(): array
@@ -24,6 +24,7 @@ class Gasto extends Model
     public function turno(): BelongsTo    { return $this->belongsTo(Turno::class); }
     public function tipo(): BelongsTo     { return $this->belongsTo(GastoTipo::class, 'gasto_tipo_id'); }
     public function concepto(): BelongsTo { return $this->belongsTo(GastoConcepto::class, 'gasto_concepto_id'); }
+    public function cuenta(): BelongsTo   { return $this->belongsTo(Cuenta::class); }
 
     public function scopeDelTurno($q, $turnoId) { return $q->where('turno_id', $turnoId); }
     public function scopeAdministrativos($q)    { return $q->whereNull('turno_id'); }

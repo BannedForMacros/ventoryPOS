@@ -123,7 +123,7 @@ class BalanceDiarioController extends Controller
 
         $maxOrden = (int) $balance->items()->where('seccion', $data['seccion'])->max('orden');
 
-        $balance->items()->create([
+        $item = $balance->items()->create([
             'seccion'     => $data['seccion'],
             'categoria'   => $data['seccion'] === 'favor' ? 'otro_favor' : 'otro_contra',
             'descripcion' => $data['descripcion'],
@@ -132,6 +132,16 @@ class BalanceDiarioController extends Controller
             'conciliado'  => false,
             'orden'       => $maxOrden + 1,
         ]);
+
+        // Trazabilidad: toda línea manual queda en auditoría con autor,
+        // fecha y monto. (Lo recurrente debe registrarse en su módulo:
+        // deudas, anticipos, adelantos... no como línea suelta.)
+        \App\Services\AuditoriaService::log('balance.linea_manual', $item, [
+            'balance_fecha' => $balance->fecha->toDateString(),
+            'seccion'       => $data['seccion'],
+            'descripcion'   => $data['descripcion'],
+            'monto'         => (float) $data['monto'],
+        ], $user);
 
         $balance->recalcularTotales();
 
@@ -149,6 +159,12 @@ class BalanceDiarioController extends Controller
         abort_if($balance->empresa_id !== $user->empresa_id, 403);
         abort_unless($balance->esBorrador(), 422, 'El balance ya fue confirmado.');
         abort_unless($item->es_manual, 422, 'Las líneas automáticas no se pueden eliminar.');
+
+        \App\Services\AuditoriaService::log('balance.linea_manual_eliminada', $item, [
+            'balance_fecha' => $balance->fecha->toDateString(),
+            'descripcion'   => $item->descripcion,
+            'monto'         => (float) $item->monto,
+        ], $user);
 
         $item->delete();
         $balance->recalcularTotales();

@@ -29,6 +29,8 @@ use Illuminate\Support\Facades\DB;
  */
 class BalanceDiarioService
 {
+    public function __construct(private TesoreriaService $tesoreria) {}
+
     /**
      * Obtiene (o crea en borrador) el balance de una fecha y regenera sus
      * líneas automáticas. Las líneas manuales (saldos de cuentas, ajustes)
@@ -66,7 +68,6 @@ class BalanceDiarioService
             ]);
 
             $this->regenerarItemsAutomaticos($balance);
-            $this->sembrarLineasManuales($balance, $anterior);
 
             $balance->recalcularTotales();
 
@@ -87,6 +88,24 @@ class BalanceDiarioService
         $items = [];
 
         // ── A FAVOR ──────────────────────────────────────────────────────
+
+        // F7 — Efectivo y cuentas bancarias: saldo AUTOMÁTICO desde el libro
+        // de tesorería (ingresos − egresos hasta la fecha del balance). Ya no
+        // se digitan a mano; si el dinero físico no cuadra, se registra un
+        // ajuste con motivo en Tesorería y aquí se refleja.
+        $fechaCorte = $balance->fecha->toDateString();
+        Cuenta::deEmpresa($empresaId)->activo()
+            ->orderByDesc('es_efectivo')->orderBy('nombre')->get()
+            ->each(function (Cuenta $c) use (&$items, &$orden, $fechaCorte) {
+                $items[] = [
+                    'seccion'     => 'favor',
+                    'categoria'   => $c->es_efectivo ? 'efectivo' : 'cuenta_bancaria',
+                    'descripcion' => $c->nombre,
+                    'ref_tipo'    => 'cuenta', 'ref_id' => $c->id,
+                    'monto'       => $this->tesoreria->saldo($c->id, $fechaCorte),
+                    'orden'       => ++$orden,
+                ];
+            });
 
         // Stock valorizado a costo del día: cantidad × precio_costo ACTUAL
         // del producto (el "punitario actual" del Excel de ladrillos).
@@ -175,56 +194,6 @@ class BalanceDiarioService
 
         foreach ($items as $item) {
             $balance->items()->create($item + ['es_manual' => false, 'conciliado' => false]);
-        }
-    }
-
-    /**
-     * Siembra las líneas manuales que el usuario llena a diario: una por
-     * cuenta bancaria activa + efectivo. Si ya existen (regeneración) no se
-     * tocan; si hay balance anterior, se precarga su último valor como
-     * punto de partida.
-     */
-    private function sembrarLineasManuales(BalanceDiario $balance, ?BalanceDiario $anterior): void
-    {
-        $empresaId = $balance->empresa_id;
-
-        $anterioresPorRef = $anterior
-            ? $anterior->items()->whereIn('categoria', ['cuenta_bancaria', 'efectivo'])->get()
-                ->keyBy(fn ($i) => $i->categoria . ':' . ($i->ref_id ?? 0))
-            : collect();
-
-        $orden = 100; // después de las automáticas
-
-        Cuenta::deEmpresa($empresaId)->activo()->orderBy('nombre')->get()
-            ->each(function (Cuenta $c) use ($balance, $anterioresPorRef, &$orden) {
-                $existe = $balance->items()
-                    ->where('categoria', 'cuenta_bancaria')
-                    ->where('ref_id', $c->id)
-                    ->exists();
-                if ($existe) return;
-
-                $previo = $anterioresPorRef->get("cuenta_bancaria:{$c->id}");
-
-                $balance->items()->create([
-                    'seccion' => 'favor', 'categoria' => 'cuenta_bancaria',
-                    'descripcion' => $c->nombre,
-                    'ref_tipo' => 'cuenta', 'ref_id' => $c->id,
-                    'monto' => $previo ? (float) $previo->monto : 0,
-                    'es_manual' => true, 'conciliado' => false,
-                    'orden' => ++$orden,
-                ]);
-            });
-
-        $existeEfectivo = $balance->items()->where('categoria', 'efectivo')->exists();
-        if (!$existeEfectivo) {
-            $previo = $anterioresPorRef->get('efectivo:0');
-            $balance->items()->create([
-                'seccion' => 'favor', 'categoria' => 'efectivo',
-                'descripcion' => 'Efectivo',
-                'monto' => $previo ? (float) $previo->monto : 0,
-                'es_manual' => true, 'conciliado' => false,
-                'orden' => ++$orden,
-            ]);
         }
     }
 

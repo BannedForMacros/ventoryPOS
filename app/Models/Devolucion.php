@@ -131,6 +131,27 @@ class Devolucion extends Model
                 // desde el módulo Salidas referenciando la devolución.
             }
 
+            // F7 — Tesorería: si el reembolso devuelve dinero (efectivo o al
+            // mismo método), el egreso sale de la cuenta correspondiente.
+            // vale_credito / cambio_producto / sin_reembolso no mueven caja.
+            if (in_array($this->forma_reembolso, ['efectivo', 'mismo_metodo'], true)) {
+                $tesoreria = app(\App\Services\TesoreriaService::class);
+                $this->loadMissing('pagos');
+                foreach ($this->pagos as $pago) {
+                    $tesoreria->registrar(
+                        $this->empresa_id,
+                        $tesoreria->resolverCuenta($this->empresa_id, $pago->cuenta_metodo_pago_id, $pago->metodo_pago_id),
+                        $this->user_id,
+                        now()->toDateString(),
+                        'egreso',
+                        (float) $pago->monto,
+                        "Reembolso devolución {$this->numero}",
+                        'devolucion',
+                        $this->id,
+                    );
+                }
+            }
+
             $this->update(['estado' => 'completada']);
         });
     }
@@ -141,6 +162,9 @@ class Devolucion extends Model
 
         DB::transaction(function () {
             $estadoPrevio = $this->estado;
+
+            // F7 — Revertir el egreso de tesorería del reembolso (si lo hubo).
+            app(\App\Services\TesoreriaService::class)->revertir('devolucion', $this->id);
 
             // Productos que quedan en stock negativo tras revertir el restock.
             // Se incluyen en el contexto de la auditoria para que el admin
