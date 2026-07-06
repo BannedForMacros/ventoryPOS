@@ -465,6 +465,26 @@ class BalanceDiarioController extends Controller
                         ])->values(),
                     ])->values();
 
+                // Trazabilidad: el historial SIEMPRE arranca con el registro de
+                // la deuda (el origen del saldo). original − amortizaciones
+                // + incrementos = saldo actual, sin montos "de la nada".
+                $fechaRegistro = ($deuda->fecha_inicio ?? $deuda->created_at)->format('Y-m-d');
+                $grupos->push([
+                    'id'      => 'registro',
+                    'titulo'  => $fechaRegistro,
+                    'esFecha' => true,
+                    'monto'   => (float) $deuda->monto_original,
+                    'tipo'    => 'neutro',
+                    'items'   => [[
+                        'descripcion' => 'Registro de la deuda (saldo inicial)',
+                        'cuenta'      => '—',
+                        'observacion' => $deuda->observacion ?? '—',
+                        'monto'       => (float) $deuda->monto_original,
+                        'tipo'        => $deuda->direccion === 'por_cobrar' ? 'ingreso' : 'egreso',
+                        'user'        => $deuda->user?->name,
+                    ]],
+                ]);
+
                 return response()->json([
                     'tipo'  => 'grupos',
                     'cards' => [

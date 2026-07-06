@@ -9,6 +9,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
+import Tabs from '@/Components/UI/Tabs';
 import Modal from '@/Components/UI/Modal';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
@@ -60,14 +61,32 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
     // ON = cada producto tiene su propia factura (input por línea); cabecera oculta.
     const [facturaPorItem, setFacturaPorItem] = useState(false);
 
-    // Pago: por defecto la entrada arranca PENDIENTE. Si la marcas como pagada
-    // mostramos metodo + cuenta. Independiente del estado borrador/confirmado.
-    const [pagado, setPagado]               = useState(false);
-    const [metodoPagoId, setMetodoPagoId]   = useState<number | ''>('');
-    const [cuentaId, setCuentaId]           = useState<number | ''>('');
+    // Pago: pendiente (todo queda como deuda), parcial (pago inicial + saldo
+    // como CxP) o pagado (total). Parcial/pagado aceptan VARIAS líneas de pago
+    // (método + cuenta + monto), igual que el POS. Independiente del estado
+    // borrador/confirmado de la entrada.
+    type EstadoPago = 'pendiente' | 'parcial' | 'pagado';
+    interface LineaPago { key: string; metodo_pago_id: number | ''; cuenta_id: number | ''; monto: string; }
+    const nuevaLinea = (monto = ''): LineaPago =>
+        ({ key: Math.random().toString(36).slice(2), metodo_pago_id: '', cuenta_id: '', monto });
 
-    const metodoSeleccionado = metodosPago.find(m => m.id === metodoPagoId) ?? null;
-    const cuentasDelMetodo   = metodoSeleccionado?.cuentas ?? [];
+    const [estadoPago, setEstadoPago] = useState<EstadoPago>('pendiente');
+    const [pagos, setPagos]           = useState<LineaPago[]>([]);
+
+    const cuentasDeLinea = (l: LineaPago) =>
+        metodosPago.find(m => m.id === l.metodo_pago_id)?.cuentas ?? [];
+    const totalPagado = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+
+    function cambiarEstadoPago(v: EstadoPago) {
+        setEstadoPago(v);
+        if (v === 'pendiente') setPagos([]);
+        if (v === 'parcial' && pagos.length === 0) setPagos([nuevaLinea()]);
+        if (v === 'pagado') setPagos(prev => prev.length === 0 ? [nuevaLinea(total.toFixed(2))] : prev);
+    }
+
+    function setPago(key: string, patch: Partial<LineaPago>) {
+        setPagos(prev => prev.map(p => p.key === key ? { ...p, ...patch } : p));
+    }
 
     function unidadesDeProducto(productoId: number | ''): ProductoUnidad[] {
         if (!productoId) return [];
@@ -141,6 +160,29 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                 // a la mano y dejar el resto en blanco — no lo bloqueamos.
             });
         }
+
+        // Pagos (parcial o pagado): cada línea con método y monto; la suma
+        // debe cuadrar con el modo elegido.
+        if (estadoPago !== 'pendiente') {
+            if (pagos.length === 0) {
+                errs.push('Agrega al menos una línea de pago (método y monto)');
+            }
+            pagos.forEach((p, idx) => {
+                const n = idx + 1;
+                if (!p.metodo_pago_id) errs.push(`Pago #${n}: falta el método de pago`);
+                const m = parseFloat(p.monto);
+                if (!p.monto || isNaN(m) || m <= 0) errs.push(`Pago #${n}: el monto debe ser mayor a 0`);
+            });
+            const suma = Math.round(totalPagado * 100) / 100;
+            const tot  = Math.round(total * 100) / 100;
+            if (estadoPago === 'pagado' && Math.abs(suma - tot) > 0.01) {
+                errs.push(`En "Pagado" los pagos (S/ ${suma.toFixed(2)}) deben cubrir exactamente el total (S/ ${tot.toFixed(2)}); usa "Pago parcial" si es a cuenta`);
+            }
+            if (estadoPago === 'parcial') {
+                if (suma >= tot - 0.01 && tot > 0) errs.push(`El pago parcial (S/ ${suma.toFixed(2)}) cubre el total: usa "Pagado"`);
+                if (suma <= 0) errs.push('El pago parcial debe ser mayor a 0');
+            }
+        }
         return errs;
     }
 
@@ -194,9 +236,12 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
             fecha,
             observacion,
             confirmar,
-            estado_pago:       pagado ? 'pagado' : 'pendiente',
-            metodo_pago_id:    pagado ? (metodoPagoId || null) : null,
-            cuenta_id:         pagado ? (cuentaId || null) : null,
+            estado_pago:       estadoPago,
+            pagos: estadoPago === 'pendiente' ? [] : pagos.map(p => ({
+                metodo_pago_id: p.metodo_pago_id,
+                cuenta_id:      p.cuenta_id || null,
+                monto:          p.monto,
+            })),
             detalles: detalles.map(d => ({
                 producto_id:       d.producto_id,
                 unidad_medida_id:  d.unidad_medida_id,
@@ -473,57 +518,92 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                     className="rounded-2xl border p-6 space-y-5"
                     style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
                 >
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                             <Wallet size={16} style={{ color: 'var(--color-text-muted)' }} />
                             <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
                                 Pago al proveedor
                             </h2>
                         </div>
-                        <Switch
-                            label={pagado ? 'Pagado' : 'Pendiente'}
-                            checked={pagado}
-                            onChange={v => {
-                                setPagado(v);
-                                if (!v) { setMetodoPagoId(''); setCuentaId(''); }
-                            }}
+                        <Tabs
+                            tabs={[
+                                { value: 'pendiente', label: 'Pendiente' },
+                                { value: 'parcial',   label: 'Pago parcial' },
+                                { value: 'pagado',    label: 'Pagado' },
+                            ]}
+                            value={estadoPago}
+                            onChange={v => cambiarEstadoPago(v as EstadoPago)}
                         />
                     </div>
 
-                    {pagado ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <Select
-                                label="Método de pago"
-                                required
-                                placeholder="Seleccionar método"
-                                value={metodoPagoId}
-                                onChange={v => {
-                                    const newId = v === '' ? '' : Number(v);
-                                    setMetodoPagoId(newId);
-                                    setCuentaId(''); // limpia cuenta al cambiar de método
-                                }}
-                                options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
-                                error={errors.metodo_pago_id}
-                            />
-                            {cuentasDelMetodo.length > 0 && (
-                                <Select
-                                    label="Cuenta"
-                                    placeholder="(Opcional) elegir cuenta"
-                                    value={cuentaId}
-                                    onChange={v => setCuentaId(v === '' ? '' : Number(v))}
-                                    options={cuentasDelMetodo.map(c => ({
-                                        value: c.id,
-                                        label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
-                                    }))}
-                                    error={errors.cuenta_id}
-                                    hint="Útil si tienes varias cuentas del mismo método (ej: 2 Yapes distintos)."
-                                />
-                            )}
-                        </div>
-                    ) : (
+                    {estadoPago === 'pendiente' ? (
                         <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                            La entrada queda registrada como deuda al proveedor. Puedes marcarla como pagada en cualquier momento desde el listado.
+                            La compra completa queda como deuda al proveedor (Cuentas por pagar). Puedes abonar o pagarla en cualquier momento.
                         </p>
+                    ) : (
+                        <div className="space-y-3">
+                            {pagos.map((p, idx) => {
+                                const cuentas = cuentasDeLinea(p);
+                                return (
+                                    <div key={p.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_140px_auto] gap-3 items-end">
+                                        <Select
+                                            label={idx === 0 ? 'Método de pago' : undefined}
+                                            required
+                                            placeholder="Seleccionar método"
+                                            value={p.metodo_pago_id}
+                                            onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: '' })}
+                                            options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                                        />
+                                        <Select
+                                            label={idx === 0 ? 'Cuenta' : undefined}
+                                            placeholder={cuentas.length ? '(Opcional) elegir cuenta' : 'Se asigna sola'}
+                                            value={p.cuenta_id}
+                                            onChange={v => setPago(p.key, { cuenta_id: v === '' ? '' : Number(v) })}
+                                            options={cuentas.map(c => ({
+                                                value: c.id,
+                                                label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
+                                            }))}
+                                            disabled={cuentas.length === 0}
+                                        />
+                                        <Input
+                                            label={idx === 0 ? 'Monto (S/)' : undefined}
+                                            required type="number" min="0.01" step="0.01"
+                                            value={p.monto}
+                                            onChange={e => setPago(p.key, { monto: e.target.value })}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setPagos(prev => prev.filter(x => x.key !== p.key))}
+                                            disabled={pagos.length === 1}
+                                            className="p-2 mb-0.5 rounded-lg hover:bg-black/5 disabled:opacity-30"
+                                            title="Quitar línea de pago"
+                                            style={{ color: 'var(--color-danger)' }}
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+
+                            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                                <Button type="button" variant="ghost" size="sm" onClick={() => setPagos(prev => [...prev, nuevaLinea()])}>
+                                    <Plus size={14} className="mr-1" />Agregar otro método
+                                </Button>
+                                <div className="flex items-center gap-5 text-sm">
+                                    <span style={{ color: 'var(--color-text-muted)' }}>
+                                        Pagado:{' '}
+                                        <strong style={{ color: 'var(--color-success)' }}>S/ {totalPagado.toFixed(2)}</strong>
+                                    </span>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>
+                                        Queda como deuda:{' '}
+                                        <strong style={{ color: Math.max(0, total - totalPagado) > 0 ? 'var(--color-danger)' : 'var(--color-text)' }}>
+                                            S/ {Math.max(0, total - totalPagado).toFixed(2)}
+                                        </strong>
+                                    </span>
+                                </div>
+                            </div>
+                            {errors.pagos && <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{errors.pagos}</p>}
+                        </div>
                     )}
                 </section>
 

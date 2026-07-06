@@ -341,16 +341,26 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
                 {detalle && (
                     <Timeline
                         emptyMessage="Sin movimientos registrados"
-                        items={detalle.pagos.map(p => ({
-                            fecha: new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
-                            badge: p.tipo === 'amortizacion'
-                                ? { texto: 'Amortización', variant: 'success' as const }
-                                : { texto: 'Incremento', variant: 'warning' as const },
-                            tipo: p.tipo === 'amortizacion' ? 'ingreso' as const : 'egreso' as const,
-                            detalle: [p.metodo_pago?.nombre, p.cuenta?.nombre, p.observacion].filter(Boolean).join(' · ') || undefined,
-                            user: p.user?.name,
-                            monto: Number(p.monto),
-                        }))}
+                        items={[
+                            ...detalle.pagos.map(p => ({
+                                fecha: new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
+                                badge: p.tipo === 'amortizacion'
+                                    ? { texto: 'Amortización', variant: 'success' as const }
+                                    : { texto: 'Incremento', variant: 'warning' as const },
+                                tipo: p.tipo === 'amortizacion' ? 'ingreso' as const : 'egreso' as const,
+                                detalle: [p.metodo_pago?.nombre, p.cuenta?.nombre, p.observacion].filter(Boolean).join(' · ') || undefined,
+                                user: p.user?.name,
+                                monto: Number(p.monto),
+                            })),
+                            // El historial siempre termina en el origen: registro de la deuda.
+                            {
+                                fecha: new Date(detalle.fecha_inicio.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE'),
+                                badge: { texto: 'Registro', variant: 'primary' as const },
+                                tipo: (detalle.direccion === 'por_cobrar' ? 'ingreso' : 'egreso') as 'ingreso' | 'egreso',
+                                detalle: detalle.observacion ?? 'Saldo inicial de la deuda',
+                                monto: Number(detalle.monto_original),
+                            },
+                        ]}
                     />
                 )}
             </Modal>

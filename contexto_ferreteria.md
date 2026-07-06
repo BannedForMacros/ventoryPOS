@@ -43,6 +43,7 @@ UTILIDAD REAL = (BALANCE HOY − BALANCE AYER) + GASTOS DEL DÍA
 4. **Todo por método de pago**: cada canal (Efectivo, Yape, Tarjeta, BCP...) es su propia cuenta. Si un método no tiene cuenta vinculada, el sistema **crea automáticamente** una cuenta con el nombre del método (el dinero de Yape NUNCA cae a Efectivo).
 5. **Pago a proveedores = costo ya emitido, NO gasto del día** (el costo nació con la compra/CxP; el pago solo cancela la deuda). Se muestran como "Gastos emitidos" en el card EN CONTRA con separador.
 6. Detalles **por día y por concepto** ("las ventas del lunes generaron X"), no documento por documento; y cada fila desplegable para ver el historial.
+7. **La cadena debe cuadrar visible**: en deudas, `monto_original − amortizaciones + incrementos = saldo`, y el historial SIEMPRE termina en el evento "Registro de la deuda (saldo inicial)" (agregado en el detalle del balance y en el modal de Deudas). Para deudas pre-sistema, `monto_original` = saldo al implementar el sistema y el préstamo original va en la observación — nunca un original que no cuadre con los pagos registrados.
 
 ---
 
@@ -58,6 +59,8 @@ Stack: Laravel 12 + Inertia + React TS + Tailwind + Postgres. Menú/permisos ví
 | Consolidación de caja | `/finanzas/consolidacion` | Segundo conteo del supervisor sobre cada cierre de turno: verifica EFECTIVO **y cada método** (grilla declarado/esperado/contado por línea). Su conteo manda; la diferencia asienta por cuenta. Faltante total → descuento de planilla opcional. |
 | Cuentas por cobrar | `/finanzas/cuentas-por-cobrar` | Ventas a crédito + abonos (con "nuevo saldo pendiente" en vivo y tope validado). Detalle = pago inicial del POS + abonos. |
 | Cuentas por pagar | `/finanzas/cuentas-por-pagar` | Compras con saldo, abonos parciales (pendiente→parcial→pagado), pagar consumiendo adelanto (no mueve caja). |
+
+**Entradas (compras) — pago al crear**: el form de Nueva Entrada tiene 3 modos (Pendiente / Pago parcial / Pagado) con **líneas de pago múltiples** (método + cuenta + monto, como el POS); crea `entrada_pagos` + egresos de tesorería con la fecha de la entrada y sincroniza `monto_pagado`/`estado_pago` vía `aplicarPago()`. El botón "Pagar" del listado registra un pago trazado por el saldo (ya NO marca sin rastro); revertir a pendiente elimina los pagos y revierte asientos (auditado; bloqueado si consumió adelanto). `update()` de entradas NO toca pagos (track independiente; resincroniza estado contra el nuevo total) y el Edit muestra el pago solo-lectura. `destroy()` de borradores revierte pagos.
 | Anticipos de clientes | `/finanzas/anticipos` | Modalidad 'monto' o 'material' (valorizada a precio de venta DEL DÍA: `valorPasivoHoy()`). Aplicar entregas, devolver/anular. |
 | Adelantos a proveedores | `/finanzas/adelantos` | Activo a favor; se consume desde CxP o se devuelve. |
 | Deudas y préstamos | `/finanzas/deudas` | direccion por_pagar/por_cobrar, tipo bancaria/personal/trabajador/otro. Amortización/incremento con dirección de caja correcta. Caso "moto del trabajador" = deuda por_cobrar tipo trabajador; cuota semanal entra sola a caja. |
@@ -110,7 +113,7 @@ Reabrir turno revierte los asientos del cierre/consolidación.
 
 ## 4. Datos de prueba (BD dev)
 - Usuarios: `jesus@gmail.com` / `12345678` (admin) · `cajera@gmail.com` / `12345678` (cajera). Empresa 1, local "Tienda Chiclayo".
-- Demo persistente: turno #203 (Cajera) con ventas V-0001 (S/150 efectivo) y V-0002 (S/300 crédito, inicial S/50), cerrado con faltante y consolidado por el usuario; ajuste demo de efectivo a S/1,000 (se puede eliminar el movimiento 'ajuste' y hacer el ajuste real).
+- **Demo ferretería completa**: `php artisan db:seed --class=DemoFerreteriaSeeder` (DESTRUCTIVO e idempotente: borra ventas/turnos/gastos/finanzas y reconstruye; usa fechas relativas ayer/hoy del día en que se corre). Recrea el Excel real: saldos iniciales BCP 44,915.86 / BBVA 4,693.54 / Efectivo 8,606.11; 12 productos de ferretería con stock valorizado ~S/226k (boutique desactivada); deudas DEUDA BCP 1-7630 (S/6,173.81 tras cuota de hoy, igual al Excel), BCP 2-5557 (32,546.43), JORDIN HERRERA (30k), sueldos personal (2k); préstamos otorgados JHON ASTONITAS (245.05) y moto trabajador; CxP Ferronor/Ardiles/Cofesa/Uyustools (S/94,900); adelantos Uyustools+Prodac (7,300); anticipos valorizados a precio del día (35,200 = 25,000 ladrillos×1.10 + montos); CxC 5 ventas a crédito (68,545.40); gastos clasificados con nombres reales del Excel (Combustible FUSO, Mecánico y fajas, Energía 5 recibos, Líneas de celulares...); faltante de caja ayer S/25.50 → descuento de planilla pendiente + herramienta dañada S/80. **Balance de AYER queda CONFIRMADO y el de HOY en borrador** → la demo es: abrir Balance hoy, revisar detalle por línea, y confirmar en vivo comparando contra ayer (diferencia y utilidad real ya calculadas).
 - Correr servidores: `php artisan serve` + `npm run dev`.
 - Pruebas E2E: se hicieron con scripts transaccionales (BEGIN...ROLLBACK) llamando controladores reales — patrón útil: `Request::create` + `setUserResolver` + `setLaravelSession`; FormRequests con `setContainer`+`setRedirector`+route param+`validateResolved()`.
 

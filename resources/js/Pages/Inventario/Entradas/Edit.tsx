@@ -9,6 +9,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
+import Badge from '@/Components/UI/Badge';
 import type { PageProps } from '@/types';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
@@ -43,9 +44,11 @@ interface EntradaData {
     fecha: string;
     estado: 'borrador' | 'confirmado';
     observacion: string | null;
-    estado_pago: 'pendiente' | 'pagado';
+    estado_pago: 'pendiente' | 'parcial' | 'pagado';
     metodo_pago_id: number | null;
     cuenta_id: number | null;
+    monto_pagado: string;
+    total: string;
     detalles: EntradaDetalleData[];
 }
 
@@ -87,12 +90,6 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
         entrada.detalles.some(d => !!d.numero_documento)
     );
 
-    const [pagado, setPagado]               = useState(entrada.estado_pago === 'pagado');
-    const [metodoPagoId, setMetodoPagoId]   = useState<number | ''>(entrada.metodo_pago_id ?? '');
-    const [cuentaId, setCuentaId]           = useState<number | ''>(entrada.cuenta_id ?? '');
-
-    const metodoSeleccionado = metodosPago.find(m => m.id === metodoPagoId) ?? null;
-    const cuentasDelMetodo   = metodoSeleccionado?.cuentas ?? [];
 
     const [detalles, setDetalles] = useState<DetalleRow[]>(
         entrada.detalles.map(d => ({
@@ -269,9 +266,6 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
             almacen_id: almacenId, proveedor_id: proveedorId || null,
             numero_documento: facturaPorItem ? null : (nroDoc || null),
             tipo, fecha, observacion,
-            estado_pago:    pagado ? 'pagado' : 'pendiente',
-            metodo_pago_id: pagado ? (metodoPagoId || null) : null,
-            cuenta_id:      pagado ? (cuentaId || null) : null,
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id, unidad_medida_id: d.unidad_medida_id,
                 cantidad: d.cantidad, factor_conversion: d.factor_conversion, precio_costo: d.precio_costo,
@@ -525,63 +519,37 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                     </div>
                 </section>
 
-                {/* ── Pago ── */}
+                {/* ── Pago (solo lectura: los pagos tienen su propia trazabilidad) ── */}
                 <section
-                    className="rounded-2xl border p-6 space-y-5"
+                    className="rounded-2xl border p-6 space-y-3"
                     style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
                 >
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                            <Wallet size={16} style={{ color: 'var(--color-text-muted)' }} />
-                            <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                                Pago al proveedor
-                            </h2>
-                        </div>
-                        <Switch
-                            label={pagado ? 'Pagado' : 'Pendiente'}
-                            checked={pagado}
-                            onChange={v => {
-                                setPagado(v);
-                                if (!v) { setMetodoPagoId(''); setCuentaId(''); }
-                            }}
-                        />
+                    <div className="flex items-center gap-2">
+                        <Wallet size={16} style={{ color: 'var(--color-text-muted)' }} />
+                        <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                            Pago al proveedor
+                        </h2>
                     </div>
-
-                    {pagado ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <Select
-                                label="Método de pago"
-                                required
-                                placeholder="Seleccionar método"
-                                value={metodoPagoId}
-                                onChange={v => {
-                                    const newId = v === '' ? '' : Number(v);
-                                    setMetodoPagoId(newId);
-                                    setCuentaId('');
-                                }}
-                                options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
-                                error={errors.metodo_pago_id}
-                            />
-                            {cuentasDelMetodo.length > 0 && (
-                                <Select
-                                    label="Cuenta"
-                                    placeholder="(Opcional) elegir cuenta"
-                                    value={cuentaId}
-                                    onChange={v => setCuentaId(v === '' ? '' : Number(v))}
-                                    options={cuentasDelMetodo.map(c => ({
-                                        value: c.id,
-                                        label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
-                                    }))}
-                                    error={errors.cuenta_id}
-                                    hint="Útil si tienes varias cuentas del mismo método."
-                                />
-                            )}
-                        </div>
-                    ) : (
-                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                            La entrada queda como deuda al proveedor. Puedes marcarla como pagada en cualquier momento.
-                        </p>
-                    )}
+                    <div className="flex flex-wrap items-center gap-5 text-sm">
+                        <span style={{ color: 'var(--color-text-muted)' }}>
+                            Pagado:{' '}
+                            <strong style={{ color: 'var(--color-success)' }}>S/ {Number(entrada.monto_pagado ?? 0).toFixed(2)}</strong>
+                        </span>
+                        <span style={{ color: 'var(--color-text-muted)' }}>
+                            Saldo:{' '}
+                            <strong style={{ color: Number(entrada.total) - Number(entrada.monto_pagado ?? 0) > 0.01 ? 'var(--color-danger)' : 'var(--color-text)' }}>
+                                S/ {Math.max(0, Number(entrada.total) - Number(entrada.monto_pagado ?? 0)).toFixed(2)}
+                            </strong>
+                        </span>
+                        <Badge variant={entrada.estado_pago === 'pagado' ? 'success' : entrada.estado_pago === 'parcial' ? 'warning' : 'secondary'}>
+                            {entrada.estado_pago === 'pagado' ? 'Pagado' : entrada.estado_pago === 'parcial' ? 'Parcial' : 'Pendiente'}
+                        </Badge>
+                    </div>
+                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        Los pagos no se editan aquí (tienen su propia trazabilidad): usa el botón "Pagar" del listado
+                        o registra abonos en Finanzas → Cuentas por pagar. Si cambias cantidades/precios, el estado
+                        del pago se recalcula solo contra el nuevo total.
+                    </p>
                 </section>
 
                 <div className="flex gap-3">

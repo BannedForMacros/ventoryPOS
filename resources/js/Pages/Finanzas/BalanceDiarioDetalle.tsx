@@ -110,6 +110,14 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
             const url = route('finanzas.balance.detalle', { fecha: balance.fecha.slice(0, 10), categoria: item.categoria })
                 + (params.toString() ? `?${params.toString()}` : '');
             const res = await fetch(url, { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+            if (res.status === 404) {
+                // La línea referencia un registro que ya no existe: la página
+                // quedó abierta con un balance viejo (p.ej. tras regenerar datos).
+                toast.error('Esta línea cambió desde que abriste la página. Recargando…');
+                setTimeout(() => router.reload(), 800);
+                setDetalleDe(null);
+                return;
+            }
             if (!res.ok) throw new Error('No se pudo cargar el detalle');
             const data = await res.json();
             setDetalleData(data);

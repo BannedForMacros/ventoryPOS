@@ -45,7 +45,8 @@ interface Entrada extends Record<string, unknown> {
     user: UserItem;
     total: string;
     estado: 'borrador' | 'confirmado';
-    estado_pago: 'pendiente' | 'pagado';
+    estado_pago: 'pendiente' | 'parcial' | 'pagado';
+    monto_pagado: string;
     metodo_pago_id: number | null;
     cuenta_id: number | null;
     metodo_pago?: { id: number; nombre: string } | null;
@@ -232,9 +233,12 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     {/* "Pendiente" inline en la misma columna del total — sin agregar otra
                         columna. El tint amarillo en la fila ya hace de visual primario;
                         este texto es la etiqueta clara para el usuario. */}
-                    {e.estado_pago === 'pendiente' && (
+                    {e.estado_pago !== 'pagado' && (
                         <p className="text-[10px] font-medium mt-0.5 flex items-center gap-1" style={{ color: '#ca8a04' }}>
-                            <Wallet size={10} />pendiente
+                            <Wallet size={10} />
+                            {e.estado_pago === 'parcial'
+                                ? `debe S/ ${(Number(e.total) - Number(e.monto_pagado ?? 0)).toFixed(2)}`
+                                : 'pendiente'}
                         </p>
                     )}
                 </div>
@@ -394,7 +398,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     </div>
                 ) : filtered.map(e => (
                     <div key={e.id}
-                        className={`rounded-2xl border p-4 space-y-3 ${e.estado_pago === 'pendiente' ? 'pago-pendiente-card' : ''}`}
+                        className={`rounded-2xl border p-4 space-y-3 ${e.estado_pago !== 'pagado' ? 'pago-pendiente-card' : ''}`}
                         style={{
                             borderColor: e.estado === 'borrador' ? 'color-mix(in srgb, var(--color-warning) 35%, var(--color-border))' : 'var(--color-border)',
                             backgroundColor: 'var(--color-surface)',
@@ -413,9 +417,12 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                 <p className="text-lg font-bold font-mono leading-tight" style={{ color: 'var(--color-text)' }}>
                                     S/ {Number(e.total).toFixed(2)}
                                 </p>
-                                {e.estado_pago === 'pendiente' && (
+                                {e.estado_pago !== 'pagado' && (
                                     <p className="text-[10px] font-medium mt-0.5 flex items-center justify-end gap-1" style={{ color: '#ca8a04' }}>
-                                        <Wallet size={10} />pago pendiente
+                                        <Wallet size={10} />
+                                        {e.estado_pago === 'parcial'
+                                            ? `debe S/ ${(Number(e.total) - Number(e.monto_pagado ?? 0)).toFixed(2)}`
+                                            : 'pago pendiente'}
                                     </p>
                                 )}
                                 <Badge variant={e.estado === 'confirmado' ? 'success' : 'warning'}>
@@ -516,7 +523,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     columns={columns}
                     searchable={false}
                     emptyMessage="No hay entradas registradas"
-                    rowClassName={(e: Entrada) => e.estado_pago === 'pendiente' ? 'pago-pendiente-row' : ''}
+                    rowClassName={(e: Entrada) => e.estado_pago !== 'pagado' ? 'pago-pendiente-row' : ''}
                 />
             </div>
 
@@ -618,7 +625,32 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                     S/ {Number(pagoEntrada.total).toFixed(2)}
                                 </span>
                             </div>
+                            <div className="flex justify-between">
+                                <span style={{ color: 'var(--color-text-muted)' }}>Pagado hasta ahora</span>
+                                <span className="font-mono" style={{ color: 'var(--color-success)' }}>
+                                    S/ {Number(pagoEntrada.monto_pagado ?? 0).toFixed(2)}
+                                </span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span style={{ color: 'var(--color-text-muted)' }}>Saldo pendiente</span>
+                                <span className="font-mono font-bold" style={{ color: 'var(--color-danger)' }}>
+                                    S/ {Math.max(0, Number(pagoEntrada.total) - Number(pagoEntrada.monto_pagado ?? 0)).toFixed(2)}
+                                </span>
+                            </div>
                         </div>
+
+                        {pagoForm.pagado && pagoEntrada.estado_pago !== 'pagado' && (
+                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                Se registrará un pago por el saldo pendiente con su egreso en tesorería
+                                (trazable en Cuentas por pagar). Para pagos parciales usa Finanzas → Cuentas por pagar.
+                            </p>
+                        )}
+                        {!pagoForm.pagado && pagoEntrada.estado_pago !== 'pendiente' && (
+                            <p className="text-xs font-medium" style={{ color: 'var(--color-danger)' }}>
+                                Al volver a "Pendiente" se eliminan los pagos registrados de esta entrada
+                                y se revierten sus asientos de tesorería (queda en auditoría).
+                            </p>
+                        )}
 
                         <div className="flex items-center justify-between gap-3">
                             <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>

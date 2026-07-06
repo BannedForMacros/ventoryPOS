@@ -6,18 +6,64 @@ use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\Cuenta;
 use App\Models\Entrada;
+use App\Models\EntradaPago;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\Proveedor;
 use App\Models\Stock;
+use App\Services\AuditoriaService;
 use App\Services\LocalScopeService;
+use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class EntradaController extends Controller
 {
-    public function __construct(private LocalScopeService $scope) {}
+    public function __construct(
+        private LocalScopeService $scope,
+        private TesoreriaService $tesoreria,
+    ) {}
+
+    /**
+     * Registra los pagos iniciales de una entrada (líneas método+cuenta+monto):
+     * crea los entrada_pagos, asienta cada egreso en tesorería y sincroniza
+     * monto_pagado/estado_pago. La fecha del pago es la fecha de la entrada.
+     *
+     * @param array<array{metodo_pago_id:int|null,cuenta_id:int|null,monto:float|string,referencia?:string|null}> $lineas
+     */
+    private function registrarPagosIniciales(Entrada $entrada, array $lineas, int $userId): void
+    {
+        $prov = $entrada->proveedor ?? 'proveedor';
+        foreach ($lineas as $linea) {
+            $pago = EntradaPago::create([
+                'entrada_id'     => $entrada->id,
+                'user_id'        => $userId,
+                'metodo_pago_id' => $linea['metodo_pago_id'] ?? null,
+                'cuenta_id'      => $linea['cuenta_id'] ?? null,
+                'fecha'          => $entrada->fecha instanceof \Carbon\CarbonInterface
+                    ? $entrada->fecha->toDateString() : substr((string) $entrada->fecha, 0, 10),
+                'monto'          => round((float) $linea['monto'], 2),
+                'referencia'     => $linea['referencia'] ?? null,
+            ]);
+
+            $this->tesoreria->registrar(
+                $entrada->empresa_id,
+                $linea['cuenta_id'] ?? $this->tesoreria->resolverCuenta($entrada->empresa_id, null, $linea['metodo_pago_id'] ?? null),
+                $userId,
+                (string) $pago->fecha,
+                'egreso',
+                (float) $pago->monto,
+                "Pago a proveedor {$prov}" . ($entrada->numero_documento ? " ({$entrada->numero_documento})" : ''),
+                'entrada_pago',
+                $pago->id,
+            );
+
+            $entrada->aplicarPago((float) $pago->monto);
+        }
+    }
 
     public function index(Request $request)
     {
@@ -98,11 +144,16 @@ class EntradaController extends Controller
             // para que cambiar la cabecera actualice los items que no tienen factura propia.
             'detalles.*.numero_documento'  => 'nullable|string|max:50',
             // Pago: independiente del estado de la entrada (puede estar confirmada y pendiente
-            // de pago). Si esta pagado, debe haber metodo_pago. La cuenta es opcional aun
-            // cuando el metodo tenga cuentas anidadas (el user puede no recordar cual).
-            'estado_pago'      => 'nullable|in:pendiente,pagado',
+            // de pago). Acepta pago total, PARCIAL y múltiples métodos: `pagos` es un
+            // array de líneas {metodo, cuenta opcional, monto}. El saldo queda como CxP.
+            'estado_pago'      => 'nullable|in:pendiente,parcial,pagado',
             'metodo_pago_id'   => 'nullable|exists:metodos_pago,id',
             'cuenta_id'        => 'nullable|exists:cuentas,id',
+            'pagos'                    => 'nullable|array|max:10',
+            'pagos.*.metodo_pago_id'   => ['required', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.monto'            => 'required|numeric|min:0.01',
+            'pagos.*.referencia'       => 'nullable|string|max:200',
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
@@ -139,11 +190,10 @@ class EntradaController extends Controller
                 'observacion'      => $data['observacion'] ?? null,
                 'estado'           => 'borrador',
                 'total'            => 0,
-                'estado_pago'      => $estadoPago,
-                // Solo persistir metodo/cuenta si esta pagado — si esta pendiente, esos
-                // campos quedan null aunque el form los haya enviado (defensivo).
-                'metodo_pago_id'   => $estadoPago === 'pagado' ? ($data['metodo_pago_id'] ?? null) : null,
-                'cuenta_id'        => $estadoPago === 'pagado' ? ($data['cuenta_id'] ?? null) : null,
+                'estado_pago'      => 'pendiente', // lo sincroniza registrarPagosIniciales()
+                // Legacy: metodo/cuenta de cabecera = primera línea de pago (solo display).
+                'metodo_pago_id'   => $data['pagos'][0]['metodo_pago_id'] ?? ($estadoPago === 'pagado' ? ($data['metodo_pago_id'] ?? null) : null),
+                'cuenta_id'        => $data['pagos'][0]['cuenta_id'] ?? ($estadoPago === 'pagado' ? ($data['cuenta_id'] ?? null) : null),
             ]);
 
             foreach ($data['detalles'] as $d) {
@@ -164,6 +214,39 @@ class EntradaController extends Controller
             }
 
             $entrada->update(['total' => $total]);
+
+            // ── Pagos iniciales (total, parcial o múltiples métodos) ────────
+            $lineas = $data['pagos'] ?? [];
+
+            // Legacy: form viejo con "pagado" + un solo método sin array de pagos.
+            if (empty($lineas) && $estadoPago === 'pagado' && !empty($data['metodo_pago_id'])) {
+                $lineas = [[
+                    'metodo_pago_id' => $data['metodo_pago_id'],
+                    'cuenta_id'      => $data['cuenta_id'] ?? null,
+                    'monto'          => $total,
+                ]];
+            }
+
+            if ($estadoPago === 'pendiente') {
+                $lineas = []; // defensivo: pendiente = sin pagos aunque el form los mande
+            }
+
+            if (!empty($lineas)) {
+                $suma = round(array_sum(array_map(fn ($l) => (float) $l['monto'], $lineas)), 2);
+
+                if ($suma > $total + 0.01) {
+                    throw ValidationException::withMessages([
+                        'pagos' => "Los pagos (S/ {$suma}) superan el total de la compra (S/ " . round($total, 2) . ').',
+                    ]);
+                }
+                if ($estadoPago === 'pagado' && abs($suma - $total) > 0.01) {
+                    throw ValidationException::withMessages([
+                        'pagos' => "Marcaste la compra como pagada, pero los pagos suman S/ {$suma} y el total es S/ " . round($total, 2) . '. Usa "Pago parcial" o completa el monto.',
+                    ]);
+                }
+
+                $this->registrarPagosIniciales($entrada, $lineas, $user->id);
+            }
 
             // Si se pidió confirmar directamente
             if (request()->boolean('confirmar')) {
@@ -238,12 +321,10 @@ class EntradaController extends Controller
             // NULL = hereda numero_documento de la cabecera al mostrar; no se copia el valor
             // para que cambiar la cabecera actualice los items que no tienen factura propia.
             'detalles.*.numero_documento'  => 'nullable|string|max:50',
-            // Pago: independiente del estado de la entrada (puede estar confirmada y pendiente
-            // de pago). Si esta pagado, debe haber metodo_pago. La cuenta es opcional aun
-            // cuando el metodo tenga cuentas anidadas (el user puede no recordar cual).
-            'estado_pago'      => 'nullable|in:pendiente,pagado',
-            'metodo_pago_id'   => 'nullable|exists:metodos_pago,id',
-            'cuenta_id'        => 'nullable|exists:cuentas,id',
+            // NOTA: update() ya NO toca el pago. Los pagos son un track independiente
+            // con su propia trazabilidad (entrada_pagos + tesorería): se registran al
+            // crear, con el botón "Pagar" del listado o abonando en Cuentas por Pagar.
+            // Aquí solo se resincroniza estado_pago si cambió el total.
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
@@ -332,8 +413,7 @@ class EntradaController extends Controller
                     }
                 }
 
-                // 2) Update cabecera + reemplazo de detalles.
-                $estadoPago = $data['estado_pago'] ?? 'pendiente';
+                // 2) Update cabecera + reemplazo de detalles (el pago no se toca aquí).
                 $entrada->update([
                     'almacen_id'       => $data['almacen_id'],
                     'proveedor_id'     => $data['proveedor_id'] ?? null,
@@ -342,9 +422,6 @@ class EntradaController extends Controller
                     'tipo'             => $data['tipo'],
                     'fecha'            => $data['fecha'],
                     'observacion'      => $data['observacion'] ?? null,
-                    'estado_pago'      => $estadoPago,
-                    'metodo_pago_id'   => $estadoPago === 'pagado' ? ($data['metodo_pago_id'] ?? null) : null,
-                    'cuenta_id'        => $estadoPago === 'pagado' ? ($data['cuenta_id'] ?? null) : null,
                 ]);
 
                 $entrada->detalles()->delete();
@@ -371,6 +448,11 @@ class EntradaController extends Controller
                 }
 
                 $entrada->update(['total' => $total]);
+
+                // Resincronizar estado_pago con el nuevo total (los pagos ya
+                // registrados no cambian; si el total subió puede volver a
+                // 'parcial', si bajó puede quedar 'pagado').
+                $entrada->aplicarPago(0);
 
                 // 3) Si era confirmada, aplicar el stock nuevo y reconstruir CPP para
                 //    cada (almacen, producto) afectado. Reconstruir es necesario porque
@@ -446,32 +528,79 @@ class EntradaController extends Controller
     }
 
     /**
-     * Actualiza SOLO los campos de pago. A diferencia de update() esto funciona
+     * Pago rápido desde el listado. A diferencia de update() esto funciona
      * en cualquier estado de la entrada (borrador o confirmada) porque el pago
      * es un track independiente — tipico flujo "te debo, te pago la semana
      * que viene" donde la mercaderia ya entro al stock pero falta liquidar.
+     *
+     * TRAZABILIDAD: "pagado" registra un entrada_pago por el saldo pendiente
+     * con su egreso en tesorería (nada de marcar sin dejar rastro); volver a
+     * "pendiente" elimina los pagos en dinero y revierte sus asientos,
+     * auditado — y se bloquea si algún pago consumió un adelanto.
      */
     public function actualizarPago(Request $request, Entrada $entrada)
     {
-        abort_unless($this->scope->puedeAccederAlmacen($request->user(), $entrada->almacen), 403);
+        $user = $request->user();
+        abort_unless($this->scope->puedeAccederAlmacen($user, $entrada->almacen), 403);
 
         $data = $request->validate([
             'estado_pago'    => 'required|in:pendiente,pagado',
-            'metodo_pago_id' => 'nullable|exists:metodos_pago,id',
-            'cuenta_id'      => 'nullable|exists:cuentas,id',
+            'metodo_pago_id' => ['nullable', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
-        $entrada->update([
-            'estado_pago'    => $data['estado_pago'],
-            'metodo_pago_id' => $data['estado_pago'] === 'pagado' ? ($data['metodo_pago_id'] ?? null) : null,
-            'cuenta_id'      => $data['estado_pago'] === 'pagado' ? ($data['cuenta_id'] ?? null) : null,
-        ]);
+        if ($data['estado_pago'] === 'pagado') {
+            $saldo = $entrada->saldoPendiente();
+            if ($saldo <= 0.01) {
+                return redirect()->back()->with('success', 'La entrada ya estaba pagada.');
+            }
 
-        return redirect()->back()->with('success',
-            $data['estado_pago'] === 'pagado'
-                ? 'Entrada marcada como pagada.'
-                : 'Pago revertido a pendiente.'
-        );
+            DB::transaction(function () use ($entrada, $data, $user, $saldo) {
+                $entrada->update([
+                    'metodo_pago_id' => $data['metodo_pago_id'] ?? null,
+                    'cuenta_id'      => $data['cuenta_id'] ?? null,
+                ]);
+                $this->registrarPagosIniciales($entrada, [[
+                    'metodo_pago_id' => $data['metodo_pago_id'] ?? null,
+                    'cuenta_id'      => $data['cuenta_id'] ?? null,
+                    'monto'          => $saldo,
+                ]], $user->id);
+
+                AuditoriaService::log('entrada.pago_total', $entrada, [
+                    'monto' => $saldo,
+                ], $user);
+            });
+
+            return redirect()->back()->with('success', 'Pago registrado: S/ ' . number_format($saldo, 2) . ' al proveedor.');
+        }
+
+        // Revertir a pendiente: eliminar pagos en dinero + asientos de tesorería.
+        $pagos = $entrada->pagosParciales()->get();
+        if ($pagos->contains(fn ($p) => $p->proveedor_adelanto_id !== null)) {
+            return back()->withErrors([
+                'estado_pago' => 'Esta entrada tiene pagos que consumieron un adelanto al proveedor. Gestiónalos desde Finanzas → Cuentas por Pagar.',
+            ]);
+        }
+
+        DB::transaction(function () use ($entrada, $pagos, $user) {
+            foreach ($pagos as $p) {
+                $this->tesoreria->revertir('entrada_pago', $p->id);
+                $p->delete();
+            }
+            $entrada->update([
+                'monto_pagado'   => 0,
+                'estado_pago'    => 'pendiente',
+                'metodo_pago_id' => null,
+                'cuenta_id'      => null,
+            ]);
+
+            AuditoriaService::log('entrada.pago_revertido', $entrada, [
+                'pagos_eliminados' => $pagos->count(),
+                'monto_revertido'  => round((float) $pagos->sum('monto'), 2),
+            ], $user);
+        });
+
+        return redirect()->back()->with('success', 'Pago revertido a pendiente (asientos de tesorería revertidos).');
     }
 
     public function destroy(Request $request, Entrada $entrada)
@@ -495,8 +624,15 @@ class EntradaController extends Controller
             ])->all(),
         ];
 
-        $entrada->detalles()->delete();
-        $entrada->delete();
+        DB::transaction(function () use ($entrada) {
+            // Revertir pagos registrados (y sus asientos de tesorería) antes de borrar.
+            foreach ($entrada->pagosParciales()->get() as $p) {
+                $this->tesoreria->revertir('entrada_pago', $p->id);
+                $p->delete();
+            }
+            $entrada->detalles()->delete();
+            $entrada->delete();
+        });
 
         \App\Services\AuditoriaService::log('entrada.eliminada', $entrada, $snapshot, $request->user());
 

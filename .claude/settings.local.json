@@ -120,7 +120,8 @@
       "Bash(python *)",
       "PowerShell(npx tsc --noEmit)",
       "Skill(dataviz)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(pip3 install *)"
     ]
   }
 }
