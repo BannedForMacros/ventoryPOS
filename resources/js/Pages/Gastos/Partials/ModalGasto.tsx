@@ -6,6 +6,7 @@ import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import type { GastoConcepto, GastoTipo, Local, Turno } from '@/types';
+import { hoyLocal } from '@/lib/fechas';
 
 export interface GastoForm {
     gasto_tipo_id:      number | '';
@@ -22,7 +23,7 @@ export const emptyGasto = (turnoId: number | null = null): GastoForm => ({
     gasto_tipo_id:     '',
     gasto_concepto_id: '',
     monto:             '',
-    fecha:             new Date().toISOString().split('T')[0],
+    fecha:             hoyLocal(),
     comentario:        '',
     turno_id:          turnoId,
     local_id:          '',

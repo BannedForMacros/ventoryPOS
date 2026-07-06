@@ -41,7 +41,9 @@ interface Props extends PageProps {
     movimientos: Paginado<Movimiento>;
 }
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+import { hoyLocal } from '@/lib/fechas';
+
+const hoy = () => hoyLocal();
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const fdate = (s: string) => new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE');
 
@@ -107,7 +109,7 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos }: Props) {
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
         {
-            key: 'monto', label: 'Monto',
+            key: 'monto', label: 'Monto', align: 'right',
             render: (m) => (
                 <span className="font-bold" style={{ color: m.tipo === 'ingreso' ? 'var(--color-success)' : 'var(--color-danger)' }}>
                     {m.tipo === 'ingreso' ? '+' : '−'}{money(m.monto)}
@@ -123,6 +125,7 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos }: Props) {
     return (
         <AppLayout title="Tesorería">
             <PageHeader
+                icon={<Landmark size={22} />}
                 title="Tesorería"
                 subtitle="Cada sol que entra o sale, con su origen. Nada se digita a mano."
                 actions={
@@ -134,12 +137,13 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos }: Props) {
 
             {/* Tarjetas de cuentas con saldo */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-5">
-                {cuentas.map(c => (
+                {cuentas.map((c, i) => (
                     <button
                         key={c.id}
                         onClick={() => cambiarCuenta(c.id)}
-                        className="text-left rounded-2xl px-4 py-3 transition-all"
+                        className="text-left rounded-2xl px-4 py-3 vp-fade-up transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
                         style={{
+                            animationDelay: `${i * 50}ms`,
                             border: c.id === cuentaId ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
                             backgroundColor: c.id === cuentaId
                                 ? 'color-mix(in srgb, var(--color-primary) 6%, var(--color-surface))'

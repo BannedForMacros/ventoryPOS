@@ -11,6 +11,7 @@ import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
 import type { PageProps } from '@/types';
+import { hoyLocal, fechaLocal } from '@/lib/fechas';
 
 interface Cita {
     id: number;
@@ -111,14 +112,14 @@ export default function AgendaIndex({
     function cambiarDia(delta: number) {
         const d = new Date(localFilters.fecha_desde + 'T00:00:00');
         d.setDate(d.getDate() + delta);
-        const iso = d.toISOString().slice(0, 10);
+        const iso = fechaLocal(d);
         const nf = { ...localFilters, fecha_desde: iso, fecha_hasta: iso };
         setLocalFilters(nf);
         router.get(route('agenda.index'), nf as any, { preserveState: true, preserveScroll: true });
     }
 
     function irAHoy() {
-        const iso = new Date().toISOString().slice(0, 10);
+        const iso = hoyLocal();
         const nf = { ...localFilters, fecha_desde: iso, fecha_hasta: iso };
         setLocalFilters(nf);
         router.get(route('agenda.index'), nf as any, { preserveState: true, preserveScroll: true });

@@ -12,6 +12,8 @@ export interface Column<T extends Record<string, unknown>> {
     label: string;
     sortable?: boolean;
     searchKey?: string;
+    /** Alineación de la celda. Montos SIEMPRE 'right'. */
+    align?: 'left' | 'right' | 'center';
     render?: (row: T) => React.ReactNode;
 }
 
@@ -212,14 +214,19 @@ export default function Table<T extends Record<string, unknown>>({
                                         key={column.key}
                                         onClick={() => handleSort(column)}
                                         className={cn(
-                                            'px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider',
+                                            'px-5 py-3 text-xs font-semibold uppercase tracking-wider',
+                                            column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left',
                                             column.sortable && sortable && 'cursor-pointer select-none'
                                         )}
                                         style={{ color: 'var(--color-text-muted)' }}
                                         onMouseEnter={e => { if (column.sortable && sortable) e.currentTarget.style.color = 'var(--color-text)'; }}
                                         onMouseLeave={e => { if (column.sortable && sortable) e.currentTarget.style.color = 'var(--color-text-muted)'; }}
                                     >
-                                        <div className="flex items-center gap-1.5">
+                                        <div className={cn(
+                                            'flex items-center gap-1.5',
+                                            column.align === 'right' && 'justify-end',
+                                            column.align === 'center' && 'justify-center'
+                                        )}>
                                             <span>{column.label}</span>
                                             {column.sortable && sortable && (
                                                 <span className="flex flex-col" style={{ lineHeight: 0 }}>
@@ -272,8 +279,11 @@ export default function Table<T extends Record<string, unknown>>({
                                                 {columns.map(column => (
                                                     <td
                                                         key={column.key}
-                                                        className="px-5 py-3.5 text-sm align-middle"
-                                                        style={{ color: 'var(--color-text)' }}
+                                                        className={cn(
+                                                            'px-5 py-3.5 text-sm align-middle',
+                                                            column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left'
+                                                        )}
+                                                        style={{ color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}
                                                     >
                                                         {column.render
                                                             ? column.render(row)

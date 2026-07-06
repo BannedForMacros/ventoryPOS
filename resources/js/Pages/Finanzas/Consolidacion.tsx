@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ClipboardCheck, AlertTriangle, Coins, CreditCard, Check } from 'lucide-react';
+import { ClipboardCheck, AlertTriangle, Coins, CreditCard, Check, ShieldCheck } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -157,9 +157,9 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requ
         { key: 'fecha_cierre', label: 'Cierre', sortable: true, render: (t) => <span className="text-sm">{fdatetime(t.fecha_cierre)}</span> },
         { key: 'caja', label: 'Caja', render: (t) => <span className="text-sm font-medium">{t.caja?.nombre ?? '—'}</span> },
         { key: 'user', label: 'Cajera', render: (t) => <span className="text-sm">{t.user?.name ?? '—'}</span> },
-        { key: 'monto_caja_chica', label: 'Caja chica', render: (t) => <span className="text-sm">{money(t.monto_caja_chica)}</span> },
+        { key: 'monto_caja_chica', label: 'Caja chica', align: 'right', render: (t) => <span className="text-sm">{money(t.monto_caja_chica)}</span> },
         {
-            key: 'monto_cierre_declarado', label: 'Declaró (efectivo)',
+            key: 'monto_cierre_declarado', label: 'Declaró (efectivo)', align: 'right',
             render: (t) => t.monto_cierre_declarado !== null
                 ? <span className="font-semibold">{money(t.monto_cierre_declarado)}</span>
                 : <Badge variant="secondary">Cierre rápido</Badge>,
@@ -207,6 +207,7 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requ
     return (
         <AppLayout title="Consolidación de caja">
             <PageHeader
+                icon={<ShieldCheck size={22} />}
                 title="Consolidación de caja"
                 subtitle="El supervisor verifica TODO el cierre: efectivo y cada método/cuenta. Su conteo es el que manda."
             />

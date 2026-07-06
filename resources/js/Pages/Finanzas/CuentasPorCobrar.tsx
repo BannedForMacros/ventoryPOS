@@ -58,7 +58,9 @@ interface Props extends PageProps {
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
 }
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+import { hoyLocal } from '@/lib/fechas';
+
+const hoy = () => hoyLocal();
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const nombreCliente = (v: VentaCxc) =>
     v.cliente?.razon_social ?? (`${v.cliente?.nombres ?? ''} ${v.cliente?.apellidos ?? ''}`.trim() || '—');
@@ -113,10 +115,10 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
         },
         { key: 'numero', label: 'N°', render: (v) => <span className="font-mono text-sm">{v.numero ?? '—'}</span> },
         { key: 'cliente', label: 'Cliente', render: (v) => <span className="font-medium">{nombreCliente(v)}</span> },
-        { key: 'total', label: 'Total', render: (v) => <span>{money(v.total)}</span> },
-        { key: 'monto_pagado', label: 'Pagado', render: (v) => <span style={{ color: 'var(--color-success, #16a34a)' }}>{money(v.monto_pagado)}</span> },
+        { key: 'total', label: 'Total', align: 'right', render: (v) => <span>{money(v.total)}</span> },
+        { key: 'monto_pagado', label: 'Pagado', align: 'right', render: (v) => <span style={{ color: 'var(--color-success, #16a34a)' }}>{money(v.monto_pagado)}</span> },
         {
-            key: 'saldo_pendiente', label: 'Saldo', sortable: true,
+            key: 'saldo_pendiente', label: 'Saldo', sortable: true, align: 'right',
             render: (v) => Number(v.saldo_pendiente) > 0
                 ? <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(v.saldo_pendiente)}</span>
                 : <Badge variant="success">Saldada</Badge>,
@@ -164,20 +166,19 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
     return (
         <AppLayout title="Cuentas por cobrar">
             <PageHeader
+                icon={<HandCoins size={22} />}
                 title="Cuentas por cobrar"
                 subtitle="Ventas a crédito y abonos de clientes"
-                actions={
-                    <div
-                        className="px-4 py-2 rounded-xl text-right"
-                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, var(--color-bg))' }}
-                    >
-                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                            Total por cobrar
-                        </p>
-                        <p className="text-lg font-bold" style={{ color: 'var(--color-danger)' }}>{money(totalPendiente)}</p>
-                    </div>
-                }
             />
+
+            <div className="mb-5">
+                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                    {
+                        label: 'Total por cobrar', valor: money(totalPendiente), color: 'danger', destacado: true,
+                        icon: <HandCoins size={19} />, sub: 'Saldo pendiente de ventas a crédito',
+                    },
+                ]} />
+            </div>
 
             <div className="mb-5">
                 <Tabs

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Eye, PackageCheck, Ban } from 'lucide-react';
+import { Plus, Eye, PackageCheck, Ban, PiggyBank } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -56,7 +56,9 @@ interface Props extends PageProps {
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
 }
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+import { hoyLocal } from '@/lib/fechas';
+
+const hoy = () => hoyLocal();
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const nombreCliente = (c?: { nombres?: string; apellidos?: string; razon_social?: string } | null) =>
     c?.razon_social ?? (`${c?.nombres ?? ''} ${c?.apellidos ?? ''}`.trim() || '—');
@@ -145,15 +147,15 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                 ? <Badge variant="primary">Material: {a.producto?.nombre ?? '—'}</Badge>
                 : <Badge variant="secondary">Dinero</Badge>,
         },
-        { key: 'monto', label: 'Recibido', render: (a) => <span>{money(a.monto)}</span> },
+        { key: 'monto', label: 'Recibido', align: 'right', render: (a) => <span>{money(a.monto)}</span> },
         {
-            key: 'pendiente', label: 'Pendiente',
+            key: 'pendiente', label: 'Pendiente', align: 'right',
             render: (a) => a.tipo_valorizacion === 'material'
                 ? <span className="text-sm">{Number(a.cantidad_pendiente ?? 0)} und</span>
                 : <span className="text-sm">{money(a.saldo)}</span>,
         },
         {
-            key: 'valor_hoy', label: 'Pasivo a hoy',
+            key: 'valor_hoy', label: 'Pasivo a hoy', align: 'right',
             render: (a) => a.estado === 'activo'
                 ? <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(valorHoy(a))}</span>
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
@@ -196,23 +198,24 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
     return (
         <AppLayout title="Anticipos de clientes">
             <PageHeader
+                icon={<PiggyBank size={22} />}
                 title="Anticipos de clientes"
                 subtitle="Dinero recibido por adelantado a cambio de mercadería futura"
                 actions={
-                    <div className="flex items-center gap-3">
-                        <div className="px-4 py-2 rounded-xl text-right"
-                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, var(--color-bg))' }}>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                                Pasivo a precio del día
-                            </p>
-                            <p className="text-lg font-bold" style={{ color: 'var(--color-danger)' }}>{money(totalPasivo)}</p>
-                        </div>
-                        <Button onClick={() => { setErrors({}); setForm(emptyForm()); setModalNuevo(true); }}>
-                            <Plus size={15} className="mr-1 flex-shrink-0" />Nuevo anticipo
-                        </Button>
-                    </div>
+                    <Button onClick={() => { setErrors({}); setForm(emptyForm()); setModalNuevo(true); }}>
+                        <Plus size={15} className="mr-1 flex-shrink-0" />Nuevo anticipo
+                    </Button>
                 }
             />
+
+            <div className="mb-5">
+                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                    {
+                        label: 'Pasivo a precio del día', valor: money(totalPasivo), color: 'danger', destacado: true,
+                        icon: <PiggyBank size={19} />, sub: 'Se revaloriza con el precio de venta de hoy',
+                    },
+                ]} />
+            </div>
 
             <div className="mb-5">
                 <Tabs

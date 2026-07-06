@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Eye, Ban, Coins } from 'lucide-react';
+import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -51,7 +51,9 @@ interface Props extends PageProps {
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
 }
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+import { hoyLocal } from '@/lib/fechas';
+
+const hoy = () => hoyLocal();
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 
 const TIPO_LABEL: Record<string, string> = {
@@ -131,9 +133,9 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
         },
         { key: 'nombre', label: 'Nombre', sortable: true, render: (d) => <span className="font-medium">{d.nombre}</span> },
         { key: 'tipo', label: 'Tipo', render: (d) => <span className="text-sm">{TIPO_LABEL[d.tipo] ?? d.tipo}</span> },
-        { key: 'monto_original', label: 'Original', render: (d) => <span>{money(d.monto_original)}</span> },
+        { key: 'monto_original', label: 'Original', align: 'right', render: (d) => <span>{money(d.monto_original)}</span> },
         {
-            key: 'saldo', label: 'Saldo', sortable: true,
+            key: 'saldo', label: 'Saldo', sortable: true, align: 'right',
             render: (d) => (
                 <span className="font-bold" style={{ color: d.direccion === 'por_pagar' ? 'var(--color-danger)' : 'var(--color-success)' }}>
                     {money(d.saldo)}
@@ -178,26 +180,28 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
     return (
         <AppLayout title="Deudas y préstamos">
             <PageHeader
+                icon={<CreditCard size={22} />}
                 title="Deudas y préstamos"
                 subtitle="Deudas bancarias, personales, al personal y préstamos otorgados"
                 actions={
-                    <div className="flex items-center gap-3">
-                        <div className="px-4 py-2 rounded-xl text-right"
-                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, var(--color-bg))' }}>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Debemos</p>
-                            <p className="text-base font-bold" style={{ color: 'var(--color-danger)' }}>{money(totales.por_pagar)}</p>
-                        </div>
-                        <div className="px-4 py-2 rounded-xl text-right"
-                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-success, #16a34a) 10%, var(--color-bg))' }}>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Nos deben</p>
-                            <p className="text-base font-bold" style={{ color: 'var(--color-success)' }}>{money(totales.por_cobrar)}</p>
-                        </div>
-                        <Button onClick={() => { setErrors({}); setForm(emptyForm()); setModalNuevo(true); }}>
-                            <Plus size={15} className="mr-1 flex-shrink-0" />Nueva deuda
-                        </Button>
-                    </div>
+                    <Button onClick={() => { setErrors({}); setForm(emptyForm()); setModalNuevo(true); }}>
+                        <Plus size={15} className="mr-1 flex-shrink-0" />Nueva deuda
+                    </Button>
                 }
             />
+
+            <div className="mb-5">
+                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                    {
+                        label: 'Debemos', valor: money(totales.por_pagar), color: 'danger', destacado: true,
+                        icon: <TrendingDown size={19} />, sub: 'Bancos, personas y personal',
+                    },
+                    {
+                        label: 'Nos deben', valor: money(totales.por_cobrar), color: 'success',
+                        icon: <TrendingUp size={19} />, sub: 'Préstamos otorgados a terceros',
+                    },
+                ]} />
+            </div>
 
             <div className="mb-5">
                 <Tabs

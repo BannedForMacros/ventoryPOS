@@ -7,6 +7,7 @@ import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import type { PageProps } from '@/types';
+import { hoyLocal } from '@/lib/fechas';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -30,7 +31,7 @@ export default function TransferenciaCreate({ almacenesOrigen, almacenesDestino,
     // Origen: siempre el almacén central (en modo central_y_local solo hay 1)
     const [origenId, setOrigenId]       = useState<number | ''>(almacenesOrigen.length === 1 ? almacenesOrigen[0].id : '');
     const [destinoId, setDestinoId]     = useState<number | ''>(almacenesDestino.length === 1 ? almacenesDestino[0].id : '');
-    const [fecha, setFecha]             = useState(new Date().toISOString().split('T')[0]);
+    const [fecha, setFecha]             = useState(hoyLocal());
     const [observacion, setObservacion] = useState('');
     const [detalles, setDetalles]       = useState<DetalleRow[]>([{ producto_id: '', unidad_medida_id: '', cantidad: '', factor_conversion: '1' }]);
     const [errors, setErrors]           = useState<Record<string, string>>({});

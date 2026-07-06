@@ -91,11 +91,16 @@ Reabrir turno revierte los asientos del cierre/consolidación.
 - `Components/UI/Collapse` — TODO desplegable anima 300ms (grid-rows 0fr→1fr); chevrons rotan.
 - `Components/Finanzas/DetalleAgrupado` — modal normalizado: cards + buscador propio + tabla Fecha/Operaciones/Monto desplegable → sub-tabla con columnas a medida + botón "Historial (N)" **colapsado por defecto**.
 - Reglas: modales grandes (`size="5xl"`, Modal soporta hasta 5xl), acciones de tabla SOLO íconos lucide con tooltip `title` (nada de botones con texto ni emojis/caracteres de teclado), montos con `money()`, fechas es-PE.
+- **Totales/cifras NUNCA en `actions` del PageHeader** (a la derecha del título van solo botones y controles). Los totales van DEBAJO del título como cards: `<StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[...]} />` con `destacado: true`, `icon` (lucide ~19px) y `sub` (línea de contexto) en cada stat (patrón aplicado en Adelantos, Anticipos, CxC, CxP y Deudas; Tesorería tiene sus cards de cuentas abajo).
+- **PageHeader con `icon`**: cada página de Finanzas pasa su ícono lucide (~22px) → chip degradado azul junto al título (Balance=Scale, Tesorería=Landmark, Consolidación=ShieldCheck, CxC=HandCoins, CxP=ReceiptText, Anticipos=PiggyBank, Adelantos=Handshake, Deudas=CreditCard, DescuentosPlanilla=UserMinus).
+- **Columnas de dinero SIEMPRE `align: 'right'`** en `Table` (el th/td se alinean y el tbody usa `tabular-nums` para que los dígitos encajen). El color semántico lo lleva el chip del ícono; el valor de las stat-cards usa tinte profundo (`color-mix` 80% con el ink), no el color plano.
+- Micro-animación de entrada: clase `.vp-fade-up` (app.css, respeta `prefers-reduced-motion`) con `animationDelay` escalonado (~50-60ms por card) en stat-cards `lg` y cards de cuentas de Tesorería.
 
 ---
 
 ## 3. Gotchas / decisiones técnicas
 - Fechas: casts `date:Y-m-d` en modelos nuevos (la serialización con hora rompía rutas `/balance/{fecha}` → 404) y `.slice(0,10)` defensivo en el front.
+- **Zona horaria (bug del "día siguiente")**: NUNCA `new Date().toISOString()` para fechas de formularios — es UTC y en Lima (UTC−5) desde las 7 pm ya es "mañana". Usar `hoyLocal()`/`fechaLocal()`/`ahoraLocalInput()` de `@/lib/fechas` (aplicado en Finanzas, Inventario, Gastos, Clientes, Agenda). Backend: `config/app.php` → `'timezone' => env('APP_TIMEZONE', 'America/Lima')` (antes UTC; el `hoy` del Balance y todos los `now()` cambiaban de día a las 7 pm). Ojo: timestamps históricos guardados en UTC ahora se leen como hora Lima (hora +5 en registros viejos de la BD dev).
 - `Select`/`SearchableSelect` comparan con `===` estricto → los values de options SIEMPRE `String(id)`.
 - No usar PowerShell `Get-Content`+`Set-Content` para reensamblar archivos (rompe UTF-8/acentos); usar python con encoding utf-8.
 - La tabla pivote `cuenta_metodo_pago` NO tiene timestamps.

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { CalendarDays, ArrowRight } from 'lucide-react';
+import { CalendarDays, ArrowRight, Scale } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -61,16 +61,16 @@ export default function BalanceDiario({ balances, hoy }: Props) {
                 </Badge>
             ),
         },
-        { key: 'total_favor',  label: 'A favor',   render: (b) => <span style={{ color: 'var(--color-success)' }}>{money(b.total_favor)}</span> },
-        { key: 'total_contra', label: 'En contra', render: (b) => <span style={{ color: 'var(--color-danger)' }}>{money(b.total_contra)}</span> },
-        { key: 'balance_neto', label: 'Balance',   render: (b) => <span className="font-bold">{money(b.balance_neto)}</span> },
+        { key: 'total_favor',  label: 'A favor',   align: 'right', render: (b) => <span style={{ color: 'var(--color-success)' }}>{money(b.total_favor)}</span> },
+        { key: 'total_contra', label: 'En contra', align: 'right', render: (b) => <span style={{ color: 'var(--color-danger)' }}>{money(b.total_contra)}</span> },
+        { key: 'balance_neto', label: 'Balance',   align: 'right', render: (b) => <span className="font-bold">{money(b.balance_neto)}</span> },
         {
-            key: 'diferencia', label: 'vs. ayer',
+            key: 'diferencia', label: 'vs. ayer', align: 'right',
             render: (b) => b.diferencia !== null ? signed(b.diferencia) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
-        { key: 'gastos_dia', label: 'Gastos', render: (b) => <span>{money(b.gastos_dia)}</span> },
+        { key: 'gastos_dia', label: 'Gastos', align: 'right', render: (b) => <span>{money(b.gastos_dia)}</span> },
         {
-            key: 'utilidad_real', label: 'Utilidad real',
+            key: 'utilidad_real', label: 'Utilidad real', align: 'right',
             render: (b) => b.utilidad_real !== null ? signed(b.utilidad_real) : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
         {
@@ -86,6 +86,7 @@ export default function BalanceDiario({ balances, hoy }: Props) {
     return (
         <AppLayout title="Balance diario">
             <PageHeader
+                icon={<Scale size={22} />}
                 title="Balance diario"
                 subtitle="Foto patrimonial del negocio: a favor − en contra, comparado con el día anterior"
                 actions={

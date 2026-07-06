@@ -5,6 +5,7 @@ import { Loader2, Search } from 'lucide-react';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Switch from '@/Components/UI/Switch';
+import { hoyLocal } from '@/lib/fechas';
 
 const TIPOS_DOC = [
     { value: 'DNI', label: 'DNI' },
@@ -131,7 +132,7 @@ export default function FormCliente({ form, setForm, errors, disabled }: Props) 
     const esRuc      = form.tipo_documento === 'RUC';
     const usaApi     = form.tipo_documento === 'DNI' || esRuc;
     const docCfg     = DOC_CONFIG[form.tipo_documento] ?? { maxLength: 20, soloNumeros: false, placeholder: '' };
-    const hoy        = new Date().toISOString().split('T')[0];
+    const hoy        = hoyLocal();
 
     const hintBloqueado = esRuc
         ? 'Eliminar el RUC para editar'

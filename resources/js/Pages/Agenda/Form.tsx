@@ -7,6 +7,7 @@ import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import type { PageProps } from '@/types';
+import { ahoraLocalInput } from '@/lib/fechas';
 
 interface ClienteOpt { id: number; nombres: string | null; apellidos: string | null; razon_social: string | null; tipo_documento: string | null; numero_documento: string | null; }
 interface ProductoOpt { id: number; nombre: string; codigo: string | null; tipo: 'producto' | 'servicio';
@@ -64,7 +65,7 @@ function toLocalInput(iso?: string): string {
     if (!iso) {
         const d = new Date();
         d.setMinutes(0, 0, 0); d.setHours(d.getHours() + 1);
-        return d.toISOString().slice(0, 16);
+        return ahoraLocalInput(d);
     }
     return iso.slice(0, 16);
 }

@@ -9,6 +9,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Badge from '@/Components/UI/Badge';
 import type { PageProps } from '@/types';
+import { hoyLocal } from '@/lib/fechas';
 
 interface Almacen { id: number; nombre: string; local?: { nombre: string } | null; }
 
@@ -48,7 +49,7 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
 
     const { data, setData, post, processing, errors, transform } = useForm({
         almacen_id: '' as number | '',
-        fecha: new Date().toISOString().slice(0, 10),
+        fecha: hoyLocal(),
         observacion: '',
         confirmar: false,
         items: [] as ItemDeclarado[],

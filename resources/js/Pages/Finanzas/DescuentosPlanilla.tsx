@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, CheckCircle2, Ban } from 'lucide-react';
+import { Plus, CheckCircle2, Ban, UserMinus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -38,7 +38,9 @@ interface Props extends PageProps {
     trabajadores: { id: number; name: string }[];
 }
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+import { hoyLocal } from '@/lib/fechas';
+
+const hoy = () => hoyLocal();
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const fdate = (s: string) => new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE');
 
@@ -96,7 +98,7 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
                 </span>
             ),
         },
-        { key: 'monto', label: 'Monto', render: (d) => <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(d.monto)}</span> },
+        { key: 'monto', label: 'Monto', align: 'right', render: (d) => <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(d.monto)}</span> },
         {
             key: 'estado', label: 'Estado',
             render: (d) => (
@@ -127,6 +129,7 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
     return (
         <AppLayout title="Descuentos de planilla">
             <PageHeader
+                icon={<UserMinus size={22} />}
                 title="Descuentos de planilla"
                 subtitle="Faltantes de caja y otros cargos a descontar al pagar la planilla"
                 actions={

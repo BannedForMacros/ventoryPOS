@@ -11,6 +11,7 @@ import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import Modal from '@/Components/UI/Modal';
 import type { PageProps } from '@/types';
+import { hoyLocal } from '@/lib/fechas';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -49,7 +50,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
     const [proveedorId, setProveedorId] = useState<number | ''>('');
     const [nroDoc, setNroDoc]           = useState('');
     const [tipo, setTipo]               = useState<string>('compra');
-    const [fecha, setFecha]             = useState(new Date().toISOString().split('T')[0]);
+    const [fecha, setFecha]             = useState(hoyLocal());
     const [observacion, setObservacion] = useState('');
     const [detalles, setDetalles]       = useState<DetalleRow[]>([emptyDetalle()]);
     const [errors, setErrors]           = useState<Record<string, string>>({});

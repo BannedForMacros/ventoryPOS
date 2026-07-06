@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Banknote, Eye } from 'lucide-react';
+import { Banknote, Eye, ReceiptText } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -54,7 +54,9 @@ interface Props extends PageProps {
     adelantos: AdelantoMin[];
 }
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+import { hoyLocal } from '@/lib/fechas';
+
+const hoy = () => hoyLocal();
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 // Normaliza fechas del backend ("2026-07-04" o "2026-07-04T00:00:00.000000Z")
 const fdate = (s: string) => new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE');
@@ -123,10 +125,10 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
         },
         { key: 'numero_documento', label: 'Documento', render: (e) => <span className="font-mono text-sm">{e.numero_documento ?? '—'}</span> },
         { key: 'proveedor', label: 'Proveedor', render: (e) => <span className="font-medium">{nombreProveedor(e)}</span> },
-        { key: 'total', label: 'Total', render: (e) => <span>{money(e.total)}</span> },
-        { key: 'monto_pagado', label: 'Pagado', render: (e) => <span style={{ color: 'var(--color-success, #16a34a)' }}>{money(e.monto_pagado)}</span> },
+        { key: 'total', label: 'Total', align: 'right', render: (e) => <span>{money(e.total)}</span> },
+        { key: 'monto_pagado', label: 'Pagado', align: 'right', render: (e) => <span style={{ color: 'var(--color-success, #16a34a)' }}>{money(e.monto_pagado)}</span> },
         {
-            key: 'saldo', label: 'Saldo',
+            key: 'saldo', label: 'Saldo', align: 'right',
             render: (e) => saldoDe(e) > 0
                 ? <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(saldoDe(e))}</span>
                 : <Badge variant="success">Pagada</Badge>,
@@ -169,20 +171,19 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
     return (
         <AppLayout title="Cuentas por pagar">
             <PageHeader
+                icon={<ReceiptText size={22} />}
                 title="Cuentas por pagar"
                 subtitle="Deudas con proveedores y pagos parciales"
-                actions={
-                    <div
-                        className="px-4 py-2 rounded-xl text-right"
-                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, var(--color-bg))' }}
-                    >
-                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                            Total por pagar
-                        </p>
-                        <p className="text-lg font-bold" style={{ color: 'var(--color-danger)' }}>{money(totalPendiente)}</p>
-                    </div>
-                }
             />
+
+            <div className="mb-5">
+                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                    {
+                        label: 'Total por pagar', valor: money(totalPendiente), color: 'danger', destacado: true,
+                        icon: <Banknote size={19} />, sub: 'Compras con saldo pendiente',
+                    },
+                ]} />
+            </div>
 
             <div className="mb-5">
                 <Tabs

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Eye, Ban } from 'lucide-react';
+import { Plus, Eye, Ban, Handshake, TrendingUp } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -13,6 +13,7 @@ import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
+import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
@@ -50,7 +51,9 @@ interface Props extends PageProps {
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
 }
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+import { hoyLocal } from '@/lib/fechas';
+
+const hoy = () => hoyLocal();
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const nombreProveedor = (p?: { razon_social?: string; nombre_comercial?: string } | null) =>
     p?.razon_social ?? p?.nombre_comercial ?? '—';
@@ -110,9 +113,9 @@ export default function Adelantos({ adelantos, totalActivo, estado, proveedores,
             render: (a) => <span className="text-sm">{new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</span>,
         },
         { key: 'proveedor', label: 'Proveedor', render: (a) => <span className="font-medium">{nombreProveedor(a.proveedor)}</span> },
-        { key: 'monto', label: 'Entregado', render: (a) => <span>{money(a.monto)}</span> },
+        { key: 'monto', label: 'Entregado', align: 'right', render: (a) => <span>{money(a.monto)}</span> },
         {
-            key: 'saldo', label: 'Saldo a favor',
+            key: 'saldo', label: 'Saldo a favor', align: 'right',
             render: (a) => a.estado === 'activo'
                 ? <span className="font-bold" style={{ color: 'var(--color-success)' }}>{money(a.saldo)}</span>
                 : <span style={{ color: 'var(--color-text-muted)' }}>{money(a.saldo)}</span>,
@@ -154,23 +157,24 @@ export default function Adelantos({ adelantos, totalActivo, estado, proveedores,
     return (
         <AppLayout title="Adelantos a proveedores">
             <PageHeader
+                icon={<Handshake size={22} />}
                 title="Adelantos a proveedores"
                 subtitle="Dinero entregado antes de recibir el material (activo a favor)"
                 actions={
-                    <div className="flex items-center gap-3">
-                        <div className="px-4 py-2 rounded-xl text-right"
-                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-success, #16a34a) 10%, var(--color-bg))' }}>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                                Saldo a favor
-                            </p>
-                            <p className="text-lg font-bold" style={{ color: 'var(--color-success)' }}>{money(totalActivo)}</p>
-                        </div>
-                        <Button onClick={() => { setErrors({}); setForm(emptyForm()); setModalNuevo(true); }}>
-                            <Plus size={15} className="mr-1 flex-shrink-0" />Nuevo adelanto
-                        </Button>
-                    </div>
+                    <Button onClick={() => { setErrors({}); setForm(emptyForm()); setModalNuevo(true); }}>
+                        <Plus size={15} className="mr-1 flex-shrink-0" />Nuevo adelanto
+                    </Button>
                 }
             />
+
+            <div className="mb-5">
+                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                    {
+                        label: 'Saldo a favor', valor: money(totalActivo), color: 'success', destacado: true,
+                        icon: <TrendingUp size={19} />, sub: 'Pendiente de recibir material',
+                    },
+                ]} />
+            </div>
 
             <div className="mb-5">
                 <Tabs
