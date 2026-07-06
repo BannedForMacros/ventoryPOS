@@ -164,8 +164,11 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
                                 } as React.CSSProperties}
                             >
                                 <option value="">— Cuenta (opcional)</option>
-                                {cuentas.map(c => (
-                                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                                {/* value = id del PIVOTE cuenta_metodo_pago (lo que valida el
+                                    backend), NO el id de la cuenta — antes coincidían de
+                                    casualidad y al divergir los ids rompía la validación. */}
+                                {cuentas.filter(c => c.pivot?.id).map(c => (
+                                    <option key={c.pivot!.id} value={c.pivot!.id}>{c.nombre}</option>
                                 ))}
                             </select>
                         )}

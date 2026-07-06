@@ -43,7 +43,9 @@ class MetodoPago extends Model
 
     public function cuentas(): BelongsToMany
     {
-        return $this->belongsToMany(Cuenta::class, 'cuenta_metodo_pago');
+        // withPivot('id'): el POS envía pagos.*.cuenta_metodo_pago_id = id del
+        // PIVOTE (no el id de la cuenta) — el front lo lee de cuenta.pivot.id.
+        return $this->belongsToMany(Cuenta::class, 'cuenta_metodo_pago')->withPivot('id');
     }
 
     public function scopeActivo(Builder $query): Builder

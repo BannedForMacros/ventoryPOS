@@ -13,6 +13,7 @@ import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
+import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
@@ -84,6 +85,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
     const [errors, setErrors]           = useState<Record<string, string>>({});
     const [form, setForm]               = useState(emptyForm());
     const [formAplicar, setFormAplicar] = useState({ fecha: hoy(), monto: '', cantidad: '', observacion: '' });
+    const [excesoACxc, setExcesoACxc]   = useState(false);
     const [formAnular, setFormAnular]   = useState({ accion: 'devuelto', motivo: '' });
 
     useEffect(() => {
@@ -114,12 +116,33 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
         });
     }
 
+    /** Cobertura y excedente de la entrega, en vivo (espejo del backend). */
+    function calcularDespacho(a: Anticipo) {
+        if (a.tipo_valorizacion === 'material') {
+            const pendiente = Number(a.cantidad_pendiente ?? 0);
+            const entregada = parseFloat(formAplicar.cantidad) || 0;
+            const excesoCant = Math.max(0, entregada - pendiente);
+            const precioDia = Number(a.producto?.precio_venta ?? 0);
+            return {
+                excesoCant,
+                excesoMonto: Math.round(excesoCant * precioDia * 100) / 100,
+                precioDia,
+            };
+        }
+        const saldo = Number(a.saldo);
+        const valor = parseFloat(formAplicar.monto) || 0;
+        return { excesoCant: 0, excesoMonto: Math.round(Math.max(0, valor - saldo) * 100) / 100, precioDia: 0 };
+    }
+
     function submitAplicar() {
         if (!aplicando) return;
         setSaving(true);
         router.post(route('finanzas.anticipos.aplicar', aplicando.id), {
             ...formAplicar,
-            cantidad: aplicando.tipo_valorizacion === 'material' ? (formAplicar.cantidad || null) : null,
+            // En material el monto lo calcula el backend (prorrata del anticipo).
+            monto:        aplicando.tipo_valorizacion === 'material' ? null : formAplicar.monto,
+            cantidad:     aplicando.tipo_valorizacion === 'material' ? (formAplicar.cantidad || null) : null,
+            exceso_a_cxc: excesoACxc,
         } as any, {
             onSuccess: () => { setAplicando(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -178,7 +201,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                     </button>
                     {a.estado === 'activo' && (
                         <>
-                            <button onClick={() => { setErrors({}); setFormAplicar({ fecha: hoy(), monto: String(a.saldo), cantidad: '', observacion: '' }); setAplicando(a); }}
+                            <button onClick={() => { setErrors({}); setExcesoACxc(false); setFormAplicar({ fecha: hoy(), monto: a.tipo_valorizacion === 'material' ? '' : String(a.saldo), cantidad: '', observacion: '' }); setAplicando(a); }}
                                 className="p-1.5 rounded-lg hover:bg-black/5" title="Registrar entrega/aplicación"
                                 style={{ color: 'var(--color-primary)' }}>
                                 <PackageCheck size={15} />
@@ -306,29 +329,62 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAplicando(null)}>Cancelar</Button>
-                        <Button onClick={submitAplicar} disabled={saving}>{saving ? 'Guardando...' : 'Registrar'}</Button>
+                        <Button onClick={submitAplicar}
+                            disabled={saving || (!!aplicando && calcularDespacho(aplicando).excesoMonto > 0 && !excesoACxc)}
+                            title={!!aplicando && calcularDespacho(aplicando).excesoMonto > 0 && !excesoACxc
+                                ? 'Confirma qué hacer con el excedente para continuar' : undefined}>
+                            {saving ? 'Guardando...' : 'Registrar'}
+                        </Button>
                     </>
                 }
             >
-                {aplicando && (
-                    <div className="space-y-4">
-                        <StatGrid stats={[
-                            aplicando.tipo_valorizacion === 'material'
-                                ? { label: `Pendiente de ${aplicando.producto?.nombre ?? 'material'}`, valor: `${Number(aplicando.cantidad_pendiente ?? 0)} und`, color: 'warning', destacado: true }
-                                : { label: 'Saldo del anticipo', valor: money(aplicando.saldo), color: 'danger', destacado: true },
-                        ]} />
-                        <Input label="Fecha" required type="date" value={formAplicar.fecha}
-                            onChange={e => setFormAplicar(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
-                        <Input label="Monto aplicado (S/)" required type="number" min="0.01" step="0.01" value={formAplicar.monto}
-                            onChange={e => setFormAplicar(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
-                        {aplicando.tipo_valorizacion === 'material' && (
-                            <Input label="Cantidad entregada" required type="number" min="0.0001" step="any" value={formAplicar.cantidad}
-                                onChange={e => setFormAplicar(f => ({ ...f, cantidad: e.target.value }))} error={errors.cantidad} />
-                        )}
-                        <Input label="Observación" value={formAplicar.observacion}
-                            onChange={e => setFormAplicar(f => ({ ...f, observacion: e.target.value }))} />
-                    </div>
-                )}
+                {aplicando && (() => {
+                    const { excesoCant, excesoMonto, precioDia } = calcularDespacho(aplicando);
+                    return (
+                        <div className="space-y-4">
+                            <StatGrid stats={
+                                aplicando.tipo_valorizacion === 'material'
+                                    ? [
+                                        { label: `Pendiente de ${aplicando.producto?.nombre ?? 'material'}`, valor: `${Number(aplicando.cantidad_pendiente ?? 0)} und`, color: 'warning', destacado: true },
+                                        { label: 'Precio del día', valor: money(precioDia) },
+                                    ]
+                                    : [{ label: 'Saldo del anticipo', valor: money(aplicando.saldo), color: 'danger', destacado: true }]
+                            } />
+                            <Input label="Fecha" required type="date" value={formAplicar.fecha}
+                                onChange={e => setFormAplicar(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                            {aplicando.tipo_valorizacion === 'material' ? (
+                                <Input label="Cantidad entregada" required type="number" min="0.0001" step="any" value={formAplicar.cantidad}
+                                    onChange={e => setFormAplicar(f => ({ ...f, cantidad: e.target.value }))} error={errors.cantidad}
+                                    hint="El monto del anticipo se descuenta solo, a prorrata de lo anticipado." />
+                            ) : (
+                                <Input label="Valor de la entrega (S/)" required type="number" min="0.01" step="0.01" value={formAplicar.monto}
+                                    onChange={e => setFormAplicar(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                            )}
+
+                            {/* Excedente: se pregunta, nunca pasa a ciegas */}
+                            {excesoMonto > 0 && (
+                                <Callout variant="warning" title="La entrega excede lo anticipado"
+                                    aside={money(excesoMonto)}>
+                                    {aplicando.tipo_valorizacion === 'material'
+                                        ? `Estás entregando ${excesoCant} und más de las anticipadas (valorizadas a precio de hoy: ${money(excesoMonto)}).`
+                                        : `El valor entregado supera el saldo del anticipo por ${money(excesoMonto)}.`}
+                                    <div className="mt-3">
+                                        <Checkbox
+                                            label="Registrar el excedente como cuenta por cobrar del cliente"
+                                            description="Se crea una deuda por cobrar a su nombre (aparece en Deudas y préstamos y suma al balance)."
+                                            checked={excesoACxc}
+                                            onChange={e => setExcesoACxc(e.target.checked)}
+                                        />
+                                    </div>
+                                </Callout>
+                            )}
+                            {errors.exceso && <Callout variant="danger">{errors.exceso}</Callout>}
+
+                            <Input label="Observación" value={formAplicar.observacion}
+                                onChange={e => setFormAplicar(f => ({ ...f, observacion: e.target.value }))} />
+                        </div>
+                    );
+                })()}
             </Modal>
 
             {/* Modal devolver / anular */}

@@ -13,6 +13,7 @@ use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 /**
@@ -112,8 +113,14 @@ class AnticipoClienteController extends Controller
     }
 
     /**
-     * Aplica el anticipo: el cliente retiró mercadería (o se le facturó una
-     * venta) y el pasivo baja. Puede vincularse a una venta existente.
+     * Aplica el anticipo: el cliente retiró mercadería (despacho) y el pasivo
+     * baja. Puede vincularse a una venta existente.
+     *
+     * Si la entrega EXCEDE lo anticipado (más unidades que las pendientes, o
+     * un valor mayor al saldo), NO se registra a ciegas: se exige confirmación
+     * (`exceso_a_cxc`) y el excedente se convierte en una DEUDA POR COBRAR a
+     * nombre del cliente (valorizada a precio del día en modalidad material).
+     * Sin confirmación, la aplicación se rechaza con el detalle del exceso.
      */
     public function aplicar(Request $request, ClienteAnticipo $anticipo)
     {
@@ -121,29 +128,75 @@ class AnticipoClienteController extends Controller
         abort_if($anticipo->empresa_id !== $user->empresa_id, 403);
         abort_unless($anticipo->estado === 'activo', 422, 'El anticipo no está activo.');
 
+        $esMaterial = $anticipo->tipo_valorizacion === 'material';
+
         $data = $request->validate([
-            'fecha'       => ['required', 'date'],
-            'monto'       => ['required', 'numeric', 'min:0.01', 'max:' . (float) $anticipo->saldo],
-            'cantidad'    => ['nullable', 'numeric', 'min:0.0001'],
-            'venta_id'    => ['nullable', 'integer', Rule::exists('ventas', 'id')->where('empresa_id', $user->empresa_id)],
-            'observacion' => ['nullable', 'string', 'max:500'],
+            'fecha'        => ['required', 'date'],
+            // En material el monto se CALCULA (prorrata del anticipo), no se digita.
+            'monto'        => [$esMaterial ? 'nullable' : 'required', 'numeric', 'min:0.01'],
+            'cantidad'     => [$esMaterial ? 'required' : 'nullable', 'numeric', 'min:0.0001'],
+            'venta_id'     => ['nullable', 'integer', Rule::exists('ventas', 'id')->where('empresa_id', $user->empresa_id)],
+            'observacion'  => ['nullable', 'string', 'max:500'],
+            'exceso_a_cxc' => ['nullable', 'boolean'],
         ]);
 
-        if ($anticipo->tipo_valorizacion === 'material') {
-            $request->validate([
-                'cantidad' => ['required', 'numeric', 'min:0.0001', 'max:' . (float) $anticipo->cantidad_pendiente],
+        // ── Calcular cobertura y excedente ──────────────────────────────
+        if ($esMaterial) {
+            $anticipo->loadMissing('producto');
+            $pendiente     = (float) $anticipo->cantidad_pendiente;
+            $entregada     = (float) $data['cantidad'];
+            $cantCubierta  = min($entregada, $pendiente);
+            $excesoCant    = round(max(0, $entregada - $pendiente), 4);
+            $precioDia     = (float) ($anticipo->producto?->precio_venta ?? 0);
+            $excesoMonto   = round($excesoCant * $precioDia, 2);
+            // El saldo (dinero) baja a prorrata del anticipo original:
+            // (monto / cantidad) = soles anticipados por unidad.
+            $montoAplicado = (float) $anticipo->cantidad > 0
+                ? min(round($cantCubierta * ((float) $anticipo->monto / (float) $anticipo->cantidad), 2), (float) $anticipo->saldo)
+                : (float) $anticipo->saldo;
+        } else {
+            $valorEntrega  = (float) $data['monto'];
+            $saldo         = (float) $anticipo->saldo;
+            $montoAplicado = min($valorEntrega, $saldo);
+            $cantCubierta  = null;
+            $excesoCant    = 0.0;
+            $excesoMonto   = round(max(0, $valorEntrega - $saldo), 2);
+        }
+
+        // Exceso sin confirmación → se pregunta, no se registra.
+        if ($excesoMonto > 0.009 && !($data['exceso_a_cxc'] ?? false)) {
+            $detalle = $esMaterial
+                ? "Estás entregando {$excesoCant} und más de lo anticipado (S/ " . number_format($excesoMonto, 2) . ' al precio de hoy).'
+                : 'La entrega excede el saldo del anticipo por S/ ' . number_format($excesoMonto, 2) . '.';
+            throw ValidationException::withMessages([
+                'exceso' => $detalle . ' Confirma si el excedente se registra como cuenta por cobrar del cliente.',
             ]);
         }
 
-        DB::transaction(function () use ($anticipo, $user, $data) {
-            $anticipo->aplicaciones()->create($data + ['user_id' => $user->id]);
+        DB::transaction(function () use ($anticipo, $user, $data, $esMaterial, $cantCubierta, $excesoCant, $excesoMonto, $montoAplicado) {
+            $obs = $data['observacion'] ?? null;
+            if ($excesoMonto > 0.009) {
+                $obs = trim(($obs ? $obs . ' · ' : '')
+                    . 'Excedente a CxC: '
+                    . ($esMaterial ? "{$excesoCant} und × precio del día = " : '')
+                    . 'S/ ' . number_format($excesoMonto, 2));
+            }
 
-            $nuevoSaldo = round((float) $anticipo->saldo - (float) $data['monto'], 2);
-            $nuevaCantidad = $anticipo->cantidad_pendiente !== null && !empty($data['cantidad'])
-                ? round((float) $anticipo->cantidad_pendiente - (float) $data['cantidad'], 4)
+            $anticipo->aplicaciones()->create([
+                'user_id'     => $user->id,
+                'fecha'       => $data['fecha'],
+                'monto'       => $montoAplicado,
+                'cantidad'    => $cantCubierta,
+                'venta_id'    => $data['venta_id'] ?? null,
+                'observacion' => $obs,
+            ]);
+
+            $nuevoSaldo    = round((float) $anticipo->saldo - $montoAplicado, 2);
+            $nuevaCantidad = $anticipo->cantidad_pendiente !== null && $cantCubierta !== null
+                ? round((float) $anticipo->cantidad_pendiente - $cantCubierta, 4)
                 : $anticipo->cantidad_pendiente;
 
-            $agotado = $anticipo->tipo_valorizacion === 'material'
+            $agotado = $esMaterial
                 ? ($nuevaCantidad !== null && $nuevaCantidad <= 0.0001)
                 : ($nuevoSaldo <= 0.01);
 
@@ -153,14 +206,42 @@ class AnticipoClienteController extends Controller
                 'estado'             => $agotado ? 'aplicado' : 'activo',
             ]);
 
+            // ── Excedente confirmado → deuda por cobrar del cliente ─────
+            // (mismo patrón que "JHON ASTONITAS" del Excel: línea a favor en
+            // el balance). NO mueve tesorería: salió mercadería, no dinero.
+            if ($excesoMonto > 0.009) {
+                $anticipo->loadMissing('cliente');
+                $nombre = $anticipo->cliente?->razon_social
+                    ?? trim(($anticipo->cliente?->nombres ?? '') . ' ' . ($anticipo->cliente?->apellidos ?? ''));
+
+                \App\Models\Deuda::create([
+                    'empresa_id'     => $user->empresa_id,
+                    'user_id'        => $user->id,
+                    'direccion'      => 'por_cobrar',
+                    'tipo'           => 'personal',
+                    'nombre'         => mb_substr("{$nombre} — excedente despacho anticipo #{$anticipo->id}", 0, 150),
+                    'monto_original' => $excesoMonto,
+                    'saldo'          => $excesoMonto,
+                    'fecha_inicio'   => $data['fecha'],
+                    'estado'         => 'activa',
+                    'observacion'    => $esMaterial
+                        ? "Despacho de {$excesoCant} und por encima de lo anticipado, valorizado a precio del día."
+                        : 'Entrega por encima del saldo del anticipo.',
+                ]);
+            }
+
             AuditoriaService::log('anticipo_cliente.aplicado', $anticipo, [
-                'monto'    => (float) $data['monto'],
-                'cantidad' => $data['cantidad'] ?? null,
-                'saldo'    => (float) $anticipo->saldo,
+                'monto'        => $montoAplicado,
+                'cantidad'     => $cantCubierta,
+                'exceso_monto' => $excesoMonto,
+                'exceso_cant'  => $excesoCant,
+                'saldo'        => (float) $anticipo->saldo,
             ], $user);
         });
 
-        return back()->with('success', 'Aplicación del anticipo registrada.');
+        return back()->with('success', $excesoMonto > 0.009
+            ? 'Despacho registrado. El excedente de S/ ' . number_format($excesoMonto, 2) . ' quedó como cuenta por cobrar del cliente.'
+            : 'Aplicación del anticipo registrada.');
     }
 
     /**

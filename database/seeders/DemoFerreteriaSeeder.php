@@ -134,6 +134,14 @@ class DemoFerreteriaSeeder extends Seeder
     {
         $now = now();
 
+        // Segunda caja: el turno demo de hoy ocupa la Caja Principal (queda
+        // ABIERTO a nombre de la Cajera), así el admin puede abrir su propio
+        // turno aquí y entrar al POS durante la demo.
+        \App\Models\Caja::firstOrCreate(
+            ['empresa_id' => self::EMPRESA, 'local_id' => self::LOCAL, 'nombre' => 'Caja 2 — Mostrador'],
+            ['activo' => true, 'caja_chica_activa' => false, 'caja_chica_monto_sugerido' => 0, 'caja_chica_en_arqueo' => false],
+        );
+
         // Cuentas reales del Excel (+ Yape; Efectivo y Tarjeta ya existen).
         $this->ctas['efectivo'] = DB::table('cuentas')->where('empresa_id', self::EMPRESA)->where('es_efectivo', true)->value('id');
         $this->ctas['bcp'] = DB::table('cuentas')->insertGetId([

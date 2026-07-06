@@ -324,6 +324,9 @@ export interface Cuenta extends Record<string, unknown> {
     activo:     boolean;
     created_at: string;
     updated_at: string;
+    /** Presente cuando la cuenta viene de metodo.cuentas (belongsToMany):
+     *  pivot.id es el cuenta_metodo_pago_id que espera el backend en el POS. */
+    pivot?: { id: number; cuenta_id: number; metodo_pago_id: number };
 }
 
 export interface MetodoPagoConCuentas extends MetodoPago {
