@@ -64,7 +64,7 @@ Stack: Laravel 12 + Inertia + React TS + Tailwind + Postgres. Menú/permisos ví
 | Anticipos de clientes | `/finanzas/anticipos` | Modalidad 'monto' o 'material' (valorizada a precio de venta DEL DÍA: `valorPasivoHoy()`). Aplicar entregas, devolver/anular. **Despacho con excedente**: si la entrega supera lo pendiente (unidades en material, saldo en monto) se BLOQUEA salvo confirmación (`exceso_a_cxc`) y el exceso se crea como Deuda por_cobrar a nombre del cliente, valorizada a precio del día (patrón "Jhon Astonitas"; no mueve tesorería porque salió mercadería, no dinero). En material el monto aplicado se calcula solo (prorrata: cantidad × monto/cantidad original), ya no se digita. |
 | Adelantos a proveedores | `/finanzas/adelantos` | Activo a favor; se consume desde CxP o se devuelve. |
 | Deudas y préstamos | `/finanzas/deudas` | direccion por_pagar/por_cobrar, tipo bancaria/personal/trabajador/otro. Amortización/incremento con dirección de caja correcta. Caso "moto del trabajador" = deuda por_cobrar tipo trabajador; cuota semanal entra sola a caja. |
-| Descuentos de planilla | `/finanzas/descuentos-planilla` | Faltantes de caja u otros cargos por trabajador; pendiente→aplicado/anulado. NO mueve tesorería. |
+| Descuentos de planilla | `/finanzas/descuentos-planilla` | Faltantes de caja u otros cargos por trabajador; pendiente→aplicado/anulado. NO mueve tesorería. **En el balance**: línea A FAVOR "Por descontar en planilla (faltantes y cargos)" = Σ pendientes (el derecho a recuperar del sueldo; el faltante en sí ya golpeó EN CONTRA vía gastos emitidos). Al APLICAR el descuento la línea baja — ese es su movimiento en el balance. Detalle clickeable (categoria `planilla_descuento`): pendientes y aplicados con trabajador/estado/fecha. |
 
 ### POS
 - Toggle **"Venta a crédito"**: exige cliente identificado (no Cliente General), pago inicial opcional/parcial, muestra "Saldo a crédito" en vivo. `ventas.es_credito/monto_pagado/saldo_pendiente/fecha_vencimiento`.
@@ -85,6 +85,7 @@ Reabrir turno revierte los asientos del cierre/consolidación.
 - Cuentas A FAVOR en **BRUTO** (Σ ingresos hasta la fecha); línea EN CONTRA `gastos_emitidos` = Σ egresos (SÍ suma al total). Neto = mismo saldo real.
 - Stock = Σ stock.cantidad × productos.precio_costo (precio del día).
 - CxC = Σ saldo_pendiente; anticipos = Σ valorPasivoHoy(); deudas línea por línea.
+- **Sección "Movimientos del día"** en el balance (entre favor/contra y el consolidado): todos los `cuenta_movimientos` de ESA fecha agrupados por concepto (Ventas cobradas, Cobros CxC, Anticipos, Gastos, Pagos a proveedores, Consolidación de caja, Cuotas...), cada grupo desplegable con sus operaciones (descripción, cuenta, usuario, monto). Responde "¿por qué se movió el balance hoy?" — las líneas del balance son acumulados en bruto y una venta puntual no se distingue ahí.
 - Detalle de líneas: endpoint `finanzas/balance/{fecha}/detalle/{categoria}` — respuesta NORMALIZADA `{tipo:'grupos', cards, itemCols (columnas a medida por categoría), montoLabel, grupos[{fecha, items[{...campos, sub, user, historial[]}]}]}`. Rango default 3 meses (pendiente: "fecha de corte" a definir con el cliente).
 
 ### Kit UI (reglas de diseño de modales)

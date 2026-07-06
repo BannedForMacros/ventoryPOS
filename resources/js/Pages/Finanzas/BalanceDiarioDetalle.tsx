@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw, ZoomIn } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw, ZoomIn, ChevronDown, ArrowDownCircle, ArrowUpCircle, Coins, Landmark } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
@@ -10,6 +10,7 @@ import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
+import Collapse from '@/Components/UI/Collapse';
 import DetalleAgrupado from '@/Components/Finanzas/DetalleAgrupado';
 import type { PageProps } from '@/types';
 
@@ -47,10 +48,27 @@ interface Gasto {
     concepto?: { nombre: string } | null;
 }
 
+interface MovimientoDia {
+    descripcion: string;
+    cuenta: string;
+    tipo: 'ingreso' | 'egreso';
+    monto: number;
+    user: string | null;
+}
+
+interface GrupoMovimientosDia {
+    label: string;
+    ingresos: number;
+    egresos: number;
+    items: MovimientoDia[];
+}
+
 interface Props extends PageProps {
     balance: Balance;
     gastos: Gasto[];
     salidasDia: { label: string; monto: number }[];
+    movimientosDia: GrupoMovimientosDia[];
+    saldosCuentas: { nombre: string; banco: string | null; es_efectivo: boolean; saldo: number }[];
 }
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
@@ -59,6 +77,7 @@ const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const CON_DETALLE = new Set([
     'efectivo', 'cuenta_bancaria', 'stock', 'cxc', 'cxp', 'gastos_emitidos',
     'anticipo_cliente', 'adelanto_proveedor', 'deuda', 'personal', 'prestamo_otorgado',
+    'planilla_descuento',
 ]);
 
 interface DetalleData {
@@ -82,11 +101,12 @@ const CATEGORIA_LABEL: Record<string, string> = {
     otro_contra:        'Otro',
 };
 
-export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Props) {
+export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas }: Props) {
     const { flash } = usePage<Props>().props;
     const editable = balance.estado === 'borrador';
 
     const [agregandoEn, setAgregandoEn]   = useState<'favor' | 'contra' | null>(null);
+    const [movAbiertos, setMovAbiertos]   = useState<string[]>([]);
     const [confirmando, setConfirmando]   = useState(false);
     const [saving, setSaving]             = useState(false);
     const [errors, setErrors]             = useState<Record<string, string>>({});
@@ -376,6 +396,20 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                 })}
             </div>
 
+            {/* ¿Cuánto tengo? — saldo REAL por cuenta a esta fecha (neto:
+                ingresos bruto A FAVOR − gastos emitidos de esa cuenta) */}
+            <div className="mb-5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                    Cuánto tengo por cuenta — saldo real a esta fecha
+                </p>
+                <StatGrid cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-5" stats={saldosCuentas.map(c => ({
+                    label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
+                    valor: money(c.saldo),
+                    color: c.saldo < 0 ? 'danger' as const : undefined,
+                    icon: c.es_efectivo ? <Coins size={16} /> : <Landmark size={16} />,
+                }))} />
+            </div>
+
             {/* Secciones favor / contra */}
             <div className="flex flex-col lg:flex-row gap-4 items-start">
                 {renderSeccion('favor')}
@@ -410,6 +444,81 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia }: Pr
                         Utilidad real = (balance hoy − balance ayer) + gastos del día
                     </p>
                 </div>
+            </div>
+
+            {/* ── Movimientos del día: la película de HOY, por concepto ──
+                Las líneas del balance son acumulados en bruto; aquí se ve cada
+                operación de esta fecha (ventas, descuentos de caja, pagos...)
+                para responder "¿por qué se movió el balance hoy?". */}
+            <div className="mt-4 rounded-2xl overflow-hidden"
+                style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))' }}>
+                    <h3 className="font-bold text-sm uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
+                        Movimientos del día
+                    </h3>
+                    <div className="flex items-center gap-4 text-sm font-semibold">
+                        <span className="inline-flex items-center gap-1" style={{ color: 'var(--color-success)' }}>
+                            <ArrowDownCircle size={14} />+{money(movimientosDia.reduce((s, g) => s + g.ingresos, 0))}
+                        </span>
+                        <span className="inline-flex items-center gap-1" style={{ color: 'var(--color-danger)' }}>
+                            <ArrowUpCircle size={14} />−{money(movimientosDia.reduce((s, g) => s + g.egresos, 0))}
+                        </span>
+                    </div>
+                </div>
+                {movimientosDia.length === 0 ? (
+                    <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>
+                        Sin movimientos de dinero en esta fecha.
+                    </p>
+                ) : (
+                    <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                        {movimientosDia.map(g => {
+                            const abierto = movAbiertos.includes(g.label);
+                            return (
+                                <div key={g.label}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setMovAbiertos(prev =>
+                                            prev.includes(g.label) ? prev.filter(l => l !== g.label) : [...prev, g.label])}
+                                        className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/[0.03]"
+                                    >
+                                        <span className="flex items-center gap-2 font-medium" style={{ color: 'var(--color-text)' }}>
+                                            <ChevronDown size={15} className="transition-transform duration-300"
+                                                style={{ transform: abierto ? 'rotate(0deg)' : 'rotate(-90deg)', color: 'var(--color-text-muted)' }} />
+                                            {g.label}
+                                            <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>
+                                                ({g.items.length})
+                                            </span>
+                                        </span>
+                                        <span className="flex items-center gap-4 font-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                                            {g.ingresos > 0 && <span style={{ color: 'var(--color-success)' }}>+{money(g.ingresos)}</span>}
+                                            {g.egresos > 0 && <span style={{ color: 'var(--color-danger)' }}>−{money(g.egresos)}</span>}
+                                        </span>
+                                    </button>
+                                    <Collapse open={abierto}>
+                                        <div className="px-4 pb-2.5">
+                                            {g.items.map((m, i) => (
+                                                <div key={i} className="flex items-center justify-between gap-3 py-1.5 pl-6 text-sm border-t"
+                                                    style={{ borderColor: 'color-mix(in srgb, var(--color-border) 55%, transparent)' }}>
+                                                    <span className="min-w-0 truncate" style={{ color: 'var(--color-text)' }}>
+                                                        {m.descripcion}
+                                                        <span className="text-xs ml-2" style={{ color: 'var(--color-text-muted)' }}>
+                                                            {m.cuenta}{m.user ? ` · ${m.user}` : ''}
+                                                        </span>
+                                                    </span>
+                                                    <span className="font-semibold whitespace-nowrap"
+                                                        style={{ color: m.tipo === 'ingreso' ? 'var(--color-success)' : 'var(--color-danger)', fontVariantNumeric: 'tabular-nums' }}>
+                                                        {m.tipo === 'ingreso' ? '+' : '−'}{money(m.monto)}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </Collapse>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
 
             {/* Card consolidador: todo A FAVOR, todo EN CONTRA, gastos y el balance */}

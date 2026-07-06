@@ -163,6 +163,19 @@ class BalanceDiarioService
                 ];
             });
 
+        // Descuentos de planilla PENDIENTES: dinero por recuperar del personal
+        // (faltantes de caja, cargos). Es un activo: cuando el faltante ocurrió
+        // el egreso ya golpeó EN CONTRA (gastos emitidos); esta línea refleja
+        // el derecho a descontarlo del sueldo. Al APLICARSE el descuento la
+        // línea baja — ese es el movimiento del balance al aplicar.
+        $planillaPendiente = (float) \App\Models\PlanillaDescuento::deEmpresa($empresaId)
+            ->pendiente()->sum('monto');
+        $items[] = [
+            'seccion' => 'favor', 'categoria' => 'planilla_descuento',
+            'descripcion' => 'Por descontar en planilla (faltantes y cargos)',
+            'monto' => round($planillaPendiente, 2), 'orden' => ++$orden,
+        ];
+
         // ── EN CONTRA ────────────────────────────────────────────────────
         $orden = 0;
 
@@ -180,19 +193,27 @@ class BalanceDiarioService
             'monto' => round($cxp, 2), 'orden' => ++$orden,
         ];
 
-        // F10 — Gastos emitidos: TODAS las salidas de dinero hasta la fecha
-        // (pagos a proveedores, gastos, cuotas, faltantes...). Contraparte
-        // EN CONTRA de las cuentas en bruto: favor(bruto) − esta línea = neto real.
-        $gastosEmitidos = (float) \App\Models\CuentaMovimiento::deEmpresa($empresaId)
-            ->where('fecha', '<=', $fechaCorte)
-            ->where('tipo', 'egreso')
-            ->sum('monto');
+        // F10 — Gastos emitidos POR CUENTA: todas las salidas de dinero hasta
+        // la fecha (pagos a proveedores, gastos, cuotas, faltantes...),
+        // desglosadas por cuenta/método (pedido del cliente: saber DE QUÉ
+        // cuenta salió cada sol). Contraparte EN CONTRA de las cuentas en
+        // bruto: favor(bruto) − gastos emitidos de la cuenta = saldo real.
+        Cuenta::deEmpresa($empresaId)->activo()
+            ->orderByDesc('es_efectivo')->orderBy('nombre')->get()
+            ->each(function (Cuenta $c) use (&$items, &$orden, $fechaCorte) {
+                $egresos = (float) \App\Models\CuentaMovimiento::where('cuenta_id', $c->id)
+                    ->where('fecha', '<=', $fechaCorte)
+                    ->where('tipo', 'egreso')
+                    ->sum('monto');
+                if ($egresos < 0.01) return; // sin salidas: no ensuciar EN CONTRA
 
-        $items[] = [
-            'seccion' => 'contra', 'categoria' => 'gastos_emitidos',
-            'descripcion' => 'Gastos emitidos (salidas de dinero)',
-            'monto' => round($gastosEmitidos, 2), 'orden' => ++$orden,
-        ];
+                $items[] = [
+                    'seccion' => 'contra', 'categoria' => 'gastos_emitidos',
+                    'descripcion' => "Gastos emitidos — {$c->nombre}",
+                    'ref_tipo' => 'cuenta', 'ref_id' => $c->id,
+                    'monto' => round($egresos, 2), 'orden' => ++$orden,
+                ];
+            });
 
         // Anticipos de clientes valorizados A PRECIO DEL DÍA.
         $anticipos = ClienteAnticipo::deEmpresa($empresaId)->activo()->with('producto')->get()

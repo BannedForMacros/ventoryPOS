@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\BalanceDiario;
 use App\Models\BalanceDiarioItem;
 use App\Models\ClienteAnticipo;
+use App\Models\Cuenta;
 use App\Models\CuentaMovimiento;
 use App\Models\Deuda;
 use App\Models\Entrada;
@@ -98,10 +99,68 @@ class BalanceDiarioController extends Controller
                 'monto' => round((float) $r->monto, 2),
             ])->values();
 
+        // ── Movimientos del DÍA (la película de hoy) ────────────────────
+        // Todo lo que entró y salió EN ESTA FECHA, agrupado por concepto.
+        // Es la respuesta a "¿por qué el balance se movió hoy?": las líneas
+        // del balance son acumulados en bruto y una venta puntual se pierde
+        // dentro de ellos; aquí se ve cada operación del día con su origen.
+        $origenLabels = [
+            'venta'                         => 'Ventas cobradas',
+            'venta_abono'                   => 'Cobros de créditos (CxC)',
+            'cliente_anticipo'              => 'Anticipos de clientes',
+            'cliente_anticipo_devolucion'   => 'Devolución de anticipos',
+            'gasto'                         => 'Gastos del día',
+            'entrada_pago'                  => 'Pagos a proveedores',
+            'entrada'                       => 'Pagos a proveedores',
+            'proveedor_adelanto'            => 'Adelantos a proveedores',
+            'proveedor_adelanto_devolucion' => 'Devolución de adelantos',
+            'deuda_pago'                    => 'Cuotas de deudas/préstamos',
+            'devolucion'                    => 'Reembolsos a clientes',
+            'cierre_turno'                  => 'Cierres de caja',
+            'turno_consolidacion'           => 'Consolidación de caja',
+            'ajuste'                        => 'Ajustes de saldo',
+        ];
+        $movimientosDia = CuentaMovimiento::deEmpresa($user->empresa_id)
+            ->where('fecha', $fecha)
+            ->with(['cuenta:id,nombre', 'user:id,name'])
+            ->orderBy('id')
+            ->get()
+            ->groupBy(fn ($m) => $origenLabels[$m->ref_tipo] ?? 'Otros movimientos')
+            ->map(fn ($rows, $label) => [
+                'label'    => $label,
+                'ingresos' => round((float) $rows->where('tipo', 'ingreso')->sum('monto'), 2),
+                'egresos'  => round((float) $rows->where('tipo', 'egreso')->sum('monto'), 2),
+                'items'    => $rows->map(fn ($m) => [
+                    'descripcion' => $m->descripcion,
+                    'cuenta'      => $m->cuenta?->nombre ?? '—',
+                    'tipo'        => $m->tipo,
+                    'monto'       => (float) $m->monto,
+                    'user'        => $m->user?->name,
+                ])->values(),
+            ])
+            ->sortByDesc(fn ($g) => $g['ingresos'] + $g['egresos'])
+            ->values();
+
+        // ── Saldo REAL por cuenta a esta fecha (lo que "tengo") ────────
+        // Neto = ingresos − egresos hasta la fecha. Es la respuesta directa a
+        // "¿cuánto tengo en efectivo / en mis tarjetas / en cada banco?" sin
+        // tener que restar mentalmente el bruto A FAVOR y los gastos emitidos.
+        $tesoreria = app(TesoreriaService::class);
+        $saldosCuentas = Cuenta::deEmpresa($user->empresa_id)->activo()
+            ->orderByDesc('es_efectivo')->orderBy('nombre')->get()
+            ->map(fn ($c) => [
+                'nombre'      => $c->nombre,
+                'banco'       => $c->banco,
+                'es_efectivo' => (bool) $c->es_efectivo,
+                'saldo'       => $tesoreria->saldo($c->id, $fecha),
+            ])->values();
+
         return Inertia::render('Finanzas/BalanceDiarioDetalle', [
-            'balance'    => $balance,
-            'gastos'     => $gastos,
-            'salidasDia' => $salidasDia,
+            'balance'        => $balance,
+            'gastos'         => $gastos,
+            'salidasDia'     => $salidasDia,
+            'movimientosDia' => $movimientosDia,
+            'saldosCuentas'  => $saldosCuentas,
         ]);
     }
 
@@ -150,6 +209,10 @@ class BalanceDiarioController extends Controller
 
                 if (!$esEgreso) {
                     $q->where('cuenta_id', $refId ?? TesoreriaService::efectivo($empresaId)->id);
+                } elseif ($refId) {
+                    // Gastos emitidos desglosados por cuenta: filtrar la cuenta
+                    // de la línea (sin ref_id — balances viejos — muestra todas).
+                    $q->where('cuenta_id', $refId);
                 }
 
                 $movs = $q->orderByDesc('fecha')->orderByDesc('id')->limit(1000)->get();
@@ -435,6 +498,51 @@ class BalanceDiarioController extends Controller
                         ['label' => 'Saldo a favor', 'valor' => (float) $adelanto->saldo, 'color' => 'success'],
                     ],
                     'itemCols'   => [['campo' => 'descripcion', 'label' => 'Aplicación']],
+                    'montoLabel' => 'Monto',
+                    'grupos' => $grupos,
+                ]);
+            }
+
+            // ── Descuentos de planilla: pendientes (suman) + aplicados ──
+            case 'planilla_descuento': {
+                $descuentos = \App\Models\PlanillaDescuento::deEmpresa($empresaId)
+                    ->with(['trabajador:id,name', 'registradoPor:id,name'])
+                    ->whereBetween('fecha', [date('Y-m-d', strtotime($fecha . ' -3 months')), $fecha])
+                    ->orderByDesc('fecha')->orderByDesc('id')
+                    ->get();
+
+                $estados = ['pendiente' => 'Pendiente', 'aplicado' => 'Aplicado en planilla', 'anulado' => 'Anulado'];
+
+                $grupos = $descuentos->groupBy(fn ($d) => $d->fecha->format('Y-m-d'))
+                    ->map(fn ($rows, $f) => [
+                        'id'      => $f,
+                        'titulo'  => $f,
+                        'esFecha' => true,
+                        // Solo lo PENDIENTE suma a la línea del balance.
+                        'monto'   => round((float) $rows->where('estado', 'pendiente')->sum('monto'), 2),
+                        'tipo'    => 'neutro',
+                        'items'   => $rows->map(fn ($d) => [
+                            'descripcion' => $d->motivo,
+                            'trabajador'  => $d->trabajador?->name ?? '—',
+                            'estado'      => ($estados[$d->estado] ?? $d->estado)
+                                . ($d->estado === 'aplicado' && $d->fecha_aplicacion ? ' (' . $d->fecha_aplicacion->format('d/m/Y') . ')' : ''),
+                            'monto'       => (float) $d->monto,
+                            'tipo'        => $d->estado === 'pendiente' ? 'ingreso' : null,
+                            'user'        => $d->registradoPor?->name,
+                        ])->values(),
+                    ])->values();
+
+                return response()->json([
+                    'tipo'  => 'grupos',
+                    'cards' => [
+                        ['label' => 'Pendiente de descontar', 'valor' => round((float) $descuentos->where('estado', 'pendiente')->sum('monto'), 2), 'color' => 'success'],
+                        ['label' => 'Ya aplicado en planilla (rango)', 'valor' => round((float) $descuentos->where('estado', 'aplicado')->sum('monto'), 2)],
+                    ],
+                    'itemCols' => [
+                        ['campo' => 'descripcion', 'label' => 'Motivo'],
+                        ['campo' => 'trabajador',  'label' => 'Trabajador'],
+                        ['campo' => 'estado',      'label' => 'Estado'],
+                    ],
                     'montoLabel' => 'Monto',
                     'grupos' => $grupos,
                 ]);
