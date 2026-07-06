@@ -46,6 +46,7 @@ interface Gasto {
     comentario: string | null;
     tipo?: { nombre: string } | null;
     concepto?: { nombre: string } | null;
+    cuenta?: { nombre: string; es_efectivo: boolean } | null;
 }
 
 interface MovimientoDia {
@@ -435,13 +436,20 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                     {g.comentario && (
                                         <p className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>{g.comentario}</p>
                                     )}
+                                    {/* De qué cuenta salió el gasto (pedido del cliente) */}
+                                    <p className="text-[11px] inline-flex items-center gap-1 mt-0.5 truncate" style={{ color: 'var(--color-text-muted)' }}>
+                                        {g.cuenta?.es_efectivo ? <Coins size={11} /> : <Landmark size={11} />}
+                                        {g.cuenta?.nombre ?? 'Efectivo'}
+                                    </p>
                                 </div>
-                                <span className="font-semibold whitespace-nowrap ml-2">{money(g.monto)}</span>
+                                <span className="font-semibold whitespace-nowrap ml-2" style={{ fontVariantNumeric: 'tabular-nums' }}>{money(g.monto)}</span>
                             </div>
                         ))}
                     </div>
                     <p className="px-3 py-2 text-[11px]" style={{ color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)' }}>
-                        Utilidad real = (balance hoy − balance ayer) + gastos del día
+                        Utilidad real = (balance hoy − balance ayer) + gastos del día.
+                        El gasto baja el balance pero no es pérdida del negocio: se suma
+                        de vuelta para ver cuánto generó la operación antes de gastos.
                     </p>
                 </div>
             </div>
@@ -541,7 +549,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                     <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Gastos del día</p>
                         <p className="text-xl font-bold" style={{ color: 'var(--color-warning)' }}>{money(balance.gastos_dia)}</p>
-                        <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>ya descontados del efectivo</p>
+                        <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>ya restados en "Gastos emitidos" (en contra); no se restan dos veces</p>
                     </div>
                     <div className="rounded-xl px-3 py-2 -my-1"
                         style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, var(--color-bg))' }}>

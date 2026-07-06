@@ -82,7 +82,9 @@ Reabrir turno revierte los asientos del cierre/consolidación.
 
 ### Balance diario — detalle técnico
 - `BalanceDiarioService::generar()`: regenera líneas automáticas (es_manual=false) y purga legado; confirmado = inmutable.
-- Cuentas A FAVOR en **BRUTO** (Σ ingresos hasta la fecha); línea EN CONTRA `gastos_emitidos` = Σ egresos (SÍ suma al total). Neto = mismo saldo real.
+- Cuentas A FAVOR en **BRUTO** (Σ ingresos hasta la fecha); EN CONTRA los `gastos_emitidos` van **DESGLOSADOS POR CUENTA** ("Gastos emitidos — Efectivo/BCP/Tarjeta...", una línea por cuenta con egresos > 0, ref cuenta, detalle filtrado por esa cuenta; balances confirmados viejos conservan la línea agregada). Neto = mismo saldo real.
+- Sección **"Cuánto tengo por cuenta"** (cards bajo el resumen): saldo NETO real de cada cuenta a la fecha del balance (`TesoreriaService::saldo(cuenta, fecha)`), rojo si es negativo — responde "¿cuánto tengo en efectivo/tarjetas/bancos?" sin restar bruto − emitidos a mano.
+- El panel **"Gastos del día"** muestra la cuenta de cada gasto (ícono efectivo/banco); el detalle de "Gastos emitidos — {cuenta}" lleva card "Salidas de la cuenta: {nombre}" y columna "Desde cuenta". Regla general: **toda cifra EN CONTRA debe poder responder "¿de qué cuenta/método salió?"**.
 - Stock = Σ stock.cantidad × productos.precio_costo (precio del día).
 - CxC = Σ saldo_pendiente; anticipos = Σ valorPasivoHoy(); deudas línea por línea.
 - **Sección "Movimientos del día"** en el balance (entre favor/contra y el consolidado): todos los `cuenta_movimientos` de ESA fecha agrupados por concepto (Ventas cobradas, Cobros CxC, Anticipos, Gastos, Pagos a proveedores, Consolidación de caja, Cuotas...), cada grupo desplegable con sus operaciones (descripción, cuenta, usuario, monto). Responde "¿por qué se movió el balance hoy?" — las líneas del balance son acumulados en bruto y una venta puntual no se distingue ahí.

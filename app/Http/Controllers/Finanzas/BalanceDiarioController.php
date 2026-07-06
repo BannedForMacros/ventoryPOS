@@ -67,9 +67,10 @@ class BalanceDiarioController extends Controller
         $balance->load(['items', 'user']);
 
         // Detalle de gastos del día para el panel lateral (como su Excel).
+        // Con su cuenta: el cliente quiere saber DE DÓNDE salió cada gasto.
         $gastos = Gasto::deEmpresa($user->empresa_id)
             ->where('fecha', $fecha)
-            ->with(['tipo', 'concepto'])
+            ->with(['tipo', 'concepto', 'cuenta:id,nombre,es_efectivo'])
             ->orderBy('id')
             ->get();
 
@@ -252,16 +253,25 @@ class BalanceDiarioController extends Controller
                     $itemCols[] = ['campo' => 'cuenta', 'label' => 'Desde cuenta'];
                 }
 
+                $cards = [
+                    ['label' => $esEgreso ? 'Total salidas (período)' : 'Total ingresado (período)',
+                     'valor' => $total, 'color' => $esEgreso ? 'danger' : 'success'],
+                    ['label' => 'Días con movimiento', 'valor' => $grupos->count(), 'esNumero' => true],
+                    ['label' => 'Operaciones', 'valor' => $movs->count(), 'esNumero' => true],
+                ];
+                // Línea desglosada por cuenta: decir de cuál es este detalle.
+                if ($esEgreso && $refId) {
+                    $nombreCuenta = Cuenta::where('id', $refId)->value('nombre');
+                    if ($nombreCuenta) {
+                        array_unshift($cards, ['label' => 'Salidas de la cuenta', 'valor' => $nombreCuenta, 'esTexto' => true]);
+                    }
+                }
+
                 return response()->json([
                     'tipo'   => 'grupos',
                     'desde'  => $desde,
                     'hasta'  => $hasta,
-                    'cards'  => [
-                        ['label' => $esEgreso ? 'Total salidas (período)' : 'Total ingresado (período)',
-                         'valor' => $total, 'color' => $esEgreso ? 'danger' : 'success'],
-                        ['label' => 'Días con movimiento', 'valor' => $grupos->count(), 'esNumero' => true],
-                        ['label' => 'Operaciones', 'valor' => $movs->count(), 'esNumero' => true],
-                    ],
+                    'cards'  => $cards,
                     'itemCols'   => $itemCols,
                     'montoLabel' => 'Monto',
                     'grupos'     => $grupos,
