@@ -1,7 +1,7 @@
 # Contexto: Ferretería HYC Ferromateriales — Balance Financiero Diario
 
 > Documento de contexto para retomar el trabajo en cualquier sesión.
-> Última actualización: 2026-07-05.
+> Última actualización: 2026-07-06.
 
 ---
 
@@ -122,9 +122,15 @@ Reabrir turno revierte los asientos del cierre/consolidación.
 - Pruebas E2E: se hicieron con scripts transaccionales (BEGIN...ROLLBACK) llamando controladores reales — patrón útil: `Request::create` + `setUserResolver` + `setLaravelSession`; FormRequests con `setContainer`+`setRedirector`+route param+`validateResolved()`.
 
 ## 5. Pendientes / próximos pasos
-- [ ] **Fecha de corte** por empresa (inicio de operaciones): congela historia previa en un saldo inicial; acota los "3 meses" por defecto de los detalles.
-- [ ] Cliente debe **vincular métodos a sus cuentas reales** (Configuración → Métodos de pago) o dejar que se auto-creen (Yape, Tarjeta ya se auto-crean).
+- [ ] **Fecha de corte** por empresa (inicio de operaciones): congela historia previa en un saldo inicial; acota los "3 meses" por defecto de los detalles. ← EL MÁS IMPORTANTE antes de datos reales.
+- [ ] **Antes de cada demo**: re-correr `DemoFerreteriaSeeder` ese mismo día (las fechas ayer/hoy son relativas al día en que se corre).
+- [ ] Decidir qué hacer con **Tarjeta en −S/ 8,000** (pago de prueba a COFESA desde cuenta sin fondos; el desglose por cuenta lo delata — sirve de ejemplo o se corrige moviendo el asiento a BCP).
+- [ ] **Vínculo descuento de planilla aplicado ↔ deuda "Sueldos pendientes"** (amortizar al aplicar) — validar el modelado con el cliente primero.
 - [ ] Reporte de faltantes por cajera (los datos ya existen: consolidaciones + descuentos planilla).
+- [ ] Valorizar la línea de stock del balance con opción precio_costo vs precio_venta (hoy: precio_costo) — decisión del cliente.
 - [ ] Kardex de ladrillo estilo Excel (ingreso/salida/pérdida semanal por producto) — fase futura.
 - [ ] Normalizar íconos de teclado (✓, ⚠) en páginas antiguas (Agenda, Turnos, Stock, Devoluciones).
-- [ ] Valorizar la línea de stock del balance con opción precio_costo vs precio_venta (hoy: precio_costo).
+- [x] Cliente vinculó métodos a sus cuentas reales (Yape→BCP, Transferencia→BCP/BBVA) en Configuración → Métodos de pago.
+
+## 6. Auditoría de trazabilidad
+`php artisan tinker database/scripts/auditoria_balance.php` — 65 verificaciones de punta a punta (solo lectura): aritmética del balance, cada línea vs su fuente de verdad, tesorería sin movimientos huérfanos ni sin origen, toda operación con su asiento, cadenas internas (original − pagos = saldo en deudas/ventas/entradas/anticipos/adelantos), saldos por cuenta e inmutabilidad de confirmados. Correrla antes de cada demo. OJO: la constante `$FECHA` del script apunta a la fecha del balance a auditar.

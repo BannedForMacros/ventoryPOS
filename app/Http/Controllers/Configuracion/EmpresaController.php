@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Configuracion;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Configuracion\EmpresaRequest;
-use App\Models\Cliente;
 use App\Models\Empresa;
 use App\Services\AlmacenSyncService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use RuntimeException;
@@ -15,35 +15,28 @@ class EmpresaController extends Controller
 {
     public function __construct(private AlmacenSyncService $almacenSync) {}
 
-    public function index()
+    public function index(Request $request)
     {
+        // Cada usuario administra únicamente SU empresa (aislamiento multi-tenant).
         return Inertia::render('Configuracion/Empresas', [
-            'empresas' => Empresa::orderBy('razon_social')->get(),
+            'empresas' => Empresa::where('id', $request->user()->empresa_id)->orderBy('razon_social')->get(),
         ]);
     }
 
     public function store(EmpresaRequest $request)
     {
-        $empresa = Empresa::create($request->validated());
-
-        // Cliente general por defecto. La flag `es_cliente_general` (A15) es
-        // la fuente de verdad; mantenemos DNI 99999999 como valor poblado pero
-        // ya no se usa para identificarlo.
-        Cliente::create([
-            'empresa_id'         => $empresa->id,
-            'tipo_documento'     => 'DNI',
-            'numero_documento'   => '99999999',
-            'nombres'            => 'Clientes Varios',
-            'apellidos'          => '',
-            'activo'             => true,
-            'es_cliente_general' => true,
-        ]);
-
-        return redirect()->back()->with('success', 'Empresa creada correctamente.');
+        // Dar de alta una empresa es una operación de onboarding (seeder/tinker),
+        // no del panel de un tenant: cualquier admin de empresa podría crear
+        // tenants ajenos. El alta creaba también su Cliente General (flag
+        // es_cliente_general, A15) — ver git history si se rehabilita detrás
+        // de un superadmin global.
+        abort(403, 'La creación de empresas se gestiona fuera del panel.');
     }
 
     public function update(EmpresaRequest $request, Empresa $empresa)
     {
+        abort_if($empresa->id !== $request->user()->empresa_id, 403);
+
         $modoAnterior = $empresa->modo_almacen;
         $datos        = $request->validated();
         $modoNuevo    = $datos['modo_almacen'];
@@ -69,7 +62,8 @@ class EmpresaController extends Controller
 
     public function destroy(Empresa $empresa)
     {
-        $empresa->delete();
-        return redirect()->back()->with('success', 'Empresa eliminada correctamente.');
+        // Borrar una empresa cascadea usuarios y todo su historial (FK
+        // cascadeOnDelete). Operación fuera del panel, igual que el alta.
+        abort(403, 'La eliminación de empresas se gestiona fuera del panel.');
     }
 }

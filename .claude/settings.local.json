@@ -121,7 +121,17 @@
       "PowerShell(npx tsc --noEmit)",
       "Skill(dataviz)",
       "Bash(python3 *)",
-      "Bash(pip3 install *)"
+      "Bash(pip3 install *)",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"check-ignore exit: $?\")",
+      "Bash(vendor/bin/pest tests/Feature --compact)",
+      "Bash(echo \"=== TSC exit: $? ===\")",
+      "Bash(vendor/bin/pest tests/Feature)",
+      "Bash(vendor/bin/pest tests/Feature/Configuracion tests/Feature/Clientes)",
+      "Bash(vendor/bin/pest tests/Feature --exclude-group=none)",
+      "Bash(awk '{print $3}')",
+      "Bash(awk '{print $2, $3}')",
+      "Bash(awk '{print $2}')"
     ]
   }
 }

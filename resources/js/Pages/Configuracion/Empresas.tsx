@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { router, useForm, usePage } from '@inertiajs/react';
+import { useForm, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -66,21 +66,14 @@ const emptyForm: FormData = {
 export default function Empresas({ empresas }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalOpen, setModalOpen] = useState(false);
-    const [confirmId, setConfirmId] = useState<number | null>(null);
     const [editing, setEditing] = useState<Empresa | null>(null);
 
-    const { data, setData, post, put, processing, errors, reset } = useForm<FormData>(emptyForm);
+    const { data, setData, put, processing, errors, reset } = useForm<FormData>(emptyForm);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
         if (flash?.error) toast.error(flash.error);
     }, [flash]);
-
-    function openCreate() {
-        setEditing(null);
-        reset();
-        setModalOpen(true);
-    }
 
     function openEdit(emp: Empresa) {
         setEditing(emp);
@@ -110,20 +103,10 @@ export default function Empresas({ empresas }: Props) {
 
     function submit(e: React.FormEvent) {
         e.preventDefault();
-        if (editing) {
-            put(route('configuracion.empresas.update', editing.id), {
-                onSuccess: () => { setModalOpen(false); reset(); },
-            });
-        } else {
-            post(route('configuracion.empresas.store'), {
-                onSuccess: () => { setModalOpen(false); reset(); },
-            });
-        }
-    }
-
-    function destroy(id: number) {
-        setConfirmId(null);
-        router.delete(route('configuracion.empresas.destroy', id));
+        if (!editing) return;
+        put(route('configuracion.empresas.update', editing.id), {
+            onSuccess: () => { setModalOpen(false); reset(); },
+        });
     }
 
     const columns: Column<Empresa>[] = [
@@ -165,7 +148,6 @@ export default function Empresas({ empresas }: Props) {
             render: (emp) => (
                 <TableActions
                     onEdit={() => openEdit(emp)}
-                    onDelete={() => setConfirmId(emp.id)}
                 />
             ),
         },
@@ -175,8 +157,7 @@ export default function Empresas({ empresas }: Props) {
         <AppLayout title="Empresas">
             <PageHeader
                 title="Empresas"
-                subtitle="Gestión de empresas registradas"
-                actions={<Button onClick={openCreate}>+ Nueva Empresa</Button>}
+                subtitle="Configuración de tu empresa"
             />
 
             <Table
@@ -190,13 +171,13 @@ export default function Empresas({ empresas }: Props) {
             <Modal
                 isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
-                title={editing ? 'Editar Empresa' : 'Nueva Empresa'}
+                title="Editar Empresa"
                 size="lg"
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
                         <Button loading={processing} onClick={submit}>
-                            {editing ? 'Guardar cambios' : 'Crear empresa'}
+                            Guardar cambios
                         </Button>
                     </>
                 }
@@ -469,24 +450,6 @@ export default function Empresas({ empresas }: Props) {
                         Empresa activa
                     </label>
                 </form>
-            </Modal>
-
-            {/* Confirm Delete */}
-            <Modal
-                isOpen={confirmId !== null}
-                onClose={() => setConfirmId(null)}
-                title="Confirmar eliminación"
-                size="sm"
-                footer={
-                    <>
-                        <Button variant="ghost" onClick={() => setConfirmId(null)}>Cancelar</Button>
-                        <Button variant="danger" onClick={() => confirmId && destroy(confirmId)}>Eliminar</Button>
-                    </>
-                }
-            >
-                <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-                    ¿Estás seguro de que deseas eliminar esta empresa? Esta acción no se puede deshacer.
-                </p>
             </Modal>
         </AppLayout>
     );

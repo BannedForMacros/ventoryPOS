@@ -26,7 +26,8 @@ class RolRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'empresa_id'  => 'required|exists:empresas,id',
+            // empresa_id NO se acepta del request: el controlador la fuerza
+            // desde el usuario autenticado.
             'nombre'      => 'required|string|max:255',
             'descripcion' => 'nullable|string|max:500',
             'es_admin'    => 'boolean',

@@ -94,7 +94,10 @@ it('ClienteController bloquea editar el Cliente General', function () {
     }
 });
 
-it('Empresa nueva creada via EmpresaController obtiene su Cliente General con la flag', function () {
+// El alta de empresas por el panel quedó bloqueada (aislamiento multi-tenant):
+// cualquier admin de empresa podría crear tenants ajenos. El onboarding se hace
+// por seeder/tinker, que debe crear también el Cliente General con la flag.
+it('EmpresaController bloquea crear empresas desde el panel', function () {
     $payload = [
         'razon_social'                    => 'Nueva SAC',
         'nombre_comercial'                => 'Nueva',
@@ -116,12 +119,8 @@ it('Empresa nueva creada via EmpresaController obtiene su Cliente General con la
         'restock_default'                 => true,
     ];
 
-    $this->post(route('configuracion.empresas.store'), $payload)->assertRedirect();
+    $this->post(route('configuracion.empresas.store'), $payload)->assertForbidden();
 
-    $empresaNueva = \App\Models\Empresa::where('ruc', $payload['ruc'])->firstOrFail();
-    $general = Cliente::generalDeEmpresa($empresaNueva->id);
-
-    expect($general)->not->toBeNull();
-    expect($general->es_cliente_general)->toBeTrue();
+    expect(\App\Models\Empresa::where('ruc', $payload['ruc'])->exists())->toBeFalse();
 });
 

@@ -14,12 +14,14 @@ class UsuarioRequest extends FormRequest
 
     public function rules(): array
     {
-        $id = $this->route('usuario')?->id;
+        $id        = $this->route('usuario')?->id;
+        // empresa_id NO se acepta del request: el controlador la fuerza desde
+        // el usuario autenticado. Rol y local deben pertenecer a esa empresa.
+        $empresaId = $this->user()->empresa_id;
 
         return [
-            'empresa_id' => 'required|exists:empresas,id',
-            'local_id'   => 'nullable|exists:locales,id',
-            'rol_id'     => 'required|exists:roles,id',
+            'local_id'   => ['nullable', Rule::exists('locales', 'id')->where('empresa_id', $empresaId)],
+            'rol_id'     => ['required', Rule::exists('roles', 'id')->where('empresa_id', $empresaId)],
             'name'       => 'required|string|max:255',
             'email'      => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($id)],
             'password'   => $id ? 'nullable|string|min:6' : 'required|string|min:6',

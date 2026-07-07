@@ -13,9 +13,10 @@ class PermisoController extends Controller
 {
     public function index(Request $request)
     {
-        $roles   = Rol::with('empresa')->orderBy('nombre')->get();
+        $empresaId = $request->user()->empresa_id;
+        $roles   = Rol::where('empresa_id', $empresaId)->with('empresa')->orderBy('nombre')->get();
         $rolId   = $request->query('rol_id');
-        $rol     = $rolId ? Rol::with('permisos')->find($rolId) : null;
+        $rol     = $rolId ? Rol::where('empresa_id', $empresaId)->with('permisos')->find($rolId) : null;
         $modulos = Modulo::with('hijos')->whereNull('padre_id')->where('activo', true)->orderBy('orden')->get();
 
         return Inertia::render('Configuracion/Permisos', [
@@ -28,6 +29,8 @@ class PermisoController extends Controller
 
     public function store(Request $request, Rol $rol)
     {
+        abort_if($rol->empresa_id !== $request->user()->empresa_id, 403);
+
         $request->validate([
             'permisos'               => 'required|array',
             'permisos.*.modulo_id'   => 'required|exists:modulos,id',
