@@ -211,6 +211,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('ruc', [DecolectaController::class, 'consultarRuc'])->name('decolecta.ruc');
     });
 
+    // Tipo de cambio del día (POS y Finanzas). Get-or-fetch SBS vía Decolecta.
+    Route::get('tipo-cambio', [\App\Http\Controllers\TipoCambioController::class, 'show'])->name('tipo-cambio.show');
+
     // ── CATÁLOGO ─────────────────────────────────────────────────────────
     Route::prefix('catalogo')->name('catalogo.')->group(function () {
         Route::middleware('permiso:catalogo.categorias')->group(function () {

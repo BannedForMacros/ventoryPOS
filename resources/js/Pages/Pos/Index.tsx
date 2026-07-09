@@ -57,6 +57,9 @@ interface Props extends PageProps {
     // desde el principio en vez de fallar al final con un 422.
     puedeVender:        boolean;
     razonNoVender:      string | null;
+    // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
+    monedas?:           string[];
+    tipoCambioHoy?:     number | null;
 }
 
 type TipoComprobante = 'ticket' | 'boleta' | 'factura';
@@ -142,7 +145,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total };
 }
 
-export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, puedeVender, razonNoVender }: Props) {
+export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, puedeVender, razonNoVender, monedas, tipoCambioHoy }: Props) {
     // Tasa de IGV de la empresa (configurable por tenant). Default 18% si no llega.
     const empresaAuth = usePage().props.auth?.user?.empresa as { tasa_igv?: number | string } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
@@ -192,6 +195,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [descuentoTotal, setDescuentoTotal]       = useState(0);
     const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(null);
     const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>('ticket');
+    // Multimoneda: moneda de la venta. En USD los precios/pagos se ingresan en
+    // dólares y el backend los convierte a soles al TC del día (congelado).
+    const [moneda, setMoneda]                       = useState<'PEN' | 'USD'>('PEN');
     // F1 — Venta a crédito: se entrega mercadería sin cobrar el total.
     // Requiere cliente identificado; el saldo queda como cuenta por cobrar.
     const [esCredito, setEsCredito]                 = useState(false);
@@ -389,6 +395,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         setCarrito([]);
         setPagos([]);
         setCliente(clienteGeneral);
+        setMoneda('PEN');
         setDescuentoTotal(0);
         setDescuentoConceptoId(null);
         setTipoComprobante('ticket');
@@ -452,6 +459,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             descuento_concepto_id: descuentoConceptoId,
             es_credito:            esCredito,
             fecha_vencimiento:     esCredito && fechaVencimiento ? fechaVencimiento : null,
+            moneda,
+            tipo_cambio:           moneda === 'USD' ? (tipoCambioHoy ?? null) : null,
             // Se reenvia el mismo key en cada reintento. El backend desduplica.
             idempotency_key:       idempotencyKey,
             // Si vino de una cita, lo enviamos para que el backend la vincule.
@@ -578,6 +587,23 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                             <option value="factura" className="text-gray-900">Factura</option>
                         </select>
                     </div>
+
+                    {/* Moneda (multimoneda). USD requiere TC del día disponible. */}
+                    {(monedas ?? ['PEN']).includes('USD') && tipoCambioHoy ? (
+                        <div className="hidden sm:flex items-center gap-1.5" title={`Tipo de cambio del día: S/ ${Number(tipoCambioHoy).toFixed(3)} por US$ 1`}>
+                            <select
+                                value={moneda}
+                                onChange={e => setMoneda(e.target.value as 'PEN' | 'USD')}
+                                className="text-xs bg-white/15 border-0 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-white/30"
+                            >
+                                <option value="PEN" className="text-gray-900">S/ Soles</option>
+                                <option value="USD" className="text-gray-900">US$ Dólares</option>
+                            </select>
+                            {moneda === 'USD' && (
+                                <span className="text-[11px] font-medium text-white/90 whitespace-nowrap">TC {Number(tipoCambioHoy).toFixed(3)}</span>
+                            )}
+                        </div>
+                    ) : null}
 
                     {/* Cliente — siempre visible (incluso en móvil/PWA) */}
                     <button

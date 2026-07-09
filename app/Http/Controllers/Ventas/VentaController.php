@@ -27,6 +27,16 @@ class VentaController extends Controller
 
     // ── POS ────────────────────────────────────────────────────────────────────
 
+    /** TC USD del día para el POS; null si la SBS no responde (el POS no debe romperse). */
+    private function tipoCambioHoy(): ?float
+    {
+        try {
+            return app(\App\Services\TipoCambioService::class)->tasaHoy('USD');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
     public function pos(Request $request)
     {
         $user   = $request->user();
@@ -126,6 +136,9 @@ class VentaController extends Controller
             'citaPrellenada'     => $citaPrellenada,
             'puedeVender'        => $puedeVender,
             'razonNoVender'      => $razonNoVender,
+            // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
+            'monedas'            => ['PEN', 'USD'],
+            'tipoCambioHoy'      => $this->tipoCambioHoy(),
         ]);
     }
 
