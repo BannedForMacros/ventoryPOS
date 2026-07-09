@@ -38,12 +38,8 @@ function MetodoIcon({ tipo }: { tipo: string }) {
 
 export default function PanelPago({ pagos, metodosPago, total, onChange }: Props) {
     const totalPagado  = pagos.reduce((s, p) => s + p.monto, 0);
+    // Lo pendiente por cubrir se usa como monto sugerido al agregar una línea.
     const pendiente    = Math.max(0, total - totalPagado);
-    // El vuelto solo se muestra cuando al menos un método admite vuelto.
-    // Fuente de verdad: la columna metodos_pago.admite_vuelto del backend.
-    const vuelto       = pagos.some(p => p.admite_vuelto)
-        ? Math.max(0, totalPagado - total)
-        : 0;
 
     function addPago() {
         const metodo = metodosPago[0];
@@ -95,7 +91,7 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
                 return (
                     <div
                         key={pago.key}
-                        className="rounded-xl p-3 space-y-2"
+                        className="rounded-xl p-2 space-y-1.5"
                         style={{
                             backgroundColor: 'var(--color-surface)',
                             border: '1px solid var(--color-border)',
@@ -192,6 +188,8 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
                 );
             })}
 
+            {/* El resumen (pagado/falta/vuelto) vive en el pie fijo del
+                CarritoPanel, siempre visible — aquí solo las líneas de pago. */}
             <button
                 onClick={addPago}
                 className="flex items-center justify-center gap-1.5 text-sm font-medium py-2 px-3 rounded-xl transition-all hover:opacity-80 w-full"
@@ -203,40 +201,6 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
             >
                 <Plus size={14} /> Agregar pago
             </button>
-
-            {/* Resumen de pagos */}
-            {pagos.length > 0 && (
-                <div
-                    className="rounded-xl p-3 space-y-1.5"
-                    style={{
-                        backgroundColor: 'var(--color-bg)',
-                        border: '1px solid var(--color-border)',
-                    }}
-                >
-                    <div className="flex justify-between text-xs">
-                        <span style={{ color: 'var(--color-text-muted)' }}>Total a pagar</span>
-                        <span className="font-semibold" style={{ color: 'var(--color-text)' }}>S/ {total.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                        <span style={{ color: 'var(--color-text-muted)' }}>Pagado</span>
-                        <span className="font-bold" style={{ color: totalPagado >= total ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                            S/ {totalPagado.toFixed(2)}
-                        </span>
-                    </div>
-                    {pendiente > 0.009 && (
-                        <div className="flex justify-between text-xs font-bold" style={{ color: 'var(--color-danger)' }}>
-                            <span>Pendiente</span>
-                            <span>S/ {pendiente.toFixed(2)}</span>
-                        </div>
-                    )}
-                    {vuelto > 0.009 && (
-                        <div className="flex justify-between text-xs font-bold" style={{ color: 'var(--color-success)' }}>
-                            <span>Vuelto</span>
-                            <span>S/ {vuelto.toFixed(2)}</span>
-                        </div>
-                    )}
-                </div>
-            )}
         </div>
     );
 }

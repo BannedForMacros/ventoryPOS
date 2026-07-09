@@ -64,7 +64,8 @@ type TipoComprobante = 'ticket' | 'boleta' | 'factura';
 function uid() { return Math.random().toString(36).slice(2); }
 
 /**
- * Miniatura del producto en el grid del POS. Cae al icono placeholder si la
+ * Miniatura del producto en el grid del POS. Compacta (44px) para que la card
+ * sea baja y entren mas productos en pantalla. Cae al icono placeholder si la
  * URL no carga (link roto, CDN caido). Manejamos el estado de error por card
  * para no penalizar al grid entero por una sola imagen mala.
  */
@@ -73,7 +74,7 @@ function ProductoThumbnail({ url, alt }: { url: string | null; alt: string }) {
     const showImg = !!url && !failed;
     return (
         <div
-            className="w-full aspect-square rounded-lg overflow-hidden mb-2 flex items-center justify-center"
+            className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center"
             style={{ backgroundColor: 'var(--color-bg)' }}
         >
             {showImg ? (
@@ -85,7 +86,7 @@ function ProductoThumbnail({ url, alt }: { url: string | null; alt: string }) {
                     onError={() => setFailed(true)}
                 />
             ) : (
-                <ImageIcon size={28} style={{ color: 'var(--color-text-muted)', opacity: 0.35 }} />
+                <ImageIcon size={18} style={{ color: 'var(--color-text-muted)', opacity: 0.35 }} />
             )}
         </div>
     );
@@ -284,6 +285,24 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     }, [busqueda, productos, categoriaActiva]);
 
     /**
+     * Enter en el buscador: agrega directo si hay match exacto de codigo
+     * (flujo de lector de codigo de barras: escanea → teclea codigo + Enter)
+     * o si la busqueda dejo un unico resultado. Limpia el buscador para el
+     * siguiente escaneo.
+     */
+    function onBusquedaKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+        if (e.key !== 'Enter') return;
+        const q = busqueda.trim().toLowerCase();
+        if (!q) return;
+        const exacto    = productos.find(p => (p.codigo ?? '').toLowerCase() === q);
+        const candidato = exacto ?? (productosFiltrados.length === 1 ? productosFiltrados[0] : null);
+        if (candidato) {
+            agregarProducto(candidato);
+            setBusqueda('');
+        }
+    }
+
+    /**
      * Punto de entrada al hacer click en un producto del catalogo.
      * - Si tiene 1 sola presentacion (caso tipico) → agrega directo al carrito.
      * - Si tiene 2+ presentaciones (talla P/M/G en servicios, presentaciones
@@ -373,6 +392,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         setDescuentoTotal(0);
         setDescuentoConceptoId(null);
         setTipoComprobante('ticket');
+        // La venta a crédito no debe "heredarse" a la siguiente venta.
+        setEsCredito(false);
+        setFechaVencimiento('');
     }
 
     // Lineas que vienen de una cita con producto/unidad desactivada. Si hay,
@@ -574,8 +596,11 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 </div>
             </div>
 
-            {/* ── Contenido principal ─────────────────────────────────── */}
-            <div className="flex flex-1 overflow-hidden relative">
+            {/* ── Contenido principal ───────────────────────────────────
+                flex-row-reverse: el DOM mantiene productos primero (autofocus
+                del buscador, orden de tabulación) pero visualmente el carrito
+                queda a la IZQUIERDA y los productos a la derecha. */}
+            <div className="flex flex-row-reverse flex-1 overflow-hidden relative">
                 {/* ── Panel izquierdo: productos ──────────────────────── */}
                 <div className="flex-1 flex flex-col overflow-hidden">
                     {/* Header de productos + buscador + categorías */}
@@ -604,7 +629,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 enterKeyHint="search"
                                 value={busqueda}
                                 onChange={e => setBusqueda(e.target.value)}
-                                placeholder="Buscar por nombre o código..."
+                                onKeyDown={onBusquedaKeyDown}
+                                placeholder="Buscar por nombre o código (Enter agrega)..."
                                 autoFocus
                                 autoComplete="off"
                                 className="w-full pl-10 pr-3 py-2.5 text-sm border rounded-xl focus:outline-none focus:ring-2"
@@ -664,14 +690,16 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 pb-[calc(96px+env(safe-area-inset-bottom,0px))] lg:pb-3"
                         style={{ overscrollBehavior: 'contain' }}
                     >
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-3">
+                        {/* Card compacta horizontal: thumb 44px + nombre + precio.
+                            auto-fill para que la densidad se adapte al ancho real. */}
+                        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))' }}>
                             {productosFiltrados.map(producto => {
                                 const enCarrito = carrito.find(i => i.producto_id === producto.id);
                                 return (
                                     <button
                                         key={producto.id}
                                         onClick={() => agregarProducto(producto)}
-                                        className="text-left p-3 sm:p-4 rounded-xl border transition-all hover:shadow-lg active:scale-[0.97] relative group"
+                                        className="text-left p-2.5 rounded-xl border transition-all hover:shadow-md active:scale-[0.97] relative group flex flex-col gap-1.5"
                                         style={{
                                             backgroundColor: 'var(--color-surface)',
                                             borderColor: enCarrito ? 'var(--color-primary)' : 'var(--color-border)',
@@ -686,25 +714,21 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                                 {enCarrito.cantidad}
                                             </span>
                                         )}
-                                        <ProductoThumbnail url={producto.imagen ?? null} alt={producto.nombre} />
-                                        <div className="flex items-start justify-between gap-1">
-                                            <p className="text-sm font-semibold leading-snug line-clamp-2" style={{ color: 'var(--color-text)' }}>
-                                                {producto.nombre}
-                                            </p>
+                                        <div className="flex items-start gap-2 min-w-0">
+                                            <ProductoThumbnail url={producto.imagen ?? null} alt={producto.nombre} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: 'var(--color-text)' }}>
+                                                    {producto.nombre}
+                                                </p>
+                                                {producto.codigo && (
+                                                    <p className="text-[10px] font-mono mt-0.5 opacity-50 truncate" style={{ color: 'var(--color-text-muted)' }}>
+                                                        {producto.codigo}
+                                                    </p>
+                                                )}
+                                            </div>
                                         </div>
-                                        {producto.codigo && (
-                                            <p className="text-[10px] font-mono mt-0.5 opacity-50" style={{ color: 'var(--color-text-muted)' }}>
-                                                {producto.codigo}
-                                            </p>
-                                        )}
-                                        <div className="flex items-center justify-between mt-2">
-                                            <span
-                                                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                                                style={{
-                                                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)',
-                                                    color: 'var(--color-text-muted)',
-                                                }}
-                                            >
+                                        <div className="flex items-center justify-between gap-1 mt-auto">
+                                            <span className="text-[10px] font-medium truncate" style={{ color: 'var(--color-text-muted)' }}>
                                                 {producto.categoria?.nombre ?? 'General'}
                                             </span>
                                             {(() => {
@@ -713,14 +737,14 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                                     const precios = unidadesActivas.map(u => parseFloat(u.precio_venta));
                                                     const min = Math.min(...precios);
                                                     return (
-                                                        <span className="text-sm font-bold flex items-center gap-1" style={{ color: 'var(--color-primary)' }}>
+                                                        <span className="text-[13px] font-bold flex items-center gap-1 whitespace-nowrap" style={{ color: 'var(--color-primary)' }}>
                                                             <span className="text-[9px] font-medium opacity-70 uppercase tracking-wider">desde</span>
                                                             S/ {min.toFixed(2)}
                                                         </span>
                                                     );
                                                 }
                                                 return (
-                                                    <span className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>
+                                                    <span className="text-[13px] font-bold whitespace-nowrap" style={{ color: 'var(--color-primary)' }}>
                                                         S/ {parseFloat(
                                                             producto.unidad_base?.precio_venta
                                                             ?? producto.unidades?.find(u => u.es_base)?.precio_venta
@@ -772,9 +796,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 {/* ── Separador vertical (desktop) ───────────────────── */}
                 <div className="w-px flex-shrink-0 hidden lg:block" style={{ backgroundColor: 'var(--color-border)' }} />
 
-                {/* ── Panel derecho: carrito (desktop) ───────────────── */}
+                {/* ── Panel izquierdo: carrito y cobro (desktop) ─────── */}
                 <div
-                    className="hidden lg:flex w-[400px] xl:w-[440px] flex-col overflow-hidden flex-shrink-0"
+                    className="hidden lg:flex w-[420px] xl:w-[470px] 2xl:w-[510px] flex-col overflow-hidden flex-shrink-0"
                     style={{ backgroundColor: 'var(--color-bg)' }}
                 >
                     <CarritoPanel
@@ -1112,33 +1136,38 @@ function CarritoPanel({
                 <ChevronDown size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
             </button>
 
-            {/* Banner persistente: items inactivos en la cita prellenada.
-                Se mantiene visible mientras el cajero no resuelva los ítems
-                (eliminándolos o pidiendo al admin reactivar el catálogo). */}
-            {hayInactivos && (
-                <div
-                    className="mx-3 mt-3 mb-1 rounded-lg p-3 flex items-start gap-2"
-                    style={{
-                        backgroundColor: 'rgba(239,68,68,0.10)',
-                        border: '1px solid var(--color-danger)',
-                    }}
-                >
-                    <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-danger)' }} />
-                    <div className="text-xs leading-tight" style={{ color: 'var(--color-danger)' }}>
-                        <p className="font-bold mb-0.5">
-                            {inactivosCount} ítem(s) inactivo(s) en este carrito
-                        </p>
-                        <p className="opacity-90">
-                            No podrás cobrar hasta que los elimines del carrito o pidas al administrador reactivar el producto/presentación.
-                        </p>
+            {/* ── Zona de scroll única ─────────────────────────────────
+                Items + descuento + crédito + pagos + desglose comparten UN
+                solo scroll: nada aplasta a nada. Abajo queda fijo solo lo
+                esencial (estado de pago, TOTAL y Cobrar), siempre visible
+                sin importar cuántos items o métodos de pago haya. */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-3">
+                {/* Banner persistente: items inactivos en la cita prellenada.
+                    Se mantiene visible mientras el cajero no resuelva los ítems
+                    (eliminándolos o pidiendo al admin reactivar el catálogo). */}
+                {hayInactivos && (
+                    <div
+                        className="rounded-lg p-3 flex items-start gap-2"
+                        style={{
+                            backgroundColor: 'rgba(239,68,68,0.10)',
+                            border: '1px solid var(--color-danger)',
+                        }}
+                    >
+                        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-danger)' }} />
+                        <div className="text-xs leading-tight" style={{ color: 'var(--color-danger)' }}>
+                            <p className="font-bold mb-0.5">
+                                {inactivosCount} ítem(s) inactivo(s) en este carrito
+                            </p>
+                            <p className="opacity-90">
+                                No podrás cobrar hasta que los elimines del carrito o pidas al administrador reactivar el producto/presentación.
+                            </p>
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* Lista de items */}
-            <div className="flex-1 overflow-y-auto px-3 py-2">
+                {/* Lista de items */}
                 {carrito.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full gap-3 py-10" style={{ color: 'var(--color-text-muted)' }}>
+                    <div className="flex flex-col items-center justify-center flex-1 gap-3 py-10" style={{ color: 'var(--color-text-muted)' }}>
                         <ShoppingCart size={48} className="opacity-15" />
                         <div className="text-center">
                             <p className="text-sm font-medium">Carrito vacío</p>
@@ -1146,117 +1175,161 @@ function CarritoPanel({
                         </div>
                     </div>
                 ) : (
-                    carrito.map(item => (
-                        <CarritoItem
-                            key={item.key}
-                            item={item}
+                    <div>
+                        {carrito.map(item => (
+                            <CarritoItem
+                                key={item.key}
+                                item={item}
+                                conceptos={conceptosDescuento}
+                                onCantidad={onCambiarCantidad}
+                                onDescuento={onAplicarDescuentoItem}
+                                onEliminar={onEliminarItem}
+                            />
+                        ))}
+                    </div>
+                )}
+
+                {carrito.length > 0 && (
+                    <>
+                        {/* Descuento global */}
+                        <PanelDescuento
+                            descuentoTotal={descuentoTotal}
+                            descuentoConceptoId={descuentoConceptoId}
                             conceptos={conceptosDescuento}
-                            onCantidad={onCambiarCantidad}
-                            onDescuento={onAplicarDescuentoItem}
-                            onEliminar={onEliminarItem}
+                            onChange={onSetDescuento}
                         />
-                    ))
+
+                        {/* F1 — Venta a crédito */}
+                        <div
+                            className="rounded-xl px-3 py-2.5"
+                            style={{
+                                border: `1px solid ${esCredito ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                backgroundColor: esCredito
+                                    ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))'
+                                    : 'var(--color-surface)',
+                            }}
+                        >
+                            <label className="flex items-center justify-between gap-2 cursor-pointer select-none">
+                                <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                                    <CreditCard size={15} style={{ color: esCredito ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
+                                    Venta a crédito
+                                </span>
+                                <input
+                                    type="checkbox"
+                                    checked={esCredito}
+                                    onChange={e => onSetEsCredito(e.target.checked)}
+                                    className="h-4 w-4 accent-[var(--color-primary)]"
+                                />
+                            </label>
+                            {esCredito && (
+                                <div className="mt-2 space-y-1.5">
+                                    {esClienteGeneral && (
+                                        <p className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
+                                            Selecciona un cliente identificado para vender a crédito.
+                                        </p>
+                                    )}
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                            Vence (opcional)
+                                        </span>
+                                        <input
+                                            type="date"
+                                            value={fechaVencimiento}
+                                            onChange={e => onSetFechaVencimiento(e.target.value)}
+                                            className="flex-1 text-xs rounded-lg px-2 py-1.5 border outline-none"
+                                            style={{
+                                                borderColor: 'var(--color-border)',
+                                                backgroundColor: 'var(--color-bg)',
+                                                color: 'var(--color-text)',
+                                            }}
+                                        />
+                                    </div>
+                                    <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                        El pago inicial es opcional; el saldo queda como cuenta por cobrar.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Pagos */}
+                        <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 px-1" style={{ color: 'var(--color-text-muted)' }}>
+                                {esCredito ? 'Pago inicial (opcional)' : 'Métodos de pago'}
+                            </p>
+                            <PanelPago
+                                pagos={pagos}
+                                metodosPago={metodosPago}
+                                total={total}
+                                onChange={onSetPagos}
+                            />
+                        </div>
+
+                        {/* Desglose */}
+                        <div className="space-y-1 px-1 pb-1">
+                            <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                <span>Subtotal</span>
+                                <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {subtotal.toFixed(2)}</span>
+                            </div>
+                            {descuentoTotal > 0 && (
+                                <div className="flex justify-between text-xs">
+                                    <span style={{ color: 'var(--color-text-muted)' }}>Descuento</span>
+                                    <span className="font-medium" style={{ color: 'var(--color-danger)' }}>-S/ {descuentoTotal.toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                <span>IGV ({tasaIgv.toFixed(tasaIgv % 1 === 0 ? 0 : 2)}%)</span>
+                                <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {igv.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </>
                 )}
             </div>
 
-            {/* Footer del carrito */}
+            {/* ── Pie FIJO: estado de pago + TOTAL + Cobrar ──────────── */}
             <div
-                className="flex-shrink-0 px-3 py-3 flex flex-col gap-3"
+                className="flex-shrink-0 px-3 pt-2.5 flex flex-col gap-2"
                 style={{
                     borderTop: '2px solid var(--color-border)',
                     backgroundColor: 'var(--color-surface)',
-                    paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+                    paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
                 }}
             >
-                {/* Descuento global */}
-                <PanelDescuento
-                    descuentoTotal={descuentoTotal}
-                    descuentoConceptoId={descuentoConceptoId}
-                    conceptos={conceptosDescuento}
-                    onChange={onSetDescuento}
-                />
-
-                {/* F1 — Venta a crédito */}
-                <div
-                    className="rounded-xl px-3 py-2.5"
-                    style={{
-                        border: `1px solid ${esCredito ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                        backgroundColor: esCredito
-                            ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))'
-                            : 'var(--color-bg)',
-                    }}
-                >
-                    <label className="flex items-center justify-between gap-2 cursor-pointer select-none">
-                        <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                            <CreditCard size={15} style={{ color: esCredito ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
-                            Venta a crédito
-                        </span>
-                        <input
-                            type="checkbox"
-                            checked={esCredito}
-                            onChange={e => onSetEsCredito(e.target.checked)}
-                            className="h-4 w-4 accent-[var(--color-primary)]"
-                        />
-                    </label>
-                    {esCredito && (
-                        <div className="mt-2 space-y-1.5">
-                            {esClienteGeneral && (
-                                <p className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
-                                    Selecciona un cliente identificado para vender a crédito.
-                                </p>
-                            )}
-                            <div className="flex items-center gap-2">
-                                <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                                    Vence (opcional)
+                {/* Estado del pago SIEMPRE visible: el cajero ve cuánto falta
+                    o cuánto es el vuelto sin buscar entre las líneas de pago. */}
+                {carrito.length > 0 && (pagos.length > 0 || esCredito) && (() => {
+                    const totalPagado = pagos.reduce((s, p) => s + p.monto, 0);
+                    const falta  = Math.max(0, total - totalPagado);
+                    const vuelto = pagos.some(p => p.admite_vuelto) ? Math.max(0, totalPagado - total) : 0;
+                    return (
+                        <div className="flex items-center justify-between gap-2 text-xs px-1">
+                            <span style={{ color: 'var(--color-text-muted)' }}>
+                                {esCredito ? 'Pago inicial' : 'Pagado'}{' '}
+                                <span className="font-bold" style={{ color: 'var(--color-text)' }}>S/ {totalPagado.toFixed(2)}</span>
+                            </span>
+                            {esCredito ? (
+                                <span className="font-bold" style={{ color: 'var(--color-primary)' }}>
+                                    Saldo a crédito S/ {falta.toFixed(2)}
                                 </span>
-                                <input
-                                    type="date"
-                                    value={fechaVencimiento}
-                                    onChange={e => onSetFechaVencimiento(e.target.value)}
-                                    className="flex-1 text-xs rounded-lg px-2 py-1.5 border outline-none"
-                                    style={{
-                                        borderColor: 'var(--color-border)',
-                                        backgroundColor: 'var(--color-bg)',
-                                        color: 'var(--color-text)',
-                                    }}
-                                />
-                            </div>
-                            <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                                El pago inicial es opcional; el saldo queda como cuenta por cobrar.
-                            </p>
+                            ) : falta > 0.009 ? (
+                                <span className="font-bold" style={{ color: 'var(--color-danger)' }}>
+                                    Falta S/ {falta.toFixed(2)}
+                                </span>
+                            ) : vuelto > 0.009 ? (
+                                <span className="font-bold" style={{ color: 'var(--color-success)' }}>
+                                    Vuelto S/ {vuelto.toFixed(2)}
+                                </span>
+                            ) : (
+                                <span className="font-bold" style={{ color: 'var(--color-success)' }}>
+                                    Cubierto ✓
+                                </span>
+                            )}
                         </div>
-                    )}
-                </div>
-
-                {/* Pagos */}
-                <PanelPago
-                    pagos={pagos}
-                    metodosPago={metodosPago}
-                    total={total}
-                    onChange={onSetPagos}
-                />
-
-                {/* Resumen financiero */}
-                <div className="space-y-1 px-1">
-                    <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        <span>Subtotal</span>
-                        <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {subtotal.toFixed(2)}</span>
-                    </div>
-                    {descuentoTotal > 0 && (
-                        <div className="flex justify-between text-xs">
-                            <span style={{ color: 'var(--color-text-muted)' }}>Descuento</span>
-                            <span className="font-medium" style={{ color: 'var(--color-danger)' }}>-S/ {descuentoTotal.toFixed(2)}</span>
-                        </div>
-                    )}
-                    <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        <span>IGV ({tasaIgv.toFixed(tasaIgv % 1 === 0 ? 0 : 2)}%)</span>
-                        <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {igv.toFixed(2)}</span>
-                    </div>
-                </div>
+                    );
+                })()}
 
                 {/* Total grande */}
                 <div
-                    className="flex items-center justify-between px-4 py-3 rounded-xl font-bold text-lg"
+                    className="flex items-center justify-between px-4 py-2.5 rounded-xl font-bold text-lg"
                     style={{
                         background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))',
                         color: '#fff',
@@ -1266,30 +1339,6 @@ function CarritoPanel({
                     <span>TOTAL</span>
                     <span>S/ {total.toFixed(2)}</span>
                 </div>
-
-                {/* F1 — Resumen del crédito: pago inicial vs saldo por cobrar */}
-                {esCredito && (
-                    <div
-                        className="rounded-xl px-3 py-2 space-y-1 text-xs"
-                        style={{
-                            border: '1px dashed var(--color-primary)',
-                            color: 'var(--color-text)',
-                        }}
-                    >
-                        <div className="flex justify-between">
-                            <span style={{ color: 'var(--color-text-muted)' }}>Pago inicial</span>
-                            <span className="font-semibold">
-                                S/ {pagos.reduce((s, p) => s + p.monto, 0).toFixed(2)}
-                            </span>
-                        </div>
-                        <div className="flex justify-between font-bold">
-                            <span style={{ color: 'var(--color-primary)' }}>Saldo a crédito</span>
-                            <span style={{ color: 'var(--color-primary)' }}>
-                                S/ {Math.max(0, total - pagos.reduce((s, p) => s + p.monto, 0)).toFixed(2)}
-                            </span>
-                        </div>
-                    </div>
-                )}
 
                 {/* A14: banner rojo cuando el backend dice que no puede vender */}
                 {!puedeVender && razonNoVender && (

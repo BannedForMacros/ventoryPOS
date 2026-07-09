@@ -131,7 +131,13 @@
       "Bash(vendor/bin/pest tests/Feature --exclude-group=none)",
       "Bash(awk '{print $3}')",
       "Bash(awk '{print $2, $3}')",
-      "Bash(awk '{print $2}')"
+      "Bash(awk '{print $2}')",
+      "Bash(grep -E \"DB_CONNECTION|DB_DATABASE|DB_HOST\" .env)",
+      "Bash(find . -name \"*.sqlite\" -not -path \"*/vendor/*\" -not -path \"*/node_modules/*\")",
+      "Bash(grep -rn 'protected $table' app/Models/Producto.php app/Models/Stock.php app/Models/Almacen.php app/Models/Entrada.php app/Models/EntradaDetalle.php app/Models/Proveedor.php)",
+      "Bash(PGPASSWORD=postgres psql -h 127.0.0.1 -p 5432 -U postgres -d ventoryPOS -tAc \"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN \\('productos','stock','almacenes','proveedores','entradas','entradas_detalle','categorias','producto_unidades','unidades_medida'\\) ORDER BY table_name;\")",
+      "Bash(PGPASSWORD=postgres psql -h 127.0.0.1 -p 5432 -U postgres -d ventoryPOS -tAc ' *)",
+      "Bash(PGPASSWORD=postgres psql -h 127.0.0.1 -p 5432 -U postgres -d ventoryPOS -tAc \"SELECT table_name||'.'||column_name FROM information_schema.columns WHERE table_schema='public' AND \\(column_name ILIKE '%moneda%' OR column_name ILIKE '%currency%' OR column_name ILIKE '%tipo_cambio%' OR column_name ILIKE '%dolar%' OR column_name ILIKE '%usd%' OR column_name ILIKE '%divisa%'\\);\")"
     ]
   }
 }
