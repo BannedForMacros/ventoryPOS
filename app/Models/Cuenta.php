@@ -18,6 +18,7 @@ class Cuenta extends Model
         'titular',
         'es_efectivo',
         'activo',
+        'moneda',
     ];
 
     protected function casts(): array

@@ -12,6 +12,7 @@ class VentaPago extends Model
     protected $fillable = [
         'venta_id', 'metodo_pago_id', 'cuenta_metodo_pago_id',
         'monto', 'referencia', 'vuelto',
+        'moneda', 'tipo_cambio', 'monto_moneda',
     ];
 
     protected function casts(): array
@@ -19,6 +20,8 @@ class VentaPago extends Model
         return [
             'monto'  => 'decimal:2',
             'vuelto' => 'decimal:2',
+            'tipo_cambio'  => 'decimal:6',
+            'monto_moneda' => 'decimal:2',
         ];
     }
 

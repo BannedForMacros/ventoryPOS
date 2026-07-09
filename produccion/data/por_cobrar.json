@@ -1,0 +1,938 @@
+[
+ {
+  "ruc": "",
+  "cliente": "ALEJANDRO PAREDES",
+  "comprobante": "P00100032336",
+  "fecha": "2025-07-21",
+  "saldo_soles": 30.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "AZAÐERO",
+  "comprobante": "P00100040619",
+  "fecha": "2026-03-16",
+  "saldo_soles": 30.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "AZAÐERO",
+  "comprobante": "P00200020018",
+  "fecha": "2025-01-28",
+  "saldo_soles": 3150.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "AZAÐERO",
+  "comprobante": "P00100041470",
+  "fecha": "2026-04-11",
+  "saldo_soles": 48.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "AZAÐERO",
+  "comprobante": "P00200028597",
+  "fecha": "2026-01-11",
+  "saldo_soles": 45.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "AZAÐERO",
+  "comprobante": "P00100040481",
+  "fecha": "2026-03-12",
+  "saldo_soles": 1005.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "AZAÐERO",
+  "comprobante": "P00100040555",
+  "fecha": "2026-03-14",
+  "saldo_soles": 1340.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "BAUTISTA CARRASCO ELMER - 996813790",
+  "comprobante": "P00100043718",
+  "fecha": "2026-07-07",
+  "saldo_soles": 5.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "BAUTISTA CARRASCO ELMER - 996813790",
+  "comprobante": "P00100035735",
+  "fecha": "2025-11-08",
+  "saldo_soles": 18.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "BECERRA ALCALDE ADELMO",
+  "comprobante": "P00100012526",
+  "fecha": "2023-06-15",
+  "saldo_soles": 185.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "BUSTAMANTE GONZALES RIGOBERTO - 967795790",
+  "comprobante": "P00100043645",
+  "fecha": "2026-07-03",
+  "saldo_soles": 150.04,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "CABANILLAS ZAMORA LENIN MICHEL - 918473100",
+  "comprobante": "P00100039262",
+  "fecha": "2026-02-09",
+  "saldo_soles": 672.1,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "CATALINO SANCHEZ",
+  "comprobante": "P00200025226",
+  "fecha": "2025-09-06",
+  "saldo_soles": 200.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20505958111",
+  "cliente": "CJ TELECOM SAC",
+  "comprobante": "P00200009618",
+  "fecha": "2023-07-10",
+  "saldo_soles": 11.7,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20505958111",
+  "cliente": "CJ TELECOM SAC",
+  "comprobante": "P00100012965",
+  "fecha": "2023-07-10",
+  "saldo_soles": 40.3,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20505958111",
+  "cliente": "CJ TELECOM SAC",
+  "comprobante": "P00400001701",
+  "fecha": "2023-07-14",
+  "saldo_soles": 127.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20505958111",
+  "cliente": "CJ TELECOM SAC",
+  "comprobante": "P00400001984",
+  "fecha": "2023-09-11",
+  "saldo_soles": 86.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "COFESEG",
+  "comprobante": "P00100016284",
+  "fecha": "2023-11-14",
+  "saldo_soles": 1.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "COFESEG",
+  "comprobante": "P00100014846",
+  "fecha": "2023-09-21",
+  "saldo_soles": 2.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "COFESEG",
+  "comprobante": "P00200011147",
+  "fecha": "2023-11-07",
+  "saldo_soles": 160.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20614348608",
+  "cliente": "CONSORCIO B&B",
+  "comprobante": "P00400003889",
+  "fecha": "2025-10-16",
+  "saldo_soles": 1320.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20614348608",
+  "cliente": "CONSORCIO B&B",
+  "comprobante": "P00200026351",
+  "fecha": "2025-10-21",
+  "saldo_soles": 330.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20614348608",
+  "cliente": "CONSORCIO B&B",
+  "comprobante": "P00200026408",
+  "fecha": "2025-10-23",
+  "saldo_soles": 660.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "DARIO OCHOA - 930938708",
+  "comprobante": "P00200023562",
+  "fecha": "2025-06-28",
+  "saldo_soles": 112.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "DARIO OCHOA - 930938708",
+  "comprobante": "P00200023570",
+  "fecha": "2025-06-28",
+  "saldo_soles": 5.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "10166854038",
+  "cliente": "DIAZ BARCO MAGDALENA",
+  "comprobante": "F00100003091",
+  "fecha": "2026-07-06",
+  "saldo_soles": 1669.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "EDINSON BARBOZA",
+  "comprobante": "P00200016646",
+  "fecha": "2024-08-29",
+  "saldo_soles": 2710.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "EDINSON VASQUEZ- ROCA FUERTE",
+  "comprobante": "P00200027719",
+  "fecha": "2025-12-11",
+  "saldo_soles": 90.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "EDINSON VASQUEZ- ROCA FUERTE",
+  "comprobante": "P00400002887",
+  "fecha": "2024-05-21",
+  "saldo_soles": 2650.8,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "ELMER BUSTAMANTE - JLO",
+  "comprobante": "P00100037758",
+  "fecha": "2026-01-02",
+  "saldo_soles": 75.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "FERNANDEZ SANCHEZ LUZ ANGELICA",
+  "comprobante": "P00100039704",
+  "fecha": "2026-02-20",
+  "saldo_soles": 54.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "FERNANDEZ SANCHEZ LUZ ANGELICA",
+  "comprobante": "P00100040504",
+  "fecha": "2026-03-13",
+  "saldo_soles": 155.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "FERRETERIA ALPES - TUMAN",
+  "comprobante": "P00100042996",
+  "fecha": "2026-06-11",
+  "saldo_soles": 1932.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20604078238",
+  "cliente": "FERROCONSTRUCTORA JH SERVICIOS GENERALES E.I.R.L.",
+  "comprobante": "P00200030673",
+  "fecha": "2026-03-16",
+  "saldo_soles": 312.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "FRANCISCO BECERRA TORRES",
+  "comprobante": "P00100013356",
+  "fecha": "2023-07-25",
+  "saldo_soles": 500.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "FREDY ALVA",
+  "comprobante": "P00200032777",
+  "fecha": "2026-07-03",
+  "saldo_soles": 38.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "GONZALES NUÐEZ EDILBERTO",
+  "comprobante": "P00100014940",
+  "fecha": "2023-09-24",
+  "saldo_soles": 88.8,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "GUSTAVO GUEVARA",
+  "comprobante": "P00100042767",
+  "fecha": "2026-06-01",
+  "saldo_soles": 648.6,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "GUSTAVO GUEVARA",
+  "comprobante": "P00200032275",
+  "fecha": "2026-06-01",
+  "saldo_soles": 88.4,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "HECTOR MEJIA CEL. 930234446",
+  "comprobante": "P00200031230",
+  "fecha": "2026-04-11",
+  "saldo_soles": 338.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "HERRERA SALAZAR JORDIN",
+  "comprobante": "P00200032871",
+  "fecha": "2026-07-06",
+  "saldo_soles": 100.4,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "HUERTAS",
+  "comprobante": "P00400000848",
+  "fecha": "2022-10-29",
+  "saldo_soles": 4468.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "ING RIMARACHIN",
+  "comprobante": "P00100041641",
+  "fecha": "2026-04-17",
+  "saldo_soles": 1380.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200008460",
+  "fecha": "2023-03-31",
+  "saldo_soles": 46.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200027522",
+  "fecha": "2025-12-04",
+  "saldo_soles": 1480.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00100003927",
+  "fecha": "2022-04-22",
+  "saldo_soles": 176.4,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200018849",
+  "fecha": "2024-12-10",
+  "saldo_soles": 25.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200012299",
+  "fecha": "2024-01-16",
+  "saldo_soles": 28.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200003138",
+  "fecha": "2022-05-26",
+  "saldo_soles": 11.4,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00100019920",
+  "fecha": "2024-04-20",
+  "saldo_soles": 40.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200003316",
+  "fecha": "2022-06-04",
+  "saldo_soles": 9.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200020509",
+  "fecha": "2025-02-15",
+  "saldo_soles": 40.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00100040757",
+  "fecha": "2026-03-20",
+  "saldo_soles": 29.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00400003919",
+  "fecha": "2025-12-27",
+  "saldo_soles": 5.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200003335",
+  "fecha": "2022-06-04",
+  "saldo_soles": 7.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200022979",
+  "fecha": "2025-06-03",
+  "saldo_soles": 80.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200015247",
+  "fecha": "2024-06-22",
+  "saldo_soles": 45.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200003339",
+  "fecha": "2022-06-04",
+  "saldo_soles": 3.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200023083",
+  "fecha": "2025-06-07",
+  "saldo_soles": 20.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00100021797",
+  "fecha": "2024-07-23",
+  "saldo_soles": 32.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200003776",
+  "fecha": "2022-06-30",
+  "saldo_soles": 2.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200023094",
+  "fecha": "2025-06-07",
+  "saldo_soles": 22.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00100014466",
+  "fecha": "2023-09-06",
+  "saldo_soles": 2.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00100022466",
+  "fecha": "2024-08-18",
+  "saldo_soles": 6.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00100038751",
+  "fecha": "2026-01-26",
+  "saldo_soles": 209.3,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200003782",
+  "fecha": "2022-06-30",
+  "saldo_soles": 0.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200003827",
+  "fecha": "2022-07-04",
+  "saldo_soles": 5.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200030613",
+  "fecha": "2026-03-12",
+  "saldo_soles": 544.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200018626",
+  "fecha": "2024-11-29",
+  "saldo_soles": 20.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200029449",
+  "fecha": "2026-02-04",
+  "saldo_soles": 18.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00100025216",
+  "fecha": "2024-11-29",
+  "saldo_soles": 79.29,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200006541",
+  "fecha": "2022-12-13",
+  "saldo_soles": 29.2,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00200026812",
+  "fecha": "2025-11-08",
+  "saldo_soles": 128.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA",
+  "comprobante": "P00100003915",
+  "fecha": "2022-04-22",
+  "saldo_soles": 35.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JEINER HERRERA - FERRETERIA LA UNION",
+  "comprobante": "P00100043766",
+  "fecha": "2026-07-08",
+  "saldo_soles": 614.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JHON SANCHEZ CEL. 915950023",
+  "comprobante": "P00100042486",
+  "fecha": "2026-05-20",
+  "saldo_soles": 56.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JHON SANCHEZ CEL. 915950023",
+  "comprobante": "P00200032234",
+  "fecha": "2026-05-29",
+  "saldo_soles": 80.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JHON SANCHEZ CEL. 915950023",
+  "comprobante": "P00200032598",
+  "fecha": "2026-06-20",
+  "saldo_soles": 4640.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JHON SANCHEZ CEL. 915950023",
+  "comprobante": "P00200030393",
+  "fecha": "2026-03-06",
+  "saldo_soles": 1764.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JHONY- LA CRIA",
+  "comprobante": "P00200023377",
+  "fecha": "2025-06-19",
+  "saldo_soles": 498.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JOSE MORE",
+  "comprobante": "P00200030545",
+  "fecha": "2026-03-10",
+  "saldo_soles": 89.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JUAN SALAZAR SALAZAR",
+  "comprobante": "P00100042177",
+  "fecha": "2026-05-08",
+  "saldo_soles": 167.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JUDITH OBLITAS",
+  "comprobante": "P00200030655",
+  "fecha": "2026-03-16",
+  "saldo_soles": 198.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JUDITH OBLITAS",
+  "comprobante": "P00200032129",
+  "fecha": "2026-05-25",
+  "saldo_soles": 333.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JUDITH OBLITAS",
+  "comprobante": "P00200032233",
+  "fecha": "2026-05-29",
+  "saldo_soles": 297.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JUDITH OBLITAS",
+  "comprobante": "P00200032246",
+  "fecha": "2026-05-30",
+  "saldo_soles": 69.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "JUDITH OBLITAS",
+  "comprobante": "P00200032406",
+  "fecha": "2026-06-09",
+  "saldo_soles": 110.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "KAREN AQUINO",
+  "comprobante": "P00100043178",
+  "fecha": "2026-06-17",
+  "saldo_soles": 3075.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "KAREN AQUINO",
+  "comprobante": "P00100043025",
+  "fecha": "2026-06-11",
+  "saldo_soles": 324.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "KAREN AQUINO",
+  "comprobante": "P00100043295",
+  "fecha": "2026-06-20",
+  "saldo_soles": 4149.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "MAESTRO BLANCO",
+  "comprobante": "P00200025295",
+  "fecha": "2025-09-08",
+  "saldo_soles": 1030.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "MALDONADO CORDOVA LUIS ALBERTO- 990073177",
+  "comprobante": "P00100025236",
+  "fecha": "2024-11-30",
+  "saldo_soles": 682.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "MARIA GLADYS PEREZ VASQUEZ",
+  "comprobante": "P00200030602",
+  "fecha": "2026-03-12",
+  "saldo_soles": 392.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "MENDOZA MONDRAGON FLOR ESTELITA - 995379798",
+  "comprobante": "P00100043726",
+  "fecha": "2026-07-07",
+  "saldo_soles": 1434.6,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "MIGUEL CAMPOS",
+  "comprobante": "P00100040229",
+  "fecha": "2026-03-05",
+  "saldo_soles": 225.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "MILIAN SALAZAR LUIS ALBERTO -916666706",
+  "comprobante": "P00100034901",
+  "fecha": "2025-10-12",
+  "saldo_soles": 45.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "MORENO VALDIVIESO SUGEY DEL ROSARIO - 977761809",
+  "comprobante": "P00200027799",
+  "fecha": "2025-12-13",
+  "saldo_soles": 155.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "ORLANDO VASQUEZ",
+  "comprobante": "P00200032426",
+  "fecha": "2026-06-10",
+  "saldo_soles": 500.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "PROGRESO-PATAPO",
+  "comprobante": "P00200032740",
+  "fecha": "2026-07-01",
+  "saldo_soles": 3396.6,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "PROGRESO-PATAPO",
+  "comprobante": "P00200032918",
+  "fecha": "2026-07-08",
+  "saldo_soles": 2900.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "QUISPE",
+  "comprobante": "P00200032898",
+  "fecha": "2026-07-07",
+  "saldo_soles": 4539.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "QUISPE",
+  "comprobante": "P00200032900",
+  "fecha": "2026-07-08",
+  "saldo_soles": 1032.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "QUISPE",
+  "comprobante": "P00200032909",
+  "fecha": "2026-07-08",
+  "saldo_soles": 3202.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20602126120",
+  "cliente": "QURMAQ SOCIEDAD ANONIMA CERRADA",
+  "comprobante": "P00200030376",
+  "fecha": "2026-03-06",
+  "saldo_soles": 551.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20602126120",
+  "cliente": "QURMAQ SOCIEDAD ANONIMA CERRADA",
+  "comprobante": "P00100041779",
+  "fecha": "2026-04-22",
+  "saldo_soles": 7290.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20602126120",
+  "cliente": "QURMAQ SOCIEDAD ANONIMA CERRADA",
+  "comprobante": "F00100002891",
+  "fecha": "2026-04-23",
+  "saldo_soles": 1081.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20602126120",
+  "cliente": "QURMAQ SOCIEDAD ANONIMA CERRADA",
+  "comprobante": "P00200029709",
+  "fecha": "2026-02-11",
+  "saldo_soles": 1437.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "SEÐOR LUCAS HERRERA",
+  "comprobante": "P00200032600",
+  "fecha": "2026-06-20",
+  "saldo_soles": 5.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "SEÐOR LUCAS HERRERA",
+  "comprobante": "P00100039054",
+  "fecha": "2026-02-02",
+  "saldo_soles": 200.7,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "SONAPO",
+  "comprobante": "P00200026141",
+  "fecha": "2025-10-13",
+  "saldo_soles": 980.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "SONAPO",
+  "comprobante": "P00200026727",
+  "fecha": "2025-11-05",
+  "saldo_soles": 98.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "TILO - 978080316",
+  "comprobante": "P00200025421",
+  "fecha": "2025-09-12",
+  "saldo_soles": 56.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20561194697",
+  "cliente": "TRANSPORTES MARIA ANTONIETA S.A.C.",
+  "comprobante": "F00100003073",
+  "fecha": "2026-07-02",
+  "saldo_soles": 1552.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20561194697",
+  "cliente": "TRANSPORTES MARIA ANTONIETA S.A.C.",
+  "comprobante": "F00100003074",
+  "fecha": "2026-07-02",
+  "saldo_soles": 903.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20561194697",
+  "cliente": "TRANSPORTES MARIA ANTONIETA S.A.C.",
+  "comprobante": "F00100003080",
+  "fecha": "2026-07-03",
+  "saldo_soles": 960.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "VILCHEZ TARRILLO HERIBERTO",
+  "comprobante": "P00200032402",
+  "fecha": "2026-06-09",
+  "saldo_soles": 393.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "",
+  "cliente": "VILCHEZ TARRILLO HERIBERTO",
+  "comprobante": "P00200031645",
+  "fecha": "2026-05-02",
+  "saldo_soles": 146.0,
+  "saldo_dolares": 0.0
+ }
+]

@@ -16,6 +16,7 @@ class Venta extends Model
         'subtotal', 'descuento_total', 'descuento_concepto_id', 'igv', 'total',
         'estado', 'observacion', 'fecha_venta',
         'es_credito', 'monto_pagado', 'saldo_pendiente', 'fecha_vencimiento',
+        'moneda', 'tipo_cambio', 'monto_moneda',
     ];
 
     protected function casts(): array
@@ -30,6 +31,8 @@ class Venta extends Model
             'monto_pagado'      => 'decimal:2',
             'saldo_pendiente'   => 'decimal:2',
             'fecha_vencimiento' => 'date:Y-m-d',
+            'tipo_cambio'       => 'decimal:6',
+            'monto_moneda'      => 'decimal:2',
         ];
     }
 

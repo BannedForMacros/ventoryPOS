@@ -14,6 +14,7 @@ class ClienteAnticipo extends Model
         'fecha', 'monto', 'saldo', 'tipo_valorizacion',
         'producto_id', 'cantidad', 'cantidad_pendiente',
         'estado', 'observacion',
+        'moneda', 'tipo_cambio', 'monto_moneda',
     ];
 
     protected function casts(): array
@@ -24,6 +25,8 @@ class ClienteAnticipo extends Model
             'saldo'              => 'decimal:2',
             'cantidad'           => 'decimal:4',
             'cantidad_pendiente' => 'decimal:4',
+            'tipo_cambio'        => 'decimal:6',
+            'monto_moneda'       => 'decimal:2',
         ];
     }
 

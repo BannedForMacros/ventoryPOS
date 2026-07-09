@@ -10,6 +10,7 @@ class VentaAbono extends Model
     protected $fillable = [
         'venta_id', 'user_id', 'metodo_pago_id', 'cuenta_id',
         'fecha', 'monto', 'referencia', 'observacion',
+        'moneda', 'tipo_cambio', 'monto_moneda',
     ];
 
     protected function casts(): array
@@ -17,6 +18,8 @@ class VentaAbono extends Model
         return [
             'fecha' => 'date:Y-m-d',
             'monto' => 'decimal:2',
+            'tipo_cambio'  => 'decimal:6',
+            'monto_moneda' => 'decimal:2',
         ];
     }
 

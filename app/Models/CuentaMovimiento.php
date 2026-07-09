@@ -11,6 +11,7 @@ class CuentaMovimiento extends Model
     protected $fillable = [
         'empresa_id', 'cuenta_id', 'user_id', 'fecha', 'tipo',
         'monto', 'descripcion', 'ref_tipo', 'ref_id',
+        'moneda', 'tipo_cambio', 'monto_moneda',
     ];
 
     protected function casts(): array
@@ -18,6 +19,8 @@ class CuentaMovimiento extends Model
         return [
             'fecha' => 'date:Y-m-d',
             'monto' => 'decimal:2',
+            'tipo_cambio'  => 'decimal:6',
+            'monto_moneda' => 'decimal:2',
         ];
     }
 

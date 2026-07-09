@@ -67,4 +67,38 @@ class DecolectaService
             'direccion'    => $data['direccion']    ?? '',
         ];
     }
+
+    /**
+     * Tipo de cambio contable SBS vía Decolecta.
+     * GET /v1/tipo-cambio/sbs/accounting?currency={moneda}[&date=Y-m-d]
+     * Respuesta: {"price":"3.546000","base_currency":"USD","quote_currency":"PEN","date":"2025-07-25"}
+     *
+     * @return array{tasa: float, fecha: string, base: string, quote: string, raw: array}
+     * @throws \Exception si la SBS no publicó tipo de cambio para esa fecha o la API falla
+     */
+    public function tipoCambioSbs(string $moneda = 'USD', ?string $fecha = null): array
+    {
+        $query = ['currency' => strtoupper($moneda)];
+        if ($fecha) {
+            $query['date'] = substr($fecha, 0, 10);
+        }
+
+        $response = Http::withToken($this->token)
+            ->timeout(8)
+            ->get("{$this->baseUrl}/v1/tipo-cambio/sbs/accounting", $query);
+
+        if (!$response->successful()) {
+            throw new \Exception("No hay tipo de cambio SBS para {$moneda}" . ($fecha ? " al {$fecha}" : '') . '.');
+        }
+
+        $data = $response->json();
+
+        return [
+            'tasa'  => (float) ($data['price'] ?? 0),
+            'fecha' => $data['date'] ?? substr((string) $fecha, 0, 10),
+            'base'  => $data['base_currency']  ?? strtoupper($moneda),
+            'quote' => $data['quote_currency'] ?? 'PEN',
+            'raw'   => is_array($data) ? $data : [],
+        ];
+    }
 }

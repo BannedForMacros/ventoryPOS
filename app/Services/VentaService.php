@@ -21,6 +21,7 @@ class VentaService
         private LocalScopeService $scope,
         private ConfiguracionOperacionService $config,
         private TesoreriaService $tesoreria,
+        private TipoCambioService $tipoCambio,
     ) {}
 
     /**
@@ -58,6 +59,19 @@ class VentaService
             // F1 — Venta a crédito: defensa en profundidad (el FormRequest ya
             // valida). El crédito exige cliente identificado.
             $esCredito = !empty($data['es_credito']);
+
+            // Multimoneda: la venta puede cobrarse en USD. Todo se GUARDA en soles
+            // (columnas existentes) al TC congelado del día; el original en moneda
+            // extranjera queda en el trío moneda/tipo_cambio/monto_moneda.
+            $moneda     = strtoupper($data['moneda'] ?? 'PEN') ?: 'PEN';
+            $tipoCambio = null;
+            $factor     = 1.0; // soles por 1 unidad de la moneda de venta
+            if ($moneda !== 'PEN') {
+                $factor = (!empty($data['tipo_cambio']) && (float) $data['tipo_cambio'] > 0)
+                    ? (float) $data['tipo_cambio']                       // el TC que vio la cajera manda
+                    : $this->tipoCambio->tasaPara(now()->toDateString(), $moneda);
+                $tipoCambio = round($factor, 6);
+            }
             if ($esCredito) {
                 $cliente = Cliente::find($clienteId);
                 if (!$cliente || $cliente->es_cliente_general) {
@@ -88,11 +102,13 @@ class VentaService
                         'idempotency_key'       => $idempotencyKey,
                         'tipo_comprobante'      => $data['tipo_comprobante'],
                         'subtotal'              => 0,
-                        'descuento_total'       => $data['descuento_total'] ?? 0,
+                        'descuento_total'       => round((float) ($data['descuento_total'] ?? 0) * $factor, 2),
                         'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
                         'igv'                   => 0,
                         'total'                 => 0,
                         'estado'                => 'completada',
+                        'moneda'                => $moneda,
+                        'tipo_cambio'           => $tipoCambio,
                         'es_credito'            => $esCredito,
                         'fecha_vencimiento'     => $esCredito ? ($data['fecha_vencimiento'] ?? null) : null,
                         'observacion'           => $data['observacion'] ?? null,
@@ -127,8 +143,9 @@ class VentaService
 
                 $cantidad       = (float) $itemData['cantidad'];
                 $cantidadBase   = round($cantidad * (float) $unidad->factor_conversion, 4);
-                $precioUnitario = (float) $itemData['precio_unitario'];
-                $descuentoItem  = (float) ($itemData['descuento_item'] ?? 0);
+                // Precios convertidos a soles al TC de la venta (factor=1 si PEN).
+                $precioUnitario = round((float) $itemData['precio_unitario'] * $factor, 2);
+                $descuentoItem  = round((float) ($itemData['descuento_item'] ?? 0) * $factor, 2);
                 $subtotal       = round(($precioUnitario - $descuentoItem) * $cantidad, 2);
 
                 $item = VentaItem::create([
@@ -201,12 +218,14 @@ class VentaService
             $metodoIds = collect($pagos)->pluck('metodo_pago_id')->unique()->all();
             $metodos   = \App\Models\MetodoPago::whereIn('id', $metodoIds)->get()->keyBy('id');
 
-            $totalPagado    = collect($pagos)->sum(fn($p) => (float) $p['monto']);
+            // Montos convertidos a soles al TC de la venta (factor=1 si PEN).
+            $totalPagado    = collect($pagos)->sum(fn($p) => round((float) $p['monto'] * $factor, 2));
             $vueltoGlobal   = max(0, round($totalPagado - (float) $venta->total, 2));
             $vueltoAsignado = false;
 
             foreach ($pagos as $pagoData) {
-                $monto        = (float) $pagoData['monto'];
+                $montoOrig    = (float) $pagoData['monto'];        // en moneda de venta
+                $monto        = round($montoOrig * $factor, 2);    // soles
                 $metodo       = $metodos->get($pagoData['metodo_pago_id']);
                 $admiteVuelto = (bool) ($metodo?->admite_vuelto);
 
@@ -223,19 +242,26 @@ class VentaService
                     'monto'                 => $monto,
                     'referencia'            => $pagoData['referencia'] ?? null,
                     'vuelto'                => $vuelto,
+                    'moneda'                => $moneda,
+                    'tipo_cambio'           => $tipoCambio,
+                    'monto_moneda'          => $moneda !== 'PEN' ? round($montoOrig, 2) : null,
                 ]);
 
-                // F7 — Tesorería: cada pago ingresa a su cuenta (neto de vuelto).
+                // F7 — Tesorería: cada pago ingresa a su cuenta (neto de vuelto), en soles.
+                $netoPen = round($monto - $vuelto, 2);
                 $this->tesoreria->registrar(
                     $user->empresa_id,
                     $this->tesoreria->resolverCuenta($user->empresa_id, $pagoData['cuenta_metodo_pago_id'] ?? null, $pagoData['metodo_pago_id']),
                     $user,
                     now()->toDateString(),
                     'ingreso',
-                    round($monto - $vuelto, 2),
+                    $netoPen,
                     "Venta {$venta->numero} — " . ($metodo?->nombre ?? 'pago'),
                     'venta',
                     $venta->id,
+                    $moneda,
+                    $tipoCambio,
+                    $moneda !== 'PEN' && $factor > 0 ? round($netoPen / $factor, 2) : null,
                 );
             }
 
@@ -245,6 +271,8 @@ class VentaService
             $venta->update([
                 'monto_pagado'    => $esCredito ? $montoPagadoReal : (float) $venta->total,
                 'saldo_pendiente' => $esCredito ? max(0, round((float) $venta->total - $montoPagadoReal, 2)) : 0,
+                // Total original en moneda de venta (soles / TC); NULL para PEN.
+                'monto_moneda'    => $moneda !== 'PEN' && $factor > 0 ? round((float) $venta->total / $factor, 2) : null,
             ]);
 
             return $venta->fresh(['items', 'pagos', 'cliente']);

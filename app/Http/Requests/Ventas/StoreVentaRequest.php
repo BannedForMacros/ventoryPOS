@@ -28,6 +28,10 @@ class StoreVentaRequest extends FormRequest
             ],
             'tipo_comprobante'       => ['required', Rule::in(['ticket', 'boleta', 'factura'])],
             'observacion'            => ['nullable', 'string', 'max:500'],
+            // Multimoneda: moneda de la venta y TC del día (soles por 1 USD).
+            // Los precios/pagos vienen EN esa moneda; el backend convierte a soles.
+            'moneda'                 => ['nullable', Rule::in(['PEN', 'USD'])],
+            'tipo_cambio'            => ['nullable', 'numeric', 'gt:0', 'required_if:moneda,USD'],
             'descuento_total'        => ['nullable', 'numeric', 'min:0'],
             // F1 — Venta a crédito: se entrega mercadería sin cobrar el total.
             // Exige cliente identificado (se valida en withValidator) y permite

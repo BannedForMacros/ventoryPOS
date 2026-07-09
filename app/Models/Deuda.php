@@ -16,6 +16,7 @@ class Deuda extends Model
         'empresa_id', 'user_id', 'direccion', 'tipo', 'nombre',
         'monto_original', 'saldo', 'fecha_inicio', 'fecha_vencimiento',
         'estado', 'observacion',
+        'moneda', 'tipo_cambio', 'monto_moneda',
     ];
 
     protected function casts(): array
@@ -25,6 +26,8 @@ class Deuda extends Model
             'fecha_vencimiento' => 'date:Y-m-d',
             'monto_original'    => 'decimal:2',
             'saldo'             => 'decimal:2',
+            'tipo_cambio'       => 'decimal:6',
+            'monto_moneda'      => 'decimal:2',
         ];
     }
 

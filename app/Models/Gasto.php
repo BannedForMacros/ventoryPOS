@@ -11,11 +11,16 @@ class Gasto extends Model
         'empresa_id', 'local_id', 'user_id', 'turno_id',
         'gasto_tipo_id', 'gasto_concepto_id',
         'monto', 'cuenta_id', 'fecha', 'comentario',
+        'moneda', 'tipo_cambio', 'monto_moneda',
     ];
 
     protected function casts(): array
     {
-        return ['fecha' => 'date'];
+        return [
+            'fecha'        => 'date',
+            'tipo_cambio'  => 'decimal:6',
+            'monto_moneda' => 'decimal:2',
+        ];
     }
 
     public function empresa(): BelongsTo  { return $this->belongsTo(Empresa::class); }

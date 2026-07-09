@@ -74,23 +74,31 @@ class TesoreriaService
         User|int $user,
         string $fecha,
         string $tipo,           // 'ingreso' | 'egreso'
-        float $monto,
+        float $monto,           // SIEMPRE en soles (PEN)
         string $descripcion,
         ?string $refTipo = null,
         ?int $refId = null,
+        // Trío multimoneda (opcional, aditivo): el monto ya viene convertido a
+        // soles; esto solo deja rastro del original en moneda extranjera.
+        string $moneda = 'PEN',
+        ?float $tipoCambio = null,
+        ?float $montoMoneda = null,
     ): ?CuentaMovimiento {
         if (round($monto, 2) <= 0) return null; // sin monto no hay movimiento
 
         return CuentaMovimiento::create([
-            'empresa_id'  => $empresaId,
-            'cuenta_id'   => $cuentaId ?? self::efectivo($empresaId)->id,
-            'user_id'     => $user instanceof User ? $user->id : $user,
-            'fecha'       => substr($fecha, 0, 10),
-            'tipo'        => $tipo,
-            'monto'       => round($monto, 2),
-            'descripcion' => mb_substr($descripcion, 0, 250),
-            'ref_tipo'    => $refTipo,
-            'ref_id'      => $refId,
+            'empresa_id'   => $empresaId,
+            'cuenta_id'    => $cuentaId ?? self::efectivo($empresaId)->id,
+            'user_id'      => $user instanceof User ? $user->id : $user,
+            'fecha'        => substr($fecha, 0, 10),
+            'tipo'         => $tipo,
+            'monto'        => round($monto, 2),
+            'descripcion'  => mb_substr($descripcion, 0, 250),
+            'ref_tipo'     => $refTipo,
+            'ref_id'       => $refId,
+            'moneda'       => strtoupper($moneda) ?: 'PEN',
+            'tipo_cambio'  => $tipoCambio,
+            'monto_moneda' => $montoMoneda,
         ]);
     }
 

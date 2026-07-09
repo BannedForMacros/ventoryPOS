@@ -25,6 +25,9 @@ class Entrada extends Model
         'estado_pago',
         'metodo_pago_id',
         'cuenta_id',
+        'moneda',
+        'tipo_cambio',
+        'monto_moneda',
     ];
 
     public function proveedorRel(): \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -48,6 +51,8 @@ class Entrada extends Model
             'fecha'        => 'date',
             'total'        => 'decimal:2',
             'monto_pagado' => 'decimal:2',
+            'tipo_cambio'  => 'decimal:6',
+            'monto_moneda' => 'decimal:2',
         ];
     }
 

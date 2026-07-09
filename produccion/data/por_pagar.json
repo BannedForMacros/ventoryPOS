@@ -1,0 +1,106 @@
+[
+ {
+  "ruc": "20131719559",
+  "proveedor": "DEPOSITO PAKATNAMU S.A.C",
+  "comprobante": "T13303689832",
+  "fecha": "2026-07-06",
+  "saldo_soles": 51040.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20103134065",
+  "proveedor": "FERRONOR SAC.",
+  "comprobante": "T00100016873",
+  "fecha": "2026-06-18",
+  "saldo_soles": 1500.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20103134065",
+  "proveedor": "FERRONOR SAC.",
+  "comprobante": "100000194",
+  "fecha": "2026-06-26",
+  "saldo_soles": 2000.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20103134065",
+  "proveedor": "FERRONOR SAC.",
+  "comprobante": "T00100017150",
+  "fecha": "2026-07-07",
+  "saldo_soles": 1500.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20103134065",
+  "proveedor": "FERRONOR SAC.",
+  "comprobante": "F01100042579",
+  "fecha": "2026-06-10",
+  "saldo_soles": 13767.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20615155412",
+  "proveedor": "GRUPO CORPORATIVO HERRERA E.I.R.L.",
+  "comprobante": "100225446",
+  "fecha": "2026-07-06",
+  "saldo_soles": 661.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "164",
+  "proveedor": "LADRILLERA RAMOS",
+  "comprobante": "100259684",
+  "fecha": "2026-04-25",
+  "saldo_soles": 1900.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "111",
+  "proveedor": "ROCA FUERTE - CARLOS",
+  "comprobante": "100022036",
+  "fecha": "2026-07-08",
+  "saldo_soles": 425.0,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20496166273",
+  "proveedor": "SERVICIOS GENERALES ADJ EIRL",
+  "comprobante": "GL0200053685",
+  "fecha": "2026-07-03",
+  "saldo_soles": 11761.6,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20496166273",
+  "proveedor": "SERVICIOS GENERALES ADJ EIRL",
+  "comprobante": "155693321",
+  "fecha": "2026-07-06",
+  "saldo_soles": 7486.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20496166273",
+  "proveedor": "SERVICIOS GENERALES ADJ EIRL",
+  "comprobante": "T00600005755",
+  "fecha": "2026-04-25",
+  "saldo_soles": -823.8,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20496166273",
+  "proveedor": "SERVICIOS GENERALES ADJ EIRL",
+  "comprobante": "GL0200053828",
+  "fecha": "2026-07-08",
+  "saldo_soles": 29994.5,
+  "saldo_dolares": 0.0
+ },
+ {
+  "ruc": "20496166273",
+  "proveedor": "SERVICIOS GENERALES ADJ EIRL",
+  "comprobante": "GL0200046451",
+  "fecha": "2026-05-22",
+  "saldo_soles": 823.8,
+  "saldo_dolares": 0.0
+ }
+]

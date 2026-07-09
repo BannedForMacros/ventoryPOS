@@ -12,6 +12,7 @@ class ProveedorAdelanto extends Model
     protected $fillable = [
         'empresa_id', 'proveedor_id', 'user_id', 'metodo_pago_id', 'cuenta_id',
         'fecha', 'monto', 'saldo', 'estado', 'referencia', 'observacion',
+        'moneda', 'tipo_cambio', 'monto_moneda',
     ];
 
     protected function casts(): array
@@ -20,6 +21,8 @@ class ProveedorAdelanto extends Model
             'fecha' => 'date:Y-m-d',
             'monto' => 'decimal:2',
             'saldo' => 'decimal:2',
+            'tipo_cambio'  => 'decimal:6',
+            'monto_moneda' => 'decimal:2',
         ];
     }
 
