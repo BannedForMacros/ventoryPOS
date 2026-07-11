@@ -32,7 +32,20 @@ class CuentasPorCobrarController extends Controller
             ->with(['cliente', 'items', 'caja:id,nombre', 'abonos.metodoPago', 'abonos.cuenta', 'abonos.user', 'pagos.metodoPago', 'user:id,name'])
             ->when($request->input('cliente_id'), fn ($q, $v) => $q->where('cliente_id', $v))
             ->when($request->input('fecha_desde'), fn ($q, $v) => $q->whereDate('fecha_venta', '>=', $v))
-            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->whereDate('fecha_venta', '<=', $v));
+            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->whereDate('fecha_venta', '<=', $v))
+            // Búsqueda del lado del SERVIDOR (por número o cliente): así encuentra
+            // la venta en TODO el histórico, no solo en la página cargada.
+            ->when($request->input('busqueda'), function ($q, $b) {
+                $q->where(function ($q) use ($b) {
+                    $q->where('numero', 'ilike', "%{$b}%")
+                      ->orWhereHas('cliente', function ($c) use ($b) {
+                          $c->where('nombres', 'ilike', "%{$b}%")
+                            ->orWhere('apellidos', 'ilike', "%{$b}%")
+                            ->orWhere('razon_social', 'ilike', "%{$b}%")
+                            ->orWhere('numero_documento', 'ilike', "%{$b}%");
+                      });
+                });
+            });
 
         // Por defecto solo pendientes; ?estado=todas muestra también saldadas.
         if ($request->input('estado', 'pendientes') === 'pendientes') {
@@ -49,6 +62,7 @@ class CuentasPorCobrarController extends Controller
             'ventas'         => $ventas,
             'totalPendiente' => round($totalPendiente, 2),
             'estado'         => $request->input('estado', 'pendientes'),
+            'busqueda'       => (string) $request->input('busqueda', ''),
             'metodosPago'    => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
             'cuentas'        => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
         ]);
