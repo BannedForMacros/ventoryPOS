@@ -34,7 +34,7 @@ it('el detalle de stock lista las ventas del día como salida de inventario', fu
     ], $this->env->admin, $this->turno);
 
     $hoy = now()->toDateString();
-    $resp = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $hoy, 'categoria' => 'stock']));
+    $resp = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $hoy, 'categoria' => 'stock_mov']));
 
     $resp->assertOk();
     $json = $resp->json();
@@ -48,10 +48,23 @@ it('el detalle de stock lista las ventas del día como salida de inventario', fu
     // Salida de 5 uds × costo 20 = -100
     expect((float) $item['monto'])->toBe(-100.0);
     expect($item['cantidad'])->toBe('-5');
+    expect($item['tipo'])->toBe('egreso'); // salida aunque el costo fuese 0
 
-    // Cards de resumen: la variación del día debe ser negativa (salió inventario)
-    $variacion = collect($json['cards'])->firstWhere('label', 'Variación del día');
-    expect((float) $variacion['valor'])->toBe(-100.0);
+    // Card: lo explicado por movimientos del día debe ser negativo (salió inventario)
+    $explicado = collect($json['cards'])->firstWhere('label', 'Explicado por movimientos del día');
+    expect((float) $explicado['valor'])->toBe(-100.0);
+});
+
+it('la línea "stock" (no _mov) muestra el stock actual valorizado', function () {
+    $this->env->crearProducto(['nombre' => 'Arena Z', 'precio_costo' => 8, 'stock_inicial' => 50]);
+    $hoy = now()->toDateString();
+    $json = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $hoy, 'categoria' => 'stock']))->json();
+
+    $card = collect($json['cards'])->firstWhere('label', 'Valor total del inventario');
+    expect($card)->not->toBeNull();
+    $prod = collect($json['grupos'])->firstWhere('titulo', 'Arena Z');
+    expect($prod)->not->toBeNull();
+    expect((float) $prod['monto'])->toBe(400.0); // 50 × 8
 });
 
 it('el detalle de stock muestra las entradas (compras) del día como reingreso', function () {
@@ -82,7 +95,7 @@ it('el detalle de stock muestra las entradas (compras) del día como reingreso',
     ]);
 
     $hoy = now()->toDateString();
-    $json = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $hoy, 'categoria' => 'stock']))->json();
+    $json = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $hoy, 'categoria' => 'stock_mov']))->json();
 
     $entradas = collect($json['grupos'])->firstWhere('titulo', 'Entradas (compras)');
     expect($entradas)->not->toBeNull();

@@ -87,7 +87,7 @@ const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 
 /** Categorías cuyo monto se puede "abrir" para ver de dónde sale. */
 const CON_DETALLE = new Set([
-    'efectivo', 'cuenta_bancaria', 'stock', 'cxc', 'cxp', 'gastos_emitidos',
+    'efectivo', 'cuenta_bancaria', 'stock', 'stock_mov', 'cxc', 'cxp', 'gastos_emitidos',
     'anticipo_cliente', 'adelanto_proveedor', 'deuda', 'personal', 'prestamo_otorgado',
     'planilla_descuento',
 ]);
@@ -101,6 +101,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
     cuenta_bancaria:    'Cuenta',
     efectivo:           'Efectivo',
     stock:              'Stock',
+    stock_mov:          'Movimientos de inventario',
     cxc:                'Por cobrar',
     adelanto_proveedor: 'Adelanto prov.',
     prestamo_otorgado:  'Préstamo otorgado',
@@ -499,7 +500,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             return (
                                 <button
                                     key={`${v.seccion}-${v.categoria}`}
-                                    onClick={() => clickeable && abrirDetalle({ id: 0, seccion: v.seccion, categoria: v.categoria, descripcion: v.label, ref_id: null, monto: String(v.hoy), es_manual: false, conciliado: false })}
+                                    onClick={() => clickeable && abrirDetalle({ id: 0, seccion: v.seccion, categoria: v.categoria === 'stock' ? 'stock_mov' : v.categoria, descripcion: `${v.label} — variación del día`, ref_id: null, monto: String(v.hoy), es_manual: false, conciliado: false })}
                                     disabled={!clickeable}
                                     className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-black/[0.02] disabled:cursor-default"
                                 >

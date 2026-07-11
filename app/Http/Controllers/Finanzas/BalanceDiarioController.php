@@ -398,49 +398,94 @@ class BalanceDiarioController extends Controller
                 ]);
             }
 
-            // ── Stock: MOVIMIENTOS del día (trazabilidad de por qué subió/bajó)
+            // ── Stock ACTUAL: producto por producto (valor del inventario hoy)
             case 'stock': {
-                // Valor total del inventario AHORA (misma valuación que el balance).
-                $valorInventario = (float) DB::table('stock')
+                $filas = DB::table('stock')
                     ->join('productos', 'productos.id', '=', 'stock.producto_id')
                     ->where('productos.empresa_id', $empresaId)
                     ->where('productos.activo', true)
-                    ->selectRaw('COALESCE(SUM(stock.cantidad * productos.precio_costo), 0) as v')
-                    ->value('v');
-
-                // Movimientos que cambian el VALOR del inventario de la empresa en
-                // esta fecha (las transferencias internas no cambian el total).
-                $movs = $this->movimientosStockDia($empresaId, $fecha);
-
-                $entradasVal = round((float) $movs->where('valor', '>', 0)->sum('valor'), 2);
-                $salidasVal  = round((float) $movs->where('valor', '<', 0)->sum('valor'), 2); // negativo
-                $variacion   = round($entradasVal + $salidasVal, 2);
+                    ->where('stock.cantidad', '!=', 0)
+                    ->selectRaw('productos.nombre, SUM(stock.cantidad) as cantidad, productos.precio_costo,
+                                 SUM(stock.cantidad * productos.precio_costo) as valor')
+                    ->groupBy('productos.id', 'productos.nombre', 'productos.precio_costo')
+                    ->orderByDesc('valor')
+                    ->limit(1000)
+                    ->get();
 
                 $fmtCant = fn ($n) => rtrim(rtrim(number_format((float) $n, 2), '0'), '.');
 
+                return response()->json([
+                    'tipo'  => 'grupos',
+                    'cards' => [
+                        ['label' => 'Valor total del inventario', 'valor' => round((float) $filas->sum('valor'), 2), 'color' => 'success'],
+                        ['label' => 'Productos con stock', 'valor' => $filas->count(), 'esNumero' => true],
+                    ],
+                    'grupos' => $filas->map(fn ($f, $i) => [
+                        'id'        => (string) $i,
+                        'titulo'    => $f->nombre,
+                        'subtitulo' => $fmtCant($f->cantidad) . ' und × S/ ' . number_format((float) $f->precio_costo, 2) . ' (costo actual)',
+                        'monto'     => round((float) $f->valor, 2),
+                        'items'     => [],
+                    ])->values(),
+                ]);
+            }
+
+            // ── Stock: MOVIMIENTOS del día + reconciliación de la variación ──
+            // Explica por qué el valor del inventario cambió vs el día anterior:
+            // parte por movimientos (ventas/salidas/entradas) y parte por cambio
+            // de costos (revaluación), que NO se ve en los movimientos.
+            case 'stock_mov': {
+                $valorHoy = (float) DB::table('stock')
+                    ->join('productos', 'productos.id', '=', 'stock.producto_id')
+                    ->where('productos.empresa_id', $empresaId)->where('productos.activo', true)
+                    ->selectRaw('COALESCE(SUM(stock.cantidad * productos.precio_costo), 0) as v')->value('v');
+
+                // Valor de stock del último balance confirmado anterior.
+                $balAnt = DB::table('balances_diarios as b')
+                    ->join('balance_diario_items as i', 'i.balance_diario_id', '=', 'b.id')
+                    ->where('b.empresa_id', $empresaId)->where('b.estado', 'confirmado')
+                    ->where('b.fecha', '<', $fecha)->where('i.categoria', 'stock')
+                    ->orderByDesc('b.fecha')
+                    ->selectRaw('b.fecha, i.monto')->first();
+                $valorAyer  = $balAnt ? (float) $balAnt->monto : null;
+                $variacion  = $valorAyer !== null ? round($valorHoy - $valorAyer, 2) : null;
+
+                $movs      = $this->movimientosStockDia($empresaId, $fecha);
+                $movTotal  = round((float) $movs->sum('valor'), 2);
+                $revaluado = $variacion !== null ? round($variacion - $movTotal, 2) : null;
+
+                $fmtCant = fn ($n) => rtrim(rtrim(number_format((float) $n, 2), '0'), '.');
+
+                // La DIRECCIÓN (color/signo) se basa en la CANTIDAD, no en el valor:
+                // un producto sin costo registrado igual es una salida (no "+0").
                 $grupos = $movs->groupBy('tipo')->map(fn ($rows, $tipo) => [
                     'id'     => $tipo,
                     'titulo' => $tipo,
                     'monto'  => round((float) $rows->sum('valor'), 2),
-                    'tipo'   => $rows->sum('valor') >= 0 ? 'ingreso' : 'egreso',
+                    'tipo'   => $rows->sum('cantidad') >= 0 ? 'ingreso' : 'egreso',
                     'items'  => $rows->map(fn ($m) => [
                         'producto'  => $m->producto,
                         'documento' => $m->documento ?? '—',
                         'cantidad'  => ($m->cantidad >= 0 ? '+' : '') . $fmtCant($m->cantidad),
                         'monto'     => round((float) $m->valor, 2),
-                        'tipo'      => $m->valor >= 0 ? 'ingreso' : 'egreso',
+                        'tipo'      => $m->cantidad >= 0 ? 'ingreso' : 'egreso',
                         'user'      => $m->usuario,
                     ])->values(),
                 ])->sortByDesc(fn ($g) => abs($g['monto']))->values();
 
+                $cards = [];
+                if ($variacion !== null) {
+                    $cards[] = ['label' => 'Variación del inventario (vs ' . $balAnt->fecha . ')', 'valor' => $variacion, 'color' => $variacion >= 0 ? 'success' : 'danger'];
+                }
+                $cards[] = ['label' => 'Explicado por movimientos del día', 'valor' => $movTotal, 'color' => $movTotal >= 0 ? 'success' : 'danger'];
+                if ($revaluado !== null && abs($revaluado) >= 0.01) {
+                    $cards[] = ['label' => 'Por cambio de costos / ajustes', 'valor' => $revaluado, 'color' => $revaluado >= 0 ? 'success' : 'danger'];
+                }
+                $cards[] = ['label' => 'Valor del inventario hoy', 'valor' => round($valorHoy, 2), 'color' => 'success'];
+
                 return response()->json([
                     'tipo'  => 'grupos',
-                    'cards' => [
-                        ['label' => 'Valor del inventario hoy', 'valor' => round($valorInventario, 2), 'color' => 'success'],
-                        ['label' => 'Entradas del día (+)', 'valor' => $entradasVal, 'color' => 'success'],
-                        ['label' => 'Salidas del día (−)', 'valor' => abs($salidasVal), 'color' => 'danger'],
-                        ['label' => 'Variación del día', 'valor' => $variacion, 'color' => $variacion >= 0 ? 'success' : 'danger'],
-                    ],
+                    'cards' => $cards,
                     'itemCols' => [
                         ['campo' => 'producto',  'label' => 'Producto'],
                         ['campo' => 'documento', 'label' => 'Documento'],
