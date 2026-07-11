@@ -5,29 +5,33 @@ import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
-import type { GastoConcepto, GastoTipo, Local, Turno } from '@/types';
+import type { GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, Turno } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
 
 export interface GastoForm {
-    gasto_tipo_id:      number | '';
-    gasto_concepto_id:  number | '';
-    monto:              string;
-    fecha:              string;
-    comentario:         string;
-    turno_id:           number | null;
-    local_id:           number | '';
-    cuenta_id:          number | '';
+    gasto_tipo_id:         number | '';
+    gasto_concepto_id:     number | '';
+    monto:                 string;
+    fecha:                 string;
+    comentario:            string;
+    turno_id:              number | null;
+    local_id:              number | '';
+    // Se paga con: método de pago y (si el método tiene cuentas) su cuenta.
+    // cuenta_metodo_pago_id es el id de la fila pivote, igual que en el POS.
+    metodo_pago_id:        number | '';
+    cuenta_metodo_pago_id: number | '';
 }
 
-export const emptyGasto = (turnoId: number | null = null): GastoForm => ({
-    gasto_tipo_id:     '',
-    gasto_concepto_id: '',
-    monto:             '',
-    fecha:             hoyLocal(),
-    comentario:        '',
-    turno_id:          turnoId,
-    local_id:          '',
-    cuenta_id:         '',
+export const emptyGasto = (turnoId: number | null = null, metodoPagoId: number | '' = ''): GastoForm => ({
+    gasto_tipo_id:         '',
+    gasto_concepto_id:     '',
+    monto:                 '',
+    fecha:                 hoyLocal(),
+    comentario:            '',
+    turno_id:              turnoId,
+    local_id:              '',
+    metodo_pago_id:        metodoPagoId,
+    cuenta_metodo_pago_id: '',
 });
 
 interface Props {
@@ -38,11 +42,15 @@ interface Props {
     locales:          Local[];
     esAdmin:          boolean;
     turnosAbiertos:   Turno[];
-    cuentas?:         { id: number; nombre: string; es_efectivo?: boolean }[];
+    metodosPago?:     MetodoPagoConCuentas[];
 }
 
-export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos, cuentas = [] }: Props) {
-    const [form, setForm]     = useState<GastoForm>(emptyGasto(turnoActivo?.id ?? null));
+export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos, metodosPago = [] }: Props) {
+    // Método por defecto: efectivo si existe, si no el primero disponible.
+    const metodoPorDefecto = (): number | '' =>
+        (metodosPago.find(m => m.tipo?.slug === 'efectivo') ?? metodosPago[0])?.id ?? '';
+
+    const [form, setForm]     = useState<GastoForm>(emptyGasto(turnoActivo?.id ?? null, metodoPorDefecto()));
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
 
@@ -50,6 +58,22 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
     useEffect(() => {
         setForm(f => ({ ...f, turno_id: turnoActivo?.id ?? null }));
     }, [turnoActivo?.id]);
+
+    // Si los métodos llegan después del montaje y aún no hay uno elegido, fijar el default.
+    useEffect(() => {
+        if (form.metodo_pago_id === '' && metodosPago.length > 0) {
+            setForm(f => ({ ...f, metodo_pago_id: metodoPorDefecto() }));
+        }
+    }, [metodosPago]);
+
+    // Método elegido y sus cuentas (para el segundo select, igual que el POS).
+    const metodoSel        = metodosPago.find(m => m.id === Number(form.metodo_pago_id)) ?? null;
+    const cuentasDelMetodo = metodoSel?.cuentas ?? [];
+
+    function handleMetodoChange(v: number | string) {
+        // Al cambiar de método se resetea la cuenta (evita mezclar cuentas ajenas).
+        setForm(f => ({ ...f, metodo_pago_id: Number(v) || '', cuenta_metodo_pago_id: '' }));
+    }
 
     const esTurnogasto = form.turno_id !== null;
 
@@ -68,7 +92,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
     }
 
     function handleClose() {
-        setForm(emptyGasto(turnoActivo?.id ?? null));
+        setForm(emptyGasto(turnoActivo?.id ?? null, metodoPorDefecto()));
         setErrors({});
         onClose();
     }
@@ -178,15 +202,33 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     disabled={saving}
                 />
 
-                {/* F7 — De qué cuenta sale el dinero (default: Efectivo) */}
-                {cuentas.length > 0 && (
+                {/* Se paga con: método de pago y, si tiene cuentas, la cuenta.
+                    Mismo patrón que el panel de pago del POS. */}
+                {metodosPago.length > 0 && (
                     <Select
                         label="Se paga con"
-                        value={form.cuenta_id}
-                        onChange={v => setForm(f => ({ ...f, cuenta_id: Number(v) || '' }))}
-                        options={cuentas.map(c => ({ value: c.id, label: c.nombre }))}
-                        placeholder="Efectivo (por defecto)"
-                        error={errors.cuenta_id}
+                        required
+                        value={form.metodo_pago_id}
+                        onChange={handleMetodoChange}
+                        options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                        placeholder="Seleccionar método de pago"
+                        error={errors.metodo_pago_id}
+                        disabled={saving}
+                    />
+                )}
+
+                {cuentasDelMetodo.length > 0 && (
+                    <Select
+                        label="Cuenta"
+                        value={form.cuenta_metodo_pago_id}
+                        onChange={v => setForm(f => ({ ...f, cuenta_metodo_pago_id: Number(v) || '' }))}
+                        // value = id del PIVOTE cuenta_metodo_pago (lo que valida el
+                        // backend), NO el id de la cuenta.
+                        options={cuentasDelMetodo
+                            .filter(c => c.pivot?.id)
+                            .map(c => ({ value: c.pivot!.id, label: c.nombre }))}
+                        placeholder="Cuenta por defecto del método"
+                        error={errors.cuenta_metodo_pago_id}
                         disabled={saving}
                     />
                 )}

@@ -44,6 +44,10 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
     // aplican al carrito al salir del input (blur) o con Enter.
     const [cantidadVal, setCantidadVal]     = useState(String(item.cantidad));
     const [precioVal, setPrecioVal]         = useState(item.precio_unitario.toFixed(2));
+    // Foco del stepper de cantidad: el resaltado va en el CONTENEDOR (box-shadow),
+    // no en el input, porque el input vive dentro de un overflow-hidden que
+    // recortaba el ring arriba y abajo.
+    const [cantFocus, setCantFocus]         = useState(false);
 
     useEffect(() => {
         setDescuentoVal(String(item.descuento_item || ''));
@@ -196,7 +200,11 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                             <input
                                 type="number"
                                 inputMode="decimal"
-                                min={item.costo_minimo > 0 ? item.costo_minimo : 0}
+                                // min=0 (NO el costo): si pusiéramos min=costo, las
+                                // flechitas del navegador frenarían en el costo SIN
+                                // disparar onChange, y no saldría el aviso. Dejamos que
+                                // JS controle el piso (aviso + auto-ajuste al costo).
+                                min="0"
                                 step="0.01"
                                 value={precioVal}
                                 onChange={e => onCambioPrecio(e.target.value)}
@@ -241,19 +249,28 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
             {/* Fila 2: Cantidad + Acciones */}
             <div className="flex items-center justify-between mt-2 gap-2">
                 <div
-                    className="flex items-center rounded-xl overflow-hidden select-none"
-                    style={{ border: '1px solid var(--color-border)' }}
+                    className="flex items-center rounded-xl overflow-hidden select-none transition-all"
+                    style={{
+                        border: `1px solid ${cantFocus ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                        // El ring va aquí (en el contenedor): el box-shadow se dibuja
+                        // por fuera y NO lo recorta el overflow-hidden, así se ve
+                        // el resaltado completo (arriba, abajo y a los lados).
+                        boxShadow: cantFocus
+                            ? '0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent)'
+                            : 'none',
+                    }}
                 >
                     <button
                         onClick={() => onCantidad(item.key, -1)}
                         aria-label="Disminuir cantidad"
-                        className="flex items-center justify-center w-9 h-9 transition-colors hover:bg-black/5 active:bg-black/10"
+                        className="flex items-center justify-center w-9 h-10 flex-shrink-0 transition-colors hover:bg-black/5 active:bg-black/10"
                         style={{ color: 'var(--color-text-muted)' }}
                     >
                         <Minus size={15} />
                     </button>
                     {/* Cantidad editable: se puede teclear directo (soporta decimales
-                        para productos por metro/kilo), ademas de los botones +/-. */}
+                        para productos por metro/kilo), ademas de los botones +/-.
+                        Ancho amplio para que un número grande no se pierda. */}
                     <input
                         type="number"
                         inputMode="decimal"
@@ -261,21 +278,24 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                         step="any"
                         value={cantidadVal}
                         onChange={e => setCantidadVal(e.target.value)}
-                        onBlur={aplicarCantidad}
+                        onBlur={() => { setCantFocus(false); aplicarCantidad(); }}
                         onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                        onFocus={e => e.target.select()}
+                        onFocus={e => { setCantFocus(true); e.target.select(); }}
                         aria-label="Cantidad"
-                        className="text-sm font-bold w-14 text-center px-1 h-9 border-0 focus:outline-none focus:ring-1"
+                        className="text-base font-bold w-20 text-center px-1 h-10 border-0 focus:outline-none"
                         style={{
-                            color: 'var(--color-text)',
-                            backgroundColor: 'var(--color-bg)',
-                            '--tw-ring-color': 'var(--color-primary)',
+                            color: cantFocus ? 'var(--color-primary)' : 'var(--color-text)',
+                            backgroundColor: cantFocus
+                                ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))'
+                                : 'var(--color-bg)',
+                            borderLeft: '1px solid var(--color-border)',
+                            borderRight: '1px solid var(--color-border)',
                         } as React.CSSProperties}
                     />
                     <button
                         onClick={() => onCantidad(item.key, 1)}
                         aria-label="Aumentar cantidad"
-                        className="flex items-center justify-center w-9 h-9 transition-colors hover:bg-black/5 active:bg-black/10"
+                        className="flex items-center justify-center w-9 h-10 flex-shrink-0 transition-colors hover:bg-black/5 active:bg-black/10"
                         style={{ color: 'var(--color-primary)' }}
                     >
                         <Plus size={15} />

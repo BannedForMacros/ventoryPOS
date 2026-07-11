@@ -3,7 +3,7 @@
   "cliente": "AUTO FACIL EN CUOTAS, ISABEL E.I.R.L.",
   "comprobante": "P00100041821",
   "fecha": "2026-04-24",
-  "monto": 360.0,
+  "monto": 395.98,
   "lineas": 1,
   "exacto": false
  },
@@ -11,15 +11,23 @@
   "cliente": "BUENAÑO TAPIA MERY EMILIN - 980461765",
   "comprobante": "P00100041961",
   "fecha": "2026-04-29",
-  "monto": 35.0,
+  "monto": 40.0,
   "lineas": 1,
+  "exacto": false
+ },
+ {
+  "cliente": "BURGA MALDONADO ALBERTO ANANIAS - 971648368",
+  "comprobante": "P00100043820",
+  "fecha": "2026-07-10",
+  "monto": 19.0,
+  "lineas": 2,
   "exacto": false
  },
  {
   "cliente": "BUSTAMANTE GONZALES RIGOBERTO - 967795790",
   "comprobante": "P00100043645",
   "fecha": "2026-07-03",
-  "monto": 9746.21,
+  "monto": 9749.23,
   "lineas": 11,
   "exacto": false
  },
@@ -27,7 +35,7 @@
   "cliente": "CAMISAN AQUINO ESTHER - 988092730",
   "comprobante": "P00200031999",
   "fecha": "2026-05-19",
-  "monto": 1397.24,
+  "monto": 1391.16,
   "lineas": 6,
   "exacto": false
  },
@@ -35,7 +43,7 @@
   "cliente": "CARHUAJULCA IRURETA LUZ ANGELICA",
   "comprobante": "P00200029187",
   "fecha": "2026-01-27",
-  "monto": 240.0,
+  "monto": 263.99,
   "lineas": 1,
   "exacto": false
  },
@@ -43,7 +51,7 @@
   "cliente": "CORONEL REGALADO DIONY JOSE - 924998664",
   "comprobante": "P00100040490",
   "fecha": "2026-03-13",
-  "monto": 2935.0,
+  "monto": 0.0,
   "lineas": 2,
   "exacto": false
  },
@@ -51,7 +59,7 @@
   "cliente": "DISTRIBUIDORA DE PRODUCTOS DE CONSUMO MASIVO SOCIEDAD ANONIMA CERRADA",
   "comprobante": "F00100001944",
   "fecha": "2025-01-23",
-  "monto": 30.0,
+  "monto": 33.0,
   "lineas": 1,
   "exacto": false
  },
@@ -67,23 +75,15 @@
   "cliente": "HERNANDEZ MORALES HERMINIO",
   "comprobante": "P00100014270",
   "fecha": "2023-08-29",
-  "monto": 489.6,
+  "monto": 484.8,
   "lineas": 1,
   "exacto": false
  },
  {
   "cliente": "JIBAJA NEYRA KEVIN OVET - 999336049",
-  "comprobante": "P00100036534",
-  "fecha": "2025-12-02",
-  "monto": 660.0,
-  "lineas": 1,
-  "exacto": true
- },
- {
-  "cliente": "JIBAJA NEYRA KEVIN OVET - 999336049",
   "comprobante": "P00100036692",
   "fecha": "2025-12-06",
-  "monto": 332.1,
+  "monto": 332.05,
   "lineas": 1,
   "exacto": false
  },
@@ -91,31 +91,15 @@
   "cliente": "JIBAJA NEYRA KEVIN OVET - 999336049",
   "comprobante": "P00100036693",
   "fecha": "2025-12-06",
-  "monto": 332.1,
+  "monto": 332.05,
   "lineas": 1,
   "exacto": false
- },
- {
-  "cliente": "JIBAJA NEYRA KEVIN OVET - 999336049",
-  "comprobante": "P00100043742",
-  "fecha": "2026-07-08",
-  "monto": 47.5,
-  "lineas": 2,
-  "exacto": true
- },
- {
-  "cliente": "JIBAJA NEYRA KEVIN OVET - 999336049",
-  "comprobante": "P00100043743",
-  "fecha": "2026-07-08",
-  "monto": 498.0,
-  "lineas": 1,
-  "exacto": true
  },
  {
   "cliente": "JUAN CLIENTE",
   "comprobante": "P00100020876",
   "fecha": "2024-06-10",
-  "monto": 65.28,
+  "monto": 64.64,
   "lineas": 1,
   "exacto": false
  },
@@ -123,7 +107,7 @@
   "cliente": "LACHE HERNANDEZ ORFELINDA ELIZABETH",
   "comprobante": "P00200028299",
   "fecha": "2025-12-30",
-  "monto": 6.08,
+  "monto": 6.09,
   "lineas": 2,
   "exacto": false
  },
@@ -131,7 +115,7 @@
   "cliente": "LUIS MEDINA",
   "comprobante": "P00200012046",
   "fecha": "2024-01-03",
-  "monto": 12844.92,
+  "monto": 12787.73,
   "lineas": 9,
   "exacto": false
  },
@@ -163,7 +147,7 @@
   "cliente": "PEREZ DIAZ MIGUEL - 937744347",
   "comprobante": "P00100036495",
   "fecha": "2025-12-01",
-  "monto": 888.62,
+  "monto": 882.18,
   "lineas": 2,
   "exacto": false
  },
@@ -171,7 +155,7 @@
   "cliente": "PEREZ DIAZ MIGUEL - 937744347",
   "comprobante": "P00100038090",
   "fecha": "2026-01-10",
-  "monto": 918.0,
+  "monto": 917.92,
   "lineas": 1,
   "exacto": false
  },
@@ -179,7 +163,7 @@
   "cliente": "PEREZ DIAZ MIGUEL - 937744347",
   "comprobante": "P00100043687",
   "fecha": "2026-07-04",
-  "monto": 551.2,
+  "monto": 581.09,
   "lineas": 4,
   "exacto": false
  },
@@ -187,7 +171,7 @@
   "cliente": "PEREZ PEREZ JUAN CARLOS",
   "comprobante": "P00200030094",
   "fecha": "2026-02-23",
-  "monto": 225.0,
+  "monto": 224.79,
   "lineas": 1,
   "exacto": false
  },
@@ -195,7 +179,7 @@
   "cliente": "PESANTES CORTIJO SILVIA MARTINA",
   "comprobante": "P00200029931",
   "fecha": "2026-02-19",
-  "monto": 105.0,
+  "monto": 120.01,
   "lineas": 1,
   "exacto": false
  },
@@ -203,7 +187,7 @@
   "cliente": "S.R OMAR",
   "comprobante": "P00100017909",
   "fecha": "2024-01-18",
-  "monto": 65.28,
+  "monto": 64.64,
   "lineas": 1,
   "exacto": false
  },
@@ -211,7 +195,7 @@
   "cliente": "TARRILLO VASQUEZ CLARA ESTHER",
   "comprobante": "P00200008967",
   "fecha": "2023-05-02",
-  "monto": 30.0,
+  "monto": 33.0,
   "lineas": 1,
   "exacto": false
  },
@@ -219,7 +203,7 @@
   "cliente": "TORRES RUIZ LUZ ANGELICA",
   "comprobante": "P00100037178",
   "fecha": "2025-12-17",
-  "monto": 303.68,
+  "monto": 303.64,
   "lineas": 2,
   "exacto": false
  },
@@ -227,7 +211,7 @@
   "cliente": "WALTER - CASA BLANCA",
   "comprobante": "P00200031344",
   "fecha": "2026-04-17",
-  "monto": 1530.0,
+  "monto": 1529.87,
   "lineas": 1,
   "exacto": false
  },
@@ -235,7 +219,7 @@
   "cliente": "YDROGO GALVEZ YONATAN",
   "comprobante": "P00200030422",
   "fecha": "2026-03-07",
-  "monto": 2165.34,
+  "monto": 2149.88,
   "lineas": 2,
   "exacto": false
  }

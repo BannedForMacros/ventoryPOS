@@ -74,9 +74,13 @@ class GastoController extends Controller
             'locales'         => $locales,
             'turnosAbiertos'  => $turnosAbiertos,
             'esAdmin'         => $esAdmin,
-            // F7 — de qué cuenta sale el dinero del gasto (default efectivo)
-            'cuentas'         => \App\Models\Cuenta::deEmpresa($user->empresa_id)->activo()
-                ->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
+            // Métodos de pago con sus cuentas (mismo patrón que el POS): el modal
+            // muestra el método y, si tiene cuentas, un segundo select de cuenta.
+            // La relación cuentas() usa withPivot('id') → cada cuenta trae pivot.id
+            // (el cuenta_metodo_pago_id que el backend resuelve a una cuenta real).
+            'metodosPago'     => \App\Models\MetodoPago::deEmpresa($user->empresa_id)->activo()
+                ->with(['tipo:id,slug,nombre', 'cuentas' => fn($q) => $q->where('activo', true)])
+                ->orderBy('nombre')->get(),
         ]);
     }
 
@@ -100,7 +104,22 @@ class GastoController extends Controller
             }
         }
 
-        DB::transaction(function () use ($request, $user, $localId, $turnoId) {
+        // Resolver la cuenta destino igual que el POS: se elige un método de pago
+        // y (si tiene) su cuenta. TesoreriaService::resolverCuenta traduce el
+        // método + cuenta_metodo_pago_id a una cuenta_id concreta (efectivo si el
+        // método es efectivo o no tiene cuenta). Compat: si aún llega cuenta_id
+        // directo (clientes viejos), se respeta.
+        $metodoPagoId       = $request->input('metodo_pago_id');
+        $cuentaMetodoPagoId = $request->input('cuenta_metodo_pago_id');
+        $cuentaId = $metodoPagoId
+            ? $this->tesoreria->resolverCuenta(
+                $user->empresa_id,
+                $cuentaMetodoPagoId ? (int) $cuentaMetodoPagoId : null,
+                (int) $metodoPagoId,
+              )
+            : ($request->input('cuenta_id') ?: null);
+
+        DB::transaction(function () use ($request, $user, $localId, $turnoId, $cuentaId) {
             $gasto = Gasto::create([
                 'empresa_id'        => $user->empresa_id,
                 'local_id'          => $localId,
@@ -109,12 +128,12 @@ class GastoController extends Controller
                 'gasto_tipo_id'     => $request->input('gasto_tipo_id'),
                 'gasto_concepto_id' => $request->input('gasto_concepto_id'),
                 'monto'             => $request->input('monto'),
-                'cuenta_id'         => $request->input('cuenta_id') ?: null,
+                'cuenta_id'         => $cuentaId,
                 'fecha'             => $request->input('fecha'),
                 'comentario'        => $request->input('comentario'),
             ]);
 
-            // F7 — Tesorería: el gasto sale de caja (efectivo por defecto).
+            // F7 — Tesorería: el gasto sale de la cuenta resuelta (efectivo por defecto).
             $gasto->load('concepto');
             $this->tesoreria->registrar(
                 $user->empresa_id,

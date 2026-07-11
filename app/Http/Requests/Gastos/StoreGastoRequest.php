@@ -25,7 +25,15 @@ class StoreGastoRequest extends FormRequest
                 Rule::exists('gasto_conceptos', 'id')->where('empresa_id', $empresaId),
             ],
             'monto'      => ['required', 'numeric', 'min:0.01'],
-            // F7 — cuenta de la que sale el dinero (null = efectivo)
+            // Método de pago con el que se paga el gasto (y su cuenta si tiene).
+            // El backend lo resuelve a una cuenta_id concreta vía resolverCuenta.
+            'metodo_pago_id' => [
+                'nullable', 'integer',
+                Rule::exists('metodos_pago', 'id')->where('empresa_id', $empresaId)->where('activo', true),
+            ],
+            // Id de la fila pivote cuenta_metodo_pago (NO el id de la cuenta).
+            'cuenta_metodo_pago_id' => ['nullable', 'integer', 'exists:cuenta_metodo_pago,id'],
+            // F7 (compat) — cuenta directa de la que sale el dinero (null = efectivo)
             'cuenta_id'  => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $empresaId)],
             'fecha'      => ['required', 'date'],
             'comentario' => ['nullable', 'string', 'max:500'],
@@ -40,6 +48,16 @@ class StoreGastoRequest extends FormRequest
             $concepto = GastoConcepto::find($this->input('gasto_concepto_id'));
             if ($concepto && (int) $concepto->gasto_tipo_id !== (int) $this->input('gasto_tipo_id')) {
                 $validator->errors()->add('gasto_concepto_id', 'El concepto no pertenece al tipo de gasto seleccionado.');
+            }
+
+            // Si viene cuenta_metodo_pago_id, su fila pivote debe corresponder
+            // al método enviado (evita mezclar la cuenta de otro método).
+            $cmpId = $this->input('cuenta_metodo_pago_id');
+            if ($cmpId) {
+                $pivot = \Illuminate\Support\Facades\DB::table('cuenta_metodo_pago')->where('id', $cmpId)->first();
+                if (!$pivot || (int) $pivot->metodo_pago_id !== (int) $this->input('metodo_pago_id')) {
+                    $validator->errors()->add('cuenta_metodo_pago_id', 'La cuenta no pertenece al método de pago seleccionado.');
+                }
             }
 
             // Validar turno si viene

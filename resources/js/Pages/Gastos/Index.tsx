@@ -11,7 +11,7 @@ import TableActions from '@/Components/UI/TableActions';
 import Tabs from '@/Components/UI/Tabs';
 import Modal from '@/Components/UI/Modal';
 import ModalGasto from './Partials/ModalGasto';
-import type { Gasto, GastoTipo, Local, PageProps, Turno } from '@/types';
+import type { Gasto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
 
 type Scope = 'turno' | 'administrativo';
 
@@ -27,7 +27,7 @@ interface Props extends PageProps {
     locales:         Local[];
     turnosAbiertos:  Turno[];
     esAdmin:         boolean;
-    cuentas:         { id: number; nombre: string; es_efectivo?: boolean }[];
+    metodosPago:     MetodoPagoConCuentas[];
 }
 
 const ALL_TABS = [
@@ -35,7 +35,7 @@ const ALL_TABS = [
     { value: 'administrativo' as Scope, label: 'Gastos administrativos' },
 ];
 
-export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbiertos, esAdmin, cuentas }: Props) {
+export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbiertos, esAdmin, metodosPago }: Props) {
     const { flash, turno_activo } = usePage<Props>().props;
     const [tab, setTab]                 = useState<Scope>(scope);
     const [modalGasto, setModalGasto]   = useState(false);
@@ -154,7 +154,7 @@ export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbier
                 locales={locales}
                 esAdmin={esAdmin}
                 turnosAbiertos={turnosAbiertos ?? []}
-                cuentas={cuentas ?? []}
+                metodosPago={metodosPago ?? []}
             />
 
             {/* Confirmar eliminar */}

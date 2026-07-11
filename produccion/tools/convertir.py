@@ -144,17 +144,38 @@ def do_por_pagar():
     return out
 
 
+# ---------------------------------------------------------------- VENTAS (indice de precio real)
+def ventas_precio_index():
+    """{ (comprobante, producto_norm): precio_unitario_real } desde VENTAS.xlsx (con IGV)."""
+    rows = load("VENTAS.xlsx")
+    # header fila5 (idx4): NDOC TDOC FECHA CLIENTE CODA CODIGOF PRODUCTO CANT PRECIO IMPORTE ...
+    idx = {}
+    for r in rows[5:]:
+        ndoc = s(r[0]); prod = norm_prod(r[6]); precio = num(r[8])
+        if ndoc and prod and precio > 0:
+            idx.setdefault((ndoc, prod), precio)
+    return idx
+
+
+# Precios reales confirmados por la ENTREGA del 09-07 (no están en ningún Excel de precios):
+# Jibaja entregó el ladrillo P00100036534 valorado 660 → 0.66/u. Fuente: bajada exacta del
+# anticipo 08→09 (1,205.50 = 47.50 + 498 + 660) contra el balance diario.
+PRECIOS_CONFIRMADOS = {
+    ("P00100036534", "LADRILLO ESTANDART 18H FORTES"): 0.66,
+}
+
+
 # ---------------------------------------------------------------- ANTICIPOS (pendientes por entregar)
 def do_anticipos(stock):
-    # price list por nombre normalizado (precio venta con IGV)
-    price = {}
+    # fallback: costo + IGV (columna "C U IGV" del stock) por nombre normalizado
+    costo_igv = {}
     for x in stock:
-        price[norm_prod(x["producto"])] = x["precio_venta_igv"]
+        costo_igv[norm_prod(x["producto"])] = x["precio_venta_igv"]
+    ventas = ventas_precio_index()
 
     rows = load("PENDIENTES POR ENTREGAR 08-07.xlsx")
-    # header fila5 (idx4): Cliente Denominacion Unidad Pedido Entregado Saldo Referencia FechaEmision
-    grupos = {}   # (cliente, comprobante) -> {cliente, comprobante, fecha, monto, sin_precio}
-    matched = unmatched = 0
+    grupos = {}   # (cliente, comprobante) -> {..., monto, lineas, exacto}
+    n_real = n_costo = n_sin = 0
     for r in rows[5:]:
         cliente = s(r[0]); denom = s(r[1])
         if not cliente or not denom:
@@ -162,24 +183,36 @@ def do_anticipos(stock):
         saldo = num(r[5])              # cantidad pendiente por entregar
         if saldo <= 0:
             continue
-        comprobante = s(r[6]); femis = fecha(r[7])
-        pu = price.get(norm_prod(denom))
+        comprobante = s(r[6]); femis = fecha(r[7]); pk = norm_prod(denom)
+        # jerarquia: precio confirmado por entrega -> venta real -> costo+IGV -> 0
+        pu = PRECIOS_CONFIRMADOS.get((comprobante, pk))
         if pu is None:
-            unmatched += 1
-            pu = 0.0
+            pu = ventas.get((comprobante, pk))
+        linea_exacta = pu is not None      # precio real/confirmado (no escalable)
+        if pu is None:
+            pu = costo_igv.get(pk)
+            if pu is None:
+                n_sin += 1; pu = 0.0
+            else:
+                n_costo += 1
         else:
-            matched += 1
+            n_real += 1
         monto = round(saldo * pu, 2)
         key = (cliente, comprobante)
         g = grupos.setdefault(key, {"cliente": cliente, "comprobante": comprobante,
-                                    "fecha": femis, "monto": 0.0, "lineas": 0})
+                                    "fecha": femis, "monto": 0.0, "lineas": 0, "exacto": True})
         g["monto"] = round(g["monto"] + monto, 2)
         g["lineas"] += 1
+        if not linea_exacta:
+            g["exacto"] = False
     out = sorted(grupos.values(), key=lambda g: (g["cliente"], g["comprobante"]))
     total = round(sum(g["monto"] for g in out), 2)
+    exacto_sum = round(sum(g["monto"] for g in out if g["exacto"]), 2)
     write("anticipos", out)
     print(f"  ANTICIPOS: {len(out)} comprobantes · valorizado S/ {total:,.2f} "
-          f"(Excel balance 08-07 CLIENTES ANTICIPOS: 53,088.74) · lineas match {matched} / sin precio {unmatched}")
+          f"(Excel balance 08-07 CLIENTES ANTICIPOS: 53,088.74)")
+    print(f"    lineas: {n_real} precio real · {n_costo} costo+IGV · {n_sin} sin precio")
+    print(f"    exactos (precio real, NO se escalan): {sum(1 for g in out if g['exacto'])} · S/ {exacto_sum:,.2f}")
     return out
 
 

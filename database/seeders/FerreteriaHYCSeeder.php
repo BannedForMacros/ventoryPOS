@@ -19,20 +19,20 @@ use Illuminate\Support\Facades\DB;
  *   php artisan db:seed --class=FerreteriaHYCSeeder --force
  *
  * Fuente de datos: produccion/data/*.json (convertidos de los Excel del cliente).
- * Fecha de corte: 2026-07-08 (último día en el balance del cliente).
+ * Fecha de corte: 2026-07-10 (último día en el balance del cliente).
  *
  * Modelo de carga:
  *  - Pasivos/activos (CxC, CxP, anticipos, deudas) = saldos PUROS, sin mover caja
  *    (el efecto en caja ya ocurrió históricamente y está en los saldos del 08).
  *  - Efectivo/bancos = se fijan al saldo del Excel con TesoreriaService::ajustarSaldo
  *    (un solo ingreso, con motivo auditado). Así el balance 08 se genera limpio.
- *  - Balance 01→07 = snapshots confirmados (items manuales, montos del Excel).
- *  - Balance 08 = generado del estado vivo (cuadra a 159,280.98).
+ *  - Balance 01→09 = snapshots confirmados (items manuales, montos del Excel).
+ *  - Balance 10 = generado del estado vivo (cuadra a 161,060.87).
  */
 class FerreteriaHYCSeeder extends Seeder
 {
     private const RUC   = '20600134648';
-    private const CORTE = '2026-07-08';
+    private const CORTE = '2026-07-10';
     /** RUCs de corridas previas (placeholder) que también se limpian. */
     private const RUCS_LEGADO = ['20600000002'];
 
@@ -70,19 +70,19 @@ class FerreteriaHYCSeeder extends Seeder
             $this->deudasSueltas();
             $this->gastosDelDia();
             $this->saldosCuentas();
-            $this->historialSnapshots();   // 01→07
-            $this->balanceDeCorte();       // 08 (live)
+            $this->historialSnapshots();   // 01→09
+            $this->balanceDeCorte();       // 10 (live)
         });
 
         $b = BalanceDiario::where('empresa_id', $this->empresaId)->where('fecha', self::CORTE)->first();
-        $this->command?->info("Empresa {$this->empresaId} — HYC Ferromateriales. Balance {$this->corteFmt()} neto S/ {$b?->balance_neto} (Excel: 159,280.98).");
+        $this->command?->info("Empresa {$this->empresaId} — HYC Ferromateriales. Balance {$this->corteFmt()} neto S/ {$b?->balance_neto} (Excel: 161,060.87).");
     }
 
     private function corteFmt(): string { return self::CORTE; }
 
     private function data(string $name): array
     {
-        return json_decode(file_get_contents(base_path("produccion/data/{$name}.json")), true);
+        return json_decode(file_get_contents(base_path("produccion-10-07/data/{$name}.json")), true);
     }
 
     // ── Limpieza idempotente (empresa HYC actual + placeholders previos) ────
@@ -303,34 +303,34 @@ class FerreteriaHYCSeeder extends Seeder
 
         $stock = $this->data('stock');
         $acum = 0.0; $i = 0;
-        $rows = []; $unidades = []; $stockRows = [];
+        // El balance del 10 valoriza el stock a COSTO+IGV. BalanceDiarioService suma
+        // cantidad × productos.precio_costo, así que guardamos precio_costo = costo×1.18.
         foreach ($stock as $p) {
             $i++;
-            $costo = round((float) $p['costo'], 2);
-            $venta = round((float) $p['precio_venta_igv'], 2);
-            $cant  = round((float) $p['cantidad'], 4);
+            $costoIgv = round((float) $p['costo_igv'], 2);   // costo + IGV
+            $cant     = round((float) $p['cantidad'], 4);
             $prodId = DB::table('productos')->insertGetId([
                 'empresa_id'=>$this->empresaId, 'categoria_id'=>$catId,
                 'codigo'=>sprintf('FERHC-%04d', $i), 'nombre'=>mb_substr($p['producto'], 0, 200),
-                'tipo'=>'producto', 'tipo_precio'=>'fijo', 'precio_venta'=>$venta, 'precio_costo'=>$costo,
+                'tipo'=>'producto', 'tipo_precio'=>'fijo', 'precio_venta'=>$costoIgv, 'precio_costo'=>$costoIgv,
                 'activo'=>true, 'incluye_igv'=>true, 'controla_stock'=>true, 'es_retornable'=>false,
                 'created_at'=>$now, 'updated_at'=>$now,
             ]);
             DB::table('producto_unidades')->insert([
                 'producto_id'=>$prodId, 'unidad_medida_id'=>$this->unidadId, 'es_base'=>true,
-                'factor_conversion'=>1, 'tipo_precio'=>'fijo', 'precio_venta'=>$venta, 'precio_costo'=>$costo,
+                'factor_conversion'=>1, 'tipo_precio'=>'fijo', 'precio_venta'=>$costoIgv, 'precio_costo'=>$costoIgv,
                 'activo'=>true, 'created_at'=>$now, 'updated_at'=>$now,
             ]);
             DB::table('stock')->insert([
                 'almacen_id'=>$this->almacenId, 'producto_id'=>$prodId,
-                'cantidad'=>$cant, 'costo_promedio'=>$costo, 'created_at'=>$now, 'updated_at'=>$now,
+                'cantidad'=>$cant, 'costo_promedio'=>$costoIgv, 'created_at'=>$now, 'updated_at'=>$now,
             ]);
-            $acum = round($acum + $cant * $costo, 2);
+            $acum += $cant * $costoIgv;   // sin redondeo por línea: igual que el SUM del balance
         }
 
         // Materiales pesados (ladrillo/cemento/agregados) en kardex aparte del cliente:
-        // una partida a granel que cierra la brecha con la línea STOCK del balance 08.
-        $granel = round(258931.52 - $acum, 2);
+        // una partida a granel que cierra la brecha con la línea STOCK del balance 10.
+        $granel = round(244461.00 - $acum, 2);
         if ($granel > 0) {
             $prodId = DB::table('productos')->insertGetId([
                 'empresa_id'=>$this->empresaId, 'categoria_id'=>$catId,
@@ -431,28 +431,42 @@ class FerreteriaHYCSeeder extends Seeder
         }
     }
 
-    // ── Anticipos de clientes (escalados para cuadrar 53,088.74) ────────────
+    // ── Anticipos: reales EXACTOS + estimados escalados para cerrar 53,088.74 ──
+    // Las líneas con precio real confirmado (VENTAS.xlsx o entrega del 09) llevan el flag
+    // exacto=true y van a su monto real SIN escalar (Jibaja: 47.50 / 498 / 660 ladrillo).
+    // El resto (costo+IGV) se escala para que el total cierre en 53,088.74 del balance 08.
+    // Así el día 08 cuadra Y la entrega de Jibaja del 09 (−1,205.50) deja el anticipo en
+    // 51,883.24 exacto, sin distorsionar el saldo por cliente. Ver produccion/tools/convertir.py.
     private function anticipos(): void
     {
         $now = now();
         $rows = array_values(array_filter($this->data('anticipos'), fn($a) => (float)$a['monto'] > 0));
-        $suma = array_sum(array_map(fn($a) => (float)$a['monto'], $rows));
-        $objetivo = 53088.74;
-        $factor = $suma > 0 ? $objetivo / $suma : 1.0;
-        $acumulado = 0.0; $n = count($rows);
-        foreach ($rows as $idx => $a) {
-            // La última fila absorbe el residuo de redondeo → suma exacta 53,088.74.
-            $monto = ($idx === $n - 1)
-                ? round($objetivo - $acumulado, 2)
-                : round((float)$a['monto'] * $factor, 2);
-            $acumulado = round($acumulado + $monto, 2);
+        $objetivo = 52303.24;   // CLIENTES ANTICIPOS del balance del 10
+        $exactoSum = array_sum(array_map(fn($a) => ($a['exacto'] ?? false) ? (float)$a['monto'] : 0, $rows));
+        $estim = array_values(array_filter($rows, fn($a) => !($a['exacto'] ?? false)));
+        $estimSum = array_sum(array_map(fn($a) => (float)$a['monto'], $estim));
+        $residual = round($objetivo - $exactoSum, 2);
+        $factor = $estimSum > 0 ? $residual / $estimSum : 1.0;
+        $acumEstim = 0.0; $nEstim = count($estim); $iEstim = 0;
+        foreach ($rows as $a) {
+            $esExacto = $a['exacto'] ?? false;
+            if ($esExacto) {
+                $monto = round((float)$a['monto'], 2);
+            } else {
+                $iEstim++;   // la última estimada absorbe el residuo de redondeo
+                $monto = ($iEstim === $nEstim)
+                    ? round($residual - $acumEstim, 2)
+                    : round((float)$a['monto'] * $factor, 2);
+                $acumEstim = round($acumEstim + $monto, 2);
+            }
             if ($monto <= 0) continue;
             $clienteId = $this->clienteId($a['cliente']);
+            $fuente = $esExacto ? 'precio real' : 'costo+IGV escalado';
             DB::table('cliente_anticipos')->insert([
                 'empresa_id'=>$this->empresaId, 'cliente_id'=>$clienteId, 'user_id'=>$this->admin->id,
                 'fecha'=>$a['fecha'] ?? self::CORTE, 'monto'=>$monto, 'saldo'=>$monto,
                 'tipo_valorizacion'=>'monto', 'estado'=>'activo',
-                'observacion'=>'Pendiente por entregar '.($a['comprobante'] ?? '').' (valorizado, migración)',
+                'observacion'=>'Pendiente por entregar '.($a['comprobante'] ?? '')." (valorizado {$fuente}, migración)",
                 'created_at'=>$now, 'updated_at'=>$now,
             ]);
         }
@@ -465,11 +479,12 @@ class FerreteriaHYCSeeder extends Seeder
         foreach ([
             ['por_pagar','bancaria','DEUDA BCP 1 - 7630', 6173.81, 'Préstamo bancario — saldo al implementar el sistema'],
             ['por_pagar','bancaria','DEUDA BCP 2 - 5557', 32546.43, 'Préstamo bancario — saldo al implementar el sistema'],
-            ['por_pagar','trabajador','PERSONAL (sueldos pendientes)', 1600.00, 'Sueldos por pagar'],
+            ['por_pagar','trabajador','PERSONAL (sueldos pendientes)', 2500.00, 'Sueldos por pagar'],
             ['por_pagar','personal','MILAGROS', 494.00, 'Deuda personal'],
             ['por_pagar','personal','INVERSIONES & TRANSPORTES', 55028.90, 'Deuda a proveedor de transporte'],
             ['por_pagar','personal','SALDO DE CEMENTO HOLCIM', 290.00, 'Saldo de cemento'],
-            ['por_pagar','personal','LUIS QUEVEDO', 855.00, 'Deuda personal'],
+            ['por_pagar','personal','PALANA', 20.00, 'Deuda menor'],
+            ['por_pagar','personal','11 CUBOS AFIRMADO - FERROCONSTRUCTORA', 290.00, 'Saldo de agregados'],
         ] as [$dir,$tipo,$nombre,$monto,$obs]) {
             DB::table('deudas')->insert([
                 'empresa_id'=>$this->empresaId, 'user_id'=>$this->admin->id, 'direccion'=>$dir, 'tipo'=>$tipo,
@@ -493,8 +508,7 @@ class FerreteriaHYCSeeder extends Seeder
             'activo'=>true, 'created_at'=>$now, 'updated_at'=>$now,
         ]);
         foreach ([
-            ['MOTO CAR - GASOLINA', 50], ['REPARACION MOTO ROJA', 100],
-            ['ATROPELLO DE PERRO', 70], ['FLETE CARLOS HERRERA', 130],
+            ['COMBUSTIBLE FUSO', 370], ['PAGO LINEA DE CELULAR', 61.66],
         ] as [$comentario, $monto]) {
             DB::table('gastos')->insert([
                 'empresa_id'=>$this->empresaId, 'local_id'=>$this->localId, 'user_id'=>$this->admin->id,
@@ -509,21 +523,21 @@ class FerreteriaHYCSeeder extends Seeder
     private function saldosCuentas(): void
     {
         foreach ([
-            ['bcp', 62927.50], ['bbva', 16629.52], ['efectivo', 11038.79],
+            ['bcp', 77544.29], ['bbva', 18064.07], ['efectivo', 23903.49],
         ] as [$alias, $saldo]) {
             $cuenta = Cuenta::find($this->ctas[$alias]);
             $this->tes->ajustarSaldo($cuenta, $this->admin, self::CORTE, $saldo,
-                'Saldo inicial — migración del sistema anterior (Excel 08-07)');
+                'Saldo inicial — migración del sistema anterior (Excel 10-07)');
         }
     }
 
-    // ── Snapshots confirmados del 01 al 07 (items manuales) ─────────────────
+    // ── Snapshots confirmados del 01 al 09 (items manuales) ─────────────────
     private function historialSnapshots(): void
     {
         $now = now();
         $balance = $this->data('balance_diario');
         foreach ($balance['dias'] as $dia) {
-            if ($dia['fecha'] === self::CORTE) continue; // el 08 va live
+            if ($dia['fecha'] === self::CORTE) continue; // el 10 va live
             $favor = round(array_sum(array_map(fn($x)=>(float)$x['monto'], $dia['favor'])), 2);
             $contra = round(array_sum(array_map(fn($x)=>(float)$x['monto'], $dia['contra'])), 2);
             $gastos = round(array_sum(array_map(fn($x)=>(float)$x['monto'], $dia['gastos'])), 2);
