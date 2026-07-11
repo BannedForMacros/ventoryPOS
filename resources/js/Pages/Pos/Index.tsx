@@ -13,6 +13,7 @@ import CarritoItem, { LineaCarrito } from './Partials/CarritoItem';
 import PanelPago, { LineaPago } from './Partials/PanelPago';
 import PanelDescuento from './Partials/PanelDescuento';
 import ModalClienteRapido from './Partials/ModalClienteRapido';
+import ModalCrearCliente from './Partials/ModalCrearCliente';
 import ModalConfirmacionVenta from './Partials/ModalConfirmacionVenta';
 import ModalSelectorPresentacion from './Partials/ModalSelectorPresentacion';
 import type { Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, ProductoUnidad, Turno, PageProps } from '@/types';
@@ -221,6 +222,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [esCredito, setEsCredito]                 = useState(false);
     const [fechaVencimiento, setFechaVencimiento]   = useState('');
     const [modalCliente, setModalCliente]   = useState(false);
+    // Alta de cliente sin salir del POS (se abre desde el modal de selección).
+    const [modalCrearCliente, setModalCrearCliente] = useState(false);
     const [modalConfirm, setModalConfirm]   = useState(false);
     const [loading, setLoading]             = useState(false);
     const [carritoAbierto, setCarritoAbierto] = useState(false);
@@ -1024,6 +1027,18 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 clientes={clientes}
                 selected={cliente}
                 onSelect={setCliente}
+                onCrearNuevo={() => { setModalCliente(false); setModalCrearCliente(true); }}
+            />
+
+            <ModalCrearCliente
+                isOpen={modalCrearCliente}
+                // Cancelar/cerrar vuelve al selector de clientes.
+                onClose={() => { setModalCrearCliente(false); setModalCliente(true); }}
+                onCreated={c => {
+                    setCliente(c);
+                    setModalCrearCliente(false);
+                    toast.success(`Cliente "${c.razon_social ?? `${c.nombres} ${c.apellidos ?? ''}`.trim()}" seleccionado para la venta.`);
+                }}
             />
 
             <ModalConfirmacionVenta

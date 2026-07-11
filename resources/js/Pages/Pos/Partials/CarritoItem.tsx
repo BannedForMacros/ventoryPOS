@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Trash2, Minus, Plus, Percent, X, AlertTriangle } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
@@ -69,18 +69,55 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
         onCantidadExacta(item.key, val);
     }
 
+    // Validación EN VIVO del precio: se evalúa sobre lo que se está tecleando,
+    // no recién al salir del input. Mientras esté por debajo del costo, el
+    // input se pinta rojo, aparece el aviso inline y se dispara un toast
+    // (con id fijo para que no se acumulen por cada tecla). Además NO se
+    // permite quedarse bajo el costo: tras una pausa breve de tipeo (que deja
+    // terminar de escribir números como "11" cuyo primer dígito "1" cae bajo
+    // el costo), el precio se ajusta solo al costo mínimo.
+    const precioNum      = parseFloat(precioVal) || 0;
+    const precioBajoCosto = item.costo_minimo > 0 && precioNum > 0 && precioNum < item.costo_minimo - 0.009;
+    const clampTimer = useRef<number | null>(null);
+
+    useEffect(() => () => {
+        if (clampTimer.current) window.clearTimeout(clampTimer.current);
+    }, []);
+
+    function ajustarAlCosto() {
+        const costo = Math.round(item.costo_minimo * 100) / 100;
+        setPrecioVal(costo.toFixed(2));
+        onPrecio(item.key, costo);
+        toast.error(
+            `Precio ajustado al costo mínimo: S/ ${costo.toFixed(2)} ("${item.producto_nombre}").`,
+            { id: `precio-bajo-costo-${item.key}`, duration: 3500 },
+        );
+    }
+
+    function onCambioPrecio(valor: string) {
+        setPrecioVal(valor);
+        if (clampTimer.current) window.clearTimeout(clampTimer.current);
+        const num = parseFloat(valor) || 0;
+        if (item.costo_minimo > 0 && num > 0 && num < item.costo_minimo - 0.009) {
+            toast.error(
+                `El precio de "${item.producto_nombre}" no puede ser menor al costo: S/ ${item.costo_minimo.toFixed(2)}.`,
+                { id: `precio-bajo-costo-${item.key}`, duration: 3500 },
+            );
+            // No dejar el precio bajo el costo: se corrige solo tras la pausa.
+            clampTimer.current = window.setTimeout(ajustarAlCosto, 900);
+        }
+    }
+
     function aplicarPrecio() {
+        if (clampTimer.current) window.clearTimeout(clampTimer.current);
         const val = Math.round((parseFloat(precioVal) || 0) * 100) / 100;
         if (val <= 0) {
             setPrecioVal(item.precio_unitario.toFixed(2));
             return;
         }
         if (item.costo_minimo > 0 && val < item.costo_minimo - 0.009) {
-            toast.error(
-                `El precio de "${item.producto_nombre}" no puede ser menor al costo: S/ ${item.costo_minimo.toFixed(2)}.`,
-                { duration: 4000 },
-            );
-            setPrecioVal(item.precio_unitario.toFixed(2));
+            // Bajo el costo al salir del campo: se fuerza al costo mínimo.
+            ajustarAlCosto();
             return;
         }
         onPrecio(item.key, val);
@@ -131,32 +168,50 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                         </span>
                         <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>·</span>
                         {/* Precio editable: la cajera puede subirlo o bajarlo, pero nunca
-                            por debajo del costo (validado aquí y en el backend). */}
-                        <span className="inline-flex items-center gap-0.5 text-[11px] font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                            S/
+                            por debajo del costo. La validación es EN VIVO: ni bien el
+                            valor tecleado queda bajo el costo, el input se pinta rojo,
+                            sale el aviso inline y el toast (backend revalida al cobrar). */}
+                        <span
+                            className="inline-flex items-center rounded-lg overflow-hidden border"
+                            style={{
+                                borderColor: precioBajoCosto
+                                    ? 'var(--color-danger)'
+                                    : item.precio_unitario !== item.precio_original
+                                        ? 'var(--color-warning)'
+                                        : 'var(--color-border)',
+                                backgroundColor: 'var(--color-bg)',
+                            }}
+                        >
+                            <span
+                                className="px-1.5 text-[11px] font-semibold self-stretch flex items-center"
+                                style={{
+                                    color: precioBajoCosto ? '#fff' : 'var(--color-text-muted)',
+                                    backgroundColor: precioBajoCosto
+                                        ? 'var(--color-danger)'
+                                        : 'color-mix(in srgb, var(--color-border) 35%, transparent)',
+                                }}
+                            >
+                                S/
+                            </span>
                             <input
                                 type="number"
                                 inputMode="decimal"
-                                min="0"
+                                min={item.costo_minimo > 0 ? item.costo_minimo : 0}
                                 step="0.01"
                                 value={precioVal}
-                                onChange={e => setPrecioVal(e.target.value)}
+                                onChange={e => onCambioPrecio(e.target.value)}
                                 onBlur={aplicarPrecio}
                                 onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                                 onFocus={e => e.target.select()}
                                 aria-label="Precio de venta"
-                                className="w-16 px-1 py-0.5 text-[11px] font-semibold border rounded-md text-right focus:outline-none focus:ring-1"
+                                className="w-24 px-2 py-1 text-xs font-bold text-right focus:outline-none border-0"
                                 style={{
-                                    borderColor: item.precio_unitario !== item.precio_original
-                                        ? 'var(--color-warning)'
-                                        : 'var(--color-border)',
-                                    backgroundColor: 'var(--color-bg)',
-                                    color: 'var(--color-text)',
-                                    '--tw-ring-color': 'var(--color-primary)',
+                                    backgroundColor: 'transparent',
+                                    color: precioBajoCosto ? 'var(--color-danger)' : 'var(--color-text)',
                                 } as React.CSSProperties}
                             />
                         </span>
-                        {item.precio_unitario !== item.precio_original && (
+                        {item.precio_unitario !== item.precio_original && !precioBajoCosto && (
                             <span className="text-[10px] line-through opacity-60" style={{ color: 'var(--color-text-muted)' }}>
                                 S/ {item.precio_original.toFixed(2)}
                             </span>
@@ -170,6 +225,13 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                             </>
                         )}
                     </div>
+                    {/* Aviso EN VIVO: el precio tecleado está por debajo del costo. */}
+                    {precioBajoCosto && (
+                        <p className="flex items-center gap-1 text-[10px] font-semibold mt-1" style={{ color: 'var(--color-danger)' }}>
+                            <AlertTriangle size={11} className="flex-shrink-0" />
+                            No puede ser menor al costo: S/ {item.costo_minimo.toFixed(2)}
+                        </p>
+                    )}
                 </div>
                 <span className="text-sm font-bold whitespace-nowrap" style={{ color: 'var(--color-primary)' }}>
                     S/ {item.subtotal.toFixed(2)}

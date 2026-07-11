@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, User, Check } from 'lucide-react';
+import { Search, User, Check, UserPlus } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import type { Cliente } from '@/types';
 
@@ -9,9 +9,11 @@ interface Props {
     clientes:  Cliente[];
     selected:  Cliente | null;
     onSelect:  (cliente: Cliente | null) => void;
+    // Abre el modal de alta de cliente sin salir del POS.
+    onCrearNuevo: () => void;
 }
 
-export default function ModalClienteRapido({ isOpen, onClose, clientes, selected, onSelect }: Props) {
+export default function ModalClienteRapido({ isOpen, onClose, clientes, selected, onSelect, onCrearNuevo }: Props) {
     const [busqueda, setBusqueda] = useState('');
 
     const filtrados = clientes.filter(c => {
@@ -52,6 +54,20 @@ export default function ModalClienteRapido({ isOpen, onClose, clientes, selected
                         } as React.CSSProperties}
                     />
                 </div>
+
+                {/* Alta rápida: crear el cliente aquí mismo, sin ir a otra página */}
+                <button
+                    onClick={() => { setBusqueda(''); onCrearNuevo(); }}
+                    className="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors hover:opacity-90 active:scale-[0.99]"
+                    style={{
+                        border: '1.5px dashed var(--color-primary)',
+                        color: 'var(--color-primary)',
+                        backgroundColor: 'color-mix(in srgb, var(--color-primary) 6%, transparent)',
+                    }}
+                >
+                    <UserPlus size={16} />
+                    Crear nuevo cliente
+                </button>
 
                 <div className="max-h-80 overflow-y-auto flex flex-col gap-1">
                     {/* Opción: cliente general */}
