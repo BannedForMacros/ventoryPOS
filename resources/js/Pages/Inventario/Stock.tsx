@@ -28,15 +28,24 @@ interface StockRow extends Record<string, unknown> {
     es_negativo: boolean;       // A9: marcado por el backend cuando cantidad < 0
 }
 
+interface StockNegativo {
+    producto_id: number;
+    producto: string;
+    codigo: string | null;
+    almacen: string;
+    cantidad: number;
+}
+
 interface Props extends PageProps {
     stocks: StockRow[];
     almacenes: Almacen[];
     mostrarSelector: boolean;
     filters: { almacen_id?: string; busqueda?: string };
     stocksNegativosCount: number; // A9: total de stocks con saldo negativo en almacenes visibles
+    stocksNegativos: StockNegativo[]; // lista exacta de negativos (producto + almacén + cantidad)
 }
 
-export default function Stock({ stocks, almacenes, mostrarSelector, filters, stocksNegativosCount }: Props) {
+export default function Stock({ stocks, almacenes, mostrarSelector, filters, stocksNegativosCount, stocksNegativos }: Props) {
     const { flash } = usePage<Props>().props;
     const [almacenId, setAlmacenId] = useState(filters.almacen_id ?? '');
     const [busqueda, setBusqueda]   = useState(filters.busqueda ?? '');
@@ -132,28 +141,53 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters, sto
                 }
             />
 
-            {/* A9: banner de alerta cuando hay stocks con saldo negativo */}
+            {/* A9: banner + LISTA EXACTA de los productos con saldo negativo */}
             {stocksNegativosCount > 0 && (
-                <div
-                    className="mb-4 flex items-start gap-3 px-4 py-3 rounded-lg border"
-                    style={{
-                        background: '#fef2f2',
-                        color: '#991b1b',
-                        borderColor: '#fecaca',
-                    }}
-                >
-                    <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-                    <div className="text-sm">
-                        <p className="font-semibold">
-                            {stocksNegativosCount === 1
-                                ? 'Hay 1 producto con stock negativo'
-                                : `Hay ${stocksNegativosCount} productos con stock negativo`}
-                        </p>
-                        <p className="mt-0.5 opacity-90">
-                            Indica una inconsistencia (venta sin transferencia previa, anulación
-                            de devolución sobre stock ya vendido, etc). Revisa las filas marcadas
-                            con ⚠ y ajusta el inventario.
-                        </p>
+                <div className="mb-4 rounded-lg overflow-hidden border" style={{ borderColor: '#fecaca' }}>
+                    <div className="flex items-start gap-3 px-4 py-3" style={{ background: '#fef2f2', color: '#991b1b' }}>
+                        <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                        <div className="text-sm">
+                            <p className="font-semibold">
+                                {stocksNegativosCount === 1
+                                    ? 'Hay 1 producto con stock negativo'
+                                    : `Hay ${stocksNegativosCount} productos con stock negativo`}
+                            </p>
+                            <p className="mt-0.5 opacity-90">
+                                Salió más mercadería de la registrada (venta sin transferencia/entrada previa, etc.).
+                                Regulariza el inventario con una entrada o transferencia, o usa "Recalcular stock".
+                            </p>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto" style={{ backgroundColor: 'var(--color-surface)' }}>
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr style={{ backgroundColor: 'var(--color-bg)' }}>
+                                    <th className="text-left px-4 py-2 font-medium" style={{ color: 'var(--color-text-muted)' }}>Producto</th>
+                                    {mostrarSelector && (
+                                        <th className="text-left px-4 py-2 font-medium" style={{ color: 'var(--color-text-muted)' }}>Almacén</th>
+                                    )}
+                                    <th className="text-right px-4 py-2 font-medium" style={{ color: 'var(--color-text-muted)' }}>Stock actual</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                                {stocksNegativos.map(s => (
+                                    <tr key={`${s.producto_id}-${s.almacen}`}>
+                                        <td className="px-4 py-2" style={{ color: 'var(--color-text)' }}>
+                                            <span className="font-medium">{s.producto}</span>
+                                            {s.codigo && (
+                                                <span className="ml-2 font-mono text-xs" style={{ color: 'var(--color-text-muted)' }}>{s.codigo}</span>
+                                            )}
+                                        </td>
+                                        {mostrarSelector && (
+                                            <td className="px-4 py-2" style={{ color: 'var(--color-text-muted)' }}>{s.almacen}</td>
+                                        )}
+                                        <td className="px-4 py-2 text-right font-bold" style={{ color: 'var(--color-danger)', fontVariantNumeric: 'tabular-nums' }}>
+                                            {Number(s.cantidad)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}

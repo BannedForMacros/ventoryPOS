@@ -169,20 +169,42 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
                 )}
             </div>
 
-            {/* Aviso: productos vendidos con stock negativo */}
+            {/* Aviso: productos vendidos con stock negativo — con el detalle exacto */}
             {hayStockNegativo && (
                 <div
-                    className="mb-4 rounded-xl px-4 py-3 flex items-start gap-3"
-                    style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)' }}
+                    className="mb-4 rounded-xl overflow-hidden"
+                    style={{ border: '1px solid rgba(239,68,68,0.35)' }}
                 >
-                    <PackageX size={18} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
-                    <div className="text-sm" style={{ color: 'var(--color-text)' }}>
-                        <p className="font-semibold" style={{ color: 'var(--color-danger)' }}>
-                            En este turno se vendieron {productosStockNegativo.length} producto(s) que quedaron con stock negativo
-                        </p>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                            Al confirmar el cierre se te pedirá confirmación adicional. Revisa la lista al final o regulariza el inventario antes de cerrar.
-                        </p>
+                    <div className="flex items-start gap-3 px-4 py-3" style={{ backgroundColor: 'rgba(239,68,68,0.08)' }}>
+                        <PackageX size={18} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
+                        <div className="text-sm" style={{ color: 'var(--color-text)' }}>
+                            <p className="font-semibold" style={{ color: 'var(--color-danger)' }}>
+                                Se vendieron {productosStockNegativo.length} producto(s) que quedaron con stock negativo
+                            </p>
+                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                Salió más mercadería de la que había registrada. Regulariza el inventario (entrada o transferencia) o confirma el cierre de todas formas.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr style={{ backgroundColor: 'var(--color-bg)' }}>
+                                    <th className="text-left px-4 py-2 font-medium" style={{ color: 'var(--color-text-muted)' }}>Producto</th>
+                                    <th className="text-right px-4 py-2 font-medium" style={{ color: 'var(--color-text-muted)' }}>Vendido en el turno</th>
+                                    <th className="text-right px-4 py-2 font-medium" style={{ color: 'var(--color-text-muted)' }}>Stock actual</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                                {productosStockNegativo.map(p => (
+                                    <tr key={p.producto_id}>
+                                        <td className="px-4 py-2 font-medium" style={{ color: 'var(--color-text)' }}>{p.producto_nombre}</td>
+                                        <td className="px-4 py-2 text-right" style={{ color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>{Number(p.cantidad_vendida)}</td>
+                                        <td className="px-4 py-2 text-right font-bold" style={{ color: 'var(--color-danger)', fontVariantNumeric: 'tabular-nums' }}>{Number(p.stock_actual)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}
