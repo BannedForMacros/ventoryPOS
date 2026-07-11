@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon, CreditCard,
+    Image as ImageIcon, CreditCard, RefreshCw,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import PosLayout from '@/Layouts/PosLayout';
@@ -314,6 +314,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // el scroll del grid) que muestra imagen + nombre completo. La cajera solo
     // pasa el mouse; no tiene que hacer clic en nada.
     const [tooltipProd, setTooltipProd] = useState<{ producto: Producto; top: number; bottom: number; left: number } | null>(null);
+    // Refresco del catálogo (solo la lista de productos) sin perder el carrito.
+    const [refrescando, setRefrescando] = useState(false);
 
     function mostrarTooltipSiCortado(e: React.MouseEvent<HTMLButtonElement>, producto: Producto) {
         const nombreEl = e.currentTarget.querySelector('[data-nombre]') as HTMLElement | null;
@@ -327,6 +329,40 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    // Refrescar SOLO el catálogo de productos (recarga parcial de Inertia) sin
+    // perder el carrito, moneda ni cliente. Función reutilizada por el botón
+    // manual y por el auto-refresco al volver a la pestaña del POS.
+    function refrescarCatalogo() {
+        if (refrescando) return;
+        setRefrescando(true);
+        // reload() de Inertia 2 preserva estado y scroll por defecto (no se
+        // pierde el carrito). `only` recarga únicamente la lista de productos.
+        router.reload({
+            only: ['productos'],
+            onFinish: () => setRefrescando(false),
+        });
+    }
+
+    // Auto-refresco: cuando la pestaña del POS vuelve a estar visible o recibe
+    // foco (p. ej. tras crear un producto en otra pestaña), se recarga el
+    // catálogo automáticamente. Con throttle para no spamear peticiones.
+    useEffect(() => {
+        let ultimo = 0;
+        function alVolver() {
+            if (document.visibilityState !== 'visible') return;
+            const t = Date.now();
+            if (t - ultimo < 4000) return;
+            ultimo = t;
+            refrescarCatalogo();
+        }
+        document.addEventListener('visibilitychange', alVolver);
+        window.addEventListener('focus', alVolver);
+        return () => {
+            document.removeEventListener('visibilitychange', alVolver);
+            window.removeEventListener('focus', alVolver);
+        };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Aviso inmediato al cajero cuando se abre el POS desde una cita con items
     // desactivados. Solo se dispara una vez al montar; despues se ven los flags
@@ -829,6 +865,19 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                             >
                                 {productosFiltrados.length}
                             </span>
+                            {/* Refrescar catálogo (sin perder el carrito): útil cuando
+                                se crea un producto en otra pestaña. */}
+                            <button
+                                onClick={refrescarCatalogo}
+                                disabled={refrescando}
+                                title="Actualizar lista de productos"
+                                aria-label="Actualizar lista de productos"
+                                className="ml-auto flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg transition-colors hover:bg-black/5 active:bg-black/10 disabled:opacity-60"
+                                style={{ color: 'var(--color-text-muted)' }}
+                            >
+                                <RefreshCw size={13} className={refrescando ? 'animate-spin' : ''} />
+                                <span className="hidden sm:inline">{refrescando ? 'Actualizando…' : 'Actualizar'}</span>
+                            </button>
                         </div>
 
                         <div className="relative">
