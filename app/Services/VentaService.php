@@ -49,6 +49,11 @@ class VentaService
             $almacen = $this->scope->almacenParaVentas($user)
                 ?? abort(422, 'No se encontró un almacén de ventas configurado.');
 
+            // Config de empresa: permitir que la venta deje stock negativo.
+            // Si esta apagado, Stock::ajustar lanza InsufficientStockException
+            // y toda la venta se revierte (comportamiento historico).
+            $permitirStockNegativo = $this->config->permiteStockNegativo($user->empresa_id);
+
             // Si no se indico cliente, usar el Cliente General de la empresa.
             // A15: la identificacion del Cliente General es por la columna
             // `es_cliente_general` (no por DNI magico).
@@ -167,7 +172,7 @@ class VentaService
 
                 // Ajustar stock según configuración (producto → local → empresa)
                 if ($this->config->deboDescontarStock($producto, $turno->local)) {
-                    Stock::ajustar($almacen->id, $producto->id, -$cantidadBase);
+                    Stock::ajustar($almacen->id, $producto->id, -$cantidadBase, 0, $permitirStockNegativo);
                 }
 
                 // Log de descuento por item si corresponde

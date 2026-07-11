@@ -144,7 +144,8 @@
       "Bash(awk '/CREATE TABLE public.empresas /,/\\\\\\);/' ventoryPOS-backup-20260710-141227.sql)",
       "Bash(awk '/CREATE TABLE public.stock /,/\\\\\\);/' ventoryPOS-backup-20260710-141227.sql)",
       "Bash(awk '/CREATE TABLE public.ventas /,/\\\\\\);/' ventoryPOS-backup-20260710-141227.sql)",
-      "Bash(awk '/CREATE TABLE public.venta_items /,/\\\\\\);/' ventoryPOS-backup-20260710-141227.sql)"
+      "Bash(awk '/CREATE TABLE public.venta_items /,/\\\\\\);/' ventoryPOS-backup-20260710-141227.sql)",
+      "Bash(PGPASSWORD=postgres psql -h 127.0.0.1 -p 5432 -U postgres -d ventoryPOS -c \"ALTER TABLE empresas ADD COLUMN IF NOT EXISTS permite_stock_negativo boolean NOT NULL DEFAULT false;\" -c \"\\\\d empresas\")"
     ]
   }
 }

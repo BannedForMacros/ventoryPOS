@@ -28,6 +28,7 @@ type FormData = {
     email: string;
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
+    permite_stock_negativo: boolean;
     tasa_igv: number | '';
     modo_cierre_caja: ModoCierre;
     modo_cierre_inventario: ModoInventario;
@@ -50,6 +51,7 @@ const emptyForm: FormData = {
     email: '',
     modo_almacen: 'simple',
     descuenta_stock_en_venta: true,
+    permite_stock_negativo: false,
     tasa_igv: 18,
     modo_cierre_caja: 'con_declaraciones',
     modo_cierre_inventario: 'por_venta',
@@ -86,6 +88,7 @@ export default function Empresas({ empresas }: Props) {
             email: emp.email ?? '',
             modo_almacen: emp.modo_almacen,
             descuenta_stock_en_venta: emp.descuenta_stock_en_venta ?? true,
+            permite_stock_negativo: emp.permite_stock_negativo ?? false,
             tasa_igv: emp.tasa_igv != null ? Number(emp.tasa_igv) : 18,
             modo_cierre_caja: (emp.modo_cierre_caja as ModoCierre) ?? 'con_declaraciones',
             modo_cierre_inventario: (emp.modo_cierre_inventario as ModoInventario) ?? 'por_venta',

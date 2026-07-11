@@ -54,6 +54,17 @@ class ConfiguracionOperacionService
     }
 
     /**
+     * true si la empresa permite que una venta deje el stock en negativo.
+     * Cuando esta activo, el POS no bloquea la venta por falta de stock:
+     * el faltante queda como saldo negativo y se avisa al cierre de caja.
+     */
+    public function permiteStockNegativo(int $empresaId): bool
+    {
+        $empresa = Empresa::findOrFail($empresaId);
+        return (bool) ($empresa->permite_stock_negativo ?? false);
+    }
+
+    /**
      * Resuelve el modo de cierre de caja efectivo para un local.
      * Retorna 'rapido' | 'con_declaraciones'.
      */

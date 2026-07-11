@@ -30,6 +30,9 @@ class EmpresaRequest extends FormRequest
             'tasa_igv'         => 'nullable|numeric|min:0|max:30',
             'modo_almacen'     => 'required|in:simple,central_y_local',
             'descuenta_stock_en_venta'        => 'boolean',
+            // Si esta activo, el POS permite vender aunque no alcance el stock:
+            // el saldo queda negativo y se avisa al cerrar la caja.
+            'permite_stock_negativo'          => 'boolean',
             'modo_cierre_caja'                => 'required|in:rapido,con_declaraciones',
             'modo_cierre_inventario'          => 'required|in:por_venta,declarado',
             'usa_fondos_iniciales'            => 'boolean',
