@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, AlertCircle, AlertTriangle, Wallet } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, AlertTriangle, Wallet, UserPlus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -10,6 +10,7 @@ import Select from '@/Components/UI/Select';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import Badge from '@/Components/UI/Badge';
+import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
 import type { PageProps } from '@/types';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
@@ -74,6 +75,8 @@ interface DetalleRow {
 
 export default function EntradaEdit({ entrada, almacenes, productos, proveedores, metodosPago, stocks, mostrarSelector, modoAlmacen }: Props) {
     const [almacenId, setAlmacenId]     = useState<number | ''>(entrada.almacen_id);
+    const [listaProveedores, setListaProveedores] = useState<Proveedor[]>(proveedores);
+    const [modalProveedor, setModalProveedor]     = useState(false);
     const [proveedorId, setProveedorId] = useState<number | ''>(entrada.proveedor_id ?? '');
     const [nroDoc, setNroDoc]           = useState(entrada.numero_documento ?? '');
     const [tipo, setTipo]               = useState(entrada.tipo);
@@ -339,17 +342,24 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                                 { value: 'compra', label: 'Compra' }, { value: 'ajuste', label: 'Ajuste' },
                                 { value: 'devolucion', label: 'Devolución' }, { value: 'otro', label: 'Otro' },
                             ]} />
-                        <Select
-                            label="Proveedor"
-                            placeholder="Sin proveedor"
-                            value={proveedorId}
-                            onChange={v => setProveedorId(v === '' ? '' : Number(v))}
-                            options={proveedores.map(p => ({
-                                value: p.id,
-                                label: `${p.razon_social ?? p.nombre_comercial ?? '—'}${p.numero_documento ? ` · ${p.tipo_documento} ${p.numero_documento}` : ''}`,
-                            }))}
-                            error={errors.proveedor_id}
-                        />
+                        <div className="flex items-end gap-2">
+                            <div className="flex-1 min-w-0">
+                                <Select
+                                    label="Proveedor"
+                                    placeholder="Sin proveedor"
+                                    value={proveedorId}
+                                    onChange={v => setProveedorId(v === '' ? '' : Number(v))}
+                                    options={listaProveedores.map(p => ({
+                                        value: p.id,
+                                        label: `${p.razon_social ?? p.nombre_comercial ?? '—'}${p.numero_documento ? ` · ${p.tipo_documento} ${p.numero_documento}` : ''}`,
+                                    }))}
+                                    error={errors.proveedor_id}
+                                />
+                            </div>
+                            <Button type="button" variant="secondary" onClick={() => setModalProveedor(true)} title="Crear nuevo proveedor">
+                                <UserPlus size={15} className="mr-1" /> Nuevo
+                            </Button>
+                        </div>
                         {!facturaPorItem && (
                             <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} />
                         )}
@@ -557,6 +567,17 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                     <Button type="button" loading={processing} onClick={submit}>Guardar cambios</Button>
                 </div>
             </div>
+
+            <ModalCrearProveedor
+                isOpen={modalProveedor}
+                onClose={() => setModalProveedor(false)}
+                onCreated={(nuevo: ProveedorLite) => {
+                    setListaProveedores(prev =>
+                        prev.some(p => p.id === nuevo.id) ? prev : [nuevo as Proveedor, ...prev]);
+                    setProveedorId(nuevo.id);
+                    setModalProveedor(false);
+                }}
+            />
         </AppLayout>
     );
 }

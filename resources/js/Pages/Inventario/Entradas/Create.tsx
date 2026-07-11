@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, AlertCircle, CheckCircle, Wallet } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, CheckCircle, Wallet, UserPlus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -11,6 +11,7 @@ import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import Tabs from '@/Components/UI/Tabs';
 import Modal from '@/Components/UI/Modal';
+import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
 
@@ -48,6 +49,9 @@ const emptyDetalle = (): DetalleRow => ({
 
 export default function EntradaCreate({ almacenes, productos, proveedores, metodosPago, mostrarSelector, modoAlmacen }: Props) {
     const [almacenId, setAlmacenId]     = useState<number | ''>(almacenes.length === 1 ? almacenes[0].id : '');
+    // Lista local de proveedores (para poder agregar uno nuevo sin recargar la página).
+    const [listaProveedores, setListaProveedores] = useState<Proveedor[]>(proveedores);
+    const [modalProveedor, setModalProveedor]     = useState(false);
     const [proveedorId, setProveedorId] = useState<number | ''>('');
     const [nroDoc, setNroDoc]           = useState('');
     const [tipo, setTipo]               = useState<string>('compra');
@@ -321,17 +325,27 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                                 { value: 'otro',       label: 'Otro' },
                             ]}
                         />
-                        <Select
-                            label="Proveedor"
-                            placeholder="Sin proveedor"
-                            value={proveedorId}
-                            onChange={v => setProveedorId(v === '' ? '' : Number(v))}
-                            options={proveedores.map(p => ({
-                                value: p.id,
-                                label: `${p.razon_social ?? p.nombre_comercial ?? '—'}${p.numero_documento ? ` · ${p.tipo_documento} ${p.numero_documento}` : ''}`,
-                            }))}
-                            error={errors.proveedor_id}
-                        />
+                        <div>
+                            <div className="flex items-end gap-2">
+                                <div className="flex-1 min-w-0">
+                                    <Select
+                                        label="Proveedor"
+                                        placeholder="Sin proveedor"
+                                        value={proveedorId}
+                                        onChange={v => setProveedorId(v === '' ? '' : Number(v))}
+                                        options={listaProveedores.map(p => ({
+                                            value: p.id,
+                                            label: `${p.razon_social ?? p.nombre_comercial ?? '—'}${p.numero_documento ? ` · ${p.tipo_documento} ${p.numero_documento}` : ''}`,
+                                        }))}
+                                        error={errors.proveedor_id}
+                                    />
+                                </div>
+                                <Button type="button" variant="secondary" onClick={() => setModalProveedor(true)}
+                                    title="Crear nuevo proveedor">
+                                    <UserPlus size={15} className="mr-1" /> Nuevo
+                                </Button>
+                            </div>
+                        </div>
                         {/* Nro. documento solo aparece en modo "factura única". En modo "por item"
                             cada línea del detalle aporta su número y la cabecera queda sin uno. */}
                         {!facturaPorItem && (
@@ -668,6 +682,19 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                     </div>
                 </div>
             </Modal>
+
+            {/* Alta de proveedor sin salir de la entrada */}
+            <ModalCrearProveedor
+                isOpen={modalProveedor}
+                onClose={() => setModalProveedor(false)}
+                onCreated={(nuevo: ProveedorLite) => {
+                    // Agregar a la lista (si no estaba) y seleccionarlo.
+                    setListaProveedores(prev =>
+                        prev.some(p => p.id === nuevo.id) ? prev : [nuevo as Proveedor, ...prev]);
+                    setProveedorId(nuevo.id);
+                    setModalProveedor(false);
+                }}
+            />
         </AppLayout>
     );
 }
