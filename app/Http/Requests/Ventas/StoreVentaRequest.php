@@ -234,6 +234,28 @@ class StoreVentaRequest extends FormRequest
                     'El producto seleccionado fue desactivado. Refresca el catálogo.',
                 );
             }
+
+            // Piso de precio: el POS permite editar el precio de venta por linea,
+            // pero nunca por debajo del costo de la presentacion. Espejo de la
+            // validacion del frontend (costo de la unidad, o costo base del
+            // producto x factor de conversion). Costo 0/null = sin piso.
+            $costoUnidad = (float) ($unidad->precio_costo ?? 0);
+            $costoMinimo = $costoUnidad > 0
+                ? $costoUnidad
+                : round((float) ($unidad->producto->precio_costo ?? 0) * (float) $unidad->factor_conversion, 2);
+
+            $precio = (float) ($item['precio_unitario'] ?? 0);
+            if ($costoMinimo > 0 && $precio < $costoMinimo - 0.009) {
+                $validator->errors()->add(
+                    "items.{$index}.precio_unitario",
+                    sprintf(
+                        'El precio de "%s" (S/ %s) no puede ser menor al costo (S/ %s).',
+                        $unidad->producto->nombre,
+                        number_format($precio, 2),
+                        number_format($costoMinimo, 2),
+                    ),
+                );
+            }
         }
     }
 

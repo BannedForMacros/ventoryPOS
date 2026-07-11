@@ -182,6 +182,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             : !it.unidad_activa
                 ? `La presentación "${it.unidad_nombre}" fue desactivada.`
                 : undefined;
+        // Resolver el costo minimo desde el catalogo cargado (la cita solo trae ids).
+        const prodCatalogo = productos.find(p => p.id === it.producto_id);
+        const uniCatalogo  = prodCatalogo?.unidades?.find(u => u.id === it.producto_unidad_id);
         return {
             key: `${it.producto_id}-${it.producto_unidad_id}`,
             producto_id:           it.producto_id,
@@ -190,6 +193,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             unidad_nombre:         it.unidad_nombre,
             precio_unitario:       it.precio_unitario,
             precio_original:       it.precio_unitario,
+            costo_minimo:          prodCatalogo && uniCatalogo ? costoMinimoDe(prodCatalogo, uniCatalogo) : 0,
             cantidad:              it.cantidad,
             descuento_item:        0,
             descuento_concepto_id: null,
@@ -365,6 +369,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 unidad_nombre:        unidad.unidad_medida?.nombre ?? '',
                 precio_unitario:      precio,
                 precio_original:      precio,
+                costo_minimo:         costoMinimoDe(producto, unidad),
                 cantidad:             1,
                 descuento_item:       0,
                 descuento_concepto_id: null,
@@ -385,6 +390,29 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             if (i.key !== key) return i;
             const cantidad = Math.max(1, i.cantidad + delta);
             return { ...i, cantidad, subtotal: Math.round((i.precio_unitario - i.descuento_item) * cantidad * 100) / 100 };
+        }));
+    }
+
+    /** Cantidad tecleada directamente en el input de la linea (permite decimales). */
+    function establecerCantidad(key: string, cantidad: number) {
+        setCarrito(prev => prev.map(i => {
+            if (i.key !== key) return i;
+            const c = Math.max(0.0001, Math.round(cantidad * 10000) / 10000);
+            return { ...i, cantidad: c, subtotal: Math.round((i.precio_unitario - i.descuento_item) * c * 100) / 100 };
+        }));
+    }
+
+    /**
+     * Precio de venta editado en la linea. CarritoItem ya valido el piso de
+     * costo antes de llamar; aqui solo recalculamos (y recortamos el descuento
+     * por linea si el nuevo precio lo dejo mas grande que el precio).
+     */
+    function cambiarPrecio(key: string, precio: number) {
+        setCarrito(prev => prev.map(i => {
+            if (i.key !== key) return i;
+            const p = Math.max(0, precio);
+            const d = Math.min(i.descuento_item, p);
+            return { ...i, precio_unitario: p, descuento_item: d, subtotal: Math.round((p - d) * i.cantidad * 100) / 100 };
         }));
     }
 
@@ -434,6 +462,13 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         if (carrito.length === 0) { toast.error('El carrito está vacío.'); return; }
         if (hayInactivos) {
             toast.error(`Hay ${itemsInactivos.length} ítem(s) inactivo(s). Elimínalos del carrito antes de cobrar.`);
+            return;
+        }
+        // Defensa adicional al piso de costo (el input ya lo valida al editar,
+        // y el backend lo vuelve a validar al registrar la venta).
+        const bajoCosto = carrito.filter(i => (i.costo_minimo ?? 0) > 0 && i.precio_unitario < i.costo_minimo - 0.009);
+        if (bajoCosto.length > 0) {
+            toast.error(`Hay precios por debajo del costo: ${bajoCosto.map(i => i.producto_nombre).join(', ')}. Corrígelos antes de cobrar.`);
             return;
         }
         const totalPagado = pagos.reduce((s, p) => s + p.monto, 0);
@@ -856,6 +891,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         tasaIgv={tasaIgv}
                         inactivosCount={itemsInactivos.length}
                         onCambiarCantidad={cambiarCantidad}
+                        onEstablecerCantidad={establecerCantidad}
+                        onCambiarPrecio={cambiarPrecio}
                         onAplicarDescuentoItem={aplicarDescuentoItem}
                         onEliminarItem={eliminarItem}
                         onLimpiarCarrito={limpiarCarrito}
@@ -923,6 +960,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 tasaIgv={tasaIgv}
                                 inactivosCount={itemsInactivos.length}
                                 onCambiarCantidad={cambiarCantidad}
+                                onEstablecerCantidad={establecerCantidad}
+                                onCambiarPrecio={cambiarPrecio}
                                 onAplicarDescuentoItem={aplicarDescuentoItem}
                                 onEliminarItem={eliminarItem}
                                 onLimpiarCarrito={limpiarCarrito}
@@ -1067,6 +1106,8 @@ interface CarritoPanelProps {
     tasaIgv: number;
     inactivosCount: number;
     onCambiarCantidad: (key: string, delta: number) => void;
+    onEstablecerCantidad: (key: string, cantidad: number) => void;
+    onCambiarPrecio: (key: string, precio: number) => void;
     onAplicarDescuentoItem: (key: string, desc: number, cid: number | null) => void;
     onEliminarItem: (key: string) => void;
     onLimpiarCarrito: () => void;
@@ -1088,7 +1129,7 @@ function CarritoPanel({
     cliente, onAbrirCliente,
     descuentoTotal, descuentoConceptoId,
     subtotal, igv, total, tasaIgv, inactivosCount,
-    onCambiarCantidad, onAplicarDescuentoItem, onEliminarItem,
+    onCambiarCantidad, onEstablecerCantidad, onCambiarPrecio, onAplicarDescuentoItem, onEliminarItem,
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar,
     puedeVender, razonNoVender,
     esCredito, fechaVencimiento, onSetEsCredito, onSetFechaVencimiento,
@@ -1222,6 +1263,8 @@ function CarritoPanel({
                                 item={item}
                                 conceptos={conceptosDescuento}
                                 onCantidad={onCambiarCantidad}
+                                onCantidadExacta={onEstablecerCantidad}
+                                onPrecio={onCambiarPrecio}
                                 onDescuento={onAplicarDescuentoItem}
                                 onEliminar={onEliminarItem}
                             />
