@@ -31,9 +31,10 @@ use Illuminate\Support\Facades\DB;
  */
 class FerreteriaHYCSeeder extends Seeder
 {
-    /** OJO: PLACEHOLDER. Reemplazar por el RUC real de HYC FERROMATERIALES SRL. */
-    private const RUC   = '20600000002';
+    private const RUC   = '20600134648';
     private const CORTE = '2026-07-08';
+    /** RUCs de corridas previas (placeholder) que también se limpian. */
+    private const RUCS_LEGADO = ['20600000002'];
 
     private TesoreriaService $tes;
     private TipoCambioService $tc;
@@ -84,11 +85,16 @@ class FerreteriaHYCSeeder extends Seeder
         return json_decode(file_get_contents(base_path("produccion/data/{$name}.json")), true);
     }
 
-    // ── Limpieza idempotente (solo la empresa HYC) ──────────────────────────
+    // ── Limpieza idempotente (empresa HYC actual + placeholders previos) ────
     private function limpiar(): void
     {
-        $emp = DB::table('empresas')->where('ruc', self::RUC)->value('id');
-        if (!$emp) return;
+        foreach (DB::table('empresas')->whereIn('ruc', array_merge([self::RUC], self::RUCS_LEGADO))->pluck('id') as $emp) {
+            $this->limpiarEmpresa((int) $emp);
+        }
+    }
+
+    private function limpiarEmpresa(int $emp): void
+    {
 
         $prodIds = DB::table('productos')->where('empresa_id', $emp)->pluck('id');
         $almIds  = DB::table('almacenes')->where('empresa_id', $emp)->pluck('id');
@@ -258,12 +264,13 @@ class FerreteriaHYCSeeder extends Seeder
         $this->ctas['efectivo'] = $this->tes->efectivo($this->empresaId)->id;
         $this->ctas['bcp'] = DB::table('cuentas')->insertGetId([
             'empresa_id'=>$this->empresaId, 'nombre'=>'Cuenta BCP Soles', 'banco'=>'BCP',
-            'numero_cuenta'=>'305-0000000-0-00', 'titular'=>'HYC Ferromateriales SRL',
+            'numero_cuenta'=>'305-2279107-0-89', 'cci'=>'002-305-002279107089-13',
+            'titular'=>'H&C FERROMATERIALES S.R.L',
             'activo'=>true, 'es_efectivo'=>false, 'moneda'=>'PEN', 'created_at'=>$now, 'updated_at'=>$now,
         ]);
         $this->ctas['bbva'] = DB::table('cuentas')->insertGetId([
             'empresa_id'=>$this->empresaId, 'nombre'=>'Cuenta BBVA Soles', 'banco'=>'BBVA',
-            'numero_cuenta'=>'0011-0000-0000000000', 'titular'=>'HYC Ferromateriales SRL',
+            'numero_cuenta'=>'0011-0285-02-01958513', 'titular'=>'FERROMATERIALES H&C S.R.L',
             'activo'=>true, 'es_efectivo'=>false, 'moneda'=>'PEN', 'created_at'=>$now, 'updated_at'=>$now,
         ]);
         $this->ctas['yape'] = DB::table('cuentas')->insertGetId([
@@ -276,7 +283,10 @@ class FerreteriaHYCSeeder extends Seeder
             'activo'=>true, 'es_efectivo'=>false, 'moneda'=>'USD', 'created_at'=>$now, 'updated_at'=>$now,
         ]);
 
-        foreach ([['Transferencia','bcp'], ['Yape','yape']] as [$m,$alias]) {
+        // Cableado método → cuenta (según indicación del cliente):
+        //  Yape → Yape + BCP · Tarjeta → BBVA · Transferencia → BBVA ·
+        //  Efectivo → Efectivo (default) · Plin → sin cuenta fija (auto).
+        foreach ([['Yape','yape'], ['Yape','bcp'], ['Tarjeta','bbva'], ['Transferencia','bbva']] as [$m,$alias]) {
             if (isset($metodos[$m])) {
                 DB::table('cuenta_metodo_pago')->insert(['cuenta_id'=>$this->ctas[$alias], 'metodo_pago_id'=>$metodos[$m]]);
             }
