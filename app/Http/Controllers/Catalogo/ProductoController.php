@@ -142,6 +142,10 @@ class ProductoController extends Controller
         DB::transaction(function () use ($data, $producto) {
             $esProducto = $data['tipo'] === 'producto';
 
+            // NO se toca precio_costo: el formulario no lo maneja, y el costo real
+            // (para el balance y la valorización) vive en stock.costo_promedio.
+            // Antes se pisaba a 0 en cada edición y eso borraba el costo del
+            // producto, descuadrando el balance. Ahora se conserva su valor.
             $producto->update([
                 'categoria_id'   => $data['categoria_id'] ?? null,
                 'codigo'         => $data['codigo'] ?? null,
@@ -151,7 +155,6 @@ class ProductoController extends Controller
                 'tipo'           => $data['tipo'],
                 'tipo_precio'    => $esProducto ? 'fijo' : $data['tipo_precio'],
                 'precio_venta'   => $esProducto ? 0 : $data['precio_venta'],
-                'precio_costo'   => 0,
                 'activo'         => $data['activo'] ?? true,
                 'incluye_igv'    => $data['incluye_igv'] ?? false,
                 'controla_stock' => $esProducto ? ($data['controla_stock'] ?? null) : false,
@@ -184,6 +187,8 @@ class ProductoController extends Controller
                         ? ['id' => $u['id']]
                         : ['unidad_medida_id' => $u['unidad_medida_id']];
 
+                    // No se pisa precio_costo de la unidad: se conserva el que
+                    // ya tuviera (una edición no debe borrar el costo).
                     $producto->unidades()->updateOrCreate(
                         $match,
                         [
@@ -192,7 +197,6 @@ class ProductoController extends Controller
                             'factor_conversion' => $u['es_base'] ? 1 : $u['factor_conversion'],
                             'tipo_precio'       => $u['tipo_precio'],
                             'precio_venta'      => $u['precio_venta'],
-                            'precio_costo'      => 0,
                             'activo'            => $u['activo'] ?? true,
                         ]
                     );

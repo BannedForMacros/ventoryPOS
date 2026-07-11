@@ -117,13 +117,15 @@ class BalanceDiarioService
                 ];
             });
 
-        // Stock valorizado a costo del día: cantidad × precio_costo ACTUAL
-        // del producto (el "punitario actual" del Excel de ladrillos).
+        // Stock valorizado a costo del día. Se usa precio_costo del producto, y
+        // si está en 0 (p. ej. lo borró una edición de producto) se cae al
+        // costo_promedio real del inventario. Así el balance no pierde valor
+        // por costos en blanco y editar productos ya no lo descuadra.
         $stockValorizado = (float) DB::table('stock')
             ->join('productos', 'productos.id', '=', 'stock.producto_id')
             ->where('productos.empresa_id', $empresaId)
             ->where('productos.activo', true)
-            ->selectRaw('COALESCE(SUM(stock.cantidad * productos.precio_costo), 0) as v')
+            ->selectRaw('COALESCE(SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)), 0) as v')
             ->value('v');
 
         $items[] = [

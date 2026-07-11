@@ -234,6 +234,11 @@ class BalanceDiarioController extends Controller
      */
     private function movimientosStockDia(int $empresaId, string $fecha): \Illuminate\Support\Collection
     {
+        // Costo efectivo del producto: precio_costo, y si está en 0 el
+        // costo_promedio real (mismo criterio que valoriza el balance). Así una
+        // venta de un producto sin costo registrado no aparece en 0.
+        $costo = "COALESCE(NULLIF(p.precio_costo, 0), (SELECT s2.costo_promedio FROM stock s2 WHERE s2.producto_id = p.id AND s2.costo_promedio > 0 LIMIT 1), 0)";
+
         // Ventas (−)
         $ventas = DB::table('venta_items as vi')
             ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
@@ -242,7 +247,7 @@ class BalanceDiarioController extends Controller
             ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
             ->whereDate('v.fecha_venta', $fecha)
             ->selectRaw("'Ventas' as tipo, v.numero as documento, p.nombre as producto, u.name as usuario,
-                         (-1 * vi.cantidad_base) as cantidad, (-1 * vi.cantidad_base * p.precio_costo) as valor")
+                         (-1 * vi.cantidad_base) as cantidad, (-1 * vi.cantidad_base * {$costo}) as valor")
             ->get();
 
         // Salidas (−)
@@ -253,7 +258,7 @@ class BalanceDiarioController extends Controller
             ->where('s.empresa_id', $empresaId)->where('s.estado', 'confirmado')
             ->whereDate('s.fecha', $fecha)
             ->selectRaw("'Salidas de inventario' as tipo, s.numero_documento as documento, p.nombre as producto, u.name as usuario,
-                         (-1 * sd.cantidad_base) as cantidad, (-1 * sd.cantidad_base * p.precio_costo) as valor")
+                         (-1 * sd.cantidad_base) as cantidad, (-1 * sd.cantidad_base * {$costo}) as valor")
             ->get();
 
         // Entradas / compras (+)
@@ -264,7 +269,7 @@ class BalanceDiarioController extends Controller
             ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')
             ->whereDate('e.fecha', $fecha)
             ->selectRaw("'Entradas (compras)' as tipo, e.numero_documento as documento, p.nombre as producto, u.name as usuario,
-                         ed.cantidad_base as cantidad, (ed.cantidad_base * p.precio_costo) as valor")
+                         ed.cantidad_base as cantidad, (ed.cantidad_base * {$costo}) as valor")
             ->get();
 
         // Devoluciones con reingreso (+)
@@ -276,7 +281,7 @@ class BalanceDiarioController extends Controller
             ->where('dd.restock', true)
             ->whereDate('d.fecha', $fecha)
             ->selectRaw("'Devoluciones (reingreso)' as tipo, d.numero as documento, p.nombre as producto, u.name as usuario,
-                         dd.cantidad_base as cantidad, (dd.cantidad_base * p.precio_costo) as valor")
+                         dd.cantidad_base as cantidad, (dd.cantidad_base * {$costo}) as valor")
             ->get();
 
         // Ajustes por cierre de inventario (+/−)
@@ -288,7 +293,7 @@ class BalanceDiarioController extends Controller
             ->where('ci.diferencia', '!=', 0)
             ->whereDate('c.fecha', $fecha)
             ->selectRaw("'Ajustes de inventario' as tipo, ('CI-' || c.id) as documento, p.nombre as producto, u.name as usuario,
-                         ci.diferencia as cantidad, (ci.diferencia * p.precio_costo) as valor")
+                         ci.diferencia as cantidad, (ci.diferencia * {$costo}) as valor")
             ->get();
 
         return collect()
@@ -400,14 +405,19 @@ class BalanceDiarioController extends Controller
 
             // ── Stock ACTUAL: producto por producto (valor del inventario hoy)
             case 'stock': {
+                // Costo efectivo: precio_costo del producto; si está en 0, el
+                // costo_promedio real del inventario (mismo criterio que el balance).
                 $filas = DB::table('stock')
                     ->join('productos', 'productos.id', '=', 'stock.producto_id')
                     ->where('productos.empresa_id', $empresaId)
                     ->where('productos.activo', true)
                     ->where('stock.cantidad', '!=', 0)
-                    ->selectRaw('productos.nombre, SUM(stock.cantidad) as cantidad, productos.precio_costo,
-                                 SUM(stock.cantidad * productos.precio_costo) as valor')
-                    ->groupBy('productos.id', 'productos.nombre', 'productos.precio_costo')
+                    ->selectRaw('productos.nombre,
+                                 SUM(stock.cantidad) as cantidad,
+                                 SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio))
+                                     / NULLIF(SUM(stock.cantidad), 0) as costo,
+                                 SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)) as valor')
+                    ->groupBy('productos.id', 'productos.nombre')
                     ->orderByDesc('valor')
                     ->limit(1000)
                     ->get();
@@ -423,7 +433,7 @@ class BalanceDiarioController extends Controller
                     'grupos' => $filas->map(fn ($f, $i) => [
                         'id'        => (string) $i,
                         'titulo'    => $f->nombre,
-                        'subtitulo' => $fmtCant($f->cantidad) . ' und × S/ ' . number_format((float) $f->precio_costo, 2) . ' (costo actual)',
+                        'subtitulo' => $fmtCant($f->cantidad) . ' und × S/ ' . number_format((float) $f->costo, 2) . ' (costo)',
                         'monto'     => round((float) $f->valor, 2),
                         'items'     => [],
                     ])->values(),
@@ -438,7 +448,7 @@ class BalanceDiarioController extends Controller
                 $valorHoy = (float) DB::table('stock')
                     ->join('productos', 'productos.id', '=', 'stock.producto_id')
                     ->where('productos.empresa_id', $empresaId)->where('productos.activo', true)
-                    ->selectRaw('COALESCE(SUM(stock.cantidad * productos.precio_costo), 0) as v')->value('v');
+                    ->selectRaw('COALESCE(SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)), 0) as v')->value('v');
 
                 // Valor de stock del último balance confirmado anterior.
                 $balAnt = DB::table('balances_diarios as b')
