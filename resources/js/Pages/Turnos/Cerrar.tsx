@@ -1,15 +1,24 @@
 import { useMemo, useState } from 'react';
 import { Link, router } from '@inertiajs/react';
-import { AlertTriangle, ArrowLeft, ClipboardCheck, Clock, ShoppingCart, TrendingDown, Wallet } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ClipboardCheck, Clock, PackageX, ShoppingCart, TrendingDown, Wallet } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
+import Modal from '@/Components/UI/Modal';
 import type { MetodoPago, ModoCierreCaja, ModoCierreInventario, Turno } from '@/types';
 
 interface CierreInventarioRef {
     id: number;
     estado: 'borrador' | 'confirmado';
+}
+
+// Producto vendido en el turno cuyo stock quedó negativo (aviso al cierre).
+interface ProductoStockNegativo {
+    producto_id:      number;
+    producto_nombre:  string;
+    cantidad_vendida: number;
+    stock_actual:     number;
 }
 
 const DENOMINACIONES_PEN = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1];
@@ -32,6 +41,7 @@ interface CerrarForm {
 
 interface Props {
     turno:                          Turno;
+    productosStockNegativo:         ProductoStockNegativo[];
     ventasPorMetodo:                Record<string, number>;
     totalVentas:                    number;
     totalGastos:                    number;
@@ -44,7 +54,7 @@ interface Props {
     fondosInicialesEnDeclaracion:   boolean;
 }
 
-export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, totalGastos, montoEsperado, metodosPago, modoCierreCaja, modoCierreInventario, cierreInventarioTurno, usaFondosIniciales, fondosInicialesEnDeclaracion }: Props) {
+export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMetodo, totalVentas, totalGastos, montoEsperado, metodosPago, modoCierreCaja, modoCierreInventario, cierreInventarioTurno, usaFondosIniciales, fondosInicialesEnDeclaracion }: Props) {
     const caja = turno.caja!;
     const requiereArqueo  = modoCierreCaja === 'con_declaraciones';
     const requiereCierreInv = modoCierreInventario === 'declarado';
@@ -59,6 +69,10 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
     });
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
+    // Modal de confirmación cuando el turno vendió productos que quedaron
+    // con stock negativo: "¿deseas cerrar la caja de todas formas?"
+    const [modalStockNegativo, setModalStockNegativo] = useState(false);
+    const hayStockNegativo = (productosStockNegativo ?? []).length > 0;
 
     const totalEfectivo = useMemo(() =>
         form.arqueo.reduce((sum, f) => sum + f.denominacion * f.cantidad, 0),
@@ -92,9 +106,22 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
             return;
         }
 
+        // Si se vendieron productos que quedaron con stock negativo, pedir
+        // confirmación explícita antes de enviar el cierre (el backend también
+        // lo exige vía confirma_stock_negativo).
+        if (hayStockNegativo) {
+            setModalStockNegativo(true);
+            return;
+        }
+
+        enviarCierre(false);
+    }
+
+    function enviarCierre(confirmaStockNegativo: boolean) {
         setSaving(true);
         const payload: Record<string, unknown> = {
             observacion_cierre: form.observacion_cierre,
+            confirma_stock_negativo: confirmaStockNegativo,
         };
 
         if (requiereArqueo) {
@@ -106,8 +133,8 @@ export default function CerrarTurno({ turno, ventasPorMetodo, totalVentas, total
         }
 
         router.post(route('turnos.cerrar', turno.id), payload as any, {
-            onSuccess: () => setSaving(false),
-            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+            onSuccess: () => { setSaving(false); setModalStockNegativo(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); setModalStockNegativo(false); },
         });
     }
 

@@ -157,6 +157,47 @@ class Turno extends Model
     }
 
     /**
+     * Productos vendidos en este turno (ventas completadas) cuyo stock actual
+     * en el almacén de ventas quedó NEGATIVO. Se usa para avisar al cajero al
+     * cerrar la caja: "vendiste estos productos y su stock quedó en negativo,
+     * ¿deseas cerrar de todas formas?".
+     *
+     * Devuelve arrays con: producto_id, producto_nombre, cantidad_vendida
+     * (en unidad base) y stock_actual (negativo).
+     */
+    public function productosVendidosConStockNegativo(): array
+    {
+        $almacenId = $this->resolverAlmacenIdDeVentas();
+        if (!$almacenId) return [];
+
+        return \App\Models\VentaItem::query()
+            ->join('ventas as v', 'v.id', '=', 'venta_items.venta_id')
+            ->join('stock as s', function ($j) use ($almacenId) {
+                $j->on('s.producto_id', '=', 'venta_items.producto_id')
+                  ->where('s.almacen_id', '=', $almacenId);
+            })
+            ->where('v.turno_id', $this->id)
+            ->where('v.estado', 'completada')
+            ->where('s.cantidad', '<', 0)
+            ->groupBy('venta_items.producto_id', 's.cantidad')
+            ->select(
+                'venta_items.producto_id',
+                DB::raw('MIN(venta_items.producto_nombre) as producto_nombre'),
+                DB::raw('SUM(venta_items.cantidad_base) as cantidad_vendida'),
+                DB::raw('s.cantidad as stock_actual'),
+            )
+            ->orderBy('producto_nombre')
+            ->get()
+            ->map(fn ($r) => [
+                'producto_id'      => (int) $r->producto_id,
+                'producto_nombre'  => $r->producto_nombre,
+                'cantidad_vendida' => (float) $r->cantidad_vendida,
+                'stock_actual'     => (float) $r->stock_actual,
+            ])
+            ->all();
+    }
+
+    /**
      * Resuelve el almacén de ventas usado durante este turno.
      * En modo simple → el único almacén tipo='local'.
      * En central_y_local → el almacén local ligado al local del turno.

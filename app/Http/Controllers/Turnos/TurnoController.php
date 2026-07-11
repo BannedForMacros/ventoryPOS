@@ -267,6 +267,9 @@ class TurnoController extends Controller
 
         return Inertia::render('Turnos/Cerrar', [
             'turno'                        => $turno,
+            // Aviso: productos vendidos en el turno cuyo stock quedó negativo.
+            // El frontend pide confirmación explícita antes de cerrar.
+            'productosStockNegativo'       => $turno->productosVendidosConStockNegativo(),
             'ventasPorMetodo'              => $ventasPorMetodo,
             'totalVentas'                  => $totalVentas,
             'totalGastos'                  => $totalGastos,
@@ -300,6 +303,20 @@ class TurnoController extends Controller
                     'cierre_inventario' => 'Este local exige cierre de inventario declarado al cerrar caja. Crea y confirma un cierre de inventario asociado al turno antes de cerrar.',
                 ]);
             }
+        }
+
+        // Validación de stock negativo: si en el turno se vendieron productos
+        // que quedaron con stock negativo, el cierre exige confirmación
+        // explícita (el frontend muestra la lista y pregunta antes de enviar
+        // confirma_stock_negativo=true). Se recalcula aquí en el servidor para
+        // que no se pueda saltar el aviso.
+        $productosNegativos = $turno->productosVendidosConStockNegativo();
+        if (!empty($productosNegativos) && !$request->boolean('confirma_stock_negativo')) {
+            $nombres = collect($productosNegativos)->pluck('producto_nombre')->take(5)->implode(', ');
+            $extra   = count($productosNegativos) > 5 ? '…' : '';
+            return back()->withErrors([
+                'stock_negativo' => "Has vendido productos que quedaron con stock negativo: {$nombres}{$extra}. Confirma que deseas cerrar la caja de todas formas.",
+            ]);
         }
 
         DB::transaction(function () use ($request, $turno, $modoCaja) {

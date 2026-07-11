@@ -254,6 +254,22 @@ export default function Empresas({ empresas }: Props) {
                         {errors.descuenta_stock_en_venta && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.descuenta_stock_en_venta}</p>
                         )}
+
+                        <label className="flex items-start gap-2 cursor-pointer mt-3">
+                            <Checkbox
+                                checked={data.permite_stock_negativo}
+                                onChange={e => setData('permite_stock_negativo', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Permitir vender con stock negativo</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, el POS deja vender aunque no alcance el stock: el saldo queda en negativo y al cerrar la caja se avisa qué productos quedaron así. Si está inactivo, la venta se bloquea cuando el stock no alcanza.
+                                </span>
+                            </span>
+                        </label>
+                        {errors.permite_stock_negativo && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.permite_stock_negativo}</p>
+                        )}
                     </div>
 
                     {/* ── Sección: Impuestos (IGV) ── */}

@@ -13,6 +13,7 @@ export interface Empresa extends Record<string, unknown> {
     tasa_igv: number | string;
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
+    permite_stock_negativo: boolean;
     modo_cierre_caja: ModoCierreCaja;
     modo_cierre_inventario: ModoCierreInventario;
     usa_fondos_iniciales: boolean;

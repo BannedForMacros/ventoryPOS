@@ -18,6 +18,9 @@ class CerrarTurnoRequest extends FormRequest
 
         $base = [
             'observacion_cierre' => ['nullable', 'string', 'max:500'],
+            // Confirmación explícita del cajero cuando el turno vendió
+            // productos que quedaron con stock negativo (ver TurnoController).
+            'confirma_stock_negativo' => ['nullable', 'boolean'],
         ];
 
         if ($modoCaja === 'rapido') {
