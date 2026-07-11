@@ -15,6 +15,11 @@ export interface LineaCarrito {
     // o costo base del producto × factor de conversión). 0 = sin costo definido,
     // en ese caso no se valida piso.
     costo_minimo:         number;
+    // Stock disponible del producto (unidad base) al abrir el POS, y factor de
+    // conversión de la presentación: sirven para mostrar el stock restante en
+    // vivo (stock − cantidad×factor). stock_disponible null = desconocido.
+    stock_disponible:     number | null;
+    factor_conversion:    number;
     cantidad:             number;
     descuento_item:       number;
     descuento_concepto_id: number | null;
@@ -48,17 +53,28 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
     // no en el input, porque el input vive dentro de un overflow-hidden que
     // recortaba el ring arriba y abajo.
     const [cantFocus, setCantFocus]         = useState(false);
+    const [precioFocus, setPrecioFocus]     = useState(false);
+    const [descFocus, setDescFocus]         = useState(false);
     // Consulta informativa del precio de costo de la línea (toggle).
     const [showCosto, setShowCosto]         = useState(false);
 
     useEffect(() => {
-        setDescuentoVal(String(item.descuento_item || ''));
+        if (!descFocus) setDescuentoVal(String(item.descuento_item || ''));
         setConceptoId(item.descuento_concepto_id);
         if (item.descuento_item > 0) setShowDescuento(true);
-    }, [item.descuento_item, item.descuento_concepto_id]);
+    }, [item.descuento_item, item.descuento_concepto_id, descFocus]);
 
-    useEffect(() => { setCantidadVal(String(item.cantidad)); }, [item.cantidad]);
-    useEffect(() => { setPrecioVal(item.precio_unitario.toFixed(2)); }, [item.precio_unitario]);
+    // Sincronizar el borrador con el valor real SOLO cuando el input no está
+    // enfocado: mientras el usuario escribe, no reformateamos lo que teclea.
+    useEffect(() => { if (!cantFocus) setCantidadVal(String(item.cantidad)); }, [item.cantidad, cantFocus]);
+    useEffect(() => { if (!precioFocus) setPrecioVal(item.precio_unitario.toFixed(2)); }, [item.precio_unitario, precioFocus]);
+
+    // Descuento EN VIVO: aplica al carrito en cada tecla.
+    function onCambioDescuento(valor: string) {
+        setDescuentoVal(valor);
+        const val = parseFloat(valor) || 0;
+        onDescuento(item.key, val, val > 0 ? conceptoId : null);
+    }
 
     function aplicarDescuento() {
         const val = parseFloat(descuentoVal) || 0;
@@ -66,13 +82,22 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
         if (val === 0) setShowDescuento(false);
     }
 
+    // Cantidad EN VIVO: aplica al carrito en cada tecla (los totales se
+    // actualizan al instante). El borrador se conserva para poder borrar/retipear.
+    function onCambioCantidad(valor: string) {
+        setCantidadVal(valor);
+        const val = parseFloat(valor);
+        if (isFinite(val) && val > 0) {
+            onCantidadExacta(item.key, val);
+        }
+    }
+
     function aplicarCantidad() {
+        // Al salir, si quedó vacío o inválido, restaurar al valor real.
         const val = parseFloat(cantidadVal);
         if (!isFinite(val) || val <= 0) {
             setCantidadVal(String(item.cantidad));
-            return;
         }
-        onCantidadExacta(item.key, val);
     }
 
     // Validación EN VIVO del precio: se evalúa sobre lo que se está tecleando,
@@ -104,6 +129,10 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
         setPrecioVal(valor);
         if (clampTimer.current) window.clearTimeout(clampTimer.current);
         const num = parseFloat(valor) || 0;
+        // Aplicar EN VIVO al carrito para que los totales se actualicen al instante.
+        if (isFinite(num) && num > 0) {
+            onPrecio(item.key, num);
+        }
         if (item.costo_minimo > 0 && num > 0 && num < item.costo_minimo - 0.009) {
             toast.error(
                 `El precio de "${item.producto_nombre}" no puede ser menor al costo: S/ ${item.costo_minimo.toFixed(2)}.`,
@@ -130,6 +159,13 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
     }
 
     const esInactivo = !!item.inactivo;
+
+    // Stock restante EN VIVO = stock disponible − (cantidad × factor). Se
+    // recalcula en cada render, así que baja conforme la cajera sube la cantidad.
+    const stockRestante = item.stock_disponible != null
+        ? Math.round((item.stock_disponible - item.cantidad * item.factor_conversion) * 10000) / 10000
+        : null;
+    const sinStock = stockRestante != null && stockRestante < 0;
 
     return (
         <div
@@ -210,9 +246,9 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                                 step="0.01"
                                 value={precioVal}
                                 onChange={e => onCambioPrecio(e.target.value)}
-                                onBlur={aplicarPrecio}
+                                onBlur={() => { setPrecioFocus(false); aplicarPrecio(); }}
                                 onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                                onFocus={e => e.target.select()}
+                                onFocus={e => { setPrecioFocus(true); e.target.select(); }}
                                 aria-label="Precio de venta"
                                 className="w-24 px-2 py-1 text-xs font-bold text-right focus:outline-none border-0"
                                 style={{
@@ -279,7 +315,7 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                         min="0"
                         step="any"
                         value={cantidadVal}
-                        onChange={e => setCantidadVal(e.target.value)}
+                        onChange={e => onCambioCantidad(e.target.value)}
                         onBlur={() => { setCantFocus(false); aplicarCantidad(); }}
                         onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                         onFocus={e => { setCantFocus(true); e.target.select(); }}
@@ -303,6 +339,23 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                         <Plus size={15} />
                     </button>
                 </div>
+
+                {/* Stock restante EN VIVO: baja conforme sube la cantidad. Rojo si
+                    la cantidad excede el stock disponible (venta en negativo). */}
+                {stockRestante != null && (
+                    <span
+                        className="text-[10px] font-bold px-1.5 py-1 rounded-md whitespace-nowrap flex-shrink-0"
+                        title="Stock que quedaría tras esta línea"
+                        style={{
+                            color: sinStock ? 'var(--color-danger)' : 'var(--color-text-muted)',
+                            backgroundColor: sinStock
+                                ? 'rgba(239,68,68,0.10)'
+                                : 'color-mix(in srgb, var(--color-border) 30%, transparent)',
+                        }}
+                    >
+                        Stock: {stockRestante}
+                    </span>
+                )}
 
                 <div className="flex items-center gap-1">
                     {/* Botón informativo: consulta el precio de costo de la línea.
@@ -340,6 +393,17 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                                     </>
                                 ) : (
                                     <p className="text-[11px] font-semibold leading-tight">Sin costo registrado</p>
+                                )}
+                                {/* Stock: disponible al abrir el POS y lo que quedaría con esta línea */}
+                                {item.stock_disponible != null && (
+                                    <p className="text-[10px] leading-tight mt-1 pt-1"
+                                        style={{ borderTop: '1px solid rgba(255,255,255,0.15)' }}>
+                                        Stock: {item.stock_disponible}
+                                        {' · '}
+                                        <span style={{ color: sinStock ? '#fca5a5' : undefined }}>
+                                            Quedaría: {stockRestante}
+                                        </span>
+                                    </p>
                                 )}
                                 {/* Flechita del tooltip */}
                                 <span
@@ -389,9 +453,10 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                             min="0"
                             step="0.01"
                             value={descuentoVal}
-                            onChange={e => setDescuentoVal(e.target.value)}
-                            onBlur={aplicarDescuento}
-                            onKeyDown={e => e.key === 'Enter' && aplicarDescuento()}
+                            onChange={e => onCambioDescuento(e.target.value)}
+                            onFocus={() => setDescFocus(true)}
+                            onBlur={() => { setDescFocus(false); aplicarDescuento(); }}
+                            onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                             placeholder="0.00"
                             className="w-full pl-6 pr-1 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2"
                             style={{

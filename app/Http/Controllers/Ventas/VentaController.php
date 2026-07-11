@@ -84,6 +84,17 @@ class VentaController extends Controller
             ->orderBy('nombre')
             ->get();
 
+        // Stock disponible (en unidad base) por producto, en el almacén de ventas
+        // del usuario. El frontend lo muestra en el carrito y lo descuenta en vivo
+        // conforme la cajera ajusta la cantidad. null si no hay almacén resoluble.
+        $almacenVentas = $this->scope->almacenParaVentas($user);
+        $stockMap = $almacenVentas
+            ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)->pluck('cantidad', 'producto_id')
+            : collect();
+        $productos->each(function ($p) use ($almacenVentas, $stockMap) {
+            $p->stock_disponible = $almacenVentas ? (float) ($stockMap[$p->id] ?? 0) : null;
+        });
+
         $clientes = Cliente::where('empresa_id', $user->empresa_id)
             ->activo()
             ->orderBy('nombres')

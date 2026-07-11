@@ -159,6 +159,8 @@ export interface Producto extends Record<string, unknown> {
     incluye_igv: boolean;
     controla_stock: boolean | null;
     es_retornable: boolean | null;
+    // Stock disponible (unidad base) en el almacén de ventas; lo inyecta el POS.
+    stock_disponible?: number | null;
     categoria?: Categoria | null;
     unidades?: ProductoUnidad[];
     unidad_base?: ProductoUnidad | null;
