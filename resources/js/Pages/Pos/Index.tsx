@@ -45,6 +45,39 @@ interface CitaPrellenada {
     tiene_inactivos:  boolean;
 }
 
+// Venta precargada para EDICIÓN (POS abierto con ?venta_id=). El submit del POS
+// irá a ventas.update en vez de ventas.store.
+interface VentaEnEdicionItem {
+    producto_id:           number;
+    producto_unidad_id:    number;
+    producto_nombre:       string;
+    unidad_nombre:         string;
+    cantidad:              number;
+    precio_unitario:       number;
+    descuento_item:        number;
+    descuento_concepto_id: number | null;
+    incluye_igv:           boolean;
+}
+interface VentaEnEdicionPago {
+    metodo_pago_id:        number;
+    cuenta_metodo_pago_id: number | null;
+    monto:                 number;
+    referencia:            string | null;
+}
+interface VentaEnEdicion {
+    id:                    number;
+    numero:                string;
+    tipo_comprobante:      TipoComprobante;
+    descuento_total:       number;
+    descuento_concepto_id: number | null;
+    moneda:                'PEN' | 'USD';
+    es_admin:              boolean;
+    expira_en:             string | null;
+    cliente:               Cliente | null;
+    items:                 VentaEnEdicionItem[];
+    pagos:                 VentaEnEdicionPago[];
+}
+
 interface Props extends PageProps {
     turno:              Turno;
     productos:          Producto[];
@@ -52,6 +85,7 @@ interface Props extends PageProps {
     metodosPago:        MetodoPagoConCuentas[];
     conceptosDescuento: DescuentoConcepto[];
     citaPrellenada?:    CitaPrellenada | null;
+    ventaEnEdicion?:    VentaEnEdicion | null;
     // A14: el backend valida que el usuario pueda operar el POS al CARGAR la
     // pantalla (admin sin local_id en modo central_y_local, almacén
     // desactivado, etc.). Si puedeVender=false bloqueamos el botón cobrar
@@ -160,7 +194,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total };
 }
 
-export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, puedeVender, razonNoVender, monedas, tipoCambioHoy }: Props) {
+export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, ventaEnEdicion, puedeVender, razonNoVender, monedas, tipoCambioHoy }: Props) {
     // Tasa de IGV de la empresa (configurable por tenant). Default 18% si no llega.
     const empresaAuth = usePage().props.auth?.user?.empresa as { tasa_igv?: number | string } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
@@ -205,18 +239,55 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         };
     }) ?? [];
 
-    const clienteInicial: Cliente | null = citaPrellenada?.cliente ?? clienteGeneral;
+    // Si el POS se abrió en modo EDICIÓN (?venta_id=), prellenar el carrito con
+    // los items de la venta existente (resolviendo costo_minimo del catálogo).
+    const carritoEdicion: LineaCarrito[] = ventaEnEdicion?.items.map(it => {
+        const prod = productos.find(p => p.id === it.producto_id);
+        const uni  = prod?.unidades?.find(u => u.id === it.producto_unidad_id);
+        return {
+            key: `${it.producto_id}-${it.producto_unidad_id}`,
+            producto_id:           it.producto_id,
+            producto_unidad_id:    it.producto_unidad_id,
+            producto_nombre:       it.producto_nombre,
+            unidad_nombre:         it.unidad_nombre,
+            precio_unitario:       it.precio_unitario,
+            precio_original:       uni ? parseFloat(uni.precio_venta) : it.precio_unitario,
+            costo_minimo:          prod && uni ? costoMinimoDe(prod, uni) : 0,
+            cantidad:              it.cantidad,
+            descuento_item:        it.descuento_item,
+            descuento_concepto_id: it.descuento_concepto_id,
+            subtotal:              Math.round((it.precio_unitario - it.descuento_item) * it.cantidad * 100) / 100,
+            incluye_igv:           it.incluye_igv,
+        };
+    }) ?? [];
+
+    // Pagos precargados en edición (resolviendo admite_vuelto/es_efectivo del método).
+    const pagosEdicion: LineaPago[] = ventaEnEdicion?.pagos.map(p => {
+        const m = metodosPago.find(mp => mp.id === p.metodo_pago_id);
+        return {
+            key:                   uid(),
+            metodo_pago_id:        p.metodo_pago_id,
+            cuenta_metodo_pago_id: p.cuenta_metodo_pago_id,
+            monto:                 p.monto,
+            referencia:            p.referencia ?? '',
+            admite_vuelto:         !!m?.admite_vuelto,
+            es_efectivo:           m?.tipo?.slug === 'efectivo',
+        };
+    }) ?? [];
+
+    const clienteInicial: Cliente | null =
+        ventaEnEdicion?.cliente ?? citaPrellenada?.cliente ?? clienteGeneral;
 
     const [busqueda, setBusqueda]           = useState('');
-    const [carrito, setCarrito]             = useState<LineaCarrito[]>(carritoInicial);
-    const [pagos, setPagos]                 = useState<LineaPago[]>([]);
+    const [carrito, setCarrito]             = useState<LineaCarrito[]>(ventaEnEdicion ? carritoEdicion : carritoInicial);
+    const [pagos, setPagos]                 = useState<LineaPago[]>(pagosEdicion);
     const [cliente, setCliente]             = useState<Cliente | null>(clienteInicial);
-    const [descuentoTotal, setDescuentoTotal]       = useState(0);
-    const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(null);
-    const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>('ticket');
+    const [descuentoTotal, setDescuentoTotal]       = useState(ventaEnEdicion?.descuento_total ?? 0);
+    const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(ventaEnEdicion?.descuento_concepto_id ?? null);
+    const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>(ventaEnEdicion?.tipo_comprobante ?? 'ticket');
     // Multimoneda: moneda de la venta. En USD los precios/pagos se ingresan en
     // dólares y el backend los convierte a soles al TC del día (congelado).
-    const [moneda, setMoneda]                       = useState<'PEN' | 'USD'>('PEN');
+    const [moneda, setMoneda]                       = useState<'PEN' | 'USD'>(ventaEnEdicion?.moneda ?? 'PEN');
     // F1 — Venta a crédito: se entrega mercadería sin cobrar el total.
     // Requiere cliente identificado; el saldo queda como cuenta por cobrar.
     const [esCredito, setEsCredito]                 = useState(false);
@@ -551,6 +622,20 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             })),
         };
 
+        // Modo EDICIÓN: PUT a ventas.update (conserva número/turno). El backend
+        // redirige al detalle de la venta, así que no limpiamos el carrito.
+        if (ventaEnEdicion) {
+            router.put(route('ventas.update', ventaEnEdicion.id), payload as any, {
+                onSuccess: () => { setLoading(false); setModalConfirm(false); },
+                onError: (errors) => {
+                    setLoading(false);
+                    const msg = Object.values(errors)[0];
+                    if (msg) toast.error(msg as string);
+                },
+            });
+            return;
+        }
+
         router.post(route('ventas.store'), payload as any, {
             onSuccess: () => {
                 setLoading(false);
@@ -572,6 +657,34 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
 
     return (
         <PosLayout>
+            {/* Banner de edición de venta (POS abierto con ?venta_id=) */}
+            {ventaEnEdicion && (
+                <div
+                    className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 flex-shrink-0 border-b text-sm"
+                    style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-warning) 15%, var(--color-bg))',
+                        borderColor: 'var(--color-warning)',
+                        color: 'var(--color-text)',
+                    }}
+                >
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                            style={{ backgroundColor: 'var(--color-warning)', color: '#fff' }}>
+                            Editando {ventaEnEdicion.numero}
+                        </span>
+                        <span style={{ color: 'var(--color-text-muted)' }}>
+                            Modifica productos, cantidades, precios o pagos y guarda los cambios.
+                            {!ventaEnEdicion.es_admin && ' Tienes 3 minutos desde que se creó la venta.'}
+                        </span>
+                    </div>
+                    <Link href={route('ventas.index')}
+                        className="text-xs font-medium underline hover:opacity-80"
+                        style={{ color: 'var(--color-warning)' }}>
+                        Cancelar
+                    </Link>
+                </div>
+            )}
+
             {/* Banner de cita activa (cuando se llega desde la agenda) */}
             {citaPrellenada && (
                 <div

@@ -10,20 +10,51 @@ use App\Models\DescuentoConcepto;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\Turno;
+use App\Models\User;
 use App\Models\Venta;
 use App\Services\CitaService;
 use App\Services\LocalScopeService;
 use App\Services\VentaService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 
 class VentaController extends Controller
 {
+    // Ventana de edición: una venta se puede editar libremente dentro de este
+    // lapso desde su creación. Pasado el plazo, editar se bloquea y anular
+    // requiere código de autorización de un administrador.
+    private const EDIT_WINDOW_SECONDS = 180; // 3 minutos
+
     public function __construct(
         private VentaService      $ventaService,
         private LocalScopeService $scope,
         private CitaService       $citaService,
     ) {}
+
+    /** true si la venta aún está dentro de los 3 min de edición desde su creación. */
+    private function dentroPlazoEdicion(Venta $venta): bool
+    {
+        return $venta->created_at
+            && abs($venta->created_at->diffInSeconds(now())) <= self::EDIT_WINDOW_SECONDS;
+    }
+
+    /**
+     * Valida un "código de autorización" para anular fuera de plazo. Placeholder
+     * hasta implementar el envío por WhatsApp/Telegram: por ahora el código es
+     * la contraseña de acceso de cualquier administrador activo de la empresa.
+     */
+    private function codigoAdminValido(int $empresaId, string $codigo): bool
+    {
+        if ($codigo === '') return false;
+        $admins = User::where('empresa_id', $empresaId)->where('activo', true)
+            ->whereHas('rol', fn($q) => $q->where('es_admin', true))
+            ->get(['id', 'password']);
+        foreach ($admins as $a) {
+            if ($a->password && Hash::check($codigo, $a->password)) return true;
+        }
+        return false;
+    }
 
     // ── POS ────────────────────────────────────────────────────────────────────
 
@@ -114,6 +145,56 @@ class VentaController extends Controller
             }
         }
 
+        // Edición de venta desde el POS (?venta_id=): precarga el carrito, cliente
+        // y pagos de una venta existente para reeditarla. La cajera solo dentro de
+        // los 3 min; el admin sin límite. El submit del POS irá a ventas.update.
+        $ventaEnEdicion = null;
+        if ($ventaId = $request->query('venta_id')) {
+            $v = Venta::with(['items.producto', 'items.productoUnidad.unidadMedida', 'pagos', 'cliente'])
+                ->where('id', $ventaId)
+                ->where('empresa_id', $user->empresa_id)
+                ->first();
+
+            $puedeEditar = $v && $v->estado === 'completada'
+                && ($user->rol->es_admin || $this->dentroPlazoEdicion($v));
+
+            if ($puedeEditar) {
+                // Los precios/montos se guardan en soles; para reeditar en la moneda
+                // original los devolvemos a esa moneda dividiendo por el TC congelado.
+                $factor = ($v->moneda && $v->moneda !== 'PEN' && $v->tipo_cambio)
+                    ? (float) $v->tipo_cambio : 1.0;
+
+                $ventaEnEdicion = [
+                    'id'                    => $v->id,
+                    'numero'                => $v->numero,
+                    'tipo_comprobante'      => $v->tipo_comprobante,
+                    'descuento_total'       => $factor > 0 ? round((float) $v->descuento_total / $factor, 2) : (float) $v->descuento_total,
+                    'descuento_concepto_id' => $v->descuento_concepto_id,
+                    'moneda'                => $v->moneda ?? 'PEN',
+                    'es_admin'              => (bool) $user->rol->es_admin,
+                    'expira_en'             => $v->created_at?->addSeconds(self::EDIT_WINDOW_SECONDS)->toIso8601String(),
+                    'cliente'               => $v->cliente,
+                    'items'                 => $v->items->map(fn($it) => [
+                        'producto_id'           => $it->producto_id,
+                        'producto_unidad_id'    => $it->producto_unidad_id,
+                        'producto_nombre'       => $it->producto_nombre,
+                        'unidad_nombre'         => $it->unidad_nombre,
+                        'cantidad'              => (float) $it->cantidad,
+                        'precio_unitario'       => $factor > 0 ? round((float) $it->precio_unitario / $factor, 2) : (float) $it->precio_unitario,
+                        'descuento_item'        => $factor > 0 ? round((float) $it->descuento_item / $factor, 2) : (float) $it->descuento_item,
+                        'descuento_concepto_id' => $it->descuento_concepto_id,
+                        'incluye_igv'           => (bool) $it->incluye_igv,
+                    ])->values(),
+                    'pagos'                 => $v->pagos->map(fn($p) => [
+                        'metodo_pago_id'        => $p->metodo_pago_id,
+                        'cuenta_metodo_pago_id' => $p->cuenta_metodo_pago_id,
+                        'monto'                 => $factor > 0 ? round((float) $p->monto / $factor, 2) : (float) $p->monto,
+                        'referencia'            => $p->referencia,
+                    ])->values(),
+                ];
+            }
+        }
+
         // A14 — Bloquear el POS cuando el usuario no tiene un almacén de ventas
         // resoluble (típicamente admin sin local_id en modo central_y_local).
         // Cargar el POS, llenar el carrito e intentar cobrar al final daba un
@@ -134,6 +215,7 @@ class VentaController extends Controller
             'metodosPago'        => $metodosPago,
             'conceptosDescuento' => $conceptosDescuento,
             'citaPrellenada'     => $citaPrellenada,
+            'ventaEnEdicion'     => $ventaEnEdicion,
             'puedeVender'        => $puedeVender,
             'razonNoVender'      => $razonNoVender,
             // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
@@ -199,6 +281,27 @@ class VentaController extends Controller
         ]);
     }
 
+    // ── Update (edición completa dentro de los 3 min) ───────────────────────────
+
+    public function update(StoreVentaRequest $request, Venta $venta)
+    {
+        $user = $request->user();
+        abort_if($venta->empresa_id !== $user->empresa_id, 403);
+
+        if ($venta->estado !== 'completada') {
+            return back()->withErrors(['venta' => 'Solo se pueden editar ventas completadas.']);
+        }
+        // El admin edita sin límite de tiempo. La cajera, solo dentro de los 3 min.
+        if (!$user->rol->es_admin && !$this->dentroPlazoEdicion($venta)) {
+            return back()->withErrors(['venta' => 'El plazo para editar esta venta (3 minutos) ya venció. Si necesitas corregirla, anúlala.']);
+        }
+
+        $venta = $this->ventaService->actualizar($venta, $request->validated(), $user);
+
+        return redirect()->route('ventas.show', $venta)
+            ->with('success', "Venta {$venta->numero} actualizada correctamente.");
+    }
+
     // ── Store (POS: registrar venta) ───────────────────────────────────────────
 
     public function store(StoreVentaRequest $request)
@@ -243,6 +346,19 @@ class VentaController extends Controller
 
         if ($venta->estado === 'anulada') {
             return back()->withErrors(['venta' => 'La venta ya está anulada.']);
+        }
+
+        // El admin anula sin restricción. Para la cajera, pasados 3 min anular
+        // exige código de autorización de un administrador. (El envío del código
+        // por WhatsApp/Telegram se implementará después; por ahora el código es
+        // la clave de un admin activo de la empresa.)
+        if (!$request->user()->rol->es_admin && !$this->dentroPlazoEdicion($venta)) {
+            $codigo = (string) $request->input('codigo_autorizacion', '');
+            if (!$this->codigoAdminValido($request->user()->empresa_id, $codigo)) {
+                return back()->withErrors([
+                    'codigo_autorizacion' => 'Pasaron más de 3 minutos: anular requiere el código de autorización de un administrador.',
+                ]);
+            }
         }
 
         $this->ventaService->anular(

@@ -1,12 +1,16 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { router, usePage, Link } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Eye, ShoppingCart, Filter, Calendar, MapPin, Receipt } from 'lucide-react';
+import { Eye, ShoppingCart, Filter, Calendar, Receipt, Pencil, Trash2, KeyRound, AlertTriangle } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
+import Modal from '@/Components/UI/Modal';
 import type { Local, PageProps, Venta } from '@/types';
+
+// Ventana de edición (debe coincidir con VentaController::EDIT_WINDOW_SECONDS).
+const EDIT_WINDOW_MS = 3 * 60 * 1000;
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
@@ -27,10 +31,58 @@ export default function VentasIndex({ ventas, locales, filters, flash }: Props) 
     const { auth } = usePage<Props>().props;
     const esAdmin  = auth.user.rol?.es_admin ?? false;
 
+    // Reloj para que el gate de 3 min se actualice en vivo (edición desaparece).
+    const [ahora, setAhora] = useState(() => Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setAhora(Date.now()), 15000);
+        return () => clearInterval(t);
+    }, []);
+
+    // Estado del modal de anulación.
+    const [anular, setAnular]   = useState<Venta | null>(null);
+    const [motivo, setMotivo]   = useState('');
+    const [codigo, setCodigo]   = useState('');
+    const [saving, setSaving]   = useState(false);
+    const [errAnular, setErrAnular] = useState<Record<string, string>>({});
+
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    // ¿La venta sigue dentro del plazo de 3 min desde su creación?
+    function dentroPlazo(v: Venta): boolean {
+        return ahora - new Date(v.created_at).getTime() < EDIT_WINDOW_MS;
+    }
+    // El admin edita/anula sin límite; la cajera solo dentro de los 3 min.
+    function puedeEditar(v: Venta): boolean {
+        return v.estado === 'completada' && (esAdmin || dentroPlazo(v));
+    }
+    // La cajera necesita código de admin para anular pasado el plazo.
+    function requiereCodigo(v: Venta): boolean {
+        return !esAdmin && !dentroPlazo(v);
+    }
+
+    function abrirAnular(v: Venta) {
+        setAnular(v);
+        setMotivo('');
+        setCodigo('');
+        setErrAnular({});
+    }
+
+    function confirmarAnular() {
+        if (!anular) return;
+        setSaving(true);
+        setErrAnular({});
+        router.post(route('ventas.anular', anular.id), {
+            motivo,
+            codigo_autorizacion: requiereCodigo(anular) ? codigo : undefined,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => { setSaving(false); setAnular(null); },
+            onError:   (errs) => { setSaving(false); setErrAnular(errs as Record<string, string>); },
+        });
+    }
 
     function filtrar(patch: Partial<Filters>) {
         router.get(route('ventas.index'), { ...filters, ...patch }, { preserveState: true, replace: true });
@@ -213,16 +265,36 @@ export default function VentasIndex({ ventas, locales, filters, flash }: Props) 
                                     </span>
                                 </td>
                                 <td className="px-4 py-3">
-                                    <Link
-                                        href={route('ventas.show', v.id)}
-                                        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
-                                        style={{
-                                            backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)',
-                                            color: 'var(--color-primary)',
-                                        }}
-                                    >
-                                        <Eye size={13} /> Ver
-                                    </Link>
+                                    <div className="flex items-center gap-1.5">
+                                        <Link
+                                            href={route('ventas.show', v.id)}
+                                            title="Ver detalle"
+                                            className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:opacity-80"
+                                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', color: 'var(--color-primary)' }}
+                                        >
+                                            <Eye size={14} />
+                                        </Link>
+                                        {puedeEditar(v) && (
+                                            <Link
+                                                href={route('pos.index', { venta_id: v.id })}
+                                                title="Editar venta"
+                                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:opacity-80"
+                                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}
+                                            >
+                                                <Pencil size={14} />
+                                            </Link>
+                                        )}
+                                        {v.estado === 'completada' && (
+                                            <button
+                                                onClick={() => abrirAnular(v)}
+                                                title={requiereCodigo(v) ? 'Anular (requiere código de admin)' : 'Anular venta'}
+                                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:opacity-80"
+                                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, transparent)', color: 'var(--color-danger)' }}
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        )}
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -241,10 +313,9 @@ export default function VentasIndex({ ventas, locales, filters, flash }: Props) 
             {/* ── Cards móvil ──────────────────────────────────────── */}
             <div className="md:hidden flex flex-col gap-2">
                 {ventas.data.map(v => (
-                    <Link
+                    <div
                         key={v.id}
-                        href={route('ventas.show', v.id)}
-                        className="rounded-xl p-3 transition-all active:scale-[0.99]"
+                        className="rounded-xl p-3"
                         style={{
                             backgroundColor: 'var(--color-surface)',
                             border: '1px solid var(--color-border)',
@@ -282,7 +353,36 @@ export default function VentasIndex({ ventas, locales, filters, flash }: Props) 
                                 </p>
                             </div>
                         </div>
-                    </Link>
+
+                        {/* Acciones */}
+                        <div className="flex items-center gap-2 mt-3 pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
+                            <Link
+                                href={route('ventas.show', v.id)}
+                                className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg"
+                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', color: 'var(--color-primary)' }}
+                            >
+                                <Eye size={14} /> Ver
+                            </Link>
+                            {puedeEditar(v) && (
+                                <Link
+                                    href={route('pos.index', { venta_id: v.id })}
+                                    className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg"
+                                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}
+                                >
+                                    <Pencil size={14} /> Editar
+                                </Link>
+                            )}
+                            {v.estado === 'completada' && (
+                                <button
+                                    onClick={() => abrirAnular(v)}
+                                    className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg"
+                                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, transparent)', color: 'var(--color-danger)' }}
+                                >
+                                    <Trash2 size={14} /> Anular
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 ))}
                 {ventas.data.length === 0 && (
                     <div className="text-center py-16" style={{ color: 'var(--color-text-muted)' }}>
@@ -310,6 +410,73 @@ export default function VentasIndex({ ventas, locales, filters, flash }: Props) 
                     ))}
                 </div>
             )}
+
+            {/* ── Modal anular ─────────────────────────────────────── */}
+            <Modal
+                isOpen={anular !== null}
+                onClose={() => setAnular(null)}
+                title={`Anular venta ${anular?.numero ?? ''}`}
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setAnular(null)} disabled={saving}>Cancelar</Button>
+                        <Button variant="danger" onClick={confirmarAnular} loading={saving}>Anular venta</Button>
+                    </>
+                }
+            >
+                {anular && (
+                    <div className="space-y-3">
+                        <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
+                            style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
+                            <p style={{ color: 'var(--color-text)' }}>
+                                Anular revierte el stock y el dinero de esta venta. Es una acción irreversible.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                                Motivo de la anulación <span style={{ color: 'var(--color-danger)' }}>*</span>
+                            </label>
+                            <textarea
+                                rows={2}
+                                value={motivo}
+                                onChange={e => setMotivo(e.target.value)}
+                                disabled={saving}
+                                placeholder="Describe por qué se anula (mín. 10 caracteres)"
+                                className="w-full rounded-xl px-3 py-2 text-sm resize-none"
+                                style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                            />
+                            {errAnular.motivo && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errAnular.motivo}</p>}
+                        </div>
+
+                        {/* Código de admin: solo cuando la cajera anula fuera del plazo de 3 min */}
+                        {requiereCodigo(anular) && (
+                            <div>
+                                <label className="flex items-center gap-1.5 text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                                    <KeyRound size={14} style={{ color: 'var(--color-warning)' }} />
+                                    Código de autorización
+                                </label>
+                                <p className="text-xs mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Pasaron más de 3 minutos. Pide a un administrador su código de autorización para anular.
+                                    <span className="italic"> (Envío por WhatsApp: pendiente de implementar; por ahora es la clave de un admin.)</span>
+                                </p>
+                                <input
+                                    type="password"
+                                    value={codigo}
+                                    onChange={e => setCodigo(e.target.value)}
+                                    disabled={saving}
+                                    placeholder="Código / clave de administrador"
+                                    className="w-full rounded-xl px-3 py-2 text-sm"
+                                    style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                                />
+                                {errAnular.codigo_autorizacion && (
+                                    <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errAnular.codigo_autorizacion}</p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </Modal>
         </AppLayout>
     );
 }

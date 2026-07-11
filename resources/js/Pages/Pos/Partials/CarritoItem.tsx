@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Trash2, Minus, Plus, Percent, X, AlertTriangle } from 'lucide-react';
+import { Trash2, Minus, Plus, Percent, X, AlertTriangle, Info } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
 
 export interface LineaCarrito {
@@ -48,6 +48,8 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
     // no en el input, porque el input vive dentro de un overflow-hidden que
     // recortaba el ring arriba y abajo.
     const [cantFocus, setCantFocus]         = useState(false);
+    // Consulta informativa del precio de costo de la línea (toggle).
+    const [showCosto, setShowCosto]         = useState(false);
 
     useEffect(() => {
         setDescuentoVal(String(item.descuento_item || ''));
@@ -303,6 +305,54 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                 </div>
 
                 <div className="flex items-center gap-1">
+                    {/* Botón informativo: consulta el precio de costo de la línea.
+                        Muestra un tooltip al pasar el mouse o al tocar (móvil). */}
+                    <div className="relative group">
+                        <button
+                            onClick={() => setShowCosto(v => !v)}
+                            aria-label="Consultar precio de costo"
+                            className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-black/5 active:bg-black/10"
+                            style={{ color: showCosto ? 'var(--color-primary)' : 'var(--color-text-muted)' }}
+                        >
+                            <Info size={15} />
+                        </button>
+                        <div
+                            className={`absolute bottom-full right-0 mb-1.5 z-20 pointer-events-none transition-opacity duration-150
+                                ${showCosto ? 'opacity-100 visible' : 'opacity-0 invisible'} group-hover:opacity-100 group-hover:visible`}
+                        >
+                            <div
+                                className="rounded-lg px-3 py-2 whitespace-nowrap"
+                                style={{
+                                    backgroundColor: 'var(--color-text)',
+                                    color: 'var(--color-bg)',
+                                    boxShadow: '0 8px 24px -6px rgba(15,23,42,0.4)',
+                                }}
+                            >
+                                {item.costo_minimo > 0 ? (
+                                    <>
+                                        <p className="text-[11px] font-bold leading-tight">
+                                            Costo: S/ {item.costo_minimo.toFixed(2)}
+                                        </p>
+                                        <p className="text-[10px] leading-tight mt-0.5 opacity-80">
+                                            Margen: S/ {(item.precio_unitario - item.costo_minimo).toFixed(2)}
+                                            {' '}({Math.round(((item.precio_unitario - item.costo_minimo) / item.costo_minimo) * 100)}%)
+                                        </p>
+                                    </>
+                                ) : (
+                                    <p className="text-[11px] font-semibold leading-tight">Sin costo registrado</p>
+                                )}
+                                {/* Flechita del tooltip */}
+                                <span
+                                    className="absolute top-full right-3 -mt-px w-0 h-0"
+                                    style={{
+                                        borderLeft: '5px solid transparent',
+                                        borderRight: '5px solid transparent',
+                                        borderTop: '5px solid var(--color-text)',
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </div>
                     {!showDescuento && (
                         <button
                             onClick={() => setShowDescuento(true)}

@@ -141,144 +141,221 @@ class VentaService
                 }
             }
 
-            // Items
-            foreach ($data['items'] as $itemData) {
-                $unidad   = ProductoUnidad::findOrFail($itemData['producto_unidad_id']);
-                $producto = Producto::findOrFail($itemData['producto_id']);
+            // Items + pagos + totales + tesorería. Lógica compartida con actualizar().
+            $this->aplicarItemsPagos($venta, $data, $user, $turno, $almacen, $moneda, $tipoCambio, $factor, $esCredito, $clienteId, $permitirStockNegativo);
 
-                $cantidad       = (float) $itemData['cantidad'];
-                $cantidadBase   = round($cantidad * (float) $unidad->factor_conversion, 4);
-                // Precios convertidos a soles al TC de la venta (factor=1 si PEN).
-                $precioUnitario = round((float) $itemData['precio_unitario'] * $factor, 2);
-                $descuentoItem  = round((float) ($itemData['descuento_item'] ?? 0) * $factor, 2);
-                $subtotal       = round(($precioUnitario - $descuentoItem) * $cantidad, 2);
+            return $venta->fresh(['items', 'pagos', 'cliente']);
+        });
+    }
 
-                $item = VentaItem::create([
-                    'venta_id'             => $venta->id,
-                    'producto_id'          => $producto->id,
-                    'producto_unidad_id'   => $unidad->id,
-                    'producto_nombre'      => $producto->nombre,
-                    'unidad_nombre'        => $unidad->unidadMedida->nombre ?? '',
-                    'cantidad'             => $cantidad,
-                    'factor_conversion'    => $unidad->factor_conversion,
-                    'cantidad_base'        => $cantidadBase,
-                    'precio_unitario'      => $precioUnitario,
-                    'precio_original'      => $unidad->precio_venta ?? $producto->precio_venta,
-                    'descuento_item'       => $descuentoItem,
-                    'descuento_concepto_id'=> $itemData['descuento_concepto_id'] ?? null,
-                    'subtotal'             => $subtotal,
-                    'incluye_igv'          => $producto->incluye_igv,
-                ]);
+    /**
+     * Crea items, ajusta stock, recalcula totales y registra los pagos en
+     * tesorería para una venta cuya cabecera YA existe. Lo comparten crear()
+     * (venta nueva) y actualizar() (edición): en ambos casos la cabecera está
+     * lista y aquí se puebla el detalle + los movimientos.
+     *
+     * Debe llamarse dentro de una transacción. En actualizar() los efectos
+     * previos (stock, tesorería, items, pagos) ya fueron revertidos antes.
+     */
+    private function aplicarItemsPagos(
+        Venta $venta,
+        array $data,
+        User $user,
+        Turno $turno,
+        \App\Models\Almacen $almacen,
+        string $moneda,
+        ?float $tipoCambio,
+        float $factor,
+        bool $esCredito,
+        ?int $clienteId,
+        bool $permitirStockNegativo,
+    ): void {
+        // Items
+        foreach ($data['items'] as $itemData) {
+            $unidad   = ProductoUnidad::findOrFail($itemData['producto_unidad_id']);
+            $producto = Producto::findOrFail($itemData['producto_id']);
 
-                // Ajustar stock según configuración (producto → local → empresa)
-                if ($this->config->deboDescontarStock($producto, $turno->local)) {
-                    Stock::ajustar($almacen->id, $producto->id, -$cantidadBase, 0, $permitirStockNegativo);
-                }
+            $cantidad       = (float) $itemData['cantidad'];
+            $cantidadBase   = round($cantidad * (float) $unidad->factor_conversion, 4);
+            $precioUnitario = round((float) $itemData['precio_unitario'] * $factor, 2);
+            $descuentoItem  = round((float) ($itemData['descuento_item'] ?? 0) * $factor, 2);
+            $subtotal       = round(($precioUnitario - $descuentoItem) * $cantidad, 2);
 
-                // Log de descuento por item si corresponde
-                if ($descuentoItem > 0 && !empty($itemData['descuento_concepto_id'])) {
-                    DescuentoLog::create([
-                        'empresa_id'            => $user->empresa_id,
-                        'venta_id'              => $venta->id,
-                        'venta_item_id'         => $item->id,
-                        'descuento_concepto_id' => $itemData['descuento_concepto_id'],
-                        'user_id'               => $user->id,
-                        'cliente_id'            => $clienteId,
-                        'monto_descuento'       => $descuentoItem * $cantidad,
-                        'requeria_aprobacion'   => false,
-                        'notificacion_enviada'  => false,
-                    ]);
-                }
+            $item = VentaItem::create([
+                'venta_id'             => $venta->id,
+                'producto_id'          => $producto->id,
+                'producto_unidad_id'   => $unidad->id,
+                'producto_nombre'      => $producto->nombre,
+                'unidad_nombre'        => $unidad->unidadMedida->nombre ?? '',
+                'cantidad'             => $cantidad,
+                'factor_conversion'    => $unidad->factor_conversion,
+                'cantidad_base'        => $cantidadBase,
+                'precio_unitario'      => $precioUnitario,
+                'precio_original'      => $unidad->precio_venta ?? $producto->precio_venta,
+                'descuento_item'       => $descuentoItem,
+                'descuento_concepto_id'=> $itemData['descuento_concepto_id'] ?? null,
+                'subtotal'             => $subtotal,
+                'incluye_igv'          => $producto->incluye_igv,
+            ]);
+
+            if ($this->config->deboDescontarStock($producto, $turno->local)) {
+                Stock::ajustar($almacen->id, $producto->id, -$cantidadBase, 0, $permitirStockNegativo);
             }
 
-            // Log de descuento global si corresponde
-            if (!empty($data['descuento_total']) && $data['descuento_total'] > 0 && !empty($data['descuento_concepto_id'])) {
+            if ($descuentoItem > 0 && !empty($itemData['descuento_concepto_id'])) {
                 DescuentoLog::create([
                     'empresa_id'            => $user->empresa_id,
                     'venta_id'              => $venta->id,
-                    'venta_item_id'         => null,
-                    'descuento_concepto_id' => $data['descuento_concepto_id'],
+                    'venta_item_id'         => $item->id,
+                    'descuento_concepto_id' => $itemData['descuento_concepto_id'],
                     'user_id'               => $user->id,
-                    'cliente_id'            => $data['cliente_id'] ?? null,
-                    'monto_descuento'       => $data['descuento_total'],
+                    'cliente_id'            => $clienteId,
+                    'monto_descuento'       => $descuentoItem * $cantidad,
                     'requeria_aprobacion'   => false,
                     'notificacion_enviada'  => false,
                 ]);
             }
+        }
 
-            // Calcular totales antes de los pagos para saber el total real
-            $venta->load('items');
-            $venta->calcularTotales();
-            $venta->refresh();
+        if (!empty($data['descuento_total']) && $data['descuento_total'] > 0 && !empty($data['descuento_concepto_id'])) {
+            DescuentoLog::create([
+                'empresa_id'            => $user->empresa_id,
+                'venta_id'              => $venta->id,
+                'venta_item_id'         => null,
+                'descuento_concepto_id' => $data['descuento_concepto_id'],
+                'user_id'               => $user->id,
+                'cliente_id'            => $data['cliente_id'] ?? null,
+                'monto_descuento'       => $data['descuento_total'],
+                'requeria_aprobacion'   => false,
+                'notificacion_enviada'  => false,
+            ]);
+        }
 
-            // Pagos.
-            // Sobrepago/vuelto: la fuente de verdad es `metodo.admite_vuelto` en BD,
-            // no el flag del request. Calculamos el vuelto GLOBAL (suma de montos −
-            // total de venta) y lo asignamos al primer pago cuyo metodo admita
-            // vuelto. Asi soporta correctamente combinaciones como tarjeta exacta
-            // + efectivo con vuelto (caso comun: el cliente paga tarjeta 80 + 30
-            // efectivo para una venta de 100; el vuelto de 10 se persiste contra
-            // la linea de efectivo).
-            $pagos     = $data['pagos'] ?? []; // crédito puede venir sin pago inicial
-            $metodoIds = collect($pagos)->pluck('metodo_pago_id')->unique()->all();
-            $metodos   = \App\Models\MetodoPago::whereIn('id', $metodoIds)->get()->keyBy('id');
+        // Totales antes de los pagos para conocer el total real
+        $venta->load('items');
+        $venta->calcularTotales();
+        $venta->refresh();
 
-            // Montos convertidos a soles al TC de la venta (factor=1 si PEN).
-            $totalPagado    = collect($pagos)->sum(fn($p) => round((float) $p['monto'] * $factor, 2));
-            $vueltoGlobal   = max(0, round($totalPagado - (float) $venta->total, 2));
-            $vueltoAsignado = false;
+        // Pagos (vuelto global asignado al primer método que admite vuelto).
+        $pagos     = $data['pagos'] ?? [];
+        $metodoIds = collect($pagos)->pluck('metodo_pago_id')->unique()->all();
+        $metodos   = \App\Models\MetodoPago::whereIn('id', $metodoIds)->get()->keyBy('id');
 
-            foreach ($pagos as $pagoData) {
-                $montoOrig    = (float) $pagoData['monto'];        // en moneda de venta
-                $monto        = round($montoOrig * $factor, 2);    // soles
-                $metodo       = $metodos->get($pagoData['metodo_pago_id']);
-                $admiteVuelto = (bool) ($metodo?->admite_vuelto);
+        $totalPagado    = collect($pagos)->sum(fn($p) => round((float) $p['monto'] * $factor, 2));
+        $vueltoGlobal   = max(0, round($totalPagado - (float) $venta->total, 2));
+        $vueltoAsignado = false;
 
-                $vuelto = 0.0;
-                if (!$vueltoAsignado && $admiteVuelto && $vueltoGlobal > 0) {
-                    $vuelto         = $vueltoGlobal;
-                    $vueltoAsignado = true;
-                }
+        foreach ($pagos as $pagoData) {
+            $montoOrig    = (float) $pagoData['monto'];
+            $monto        = round($montoOrig * $factor, 2);
+            $metodo       = $metodos->get($pagoData['metodo_pago_id']);
+            $admiteVuelto = (bool) ($metodo?->admite_vuelto);
 
-                VentaPago::create([
-                    'venta_id'              => $venta->id,
-                    'metodo_pago_id'        => $pagoData['metodo_pago_id'],
-                    'cuenta_metodo_pago_id' => $pagoData['cuenta_metodo_pago_id'] ?? null,
-                    'monto'                 => $monto,
-                    'referencia'            => $pagoData['referencia'] ?? null,
-                    'vuelto'                => $vuelto,
-                    'moneda'                => $moneda,
-                    'tipo_cambio'           => $tipoCambio,
-                    'monto_moneda'          => $moneda !== 'PEN' ? round($montoOrig, 2) : null,
-                ]);
-
-                // F7 — Tesorería: cada pago ingresa a su cuenta (neto de vuelto), en soles.
-                $netoPen = round($monto - $vuelto, 2);
-                $this->tesoreria->registrar(
-                    $user->empresa_id,
-                    $this->tesoreria->resolverCuenta($user->empresa_id, $pagoData['cuenta_metodo_pago_id'] ?? null, $pagoData['metodo_pago_id']),
-                    $user,
-                    now()->toDateString(),
-                    'ingreso',
-                    $netoPen,
-                    "Venta {$venta->numero} — " . ($metodo?->nombre ?? 'pago'),
-                    'venta',
-                    $venta->id,
-                    $moneda,
-                    $tipoCambio,
-                    $moneda !== 'PEN' && $factor > 0 ? round($netoPen / $factor, 2) : null,
-                );
+            $vuelto = 0.0;
+            if (!$vueltoAsignado && $admiteVuelto && $vueltoGlobal > 0) {
+                $vuelto         = $vueltoGlobal;
+                $vueltoAsignado = true;
             }
 
-            // F1 — Sincronizar cuenta por cobrar de la venta.
-            // monto_pagado = dinero que realmente quedó en caja (sin el vuelto).
-            $montoPagadoReal = round($totalPagado - $vueltoGlobal, 2);
-            $venta->update([
-                'monto_pagado'    => $esCredito ? $montoPagadoReal : (float) $venta->total,
-                'saldo_pendiente' => $esCredito ? max(0, round((float) $venta->total - $montoPagadoReal, 2)) : 0,
-                // Total original en moneda de venta (soles / TC); NULL para PEN.
-                'monto_moneda'    => $moneda !== 'PEN' && $factor > 0 ? round((float) $venta->total / $factor, 2) : null,
+            VentaPago::create([
+                'venta_id'              => $venta->id,
+                'metodo_pago_id'        => $pagoData['metodo_pago_id'],
+                'cuenta_metodo_pago_id' => $pagoData['cuenta_metodo_pago_id'] ?? null,
+                'monto'                 => $monto,
+                'referencia'            => $pagoData['referencia'] ?? null,
+                'vuelto'                => $vuelto,
+                'moneda'                => $moneda,
+                'tipo_cambio'           => $tipoCambio,
+                'monto_moneda'          => $moneda !== 'PEN' ? round($montoOrig, 2) : null,
             ]);
+
+            $netoPen = round($monto - $vuelto, 2);
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $this->tesoreria->resolverCuenta($user->empresa_id, $pagoData['cuenta_metodo_pago_id'] ?? null, $pagoData['metodo_pago_id']),
+                $user,
+                now()->toDateString(),
+                'ingreso',
+                $netoPen,
+                "Venta {$venta->numero} — " . ($metodo?->nombre ?? 'pago'),
+                'venta',
+                $venta->id,
+                $moneda,
+                $tipoCambio,
+                $moneda !== 'PEN' && $factor > 0 ? round($netoPen / $factor, 2) : null,
+            );
+        }
+
+        $montoPagadoReal = round($totalPagado - $vueltoGlobal, 2);
+        $venta->update([
+            'monto_pagado'    => $esCredito ? $montoPagadoReal : (float) $venta->total,
+            'saldo_pendiente' => $esCredito ? max(0, round((float) $venta->total - $montoPagadoReal, 2)) : 0,
+            'monto_moneda'    => $moneda !== 'PEN' && $factor > 0 ? round((float) $venta->total / $factor, 2) : null,
+        ]);
+    }
+
+    /**
+     * Edita una venta COMPLETA dentro de los 3 min de creada (el guard de tiempo
+     * lo aplica el controlador). Revierte por completo la versión anterior
+     * (stock, tesorería, items, pagos, logs) y vuelve a aplicar el detalle nuevo,
+     * conservando número, turno, caja, usuario y fecha originales.
+     *
+     * Para acotar el alcance, la edición NO cambia la moneda ni el flag de
+     * crédito: se conservan los de la venta original.
+     */
+    public function actualizar(Venta $venta, array $data, User $user): Venta
+    {
+        return DB::transaction(function () use ($venta, $data, $user) {
+            if ($venta->estado === 'anulada') {
+                abort(422, 'No se puede editar una venta anulada.');
+            }
+
+            $venta->loadMissing('items', 'local', 'turno.local');
+            $turno   = $venta->turno ?? abort(422, 'La venta no tiene turno asociado.');
+            $almacen = $this->scope->almacenParaVentas($user)
+                ?? abort(422, 'No se encontró un almacén de ventas configurado.');
+            $permitirStockNegativo = $this->config->permiteStockNegativo($user->empresa_id);
+
+            // 1) Revertir efectos de la versión anterior
+            foreach ($venta->items as $item) {
+                $producto = Producto::find($item->producto_id);
+                if ($producto && $this->config->deboDescontarStock($producto, $venta->local)) {
+                    Stock::ajustar($almacen->id, $producto->id, (float) $item->cantidad_base); // restaurar
+                }
+            }
+            $this->tesoreria->revertir('venta', $venta->id);
+            $venta->items()->delete();
+            $venta->pagos()->delete();
+            DescuentoLog::where('venta_id', $venta->id)->delete();
+
+            // 2) Cabecera editable (conservando moneda/crédito originales)
+            $clienteId = $data['cliente_id']
+                ?? Cliente::generalDeEmpresa($user->empresa_id)?->id
+                ?? abort(422, 'No se encontró el Cliente General de la empresa.');
+
+            $moneda     = strtoupper($venta->moneda ?? 'PEN') ?: 'PEN';
+            $tipoCambio = $venta->tipo_cambio ? (float) $venta->tipo_cambio : null;
+            $factor     = ($moneda !== 'PEN' && $tipoCambio) ? $tipoCambio : 1.0;
+            $esCredito  = (bool) $venta->es_credito;
+
+            $venta->update([
+                'cliente_id'            => $clienteId,
+                'tipo_comprobante'      => $data['tipo_comprobante'] ?? $venta->tipo_comprobante,
+                'descuento_total'       => round((float) ($data['descuento_total'] ?? 0) * $factor, 2),
+                'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
+                'observacion'           => $data['observacion'] ?? null,
+                'subtotal'              => 0,
+                'igv'                   => 0,
+                'total'                 => 0,
+            ]);
+
+            // 3) Re-aplicar detalle nuevo
+            $this->aplicarItemsPagos($venta, $data, $user, $turno, $almacen, $moneda, $tipoCambio, $factor, $esCredito, (int) $clienteId, $permitirStockNegativo);
+
+            \App\Services\AuditoriaService::log('venta.editada', $venta, [
+                'numero' => $venta->numero,
+                'total'  => (float) $venta->fresh()->total,
+            ], $user);
 
             return $venta->fresh(['items', 'pagos', 'cliente']);
         });
