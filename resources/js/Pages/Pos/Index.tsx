@@ -331,8 +331,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     }, [flash]);
 
     // Refrescar SOLO el catálogo de productos (recarga parcial de Inertia) sin
-    // perder el carrito, moneda ni cliente. Función reutilizada por el botón
-    // manual y por el auto-refresco al volver a la pestaña del POS.
+    // perder el carrito, moneda ni cliente. Se dispara SOLO con el botón manual
+    // "Actualizar" (no automático): antes se hacía al volver a la pestaña, pero
+    // eso disparaba el overlay de carga en bucle. Ahora es 100% a demanda.
     function refrescarCatalogo() {
         if (refrescando) return;
         setRefrescando(true);
@@ -343,26 +344,6 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             onFinish: () => setRefrescando(false),
         });
     }
-
-    // Auto-refresco: cuando la pestaña del POS vuelve a estar visible o recibe
-    // foco (p. ej. tras crear un producto en otra pestaña), se recarga el
-    // catálogo automáticamente. Con throttle para no spamear peticiones.
-    useEffect(() => {
-        let ultimo = 0;
-        function alVolver() {
-            if (document.visibilityState !== 'visible') return;
-            const t = Date.now();
-            if (t - ultimo < 4000) return;
-            ultimo = t;
-            refrescarCatalogo();
-        }
-        document.addEventListener('visibilitychange', alVolver);
-        window.addEventListener('focus', alVolver);
-        return () => {
-            document.removeEventListener('visibilitychange', alVolver);
-            window.removeEventListener('focus', alVolver);
-        };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Aviso inmediato al cajero cuando se abre el POS desde una cita con items
     // desactivados. Solo se dispara una vez al montar; despues se ven los flags
