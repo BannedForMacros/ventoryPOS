@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { Trash2, Minus, Plus, Percent, X, AlertTriangle } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
 
@@ -10,6 +11,10 @@ export interface LineaCarrito {
     unidad_nombre:        string;
     precio_unitario:      number;
     precio_original:      number;
+    // Piso del precio editable: costo de la presentación (costo de la unidad,
+    // o costo base del producto × factor de conversión). 0 = sin costo definido,
+    // en ese caso no se valida piso.
+    costo_minimo:         number;
     cantidad:             number;
     descuento_item:       number;
     descuento_concepto_id: number | null;
@@ -25,14 +30,20 @@ interface Props {
     item:               LineaCarrito;
     conceptos:          DescuentoConcepto[];
     onCantidad:         (key: string, delta: number) => void;
+    onCantidadExacta:   (key: string, cantidad: number) => void;
+    onPrecio:           (key: string, precio: number) => void;
     onDescuento:        (key: string, descuento: number, conceptoId: number | null) => void;
     onEliminar:         (key: string) => void;
 }
 
-export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, onEliminar }: Props) {
+export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar }: Props) {
     const [showDescuento, setShowDescuento] = useState(item.descuento_item > 0);
     const [descuentoVal, setDescuentoVal]   = useState(String(item.descuento_item || ''));
     const [conceptoId, setConceptoId]       = useState<number | null>(item.descuento_concepto_id);
+    // Borradores locales de cantidad y precio: se escriben libremente y se
+    // aplican al carrito al salir del input (blur) o con Enter.
+    const [cantidadVal, setCantidadVal]     = useState(String(item.cantidad));
+    const [precioVal, setPrecioVal]         = useState(item.precio_unitario.toFixed(2));
 
     useEffect(() => {
         setDescuentoVal(String(item.descuento_item || ''));
@@ -40,10 +51,39 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
         if (item.descuento_item > 0) setShowDescuento(true);
     }, [item.descuento_item, item.descuento_concepto_id]);
 
+    useEffect(() => { setCantidadVal(String(item.cantidad)); }, [item.cantidad]);
+    useEffect(() => { setPrecioVal(item.precio_unitario.toFixed(2)); }, [item.precio_unitario]);
+
     function aplicarDescuento() {
         const val = parseFloat(descuentoVal) || 0;
         onDescuento(item.key, val, val > 0 ? conceptoId : null);
         if (val === 0) setShowDescuento(false);
+    }
+
+    function aplicarCantidad() {
+        const val = parseFloat(cantidadVal);
+        if (!isFinite(val) || val <= 0) {
+            setCantidadVal(String(item.cantidad));
+            return;
+        }
+        onCantidadExacta(item.key, val);
+    }
+
+    function aplicarPrecio() {
+        const val = Math.round((parseFloat(precioVal) || 0) * 100) / 100;
+        if (val <= 0) {
+            setPrecioVal(item.precio_unitario.toFixed(2));
+            return;
+        }
+        if (item.costo_minimo > 0 && val < item.costo_minimo - 0.009) {
+            toast.error(
+                `El precio de "${item.producto_nombre}" no puede ser menor al costo: S/ ${item.costo_minimo.toFixed(2)}.`,
+                { duration: 4000 },
+            );
+            setPrecioVal(item.precio_unitario.toFixed(2));
+            return;
+        }
+        onPrecio(item.key, val);
     }
 
     const esInactivo = !!item.inactivo;
@@ -85,14 +125,42 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
                         {item.producto_nombre}
                         {esInactivo && <span className="ml-1 text-[10px] font-normal opacity-80">(inactivo)</span>}
                     </p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                             {item.unidad_nombre}
                         </span>
                         <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>·</span>
-                        <span className="text-[11px] font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                            S/ {item.precio_unitario.toFixed(2)}
+                        {/* Precio editable: la cajera puede subirlo o bajarlo, pero nunca
+                            por debajo del costo (validado aquí y en el backend). */}
+                        <span className="inline-flex items-center gap-0.5 text-[11px] font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                            S/
+                            <input
+                                type="number"
+                                inputMode="decimal"
+                                min="0"
+                                step="0.01"
+                                value={precioVal}
+                                onChange={e => setPrecioVal(e.target.value)}
+                                onBlur={aplicarPrecio}
+                                onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                                onFocus={e => e.target.select()}
+                                aria-label="Precio de venta"
+                                className="w-16 px-1 py-0.5 text-[11px] font-semibold border rounded-md text-right focus:outline-none focus:ring-1"
+                                style={{
+                                    borderColor: item.precio_unitario !== item.precio_original
+                                        ? 'var(--color-warning)'
+                                        : 'var(--color-border)',
+                                    backgroundColor: 'var(--color-bg)',
+                                    color: 'var(--color-text)',
+                                    '--tw-ring-color': 'var(--color-primary)',
+                                } as React.CSSProperties}
+                            />
                         </span>
+                        {item.precio_unitario !== item.precio_original && (
+                            <span className="text-[10px] line-through opacity-60" style={{ color: 'var(--color-text-muted)' }}>
+                                S/ {item.precio_original.toFixed(2)}
+                            </span>
+                        )}
                         {item.descuento_item > 0 && (
                             <>
                                 <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>·</span>
@@ -122,12 +190,26 @@ export default function CarritoItem({ item, conceptos, onCantidad, onDescuento, 
                     >
                         <Minus size={15} />
                     </button>
-                    <span
-                        className="text-sm font-bold min-w-[32px] text-center px-1 h-9 flex items-center justify-center"
-                        style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-bg)' }}
-                    >
-                        {item.cantidad}
-                    </span>
+                    {/* Cantidad editable: se puede teclear directo (soporta decimales
+                        para productos por metro/kilo), ademas de los botones +/-. */}
+                    <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="any"
+                        value={cantidadVal}
+                        onChange={e => setCantidadVal(e.target.value)}
+                        onBlur={aplicarCantidad}
+                        onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                        onFocus={e => e.target.select()}
+                        aria-label="Cantidad"
+                        className="text-sm font-bold w-14 text-center px-1 h-9 border-0 focus:outline-none focus:ring-1"
+                        style={{
+                            color: 'var(--color-text)',
+                            backgroundColor: 'var(--color-bg)',
+                            '--tw-ring-color': 'var(--color-primary)',
+                        } as React.CSSProperties}
+                    />
                     <button
                         onClick={() => onCantidad(item.key, 1)}
                         aria-label="Aumentar cantidad"

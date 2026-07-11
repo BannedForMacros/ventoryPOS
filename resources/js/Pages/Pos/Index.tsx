@@ -67,6 +67,20 @@ type TipoComprobante = 'ticket' | 'boleta' | 'factura';
 function uid() { return Math.random().toString(36).slice(2); }
 
 /**
+ * Costo minimo de una presentacion: el precio de venta editable no puede
+ * bajar de este valor. Usa el costo propio de la unidad si esta definido;
+ * si no, el costo base del producto multiplicado por el factor de conversion.
+ * Devuelve 0 cuando no hay costo registrado (sin piso).
+ */
+function costoMinimoDe(producto: Producto, unidad: ProductoUnidad): number {
+    const costoUnidad = parseFloat(unidad.precio_costo ?? '0') || 0;
+    if (costoUnidad > 0) return costoUnidad;
+    const costoBase = parseFloat(producto.precio_costo ?? '0') || 0;
+    const factor    = parseFloat(unidad.factor_conversion ?? '1') || 1;
+    return Math.round(costoBase * factor * 100) / 100;
+}
+
+/**
  * Miniatura del producto en el grid del POS. Compacta (44px) para que la card
  * sea baja y entren mas productos en pantalla. Cae al icono placeholder si la
  * URL no carga (link roto, CDN caido). Manejamos el estado de error por card
