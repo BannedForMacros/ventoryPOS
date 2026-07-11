@@ -234,6 +234,19 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [idempotencyKey, setIdempotencyKey] = useState<string>(() => generarIdempotencyKey());
     // Producto pendiente de elegir presentacion (cuando tiene 2+ unidades)
     const [productoEnSeleccion, setProductoEnSeleccion] = useState<Producto | null>(null);
+    // Tooltip de producto: solo aparece cuando el nombre de la tarjeta quedó
+    // cortado (line-clamp). Un unico tooltip con posicion fija (no lo recorta
+    // el scroll del grid) que muestra imagen + nombre completo. La cajera solo
+    // pasa el mouse; no tiene que hacer clic en nada.
+    const [tooltipProd, setTooltipProd] = useState<{ producto: Producto; top: number; bottom: number; left: number } | null>(null);
+
+    function mostrarTooltipSiCortado(e: React.MouseEvent<HTMLButtonElement>, producto: Producto) {
+        const nombreEl = e.currentTarget.querySelector('[data-nombre]') as HTMLElement | null;
+        // scrollHeight > clientHeight => el texto no cupo y se truncó con "..."
+        if (!nombreEl || nombreEl.scrollHeight <= nombreEl.clientHeight + 1) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        setTooltipProd({ producto, top: r.top, bottom: r.bottom, left: r.left + r.width / 2 });
+    }
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -777,6 +790,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                     <button
                                         key={producto.id}
                                         onClick={() => agregarProducto(producto)}
+                                        onMouseEnter={e => mostrarTooltipSiCortado(e, producto)}
+                                        onMouseLeave={() => setTooltipProd(null)}
                                         className="text-left p-2.5 rounded-xl border transition-all hover:shadow-md active:scale-[0.97] relative group flex flex-col gap-1.5"
                                         style={{
                                             backgroundColor: 'var(--color-surface)',
@@ -795,7 +810,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                         <div className="flex items-start gap-2 min-w-0">
                                             <ProductoThumbnail url={producto.imagen ?? null} alt={producto.nombre} />
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: 'var(--color-text)' }}>
+                                                <p data-nombre className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: 'var(--color-text)' }}>
                                                     {producto.nombre}
                                                 </p>
                                                 {producto.codigo && (
@@ -1065,6 +1080,49 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 producto={productoEnSeleccion}
                 onElegir={agregarConPresentacion}
             />
+
+            {/* Tooltip de producto con nombre cortado (imagen + nombre completo).
+                Posicion fija: no lo recorta el scroll del grid. Se abre arriba de
+                la tarjeta salvo que esté muy cerca del borde superior. */}
+            {tooltipProd && (
+                <div
+                    className="fixed z-[60] pointer-events-none"
+                    style={{
+                        left: tooltipProd.left,
+                        top: tooltipProd.top < 150 ? tooltipProd.bottom + 8 : tooltipProd.top - 8,
+                        transform: tooltipProd.top < 150 ? 'translateX(-50%)' : 'translate(-50%, -100%)',
+                    }}
+                >
+                    <div
+                        className="flex items-center gap-2.5 rounded-xl border p-2.5"
+                        style={{
+                            width: 244,
+                            backgroundColor: 'var(--color-surface)',
+                            borderColor: 'var(--color-border)',
+                            boxShadow: '0 12px 32px -8px rgba(15,23,42,0.35)',
+                        }}
+                    >
+                        <div
+                            className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center"
+                            style={{ backgroundColor: 'var(--color-bg)' }}
+                        >
+                            {tooltipProd.producto.imagen ? (
+                                <img src={tooltipProd.producto.imagen} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                                <ImageIcon size={22} style={{ color: 'var(--color-text-muted)', opacity: 0.35 }} />
+                            )}
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-[13px] font-semibold leading-snug" style={{ color: 'var(--color-text)' }}>
+                                {tooltipProd.producto.nombre}
+                            </p>
+                            <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                {tooltipProd.producto.categoria?.nombre ?? 'General'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* CSS para animaciones del drawer */}
             <style>{`
