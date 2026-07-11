@@ -312,8 +312,12 @@ class VentaService
 
             $venta->loadMissing('items', 'local', 'turno.local');
             $turno   = $venta->turno ?? abort(422, 'La venta no tiene turno asociado.');
-            $almacen = $this->scope->almacenParaVentas($user)
-                ?? abort(422, 'No se encontró un almacén de ventas configurado.');
+            // El stock se mueve en el almacén del local DE LA VENTA (no el del
+            // editor): así un admin puede editar la venta de una cajera de otro
+            // local sin desviar el inventario a su propio almacén.
+            $almacen = $this->scope->almacenVentasDeLocal($venta->empresa_id, $venta->local_id)
+                ?? $this->scope->almacenParaVentas($user)
+                ?? abort(422, 'No se encontró un almacén de ventas para el local de la venta.');
             $permitirStockNegativo = $this->config->permiteStockNegativo($user->empresa_id);
 
             // 1) Revertir efectos de la versión anterior
@@ -375,10 +379,13 @@ class VentaService
                 throw new \RuntimeException('La venta ya está anulada.');
             }
 
-            $almacen = $this->scope->almacenParaVentas($user)
-                ?? abort(422, 'No se encontró un almacén de ventas configurado.');
-
             $venta->loadMissing('local');
+
+            // Restaurar el stock en el almacén del local de la venta (no el del
+            // usuario que anula: un admin puede anular ventas de otros locales).
+            $almacen = $this->scope->almacenVentasDeLocal($venta->empresa_id, $venta->local_id)
+                ?? $this->scope->almacenParaVentas($user)
+                ?? abort(422, 'No se encontró un almacén de ventas para el local de la venta.');
 
             foreach ($venta->items as $item) {
                 $producto = $item->producto;

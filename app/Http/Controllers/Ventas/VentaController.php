@@ -71,8 +71,27 @@ class VentaController extends Controller
     public function pos(Request $request)
     {
         $user   = $request->user();
-        $turno  = Turno::turnoActivoDelUsuario($user->id)?->load('caja');
+        $turnoActivo = Turno::turnoActivoDelUsuario($user->id)?->load('caja');
 
+        // Modo edición (?venta_id=): cargar temprano la venta objetivo para poder
+        // resolver el turno. El admin edita SOBRE el turno de quien hizo la venta,
+        // por eso NO se le exige tener un turno propio abierto.
+        $ventaObjetivo = null;
+        if ($ventaId = $request->query('venta_id')) {
+            $ventaObjetivo = Venta::with(['items.producto', 'items.productoUnidad.unidadMedida', 'pagos', 'cliente', 'turno.caja'])
+                ->where('id', $ventaId)
+                ->where('empresa_id', $user->empresa_id)
+                ->first();
+        }
+        $puedeEditarVenta = $ventaObjetivo && $ventaObjetivo->estado === 'completada'
+            && ($user->rol->es_admin || $this->dentroPlazoEdicion($ventaObjetivo));
+
+        // Turno del POS: el propio activo; y si estamos editando sin turno propio,
+        // se toma el turno de la venta (así el admin puede editar sin abrir caja).
+        $turno = $turnoActivo;
+        if (!$turno && $puedeEditarVenta) {
+            $turno = $ventaObjetivo->turno?->loadMissing('caja');
+        }
         if (!$turno) {
             return redirect()->route('turnos.index')
                 ->with('error', 'Debes tener un turno activo para acceder al POS.');
@@ -84,10 +103,13 @@ class VentaController extends Controller
             ->orderBy('nombre')
             ->get();
 
-        // Stock disponible (en unidad base) por producto, en el almacén de ventas
-        // del usuario. El frontend lo muestra en el carrito y lo descuenta en vivo
-        // conforme la cajera ajusta la cantidad. null si no hay almacén resoluble.
-        $almacenVentas = $this->scope->almacenParaVentas($user);
+        // Stock disponible (en unidad base) por producto. Se toma del almacén del
+        // local DE LA VENTA cuando estamos editando (para que el admin vea el stock
+        // correcto aunque no tenga local); si no, del almacén del propio usuario.
+        $almacenVentas = ($puedeEditarVenta
+            ? $this->scope->almacenVentasDeLocal($ventaObjetivo->empresa_id, $ventaObjetivo->local_id)
+            : null)
+            ?? $this->scope->almacenParaVentas($user);
         $stockMap = $almacenVentas
             ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)->pluck('cantidad', 'producto_id')
             : collect();
@@ -157,19 +179,12 @@ class VentaController extends Controller
         }
 
         // Edición de venta desde el POS (?venta_id=): precarga el carrito, cliente
-        // y pagos de una venta existente para reeditarla. La cajera solo dentro de
-        // los 3 min; el admin sin límite. El submit del POS irá a ventas.update.
+        // y pagos de la venta ya cargada arriba ($ventaObjetivo). La cajera solo
+        // dentro de los 3 min; el admin sin límite. El submit irá a ventas.update.
         $ventaEnEdicion = null;
-        if ($ventaId = $request->query('venta_id')) {
-            $v = Venta::with(['items.producto', 'items.productoUnidad.unidadMedida', 'pagos', 'cliente'])
-                ->where('id', $ventaId)
-                ->where('empresa_id', $user->empresa_id)
-                ->first();
-
-            $puedeEditar = $v && $v->estado === 'completada'
-                && ($user->rol->es_admin || $this->dentroPlazoEdicion($v));
-
-            if ($puedeEditar) {
+        if ($puedeEditarVenta) {
+            $v = $ventaObjetivo;
+            {
                 // Los precios/montos se guardan en soles; para reeditar en la moneda
                 // original los devolvemos a esa moneda dividiendo por el TC congelado.
                 $factor = ($v->moneda && $v->moneda !== 'PEN' && $v->tipo_cambio)

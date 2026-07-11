@@ -194,6 +194,23 @@ class LocalScopeService
     }
 
     /**
+     * Resuelve el almacén de ventas (tipo='local') de un local específico.
+     * Se usa al editar/anular una venta: los movimientos de stock deben ir al
+     * almacén DONDE se hizo la venta, no al del usuario que la edita (p. ej. un
+     * admin sin local puede editar la venta de una cajera de otro local).
+     */
+    public function almacenVentasDeLocal(int $empresaId, ?int $localId): ?Almacen
+    {
+        if (!$localId) return null;
+
+        return Almacen::deEmpresa($empresaId)
+            ->activo()
+            ->local()
+            ->where('local_id', $localId)
+            ->first();
+    }
+
+    /**
      * Retorna true si el usuario puede operar ventas (tiene almacén de ventas resuelto).
      * Útil para mostrar alertas de configuración en el frontend.
      */

@@ -6,6 +6,7 @@ use App\Models\Rol;
 use App\Models\Stock;
 use App\Models\User;
 use App\Services\VentaService;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Support\TestEnv;
 
 /**
@@ -141,6 +142,37 @@ it('la cajera pasados 3 min necesita código de admin para anular', function () 
         ])
         ->assertSessionHasNoErrors();
     expect($venta->fresh()->estado)->toBe('anulada');
+});
+
+it('el admin abre el POS para editar la venta de la cajera SIN tener turno propio', function () {
+    $turnoCajera = $this->env->abrirTurno($this->cajera);
+    $venta = ventaBase($this->cajera, $turnoCajera, 2);
+    \App\Models\Venta::where('id', $venta->id)->update(['created_at' => now()->subMinutes(10)]); $venta->refresh();
+
+    // El admin NO abre turno. Antes esto redirigía a turnos.index; ahora debe
+    // cargar el POS en modo edición usando el turno de la venta.
+    $this->actingAs($this->env->admin)
+        ->get(route('pos.index', ['venta_id' => $venta->id]))
+        ->assertInertia(fn (Assert $p) => $p
+            ->component('Pos/Index')
+            ->where('ventaEnEdicion.id', $venta->id)
+            ->where('turno.id', $turnoCajera->id)   // usa el turno de la cajera
+        );
+});
+
+it('el admin edita la venta de la cajera SIN turno propio y ajusta el stock del local de la venta', function () {
+    $turnoCajera = $this->env->abrirTurno($this->cajera);
+    $venta = ventaBase($this->cajera, $turnoCajera, 2); // stock 100 → 98
+    \App\Models\Venta::where('id', $venta->id)->update(['created_at' => now()->subMinutes(10)]); $venta->refresh();
+
+    // Admin sin turno propio edita a 5 unidades
+    $this->actingAs($this->env->admin)
+        ->put(route('ventas.update', $venta), payloadEdicion(5))
+        ->assertRedirect(route('ventas.show', $venta));
+
+    expect((float) $venta->fresh()->load('items')->items->first()->cantidad)->toBe(5.0);
+    // Stock del almacén del local de la venta: 100 − 5 = 95
+    expect((float) Stock::where('almacen_id', $this->env->almacen->id)->where('producto_id', $this->producto->id)->value('cantidad'))->toBe(95.0);
 });
 
 it('el admin anula pasados 3 min sin código', function () {
