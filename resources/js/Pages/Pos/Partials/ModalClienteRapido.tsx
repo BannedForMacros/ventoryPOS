@@ -18,8 +18,10 @@ export default function ModalClienteRapido({ isOpen, onClose, clientes, selected
 
     const filtrados = clientes.filter(c => {
         const q = busqueda.toLowerCase();
+        // Los clientes con RUC tienen nombres/apellidos en null (usan razon_social),
+        // por eso todos los accesos son defensivos con ?? ''.
         return (
-            c.nombres.toLowerCase().includes(q) ||
+            (c.nombres ?? '').toLowerCase().includes(q) ||
             (c.apellidos ?? '').toLowerCase().includes(q) ||
             (c.razon_social ?? '').toLowerCase().includes(q) ||
             (c.numero_documento ?? '').includes(busqueda) ||
@@ -96,7 +98,10 @@ export default function ModalClienteRapido({ isOpen, onClose, clientes, selected
                         {selected === null && <Check size={16} style={{ color: 'var(--color-primary)' }} />}
                     </button>
 
-                    {filtrados.map(c => (
+                    {filtrados.map(c => {
+                        // RUC → razon_social; persona natural → nombres+apellidos.
+                        const displayName = (c.razon_social ?? `${c.nombres ?? ''} ${c.apellidos ?? ''}`.trim()) || 'Cliente';
+                        return (
                         <button
                             key={c.id}
                             onClick={() => elegir(c)}
@@ -114,11 +119,11 @@ export default function ModalClienteRapido({ isOpen, onClose, clientes, selected
                                     color: 'var(--color-primary)',
                                 }}
                             >
-                                {(c.nombres[0] ?? '').toUpperCase()}
+                                {displayName.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
                                 <p className="font-semibold truncate">
-                                    {c.razon_social ?? `${c.nombres} ${c.apellidos ?? ''}`.trim()}
+                                    {displayName}
                                 </p>
                                 <p className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>
                                     {c.tipo_documento} {c.numero_documento}
@@ -127,7 +132,8 @@ export default function ModalClienteRapido({ isOpen, onClose, clientes, selected
                             </div>
                             {selected?.id === c.id && <Check size={16} className="flex-shrink-0" style={{ color: 'var(--color-primary)' }} />}
                         </button>
-                    ))}
+                        );
+                    })}
 
                     {filtrados.length === 0 && busqueda && (
                         <div className="text-center py-8" style={{ color: 'var(--color-text-muted)' }}>
