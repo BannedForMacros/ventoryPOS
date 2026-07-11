@@ -169,6 +169,24 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
                 )}
             </div>
 
+            {/* Aviso: productos vendidos con stock negativo */}
+            {hayStockNegativo && (
+                <div
+                    className="mb-4 rounded-xl px-4 py-3 flex items-start gap-3"
+                    style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)' }}
+                >
+                    <PackageX size={18} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
+                    <div className="text-sm" style={{ color: 'var(--color-text)' }}>
+                        <p className="font-semibold" style={{ color: 'var(--color-danger)' }}>
+                            En este turno se vendieron {productosStockNegativo.length} producto(s) que quedaron con stock negativo
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                            Al confirmar el cierre se te pedirá confirmación adicional. Revisa la lista al final o regulariza el inventario antes de cerrar.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* ── Columna izquierda — Resúmenes ── */}
                 <div className="space-y-5">
@@ -465,6 +483,9 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
                     </div>
 
                     {/* Botón confirmar */}
+                    {errors.stock_negativo && (
+                        <p className="text-xs text-right" style={{ color: 'var(--color-danger)' }}>{errors.stock_negativo}</p>
+                    )}
                     <div className="flex justify-end gap-3">
                         <Button variant="ghost" onClick={() => router.visit(route('turnos.index'))}>
                             Cancelar
@@ -475,6 +496,59 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
                     </div>
                 </div>
             </div>
+
+            {/* Confirmación de cierre con stock negativo */}
+            <Modal
+                isOpen={modalStockNegativo}
+                onClose={() => setModalStockNegativo(false)}
+                title="Productos con stock negativo"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setModalStockNegativo(false)} disabled={saving}>
+                            Volver
+                        </Button>
+                        <Button variant="danger" onClick={() => enviarCierre(true)} loading={saving}>
+                            Sí, cerrar de todas formas
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-3">
+                    <div className="flex items-start gap-2">
+                        <AlertTriangle size={18} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
+                        <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                            Durante este turno vendiste los siguientes productos y su stock quedó
+                            <strong> en negativo</strong>. ¿Deseas cerrar la caja de todas formas?
+                        </p>
+                    </div>
+                    <div
+                        className="rounded-xl overflow-hidden"
+                        style={{ border: '1px solid var(--color-border)' }}
+                    >
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr style={{ backgroundColor: 'var(--color-bg)' }}>
+                                    <th className="text-left px-3 py-2 font-medium" style={{ color: 'var(--color-text-muted)' }}>Producto</th>
+                                    <th className="text-right px-3 py-2 font-medium" style={{ color: 'var(--color-text-muted)' }}>Vendido</th>
+                                    <th className="text-right px-3 py-2 font-medium" style={{ color: 'var(--color-text-muted)' }}>Stock actual</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                                {(productosStockNegativo ?? []).map(p => (
+                                    <tr key={p.producto_id}>
+                                        <td className="px-3 py-2 font-medium" style={{ color: 'var(--color-text)' }}>{p.producto_nombre}</td>
+                                        <td className="px-3 py-2 text-right" style={{ color: 'var(--color-text)' }}>{Number(p.cantidad_vendida)}</td>
+                                        <td className="px-3 py-2 text-right font-semibold" style={{ color: 'var(--color-danger)' }}>{Number(p.stock_actual)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        Sugerencia: registra la entrada o transferencia de mercadería pendiente para regularizar el inventario. El stock negativo también aparece resaltado en el módulo de inventario.
+                    </p>
+                </div>
+            </Modal>
         </AppLayout>
     );
 }
