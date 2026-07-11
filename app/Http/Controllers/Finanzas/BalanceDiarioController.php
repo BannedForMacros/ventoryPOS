@@ -156,12 +156,54 @@ class BalanceDiarioController extends Controller
                 'saldo'       => $tesoreria->saldo($c->id, $fecha),
             ])->values();
 
+        // ── Variación vs día anterior (por categoría) ───────────────────
+        // Compara el monto de cada categoría HOY contra el último balance
+        // CONFIRMADO anterior (que congeló los valores reales de ese día). Así
+        // se ve qué subió/bajó y, al hacer clic, se abre el detalle de esa línea.
+        $anterior = BalanceDiario::deEmpresa($user->empresa_id)
+            ->confirmado()
+            ->where('fecha', '<', $fecha)
+            ->orderByDesc('fecha')
+            ->with('items')
+            ->first();
+
+        $labelCat = [
+            'efectivo' => 'Efectivo', 'cuenta_bancaria' => 'Cuentas bancarias',
+            'stock' => 'Stock (inventario)', 'cxc' => 'Deudas por cobrar',
+            'cxp' => 'Deudas por pagar', 'prestamo_otorgado' => 'Préstamos otorgados',
+            'adelanto_proveedor' => 'Adelantos a proveedores', 'anticipo_cliente' => 'Anticipos de clientes',
+            'planilla_descuento' => 'Descuentos de planilla', 'gastos_emitidos' => 'Gastos emitidos',
+            'deuda' => 'Deudas/préstamos', 'personal' => 'Personal',
+        ];
+
+        $totHoy  = $balance->items->groupBy('categoria');
+        $totAyer = $anterior ? $anterior->items->groupBy('categoria') : collect();
+
+        $variaciones = collect($totHoy->keys())->merge($totAyer->keys())->unique()->values()
+            ->map(function ($cat) use ($totHoy, $totAyer, $labelCat) {
+                $hoy  = round((float) ($totHoy->get($cat)?->sum('monto') ?? 0), 2);
+                $ayer = round((float) ($totAyer->get($cat)?->sum('monto') ?? 0), 2);
+                return [
+                    'categoria' => $cat,
+                    'seccion'   => $totHoy->get($cat)?->first()->seccion ?? ($totAyer->get($cat)?->first()->seccion ?? 'favor'),
+                    'label'     => $labelCat[$cat] ?? ucfirst(str_replace('_', ' ', (string) $cat)),
+                    'hoy'       => $hoy,
+                    'ayer'      => $ayer,
+                    'delta'     => round($hoy - $ayer, 2),
+                ];
+            })
+            ->filter(fn ($v) => abs($v['delta']) >= 0.01) // solo lo que cambió
+            ->sortByDesc(fn ($v) => abs($v['delta']))
+            ->values();
+
         return Inertia::render('Finanzas/BalanceDiarioDetalle', [
             'balance'        => $balance,
             'gastos'         => $gastos,
             'salidasDia'     => $salidasDia,
             'movimientosDia' => $movimientosDia,
             'saldosCuentas'  => $saldosCuentas,
+            'variaciones'    => $variaciones,
+            'balanceAnteriorFecha' => $anterior?->fecha?->toDateString(),
         ]);
     }
 
@@ -182,6 +224,84 @@ class BalanceDiarioController extends Controller
      *   ]}],
      * }
      */
+    /**
+     * Movimientos que cambian el VALOR del inventario de la empresa en una fecha.
+     * Une las fuentes que suben/bajan el stock total (las transferencias internas
+     * se excluyen porque no cambian el valor total de la empresa). El valor de
+     * cada movimiento se calcula con productos.precio_costo (igual que el balance).
+     *
+     * Devuelve filas con: tipo, producto, documento, cantidad (± base), valor (±), usuario.
+     */
+    private function movimientosStockDia(int $empresaId, string $fecha): \Illuminate\Support\Collection
+    {
+        // Ventas (−)
+        $ventas = DB::table('venta_items as vi')
+            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
+            ->join('productos as p', 'p.id', '=', 'vi.producto_id')
+            ->leftJoin('users as u', 'u.id', '=', 'v.user_id')
+            ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
+            ->whereDate('v.fecha_venta', $fecha)
+            ->selectRaw("'Ventas' as tipo, v.numero as documento, p.nombre as producto, u.name as usuario,
+                         (-1 * vi.cantidad_base) as cantidad, (-1 * vi.cantidad_base * p.precio_costo) as valor")
+            ->get();
+
+        // Salidas (−)
+        $salidas = DB::table('salidas_detalle as sd')
+            ->join('salidas as s', 's.id', '=', 'sd.salida_id')
+            ->join('productos as p', 'p.id', '=', 'sd.producto_id')
+            ->leftJoin('users as u', 'u.id', '=', 's.user_id')
+            ->where('s.empresa_id', $empresaId)->where('s.estado', 'confirmado')
+            ->whereDate('s.fecha', $fecha)
+            ->selectRaw("'Salidas de inventario' as tipo, s.numero_documento as documento, p.nombre as producto, u.name as usuario,
+                         (-1 * sd.cantidad_base) as cantidad, (-1 * sd.cantidad_base * p.precio_costo) as valor")
+            ->get();
+
+        // Entradas / compras (+)
+        $entradas = DB::table('entradas_detalle as ed')
+            ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
+            ->join('productos as p', 'p.id', '=', 'ed.producto_id')
+            ->leftJoin('users as u', 'u.id', '=', 'e.user_id')
+            ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')
+            ->whereDate('e.fecha', $fecha)
+            ->selectRaw("'Entradas (compras)' as tipo, e.numero_documento as documento, p.nombre as producto, u.name as usuario,
+                         ed.cantidad_base as cantidad, (ed.cantidad_base * p.precio_costo) as valor")
+            ->get();
+
+        // Devoluciones con reingreso (+)
+        $devoluciones = DB::table('devoluciones_detalle as dd')
+            ->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
+            ->join('productos as p', 'p.id', '=', 'dd.producto_id')
+            ->leftJoin('users as u', 'u.id', '=', 'd.user_id')
+            ->where('d.empresa_id', $empresaId)->where('d.estado', 'completada')
+            ->where('dd.restock', true)
+            ->whereDate('d.fecha', $fecha)
+            ->selectRaw("'Devoluciones (reingreso)' as tipo, d.numero as documento, p.nombre as producto, u.name as usuario,
+                         dd.cantidad_base as cantidad, (dd.cantidad_base * p.precio_costo) as valor")
+            ->get();
+
+        // Ajustes por cierre de inventario (+/−)
+        $cierres = DB::table('cierres_inventario_items as ci')
+            ->join('cierres_inventario as c', 'c.id', '=', 'ci.cierre_id')
+            ->join('productos as p', 'p.id', '=', 'ci.producto_id')
+            ->leftJoin('users as u', 'u.id', '=', 'c.user_id')
+            ->where('c.empresa_id', $empresaId)->where('c.estado', 'confirmado')
+            ->where('ci.diferencia', '!=', 0)
+            ->whereDate('c.fecha', $fecha)
+            ->selectRaw("'Ajustes de inventario' as tipo, ('CI-' || c.id) as documento, p.nombre as producto, u.name as usuario,
+                         ci.diferencia as cantidad, (ci.diferencia * p.precio_costo) as valor")
+            ->get();
+
+        return collect()
+            ->concat($ventas)->concat($salidas)->concat($entradas)
+            ->concat($devoluciones)->concat($cierres)
+            ->map(function ($m) {
+                $m->cantidad = (float) $m->cantidad;
+                $m->valor    = (float) $m->valor;
+                return $m;
+            })
+            ->values();
+    }
+
     public function detalleItem(Request $request, string $fecha, string $categoria)
     {
         $user = $request->user();
@@ -278,33 +398,56 @@ class BalanceDiarioController extends Controller
                 ]);
             }
 
-            // ── Stock valorizado: producto por producto ─────────────────
+            // ── Stock: MOVIMIENTOS del día (trazabilidad de por qué subió/bajó)
             case 'stock': {
-                $filas = DB::table('stock')
+                // Valor total del inventario AHORA (misma valuación que el balance).
+                $valorInventario = (float) DB::table('stock')
                     ->join('productos', 'productos.id', '=', 'stock.producto_id')
                     ->where('productos.empresa_id', $empresaId)
                     ->where('productos.activo', true)
-                    ->where('stock.cantidad', '!=', 0)
-                    ->selectRaw('productos.nombre, SUM(stock.cantidad) as cantidad, productos.precio_costo,
-                                 SUM(stock.cantidad * productos.precio_costo) as valor')
-                    ->groupBy('productos.id', 'productos.nombre', 'productos.precio_costo')
-                    ->orderByDesc('valor')
-                    ->limit(500)
-                    ->get();
+                    ->selectRaw('COALESCE(SUM(stock.cantidad * productos.precio_costo), 0) as v')
+                    ->value('v');
+
+                // Movimientos que cambian el VALOR del inventario de la empresa en
+                // esta fecha (las transferencias internas no cambian el total).
+                $movs = $this->movimientosStockDia($empresaId, $fecha);
+
+                $entradasVal = round((float) $movs->where('valor', '>', 0)->sum('valor'), 2);
+                $salidasVal  = round((float) $movs->where('valor', '<', 0)->sum('valor'), 2); // negativo
+                $variacion   = round($entradasVal + $salidasVal, 2);
+
+                $fmtCant = fn ($n) => rtrim(rtrim(number_format((float) $n, 2), '0'), '.');
+
+                $grupos = $movs->groupBy('tipo')->map(fn ($rows, $tipo) => [
+                    'id'     => $tipo,
+                    'titulo' => $tipo,
+                    'monto'  => round((float) $rows->sum('valor'), 2),
+                    'tipo'   => $rows->sum('valor') >= 0 ? 'ingreso' : 'egreso',
+                    'items'  => $rows->map(fn ($m) => [
+                        'producto'  => $m->producto,
+                        'documento' => $m->documento ?? '—',
+                        'cantidad'  => ($m->cantidad >= 0 ? '+' : '') . $fmtCant($m->cantidad),
+                        'monto'     => round((float) $m->valor, 2),
+                        'tipo'      => $m->valor >= 0 ? 'ingreso' : 'egreso',
+                        'user'      => $m->usuario,
+                    ])->values(),
+                ])->sortByDesc(fn ($g) => abs($g['monto']))->values();
 
                 return response()->json([
                     'tipo'  => 'grupos',
                     'cards' => [
-                        ['label' => 'Valor total del inventario', 'valor' => round((float) $filas->sum('valor'), 2), 'color' => 'success'],
-                        ['label' => 'Productos con stock', 'valor' => $filas->count(), 'esNumero' => true],
+                        ['label' => 'Valor del inventario hoy', 'valor' => round($valorInventario, 2), 'color' => 'success'],
+                        ['label' => 'Entradas del día (+)', 'valor' => $entradasVal, 'color' => 'success'],
+                        ['label' => 'Salidas del día (−)', 'valor' => abs($salidasVal), 'color' => 'danger'],
+                        ['label' => 'Variación del día', 'valor' => $variacion, 'color' => $variacion >= 0 ? 'success' : 'danger'],
                     ],
-                    'grupos' => $filas->map(fn ($f, $i) => [
-                        'id'        => (string) $i,
-                        'titulo'    => $f->nombre,
-                        'subtitulo' => rtrim(rtrim(number_format((float) $f->cantidad, 2), '0'), '.') . ' und × S/' . number_format((float) $f->precio_costo, 2) . ' (costo del día)',
-                        'monto'     => round((float) $f->valor, 2),
-                        'items'     => [],
-                    ])->values(),
+                    'itemCols' => [
+                        ['campo' => 'producto',  'label' => 'Producto'],
+                        ['campo' => 'documento', 'label' => 'Documento'],
+                        ['campo' => 'cantidad',  'label' => 'Cant.'],
+                    ],
+                    'montoLabel' => 'Valor',
+                    'grupos'     => $grupos,
                 ]);
             }
 

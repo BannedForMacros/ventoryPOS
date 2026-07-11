@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw, ZoomIn, ChevronDown, ArrowDownCircle, ArrowUpCircle, Coins, Landmark } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw, ZoomIn, ChevronDown, ArrowDownCircle, ArrowUpCircle, Coins, Landmark, TrendingUp, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
@@ -64,12 +64,23 @@ interface GrupoMovimientosDia {
     items: MovimientoDia[];
 }
 
+interface Variacion {
+    categoria: string;
+    seccion: 'favor' | 'contra';
+    label: string;
+    hoy: number;
+    ayer: number;
+    delta: number;
+}
+
 interface Props extends PageProps {
     balance: Balance;
     gastos: Gasto[];
     salidasDia: { label: string; monto: number }[];
     movimientosDia: GrupoMovimientosDia[];
     saldosCuentas: { nombre: string; banco: string | null; es_efectivo: boolean; saldo: number }[];
+    variaciones: Variacion[];
+    balanceAnteriorFecha: string | null;
 }
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
@@ -102,7 +113,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
     otro_contra:        'Otro',
 };
 
-export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas }: Props) {
+export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas, variaciones, balanceAnteriorFecha }: Props) {
     const { flash } = usePage<Props>().props;
     const editable = balance.estado === 'borrador';
 
@@ -452,6 +463,73 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                         de vuelta para ver cuánto generó la operación antes de gastos.
                     </p>
                 </div>
+            </div>
+
+            {/* ── Variación vs día anterior: qué subió/bajó por categoría ──
+                Compara cada monto contra el último balance confirmado. Cada fila
+                es clickeable para abrir el detalle de esa subida/baja. */}
+            <div className="mt-4 rounded-2xl overflow-hidden"
+                style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))' }}>
+                    <h3 className="font-bold text-sm uppercase tracking-wider flex items-center gap-2" style={{ color: 'var(--color-primary)' }}>
+                        <TrendingUp size={16} /> Variación vs día anterior
+                    </h3>
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        {balanceAnteriorFecha
+                            ? `Comparado con el balance del ${new Date(balanceAnteriorFecha + 'T00:00:00').toLocaleDateString('es-PE')}`
+                            : 'Sin balance anterior confirmado para comparar'}
+                    </span>
+                </div>
+
+                {!balanceAnteriorFecha ? (
+                    <p className="text-sm text-center py-6 px-4" style={{ color: 'var(--color-text-muted)' }}>
+                        Confirma el balance de días anteriores para ver aquí qué subió o bajó respecto a ayer.
+                    </p>
+                ) : variaciones.length === 0 ? (
+                    <p className="text-sm text-center py-6 px-4" style={{ color: 'var(--color-text-muted)' }}>
+                        Sin cambios de monto respecto al día anterior.
+                    </p>
+                ) : (
+                    <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                        {variaciones.map(v => {
+                            const subio = v.delta > 0;
+                            const clickeable = CON_DETALLE.has(v.categoria);
+                            const color = subio ? 'var(--color-success, #16a34a)' : 'var(--color-danger)';
+                            return (
+                                <button
+                                    key={`${v.seccion}-${v.categoria}`}
+                                    onClick={() => clickeable && abrirDetalle({ id: 0, seccion: v.seccion, categoria: v.categoria, descripcion: v.label, ref_id: null, monto: String(v.hoy), es_manual: false, conciliado: false })}
+                                    disabled={!clickeable}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-black/[0.02] disabled:cursor-default"
+                                >
+                                    <div className="min-w-0 flex items-center gap-2">
+                                        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full"
+                                            style={{ backgroundColor: subio ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', color }}>
+                                            {subio ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
+                                        </span>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                                                {v.label}
+                                                <span className="ml-1.5 text-[10px] font-normal uppercase tracking-wide"
+                                                    style={{ color: 'var(--color-text-muted)' }}>
+                                                    {v.seccion === 'favor' ? 'a favor' : 'en contra'}
+                                                </span>
+                                            </p>
+                                            <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                Ayer {money(v.ayer)} → Hoy {money(v.hoy)}
+                                                {clickeable && <span className="ml-1 inline-flex items-center gap-0.5" style={{ color: 'var(--color-primary)' }}><ZoomIn size={10} /> ver detalle</span>}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span className="font-bold text-sm whitespace-nowrap" style={{ color, fontVariantNumeric: 'tabular-nums' }}>
+                                        {subio ? '+' : '−'}{money(Math.abs(v.delta)).replace('S/ ', 'S/ ')}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
 
             {/* ── Movimientos del día: la película de HOY, por concepto ──
