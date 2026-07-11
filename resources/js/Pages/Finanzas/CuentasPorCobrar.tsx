@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { HandCoins, Eye } from 'lucide-react';
+import { HandCoins, Eye, Receipt, ChevronDown, ChevronRight } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -34,16 +34,33 @@ interface PagoInicial {
     metodo_pago?: { nombre: string } | null;
 }
 
+interface VentaItemCxc {
+    id: number;
+    producto_nombre: string;
+    unidad_nombre: string;
+    cantidad: string;
+    precio_unitario: string;
+    descuento_item: string;
+    subtotal: string;
+}
+
 interface VentaCxc extends Record<string, unknown> {
     id: number;
     numero: string | null;
     fecha_venta: string;
     fecha_vencimiento: string | null;
+    tipo_comprobante?: string;
     total: string;
+    subtotal?: string;
+    igv?: string;
+    descuento_total?: string;
+    observacion?: string | null;
     monto_pagado: string;
     saldo_pendiente: string;
     cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string } | null;
     user?: { name: string } | null;
+    caja?: { nombre: string } | null;
+    items?: VentaItemCxc[];
     abonos: Abono[];
     pagos: PagoInicial[];
 }
@@ -69,6 +86,8 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
     const { flash } = usePage<Props>().props;
     const [abonando, setAbonando] = useState<VentaCxc | null>(null);
     const [detalle, setDetalle]   = useState<VentaCxc | null>(null);
+    // Colapsable de la venta relacionada dentro del modal de detalle.
+    const [ventaAbierta, setVentaAbierta] = useState(false);
     const [saving, setSaving]     = useState(false);
     const [errors, setErrors]     = useState<Record<string, string>>({});
     const [form, setForm] = useState({
@@ -141,9 +160,9 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
             render: (v) => (
                 <div className="flex items-center gap-2">
                     <button
-                        onClick={() => setDetalle(v)}
+                        onClick={() => { setDetalle(v); setVentaAbierta(false); }}
                         className="p-1.5 rounded-lg hover:bg-black/5"
-                        title="Ver abonos"
+                        title="Ver detalle y trazabilidad"
                         style={{ color: 'var(--color-text-muted)' }}
                     >
                         <Eye size={15} />
@@ -289,47 +308,169 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, metod
                 )}
             </Modal>
 
-            {/* Modal historial de abonos */}
+            {/* Modal detalle de la cuenta por cobrar — trazabilidad completa */}
             <Modal
                 isOpen={detalle !== null}
                 onClose={() => setDetalle(null)}
-                title={detalle ? `Abonos — venta ${detalle.numero ?? ''}` : ''}
-                size="md"
-                footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
+                title={detalle ? `Detalle — venta ${detalle.numero ?? ''} · ${nombreCliente(detalle)}` : ''}
+                size="3xl"
+                footer={
+                    <>
+                        {detalle && Number(detalle.saldo_pendiente) > 0 && (
+                            <Button variant="primary" onClick={() => { const d = detalle; setDetalle(null); abrirAbono(d); }}>
+                                <HandCoins size={15} className="mr-1.5" /> Registrar abono
+                            </Button>
+                        )}
+                        <Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>
+                    </>
+                }
             >
                 {detalle && (
                     <div className="space-y-4">
+                        {/* Resumen del crédito */}
                         <StatGrid stats={[
                             { label: 'Total', valor: money(detalle.total) },
                             { label: 'Pagado', valor: money(detalle.monto_pagado), color: 'success' },
-                            { label: 'Saldo', valor: money(detalle.saldo_pendiente), color: 'danger' },
+                            { label: 'Saldo pendiente', valor: money(detalle.saldo_pendiente), color: 'danger', destacado: true },
                         ]} />
-                        <Timeline
-                            emptyMessage="Sin pagos registrados"
-                            items={[
-                                // Pago inicial hecho en el POS al momento de la venta
-                                ...detalle.pagos.filter(p => Number(p.monto) - Number(p.vuelto) > 0).map(p => ({
-                                    fecha: new Date(detalle.fecha_venta).toLocaleDateString('es-PE'),
-                                    badge: { texto: 'Pago inicial', variant: 'primary' as const },
-                                    tipo: 'ingreso' as const,
-                                    detalle: [p.metodo_pago?.nombre, 'al momento de la venta'].filter(Boolean).join(' · '),
-                                    user: detalle.user?.name,
-                                    monto: Number(p.monto) - Number(p.vuelto),
-                                })),
-                                // Abonos posteriores
-                                ...detalle.abonos.map(a => ({
-                                    fecha: new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
-                                    badge: { texto: 'Abono', variant: 'success' as const },
-                                    tipo: 'ingreso' as const,
-                                    detalle: [a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || undefined,
-                                    user: a.user?.name,
-                                    monto: Number(a.monto),
-                                })),
-                            ]}
-                        />
+
+                        {/* Datos generales / trazabilidad */}
+                        <div className="rounded-xl p-3 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2.5"
+                            style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                            <Dato label="Cliente" valor={nombreCliente(detalle)} />
+                            <Dato label="Comprobante" valor={detalle.tipo_comprobante ?? '—'} capitalize />
+                            <Dato label="Vendedor" valor={detalle.user?.name ?? '—'} />
+                            <Dato label="Fecha de venta" valor={new Date(detalle.fecha_venta).toLocaleString('es-PE')} />
+                            <Dato label="Vencimiento" valor={detalle.fecha_vencimiento
+                                ? new Date(detalle.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-PE') : '—'} />
+                            <Dato label="Caja" valor={detalle.caja?.nombre ?? '—'} />
+                        </div>
+
+                        {/* Venta relacionada — minimizada, se despliega con clic */}
+                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                            <button
+                                onClick={() => setVentaAbierta(v => !v)}
+                                className="w-full flex items-center justify-between px-3 py-2.5 transition-colors hover:bg-black/[0.03]"
+                                style={{ backgroundColor: 'var(--color-bg)' }}
+                            >
+                                <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                                    <Receipt size={15} style={{ color: 'var(--color-primary)' }} />
+                                    Venta relacionada {detalle.numero ?? ''}
+                                    <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>
+                                        · {detalle.items?.length ?? 0} producto(s)
+                                    </span>
+                                </span>
+                                <span className="flex items-center gap-2">
+                                    <span className="font-bold text-sm" style={{ color: 'var(--color-primary)' }}>{money(detalle.total)}</span>
+                                    {ventaAbierta ? <ChevronDown size={16} style={{ color: 'var(--color-text-muted)' }} /> : <ChevronRight size={16} style={{ color: 'var(--color-text-muted)' }} />}
+                                </span>
+                            </button>
+
+                            {ventaAbierta && (
+                                <div className="p-3 space-y-3" style={{ borderTop: '1px solid var(--color-border)' }}>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-xs">
+                                            <thead>
+                                                <tr style={{ color: 'var(--color-text-muted)' }}>
+                                                    <th className="text-left py-1.5 font-medium">Producto</th>
+                                                    <th className="text-right py-1.5 font-medium">Cant.</th>
+                                                    <th className="text-right py-1.5 font-medium">P. Unit.</th>
+                                                    <th className="text-right py-1.5 font-medium">Dcto.</th>
+                                                    <th className="text-right py-1.5 font-medium">Subtotal</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {(detalle.items ?? []).map(it => (
+                                                    <tr key={it.id} style={{ borderTop: '1px solid var(--color-border)' }}>
+                                                        <td className="py-1.5">
+                                                            <span className="font-medium" style={{ color: 'var(--color-text)' }}>{it.producto_nombre}</span>
+                                                            <span className="block text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{it.unidad_nombre}</span>
+                                                        </td>
+                                                        <td className="text-right" style={{ color: 'var(--color-text)' }}>{Number(it.cantidad)}</td>
+                                                        <td className="text-right" style={{ color: 'var(--color-text)' }}>{money(it.precio_unitario)}</td>
+                                                        <td className="text-right" style={{ color: Number(it.descuento_item) > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
+                                                            {Number(it.descuento_item) > 0 ? '- ' + money(it.descuento_item) : '—'}
+                                                        </td>
+                                                        <td className="text-right font-medium" style={{ color: 'var(--color-text)' }}>{money(it.subtotal)}</td>
+                                                    </tr>
+                                                ))}
+                                                {(detalle.items?.length ?? 0) === 0 && (
+                                                    <tr><td colSpan={5} className="py-3 text-center" style={{ color: 'var(--color-text-muted)' }}>Sin productos</td></tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Resumen financiero de la venta */}
+                                    <div className="flex flex-col gap-1 items-end pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                                        <Resumen label="Subtotal" valor={money(detalle.subtotal ?? 0)} />
+                                        {Number(detalle.descuento_total ?? 0) > 0 && <Resumen label="Descuento" valor={'- ' + money(detalle.descuento_total)} danger />}
+                                        <Resumen label="IGV" valor={money(detalle.igv ?? 0)} />
+                                        <Resumen label="Total" valor={money(detalle.total)} bold />
+                                    </div>
+
+                                    {detalle.observacion && (
+                                        <p className="text-xs pt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                            <span className="font-medium">Observación:</span> {detalle.observacion}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Historial de pagos y abonos */}
+                        <div>
+                            <p className="text-sm font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
+                                Historial de pagos y abonos
+                            </p>
+                            <Timeline
+                                emptyMessage="Sin pagos registrados"
+                                items={[
+                                    ...detalle.pagos.filter(p => Number(p.monto) - Number(p.vuelto) > 0).map(p => ({
+                                        fecha: new Date(detalle.fecha_venta).toLocaleDateString('es-PE'),
+                                        badge: { texto: 'Pago inicial', variant: 'primary' as const },
+                                        tipo: 'ingreso' as const,
+                                        detalle: [p.metodo_pago?.nombre, 'al momento de la venta'].filter(Boolean).join(' · '),
+                                        user: detalle.user?.name,
+                                        monto: Number(p.monto) - Number(p.vuelto),
+                                    })),
+                                    ...detalle.abonos.map(a => ({
+                                        fecha: new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
+                                        badge: { texto: 'Abono', variant: 'success' as const },
+                                        tipo: 'ingreso' as const,
+                                        detalle: [a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || undefined,
+                                        user: a.user?.name,
+                                        monto: Number(a.monto),
+                                    })),
+                                ]}
+                            />
+                        </div>
                     </div>
                 )}
             </Modal>
         </AppLayout>
+    );
+}
+
+/** Celda etiqueta/valor para la trazabilidad. */
+function Dato({ label, valor, capitalize }: { label: string; valor: string; capitalize?: boolean }) {
+    return (
+        <div className="min-w-0">
+            <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            <p className={`text-sm truncate ${capitalize ? 'capitalize' : ''}`} style={{ color: 'var(--color-text)' }}>{valor}</p>
+        </div>
+    );
+}
+
+/** Fila del resumen financiero de la venta. */
+function Resumen({ label, valor, bold, danger }: { label: string; valor: string; bold?: boolean; danger?: boolean }) {
+    return (
+        <div className="flex items-center justify-between gap-8 text-xs w-full max-w-[220px]">
+            <span style={{ color: 'var(--color-text-muted)' }}>{label}</span>
+            <span className={bold ? 'font-bold text-sm' : 'font-medium'}
+                style={{ color: danger ? 'var(--color-danger)' : 'var(--color-text)' }}>
+                {valor}
+            </span>
+        </div>
     );
 }
