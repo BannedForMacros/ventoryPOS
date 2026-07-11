@@ -146,13 +146,22 @@ class VentaController extends Controller
 
     public function index(Request $request)
     {
-        $user = $request->user();
+        $user    = $request->user();
+        $esAdmin = $user->rol->es_admin;
+
+        // La cajera (no admin) se limita a SUS ventas y por defecto a las de HOY.
+        // El admin ve todo el historial de la empresa/local. Si la cajera cambia
+        // el rango de fechas, sigue viendo solo lo suyo.
+        $hoy         = now()->toDateString();
+        $fechaDesde  = $request->fecha_desde ?: (!$esAdmin ? $hoy : null);
+        $fechaHasta  = $request->fecha_hasta ?: (!$esAdmin ? $hoy : null);
 
         $ventas = Venta::deEmpresa($user->empresa_id)
-            ->with(['user', 'cliente', 'local'])
+            ->with(['user', 'cliente', 'local', 'caja', 'turno'])
+            ->when(!$esAdmin, fn($q) => $q->where('user_id', $user->id))
             ->when($request->estado, fn($q, $v) => $q->where('estado', $v))
-            ->when($request->fecha_desde, fn($q, $v) => $q->where('fecha_venta', '>=', $v))
-            ->when($request->fecha_hasta, fn($q, $v) => $q->where('fecha_venta', '<=', $v . ' 23:59:59'))
+            ->when($fechaDesde, fn($q, $v) => $q->where('fecha_venta', '>=', $v))
+            ->when($fechaHasta, fn($q, $v) => $q->where('fecha_venta', '<=', $v . ' 23:59:59'))
             ->when($request->local_id, fn($q, $v) => $q->where('local_id', $v))
             ->when($user->local_id, fn($q) => $q->where('local_id', $user->local_id))
             ->orderByDesc('fecha_venta')
@@ -165,7 +174,12 @@ class VentaController extends Controller
         return Inertia::render('Ventas/Index', [
             'ventas'  => $ventas,
             'locales' => $locales,
-            'filters' => $request->only(['estado', 'fecha_desde', 'fecha_hasta', 'local_id']),
+            'esAdmin' => $esAdmin,
+            // Reflejar en la UI las fechas efectivas (incluye el default de hoy).
+            'filters' => array_merge(
+                $request->only(['estado', 'fecha_desde', 'fecha_hasta', 'local_id']),
+                ['fecha_desde' => $fechaDesde, 'fecha_hasta' => $fechaHasta],
+            ),
         ]);
     }
 
