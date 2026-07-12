@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon, CreditCard, RefreshCw,
+    Image as ImageIcon, CreditCard, RefreshCw, Truck,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import PosLayout from '@/Layouts/PosLayout';

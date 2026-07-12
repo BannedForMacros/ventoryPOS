@@ -217,8 +217,9 @@ class BalanceDiarioService
                 ];
             });
 
-        // Anticipos de clientes valorizados A PRECIO DEL DÍA.
-        $anticipos = ClienteAnticipo::deEmpresa($empresaId)->activo()->with('producto')->get()
+        // Anticipos de clientes valorizados A PRECIO DEL DÍA (incluye los
+        // multi-producto "pendiente por entregar" creados desde el POS).
+        $anticipos = ClienteAnticipo::deEmpresa($empresaId)->activo()->with(['producto', 'items.unidad'])->get()
             ->sum(fn (ClienteAnticipo $a) => $a->valorPasivoHoy());
 
         $items[] = [

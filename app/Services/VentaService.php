@@ -170,6 +170,12 @@ class VentaService
         ?int $clienteId,
         bool $permitirStockNegativo,
     ): void {
+        // Pendiente por entregar: el cliente paga todo pero se lleva solo parte.
+        // Lo pendiente NO descuenta stock aquí (sale recién al entregarse) y se
+        // acumula para crear el anticipo material vinculado a la venta.
+        $esEntregaPendiente = !empty($data['entrega_pendiente']);
+        $itemsPendientes    = [];
+
         // Items
         foreach ($data['items'] as $itemData) {
             $unidad   = ProductoUnidad::findOrFail($itemData['producto_unidad_id']);
@@ -180,6 +186,10 @@ class VentaService
             $precioUnitario = round((float) $itemData['precio_unitario'] * $factor, 2);
             $descuentoItem  = round((float) ($itemData['descuento_item'] ?? 0) * $factor, 2);
             $subtotal       = round(($precioUnitario - $descuentoItem) * $cantidad, 2);
+
+            $cantPendiente  = $esEntregaPendiente
+                ? min(max(0, (float) ($itemData['cantidad_pendiente'] ?? 0)), $cantidad)
+                : 0.0;
 
             $item = VentaItem::create([
                 'venta_id'             => $venta->id,
@@ -199,7 +209,27 @@ class VentaService
             ]);
 
             if ($this->config->deboDescontarStock($producto, $turno->local)) {
-                Stock::ajustar($almacen->id, $producto->id, -$cantidadBase, 0, $permitirStockNegativo);
+                // Solo sale del almacén lo que el cliente SE LLEVA ahora; lo
+                // pendiente se descuenta al registrar la entrega del anticipo.
+                $baseEntregada = round(($cantidad - $cantPendiente) * (float) $unidad->factor_conversion, 4);
+                if ($baseEntregada > 0.00009) {
+                    Stock::ajustar($almacen->id, $producto->id, -$baseEntregada, 0, $permitirStockNegativo);
+                }
+            }
+
+            if ($cantPendiente > 0.00009) {
+                $itemsPendientes[] = [
+                    'venta_item_id'      => $item->id,
+                    'producto_id'        => $producto->id,
+                    'producto_unidad_id' => $unidad->id,
+                    'producto_nombre'    => $producto->nombre,
+                    'unidad_nombre'      => $unidad->unidadMedida->nombre ?? '',
+                    'cantidad'           => $cantPendiente,
+                    'factor_conversion'  => (float) $unidad->factor_conversion,
+                    'cantidad_pendiente' => $cantPendiente,
+                    // Valor realmente pagado por unidad (S/, congelado).
+                    'precio_unitario'    => round($precioUnitario - $descuentoItem, 2),
+                ];
             }
 
             if ($descuentoItem > 0 && !empty($itemData['descuento_concepto_id'])) {
@@ -292,6 +322,41 @@ class VentaService
             'saldo_pendiente' => $esCredito ? max(0, round((float) $venta->total - $montoPagadoReal, 2)) : 0,
             'monto_moneda'    => $moneda !== 'PEN' && $factor > 0 ? round((float) $venta->total / $factor, 2) : null,
         ]);
+
+        // ── Pendiente por entregar → anticipo material automático ────────
+        // Toda la mercadería pagada y NO llevada queda como pasivo en
+        // finanzas/anticipos (multi-producto, vinculado a la venta). El dinero
+        // NO se vuelve a registrar en tesorería: ya entró con los pagos de la
+        // venta. La entrega (total o parcial, con fecha) se registra luego en
+        // Finanzas → Anticipos y recién ahí sale el stock.
+        if (!empty($itemsPendientes)) {
+            $montoPendiente = round(collect($itemsPendientes)
+                ->sum(fn ($i) => $i['cantidad'] * $i['precio_unitario']), 2);
+
+            $anticipo = \App\Models\ClienteAnticipo::create([
+                'empresa_id'             => $user->empresa_id,
+                'cliente_id'             => $venta->cliente_id,
+                'user_id'                => $user->id,
+                'venta_id'               => $venta->id,
+                'fecha'                  => now()->toDateString(),
+                'monto'                  => $montoPendiente,
+                'saldo'                  => $montoPendiente,
+                'tipo_valorizacion'      => 'material',
+                'estado'                 => 'activo',
+                'fecha_entrega_estimada' => $data['fecha_entrega_estimada'] ?? null,
+                'observacion'            => "Pendiente por entregar — Venta {$venta->numero}",
+            ]);
+
+            $anticipo->items()->createMany($itemsPendientes);
+
+            \App\Services\AuditoriaService::log('anticipo_cliente.creado', $anticipo, [
+                'origen'     => 'pos_pendiente_entrega',
+                'venta_id'   => $venta->id,
+                'cliente_id' => $venta->cliente_id,
+                'monto'      => $montoPendiente,
+                'items'      => count($itemsPendientes),
+            ], $user);
+        }
     }
 
     /**
@@ -309,6 +374,16 @@ class VentaService
             if ($venta->estado === 'anulada') {
                 abort(422, 'No se puede editar una venta anulada.');
             }
+
+            // Una venta con mercadería pendiente por entregar no se edita: el
+            // anticipo material vinculado quedaría desalineado (stock retenido,
+            // saldos, entregas ya registradas). Para corregirla: anular y
+            // volver a registrar.
+            if ($venta->anticipos()->where('estado', 'activo')->exists()) {
+                abort(422, 'Esta venta tiene mercadería pendiente por entregar. Para corregirla, anúlala y regístrala de nuevo.');
+            }
+            // Defensa: la edición tampoco acepta crear nuevos pendientes.
+            unset($data['entrega_pendiente'], $data['fecha_entrega_estimada']);
 
             $venta->loadMissing('items', 'local', 'turno.local');
             $turno   = $venta->turno ?? abort(422, 'La venta no tiene turno asociado.');
@@ -387,12 +462,39 @@ class VentaService
                 ?? $this->scope->almacenParaVentas($user)
                 ?? abort(422, 'No se encontró un almacén de ventas para el local de la venta.');
 
+            // Pendiente por entregar: lo aún NO entregado nunca salió del
+            // almacén, así que NO se restaura. Mapear venta_item_id → cantidad
+            // pendiente en unidades BASE de los anticipos activos vinculados.
+            $pendienteBasePorItem = [];
+            $anticiposPendientes  = $venta->anticipos()->where('estado', 'activo')->with('items')->get();
+            foreach ($anticiposPendientes as $ant) {
+                foreach ($ant->items as $ai) {
+                    if ($ai->venta_item_id) {
+                        $pendienteBasePorItem[$ai->venta_item_id] = ($pendienteBasePorItem[$ai->venta_item_id] ?? 0)
+                            + round((float) $ai->cantidad_pendiente * (float) $ai->factor_conversion, 4);
+                    }
+                }
+            }
+
             foreach ($venta->items as $item) {
                 $producto = $item->producto;
                 if ($producto && $this->config->deboDescontarStock($producto, $venta->local)) {
-                    // Restaurar stock: entrada positiva
-                    Stock::ajustar($almacen->id, $producto->id, (float) $item->cantidad_base);
+                    // Restaurar stock: entrada positiva (solo lo efectivamente entregado)
+                    $restaurar = round((float) $item->cantidad_base - ($pendienteBasePorItem[$item->id] ?? 0), 4);
+                    if ($restaurar > 0.00009) {
+                        Stock::ajustar($almacen->id, $producto->id, $restaurar);
+                    }
                 }
+            }
+
+            // El pendiente muere con la venta: se anula el anticipo vinculado.
+            // Sin movimiento de tesorería propio (el dinero se revierte con los
+            // pagos de la venta, abajo).
+            foreach ($anticiposPendientes as $ant) {
+                $ant->update(['estado' => 'anulado']);
+                \App\Services\AuditoriaService::log('anticipo_cliente.anulado', $ant, [
+                    'motivo' => "Anulación de la venta {$venta->numero}",
+                ], $user);
             }
 
             // F1 — Una venta anulada deja de ser cuenta por cobrar.
