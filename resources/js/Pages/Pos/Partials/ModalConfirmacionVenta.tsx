@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingBag, User, Receipt, CreditCard, CheckCircle2 } from 'lucide-react';
+import { ShoppingBag, User, Receipt, CreditCard, CheckCircle2, Truck } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import type { Cliente, DescuentoConcepto, MetodoPago } from '@/types';
@@ -22,6 +22,10 @@ interface Props {
     total:               number;
     metodosPago:         MetodoPago[];
     conceptos:           DescuentoConcepto[];
+    // Pendiente por entregar: pagó todo pero se lleva solo parte.
+    entregaPendiente?:   boolean;
+    pendienteDe?:        (item: LineaCarrito) => number;
+    fechaEntrega?:       string;
 }
 
 function SectionLabel({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
@@ -39,7 +43,11 @@ export default function ModalConfirmacionVenta({
     isOpen, onClose, onConfirmar, loading,
     items, pagos, cliente, descuentoTotal, descuentoConceptoId, tipoComprobante,
     subtotal, igv, total, metodosPago, conceptos,
+    entregaPendiente, pendienteDe, fechaEntrega,
 }: Props) {
+    const pendientes = entregaPendiente && pendienteDe
+        ? items.map(i => ({ item: i, pendiente: pendienteDe(i) })).filter(p => p.pendiente > 0)
+        : [];
     return (
         <Modal
             isOpen={isOpen}
@@ -161,12 +169,48 @@ export default function ModalConfirmacionVenta({
                                             -S/{item.descuento_item.toFixed(2)}/u
                                         </span>
                                     )}
+                                    {entregaPendiente && pendienteDe && pendienteDe(item) > 0 && (
+                                        <span className="ml-1.5 text-[10px] font-bold" style={{ color: 'var(--color-warning)' }}>
+                                            · queda {pendienteDe(item)} por entregar
+                                        </span>
+                                    )}
                                 </div>
                                 <span className="font-bold ml-3 flex-shrink-0">S/ {item.subtotal.toFixed(2)}</span>
                             </div>
                         ))}
                     </div>
                 </div>
+
+                {/* Pendiente por entregar: resumen de lo que NO se lleva hoy */}
+                {pendientes.length > 0 && (
+                    <div
+                        className="rounded-xl p-3"
+                        style={{
+                            backgroundColor: 'color-mix(in srgb, var(--color-warning) 10%, var(--color-bg))',
+                            border: '1px solid var(--color-warning)',
+                        }}
+                    >
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                            <Truck size={14} style={{ color: 'var(--color-warning)' }} />
+                            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-warning)' }}>
+                                Queda pendiente por entregar
+                            </span>
+                        </div>
+                        <ul className="text-xs space-y-0.5" style={{ color: 'var(--color-text)' }}>
+                            {pendientes.map(({ item, pendiente }) => (
+                                <li key={item.key}>
+                                    <strong>{pendiente}</strong> × {item.producto_nombre} ({item.unidad_nombre})
+                                </li>
+                            ))}
+                        </ul>
+                        <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                            {fechaEntrega
+                                ? `Entrega estimada: ${new Date(fechaEntrega + 'T00:00:00').toLocaleDateString('es-PE')}. `
+                                : ''}
+                            Se registrará automáticamente en Finanzas → Anticipos; el stock pendiente sale del almacén al entregarse.
+                        </p>
+                    </div>
+                )}
 
                 {/* Totales */}
                 <div

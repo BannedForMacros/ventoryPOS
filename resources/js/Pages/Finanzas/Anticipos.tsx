@@ -18,6 +18,12 @@ import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
+interface AplicacionItem {
+    id: number;
+    cantidad: string;
+    item?: { id: number; producto_nombre: string; unidad_nombre: string } | null;
+}
+
 interface Aplicacion {
     id: number;
     fecha: string;
@@ -26,6 +32,19 @@ interface Aplicacion {
     observacion: string | null;
     venta?: { numero: string | null } | null;
     user?: { name: string } | null;
+    items?: AplicacionItem[];
+}
+
+/** Ítem de un anticipo multi-producto (pendiente por entregar del POS). */
+interface AnticipoItem {
+    id: number;
+    producto_nombre: string;
+    unidad_nombre: string;
+    cantidad: string;
+    cantidad_pendiente: string;
+    precio_unitario: string;
+    producto?: { id: number; nombre: string; precio_venta: string } | null;
+    unidad?: { id: number; precio_venta: string } | null;
 }
 
 interface Anticipo extends Record<string, unknown> {
@@ -38,11 +57,15 @@ interface Anticipo extends Record<string, unknown> {
     cantidad_pendiente: string | null;
     estado: string;
     observacion: string | null;
+    fecha_entrega_estimada?: string | null;
+    valor_pasivo_hoy?: number;
     cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string } | null;
     producto?: { id: number; nombre: string; precio_venta: string } | null;
+    venta?: { id: number; numero: string } | null;
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
     aplicaciones: Aplicacion[];
+    items?: AnticipoItem[];
 }
 
 interface Paginado<T> { data: T[]; total: number; }
@@ -64,11 +87,22 @@ const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const nombreCliente = (c?: { nombres?: string; apellidos?: string; razon_social?: string } | null) =>
     c?.razon_social ?? (`${c?.nombres ?? ''} ${c?.apellidos ?? ''}`.trim() || '—');
 
-/** Pasivo actual del anticipo: material → cantidad pendiente × precio del día. */
-const valorHoy = (a: Anticipo) =>
-    a.tipo_valorizacion === 'material' && a.producto && a.cantidad_pendiente !== null
+const esMultiItem = (a: Anticipo) => (a.items?.length ?? 0) > 0;
+
+/** Suma de unidades aún pendientes de un anticipo multi-producto. */
+const pendienteTotal = (a: Anticipo) =>
+    (a.items ?? []).reduce((s, i) => s + Number(i.cantidad_pendiente), 0);
+
+/** Pasivo actual del anticipo: el backend lo calcula (multi-item o clásico). */
+const valorHoy = (a: Anticipo) => {
+    if (a.valor_pasivo_hoy !== undefined && a.valor_pasivo_hoy !== null) return Number(a.valor_pasivo_hoy);
+    if (esMultiItem(a))
+        return (a.items ?? []).reduce((s, i) =>
+            s + Number(i.cantidad_pendiente) * Number(i.unidad?.precio_venta ?? i.precio_unitario), 0);
+    return a.tipo_valorizacion === 'material' && a.producto && a.cantidad_pendiente !== null
         ? Number(a.cantidad_pendiente) * Number(a.producto.precio_venta)
         : Number(a.saldo);
+};
 
 const emptyForm = () => ({
     cliente_id: '', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '',
@@ -85,6 +119,8 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
     const [errors, setErrors]           = useState<Record<string, string>>({});
     const [form, setForm]               = useState(emptyForm());
     const [formAplicar, setFormAplicar] = useState({ fecha: hoy(), monto: '', cantidad: '', observacion: '' });
+    // Entregas por ítem (anticipos multi-producto del POS): item.id → cantidad a entregar.
+    const [entregas, setEntregas]       = useState<Record<number, string>>({});
     const [excesoACxc, setExcesoACxc]   = useState(false);
     const [formAnular, setFormAnular]   = useState({ accion: 'devuelto', motivo: '' });
 
@@ -137,6 +173,23 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
     function submitAplicar() {
         if (!aplicando) return;
         setSaving(true);
+
+        // Anticipo multi-producto (pendiente por entregar del POS): entrega
+        // parcial por ítem — "solo te doy tanto de esto, lo demás queda".
+        if (esMultiItem(aplicando)) {
+            router.post(route('finanzas.anticipos.aplicar', aplicando.id), {
+                fecha:       formAplicar.fecha,
+                observacion: formAplicar.observacion,
+                items: (aplicando.items ?? [])
+                    .map(i => ({ id: i.id, cantidad: parseFloat(entregas[i.id] ?? '') || 0 }))
+                    .filter(i => i.cantidad > 0),
+            } as any, {
+                onSuccess: () => { setAplicando(null); setSaving(false); },
+                onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+            });
+            return;
+        }
+
         router.post(route('finanzas.anticipos.aplicar', aplicando.id), {
             ...formAplicar,
             // En material el monto lo calcula el backend (prorrata del anticipo).
@@ -166,16 +219,31 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
         { key: 'cliente', label: 'Cliente', render: (a) => <span className="font-medium">{nombreCliente(a.cliente)}</span> },
         {
             key: 'tipo_valorizacion', label: 'Modalidad',
-            render: (a) => a.tipo_valorizacion === 'material'
-                ? <Badge variant="primary">Material: {a.producto?.nombre ?? '—'}</Badge>
-                : <Badge variant="secondary">Dinero</Badge>,
+            render: (a) => esMultiItem(a)
+                ? <Badge variant="warning">
+                    Por entregar{a.venta?.numero ? ` · Venta ${a.venta.numero}` : ''} ({a.items!.length} prod.)
+                  </Badge>
+                : a.tipo_valorizacion === 'material'
+                    ? <Badge variant="primary">Material: {a.producto?.nombre ?? '—'}</Badge>
+                    : <Badge variant="secondary">Dinero</Badge>,
         },
         { key: 'monto', label: 'Recibido', align: 'right', render: (a) => <span>{money(a.monto)}</span> },
         {
             key: 'pendiente', label: 'Pendiente', align: 'right',
-            render: (a) => a.tipo_valorizacion === 'material'
-                ? <span className="text-sm">{Number(a.cantidad_pendiente ?? 0)} und</span>
-                : <span className="text-sm">{money(a.saldo)}</span>,
+            render: (a) => esMultiItem(a)
+                ? (
+                    <div className="text-sm leading-tight">
+                        <div>{pendienteTotal(a)} und</div>
+                        {a.fecha_entrega_estimada && a.estado === 'activo' && (
+                            <div className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                entrega est. {new Date(a.fecha_entrega_estimada + 'T00:00:00').toLocaleDateString('es-PE')}
+                            </div>
+                        )}
+                    </div>
+                )
+                : a.tipo_valorizacion === 'material'
+                    ? <span className="text-sm">{Number(a.cantidad_pendiente ?? 0)} und</span>
+                    : <span className="text-sm">{money(a.saldo)}</span>,
         },
         {
             key: 'valor_hoy', label: 'Pasivo a hoy', align: 'right',
@@ -201,7 +269,14 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                     </button>
                     {a.estado === 'activo' && (
                         <>
-                            <button onClick={() => { setErrors({}); setExcesoACxc(false); setFormAplicar({ fecha: hoy(), monto: a.tipo_valorizacion === 'material' ? '' : String(a.saldo), cantidad: '', observacion: '' }); setAplicando(a); }}
+                            <button onClick={() => {
+                                setErrors({}); setExcesoACxc(false);
+                                setFormAplicar({ fecha: hoy(), monto: a.tipo_valorizacion === 'material' ? '' : String(a.saldo), cantidad: '', observacion: '' });
+                                // Multi-producto: por defecto se entrega TODO lo pendiente;
+                                // el usuario puede bajar cantidades ("solo te doy tanto").
+                                setEntregas(Object.fromEntries((a.items ?? []).map(i => [i.id, String(Number(i.cantidad_pendiente))])));
+                                setAplicando(a);
+                            }}
                                 className="p-1.5 rounded-lg hover:bg-black/5" title="Registrar entrega/aplicación"
                                 style={{ color: 'var(--color-primary)' }}>
                                 <PackageCheck size={15} />
@@ -330,15 +405,87 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                     <>
                         <Button variant="ghost" onClick={() => setAplicando(null)}>Cancelar</Button>
                         <Button onClick={submitAplicar}
-                            disabled={saving || (!!aplicando && calcularDespacho(aplicando).excesoMonto > 0 && !excesoACxc)}
-                            title={!!aplicando && calcularDespacho(aplicando).excesoMonto > 0 && !excesoACxc
+                            disabled={saving
+                                || (!!aplicando && !esMultiItem(aplicando) && calcularDespacho(aplicando).excesoMonto > 0 && !excesoACxc)
+                                || (!!aplicando && esMultiItem(aplicando) && !(aplicando.items ?? []).some(i => (parseFloat(entregas[i.id] ?? '') || 0) > 0))}
+                            title={!!aplicando && !esMultiItem(aplicando) && calcularDespacho(aplicando).excesoMonto > 0 && !excesoACxc
                                 ? 'Confirma qué hacer con el excedente para continuar' : undefined}>
                             {saving ? 'Guardando...' : 'Registrar'}
                         </Button>
                     </>
                 }
             >
-                {aplicando && (() => {
+                {/* Entrega de anticipo multi-producto (pendiente del POS):
+                    cantidad por ítem ("solo te doy tanto, lo demás queda")
+                    y fecha de ESTA entrega. El stock sale del almacén aquí. */}
+                {aplicando && esMultiItem(aplicando) && (
+                    <div className="space-y-4">
+                        <StatGrid stats={[
+                            { label: 'Pendiente por entregar', valor: `${pendienteTotal(aplicando)} und`, color: 'warning', destacado: true },
+                            ...(aplicando.venta?.numero ? [{ label: 'Venta origen', valor: aplicando.venta.numero }] : []),
+                        ]} />
+                        <Input label="Fecha de la entrega" required type="date" value={formAplicar.fecha}
+                            onChange={e => setFormAplicar(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                        <div>
+                            <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                                ¿Cuánto entregas de cada producto? (baja la cantidad si solo entregas parte)
+                            </p>
+                            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                {(aplicando.items ?? []).map((it, idx) => {
+                                    const pendiente = Number(it.cantidad_pendiente);
+                                    const valor     = entregas[it.id] ?? '';
+                                    const num       = parseFloat(valor) || 0;
+                                    const excedido  = num > pendiente + 0.00009;
+                                    return (
+                                        <div key={it.id} className="flex items-center gap-2 px-3 py-2 text-xs"
+                                            style={{
+                                                borderBottom: idx < (aplicando.items!.length - 1) ? '1px solid var(--color-border)' : undefined,
+                                                backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
+                                                opacity: pendiente <= 0.0001 ? 0.5 : 1,
+                                            }}>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>{it.producto_nombre}</p>
+                                                <p style={{ color: 'var(--color-text-muted)' }}>
+                                                    pendiente: <strong>{pendiente}</strong> {it.unidad_nombre || 'und'}
+                                                </p>
+                                            </div>
+                                            {pendiente > 0.0001 ? (
+                                                <>
+                                                    <input
+                                                        type="number" min={0} max={pendiente} step="any" value={valor}
+                                                        onChange={e => setEntregas(prev => ({ ...prev, [it.id]: e.target.value }))}
+                                                        className="w-20 text-right rounded-lg px-2 py-1.5 border outline-none flex-shrink-0"
+                                                        style={{
+                                                            borderColor: excedido ? 'var(--color-danger)' : 'var(--color-border)',
+                                                            backgroundColor: 'var(--color-bg)',
+                                                            color: 'var(--color-text)',
+                                                        }}
+                                                    />
+                                                    <span className="flex-shrink-0 w-20 text-right" style={{ color: excedido ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
+                                                        {excedido ? `máx ${pendiente}` : num > 0 && num < pendiente - 0.00009 ? `quedan ${Math.round((pendiente - num) * 10000) / 10000}` : num > 0 ? 'completo' : 'no entrega'}
+                                                    </span>
+                                                </>
+                                            ) : (
+                                                <span className="flex-shrink-0" style={{ color: 'var(--color-success)' }}>Entregado ✓</span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {errors.items && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.items}</p>}
+                            {Object.entries(errors).filter(([k]) => k.startsWith('items.')).map(([k, v]) => (
+                                <p key={k} className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{v}</p>
+                            ))}
+                        </div>
+                        <Callout variant="info">
+                            Lo entregado sale del stock del almacén recién ahora (no salió al vender). Lo que no entregues queda pendiente para otra fecha.
+                        </Callout>
+                        <Input label="Observación" value={formAplicar.observacion}
+                            onChange={e => setFormAplicar(f => ({ ...f, observacion: e.target.value }))} />
+                    </div>
+                )}
+
+                {aplicando && !esMultiItem(aplicando) && (() => {
                     const { excesoCant, excesoMonto, precioDia } = calcularDespacho(aplicando);
                     return (
                         <div className="space-y-4">
@@ -406,6 +553,12 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                         value={formAnular.accion}
                         onChange={v => setFormAnular(f => ({ ...f, accion: String(v) }))}
                     />
+                    {anulando && esMultiItem(anulando) && formAnular.accion === 'anulado' && (
+                        <Callout variant="warning">
+                            Este pendiente proviene de una venta del POS{anulando.venta?.numero ? ` (${anulando.venta.numero})` : ''}. Para revertirlo, anula esa venta desde el historial: eso ajusta stock y tesorería juntos.
+                        </Callout>
+                    )}
+                    {errors.accion && <Callout variant="danger">{errors.accion}</Callout>}
                     <Input label="Motivo" required value={formAnular.motivo}
                         onChange={e => setFormAnular(f => ({ ...f, motivo: e.target.value }))} error={errors.motivo} />
                 </div>
@@ -417,17 +570,58 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (
-                    <Timeline
-                        emptyMessage="Sin aplicaciones registradas"
-                        items={detalle.aplicaciones.map(ap => ({
-                            fecha: new Date(ap.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
-                            badge: { texto: 'Entrega', variant: 'success' as const },
-                            tipo: 'neutro' as const,
-                            detalle: [ap.cantidad ? `${Number(ap.cantidad)} und` : null, ap.venta?.numero ? `Venta ${ap.venta.numero}` : null, ap.observacion].filter(Boolean).join(' · ') || undefined,
-                            user: ap.user?.name,
-                            monto: Number(ap.monto),
-                        }))}
-                    />
+                    <div className="space-y-4">
+                        {/* Desglose de productos pendientes (anticipos del POS) */}
+                        {esMultiItem(detalle) && (
+                            <div>
+                                <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Productos {detalle.venta?.numero ? `de la venta ${detalle.venta.numero}` : 'comprometidos'}
+                                    {detalle.fecha_entrega_estimada
+                                        ? ` · entrega estimada ${new Date(detalle.fecha_entrega_estimada + 'T00:00:00').toLocaleDateString('es-PE')}`
+                                        : ''}
+                                </p>
+                                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                    {(detalle.items ?? []).map((it, idx) => {
+                                        const pendiente = Number(it.cantidad_pendiente);
+                                        return (
+                                            <div key={it.id} className="flex items-center justify-between gap-2 px-3 py-2 text-xs"
+                                                style={{
+                                                    borderBottom: idx < (detalle.items!.length - 1) ? '1px solid var(--color-border)' : undefined,
+                                                    backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
+                                                }}>
+                                                <span className="font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                                                    {it.producto_nombre} <span style={{ color: 'var(--color-text-muted)' }}>× {Number(it.cantidad)} {it.unidad_nombre || 'und'}</span>
+                                                </span>
+                                                {pendiente > 0.0001 ? (
+                                                    <Badge variant="warning">quedan {pendiente}</Badge>
+                                                ) : (
+                                                    <Badge variant="success">entregado</Badge>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        <Timeline
+                            emptyMessage="Sin aplicaciones registradas"
+                            items={detalle.aplicaciones.map(ap => ({
+                                fecha: new Date(ap.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
+                                badge: { texto: 'Entrega', variant: 'success' as const },
+                                tipo: 'neutro' as const,
+                                detalle: [
+                                    ap.items?.length
+                                        ? ap.items.map(ai => `${Number(ai.cantidad)} × ${ai.item?.producto_nombre ?? 'ítem'}`).join(', ')
+                                        : (ap.cantidad ? `${Number(ap.cantidad)} und` : null),
+                                    ap.venta?.numero ? `Venta ${ap.venta.numero}` : null,
+                                    ap.observacion,
+                                ].filter(Boolean).join(' · ') || undefined,
+                                user: ap.user?.name,
+                                monto: Number(ap.monto),
+                            }))}
+                        />
+                    </div>
                 )}
             </Modal>
         </AppLayout>

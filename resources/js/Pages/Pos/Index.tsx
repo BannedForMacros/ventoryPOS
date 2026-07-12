@@ -296,6 +296,13 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // Requiere cliente identificado; el saldo queda como cuenta por cobrar.
     const [esCredito, setEsCredito]                 = useState(false);
     const [fechaVencimiento, setFechaVencimiento]   = useState('');
+    // Pendiente por entregar: el cliente paga todo pero se lleva solo PARTE.
+    // `pendientes` guarda por línea (key del carrito) cuánto QUEDA pendiente;
+    // el POS crea automáticamente el anticipo material en finanzas y el stock
+    // pendiente sale del almacén recién al registrarse la entrega.
+    const [entregaPendiente, setEntregaPendiente]   = useState(false);
+    const [fechaEntrega, setFechaEntrega]           = useState('');
+    const [pendientes, setPendientes]               = useState<Record<string, number>>({});
     const [modalCliente, setModalCliente]   = useState(false);
     // Alta de cliente sin salir del POS (se abre desde el modal de selección).
     const [modalCrearCliente, setModalCrearCliente] = useState(false);
@@ -554,7 +561,21 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         // La venta a crédito no debe "heredarse" a la siguiente venta.
         setEsCredito(false);
         setFechaVencimiento('');
+        // Tampoco el pendiente por entregar.
+        setEntregaPendiente(false);
+        setFechaEntrega('');
+        setPendientes({});
     }
+
+    /** Pendiente efectivo de una línea: lo tecleado, recortado a [0, cantidad]. */
+    function pendienteDe(item: LineaCarrito): number {
+        const p = pendientes[item.key] ?? 0;
+        return Math.min(Math.max(0, p), item.cantidad);
+    }
+
+    const totalPendientes = entregaPendiente
+        ? carrito.reduce((s, i) => s + pendienteDe(i), 0)
+        : 0;
 
     // Lineas que vienen de una cita con producto/unidad desactivada. Si hay,
     // no permitimos confirmar la venta hasta que el cajero las elimine o pida
@@ -582,6 +603,21 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             return;
         }
         const totalPagado = pagos.reduce((s, p) => s + p.monto, 0);
+
+        if (entregaPendiente) {
+            if (esCredito) {
+                toast.error('No puedes combinar "Pendiente por entregar" con venta a crédito: el pendiente exige que la venta esté pagada.');
+                return;
+            }
+            if (esClienteGeneralSel) {
+                toast.error('Marcar mercadería pendiente por entregar requiere un cliente identificado.');
+                return;
+            }
+            if (totalPendientes <= 0.00009) {
+                toast.error('Indica cuánto queda pendiente por entregar en al menos un producto (o desmarca la opción).');
+                return;
+            }
+        }
 
         if (esCredito) {
             if (esClienteGeneralSel) {
@@ -618,6 +654,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             descuento_concepto_id: descuentoConceptoId,
             es_credito:            esCredito,
             fecha_vencimiento:     esCredito && fechaVencimiento ? fechaVencimiento : null,
+            entrega_pendiente:     entregaPendiente,
+            fecha_entrega_estimada: entregaPendiente && fechaEntrega ? fechaEntrega : null,
             moneda,
             tipo_cambio:           moneda === 'USD' ? (tipoCambioHoy ?? null) : null,
             // Se reenvia el mismo key en cada reintento. El backend desduplica.
@@ -628,6 +666,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 producto_id:           i.producto_id,
                 producto_unidad_id:    i.producto_unidad_id,
                 cantidad:              i.cantidad,
+                cantidad_pendiente:    entregaPendiente ? pendienteDe(i) : 0,
                 precio_unitario:       i.precio_unitario,
                 descuento_item:        i.descuento_item,
                 descuento_concepto_id: i.descuento_concepto_id,
@@ -677,6 +716,32 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     }
 
     const cantidadItems = carrito.reduce((s, i) => s + i.cantidad, 0);
+
+    // Crédito y pendiente-por-entregar son excluyentes: el pendiente asume que
+    // la venta se pagó completa; el crédito, que se llevó todo sin pagar.
+    function activarCredito(v: boolean) {
+        setEsCredito(v);
+        if (v) setEntregaPendiente(false);
+    }
+    function activarPendiente(v: boolean) {
+        setEntregaPendiente(v);
+        if (v) setEsCredito(false);
+    }
+    function setPendienteLinea(key: string, valor: number) {
+        setPendientes(prev => ({ ...prev, [key]: valor }));
+    }
+
+    const propsPendiente = {
+        // En edición no se pueden crear pendientes (el backend también lo bloquea).
+        permitirPendiente:     !ventaEnEdicion,
+        entregaPendiente,
+        fechaEntrega,
+        pendienteDe,
+        totalPendientes,
+        onSetEntregaPendiente: activarPendiente,
+        onSetFechaEntrega:     setFechaEntrega,
+        onSetPendiente:        setPendienteLinea,
+    };
 
     return (
         <PosLayout>
@@ -1070,8 +1135,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         razonNoVender={razonNoVender}
                         esCredito={esCredito}
                         fechaVencimiento={fechaVencimiento}
-                        onSetEsCredito={setEsCredito}
+                        onSetEsCredito={activarCredito}
                         onSetFechaVencimiento={setFechaVencimiento}
+                        {...propsPendiente}
                     />
                 </div>
 
@@ -1139,8 +1205,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 razonNoVender={razonNoVender}
                                 esCredito={esCredito}
                                 fechaVencimiento={fechaVencimiento}
-                                onSetEsCredito={setEsCredito}
+                                onSetEsCredito={activarCredito}
                                 onSetFechaVencimiento={setFechaVencimiento}
+                                {...propsPendiente}
                             />
                         </div>
                     </div>
@@ -1221,6 +1288,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 total={total}
                 metodosPago={metodosPago}
                 conceptos={conceptosDescuento}
+                entregaPendiente={entregaPendiente}
+                pendienteDe={pendienteDe}
+                fechaEntrega={fechaEntrega}
             />
 
             <ModalSelectorPresentacion
@@ -1344,6 +1414,15 @@ interface CarritoPanelProps {
     fechaVencimiento: string;
     onSetEsCredito: (v: boolean) => void;
     onSetFechaVencimiento: (v: string) => void;
+    // Pendiente por entregar (pagado pero se lleva solo parte)
+    permitirPendiente: boolean;
+    entregaPendiente: boolean;
+    fechaEntrega: string;
+    pendienteDe: (item: LineaCarrito) => number;
+    totalPendientes: number;
+    onSetEntregaPendiente: (v: boolean) => void;
+    onSetFechaEntrega: (v: string) => void;
+    onSetPendiente: (key: string, v: number) => void;
 }
 
 function CarritoPanel({
@@ -1355,6 +1434,8 @@ function CarritoPanel({
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar,
     puedeVender, razonNoVender,
     esCredito, fechaVencimiento, onSetEsCredito, onSetFechaVencimiento,
+    permitirPendiente, entregaPendiente, fechaEntrega, pendienteDe, totalPendientes,
+    onSetEntregaPendiente, onSetFechaEntrega, onSetPendiente,
 }: CarritoPanelProps) {
     const hayInactivos = inactivosCount > 0;
 
@@ -1555,6 +1636,107 @@ function CarritoPanel({
                                 </div>
                             )}
                         </div>
+
+                        {/* Pendiente por entregar: pagó todo, se lleva solo parte.
+                            El POS crea el anticipo material en Finanzas solo;
+                            el stock pendiente sale recién al entregarse. */}
+                        {permitirPendiente && (
+                            <div
+                                className="rounded-xl px-3 py-2.5"
+                                style={{
+                                    border: `1px solid ${entregaPendiente ? 'var(--color-warning)' : 'var(--color-border)'}`,
+                                    backgroundColor: entregaPendiente
+                                        ? 'color-mix(in srgb, var(--color-warning) 8%, var(--color-bg))'
+                                        : 'var(--color-surface)',
+                                }}
+                            >
+                                <label className="flex items-center justify-between gap-2 cursor-pointer select-none">
+                                    <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                                        <Truck size={15} style={{ color: entregaPendiente ? 'var(--color-warning)' : 'var(--color-text-muted)' }} />
+                                        Pendiente por entregar
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={entregaPendiente}
+                                        onChange={e => onSetEntregaPendiente(e.target.checked)}
+                                        className="h-4 w-4 accent-[var(--color-warning)]"
+                                    />
+                                </label>
+                                {entregaPendiente && (
+                                    <div className="mt-2 space-y-2">
+                                        {esClienteGeneral && (
+                                            <p className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
+                                                Selecciona un cliente identificado para dejar mercadería pendiente.
+                                            </p>
+                                        )}
+                                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                            Indica cuánto <strong>se lleva ahora</strong> de cada producto; el resto queda pendiente y se registra solo en Finanzas → Anticipos.
+                                        </p>
+                                        <div className="space-y-1.5">
+                                            {carrito.map(item => {
+                                                const pendiente = pendienteDe(item);
+                                                const llevado   = Math.round((item.cantidad - pendiente) * 10000) / 10000;
+                                                return (
+                                                    <div key={item.key} className="flex items-center gap-2 text-xs">
+                                                        <span className="flex-1 min-w-0 truncate" style={{ color: 'var(--color-text)' }}>
+                                                            {item.producto_nombre}
+                                                        </span>
+                                                        <span className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>lleva</span>
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            max={item.cantidad}
+                                                            step="any"
+                                                            value={llevado}
+                                                            onChange={e => {
+                                                                const l = parseFloat(e.target.value);
+                                                                const llevaAhora = isNaN(l) ? 0 : Math.min(Math.max(0, l), item.cantidad);
+                                                                onSetPendiente(item.key, Math.round((item.cantidad - llevaAhora) * 10000) / 10000);
+                                                            }}
+                                                            className="w-16 text-xs text-right rounded-lg px-1.5 py-1 border outline-none flex-shrink-0"
+                                                            style={{
+                                                                borderColor: pendiente > 0 ? 'var(--color-warning)' : 'var(--color-border)',
+                                                                backgroundColor: 'var(--color-bg)',
+                                                                color: 'var(--color-text)',
+                                                            }}
+                                                        />
+                                                        <span className="flex-shrink-0 w-24 text-right font-medium"
+                                                            style={{ color: pendiente > 0 ? 'var(--color-warning)' : 'var(--color-text-muted)' }}>
+                                                            {pendiente > 0 ? `queda ${pendiente}` : 'completo'}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                                Entrega estimada (opcional)
+                                            </span>
+                                            <input
+                                                type="date"
+                                                value={fechaEntrega}
+                                                onChange={e => onSetFechaEntrega(e.target.value)}
+                                                className="flex-1 text-xs rounded-lg px-2 py-1.5 border outline-none"
+                                                style={{
+                                                    borderColor: 'var(--color-border)',
+                                                    backgroundColor: 'var(--color-bg)',
+                                                    color: 'var(--color-text)',
+                                                }}
+                                            />
+                                        </div>
+                                        {totalPendientes > 0 ? (
+                                            <p className="text-[11px] font-medium" style={{ color: 'var(--color-warning)' }}>
+                                                {totalPendientes} und quedarán pendientes por entregar (no salen del stock hasta entregarse).
+                                            </p>
+                                        ) : (
+                                            <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+                                                Aún no marcaste nada como pendiente: reduce lo que "lleva" en algún producto.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Pagos */}
                         <div>
