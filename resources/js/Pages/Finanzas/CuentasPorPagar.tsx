@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Banknote, Eye, ReceiptText } from 'lucide-react';
+import { Banknote, Eye, Pencil, ReceiptText, Trash2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -13,7 +13,6 @@ import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
-import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
 interface Pago {
@@ -21,6 +20,9 @@ interface Pago {
     fecha: string;
     monto: string;
     referencia: string | null;
+    observacion?: string | null;
+    metodo_pago_id?: number | null;
+    cuenta_id?: number | null;
     proveedor_adelanto_id: number | null;
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
@@ -48,6 +50,7 @@ interface Paginado<T> { data: T[]; total: number; }
 interface Props extends PageProps {
     entradas: Paginado<EntradaCxp>;
     totalPendiente: number;
+    esAdmin?: boolean;
     estado: string;
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
@@ -64,7 +67,7 @@ const nombreProveedor = (e: EntradaCxp) =>
     e.proveedor_rel?.razon_social ?? e.proveedor_rel?.nombre_comercial ?? e.proveedor ?? '—';
 const saldoDe = (e: EntradaCxp) => Math.max(0, Number(e.total) - Number(e.monto_pagado));
 
-export default function CuentasPorPagar({ entradas, totalPendiente, estado, metodosPago, cuentas, adelantos }: Props) {
+export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, estado, metodosPago, cuentas, adelantos }: Props) {
     const { flash } = usePage<Props>().props;
     const [abonando, setAbonando] = useState<EntradaCxp | null>(null);
     const [detalle, setDetalle]   = useState<EntradaCxp | null>(null);
@@ -75,6 +78,54 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
         monto: '', fecha: hoy(), metodo_pago_id: '', cuenta_id: '',
         proveedor_adelanto_id: '', referencia: '', observacion: '',
     });
+    // Edición / anulación de un pago ya registrado (solo admin).
+    const [editandoPago, setEditandoPago]   = useState<Pago | null>(null);
+    const [anulandoPago, setAnulandoPago]   = useState<Pago | null>(null);
+    const [motivoAnular, setMotivoAnular]   = useState('');
+    const [formPago, setFormPago] = useState({
+        monto: '', fecha: '', metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
+    });
+
+    function abrirEditarPago(p: Pago) {
+        setErrors({});
+        setFormPago({
+            monto:          String(Number(p.monto)),
+            fecha:          p.fecha.slice(0, 10),
+            metodo_pago_id: p.metodo_pago_id ? String(p.metodo_pago_id) : '',
+            cuenta_id:      p.cuenta_id ? String(p.cuenta_id) : '',
+            referencia:     p.referencia ?? '',
+            observacion:    p.observacion ?? '',
+        });
+        setEditandoPago(p);
+    }
+
+    function submitEditarPago() {
+        if (!editandoPago) return;
+        setSaving(true);
+        const esAdelantoPago = !!editandoPago.proveedor_adelanto_id;
+        router.put(route('finanzas.cxp.pagos.update', editandoPago.id), {
+            // Vía adelanto el monto no se envía (el backend lo prohíbe).
+            ...(esAdelantoPago ? {} : { monto: formPago.monto }),
+            fecha:          formPago.fecha,
+            metodo_pago_id: esAdelantoPago ? null : (formPago.metodo_pago_id || null),
+            cuenta_id:      esAdelantoPago ? null : (formPago.cuenta_id || null),
+            referencia:     formPago.referencia || null,
+            observacion:    formPago.observacion || null,
+        } as any, {
+            onSuccess: () => { setEditandoPago(null); setDetalle(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    function submitAnularPago() {
+        if (!anulandoPago) return;
+        setSaving(true);
+        router.delete(route('finanzas.cxp.pagos.destroy', anulandoPago.id), {
+            data: { motivo: motivoAnular.trim() },
+            onSuccess: () => { setAnulandoPago(null); setMotivoAnular(''); setDetalle(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        } as any);
+    }
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -208,7 +259,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
                 isOpen={abonando !== null}
                 onClose={() => setAbonando(null)}
                 title={abonando ? `Pagar a ${nombreProveedor(abonando)}` : ''}
-                size="md"
+                size="lg"
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAbonando(null)}>Cancelar</Button>
@@ -320,12 +371,12 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
                 )}
             </Modal>
 
-            {/* Modal historial de pagos */}
+            {/* Modal historial de pagos (con editar/anular para admin) */}
             <Modal
                 isOpen={detalle !== null}
                 onClose={() => setDetalle(null)}
-                title={detalle ? `Pagos — ${nombreProveedor(detalle)}` : ''}
-                size="md"
+                title={detalle ? `Pagos — ${nombreProveedor(detalle)}${detalle.numero_documento ? ` · ${detalle.numero_documento}` : ''}` : ''}
+                size="2xl"
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (
@@ -335,20 +386,151 @@ export default function CuentasPorPagar({ entradas, totalPendiente, estado, meto
                             { label: 'Pagado', valor: money(detalle.monto_pagado), color: 'success' },
                             { label: 'Saldo', valor: money(saldoDe(detalle)), color: 'danger' },
                         ]} />
-                        <Timeline
-                            emptyMessage="Sin pagos registrados"
-                            items={detalle.pagos_parciales.map(p => ({
-                                fecha: fdate(p.fecha),
-                                badge: p.proveedor_adelanto_id
-                                    ? { texto: 'Adelanto', variant: 'warning' as const }
-                                    : { texto: 'Pago', variant: 'success' as const },
-                                tipo: 'egreso' as const,
-                                detalle: p.proveedor_adelanto_id
-                                    ? `Consumió adelanto #${p.proveedor_adelanto_id}`
-                                    : [p.metodo_pago?.nombre, p.cuenta?.nombre, p.referencia].filter(Boolean).join(' · ') || undefined,
-                                user: p.user?.name,
-                                monto: Number(p.monto),
-                            }))}
+                        {detalle.pagos_parciales.length === 0 ? (
+                            <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>Sin pagos registrados</p>
+                        ) : (
+                            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                {detalle.pagos_parciales.map((p, idx) => (
+                                    <div key={p.id} className="flex items-center gap-3 px-4 py-2.5"
+                                        style={{
+                                            borderBottom: idx < detalle.pagos_parciales.length - 1 ? '1px solid var(--color-border)' : undefined,
+                                            backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
+                                        }}>
+                                        <Badge variant={p.proveedor_adelanto_id ? 'warning' : 'success'}>
+                                            {p.proveedor_adelanto_id ? 'Adelanto' : 'Pago'}
+                                        </Badge>
+                                        <div className="flex-1 min-w-0 text-xs">
+                                            <p className="font-medium" style={{ color: 'var(--color-text)' }}>
+                                                {fdate(p.fecha)}
+                                                <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {p.proveedor_adelanto_id
+                                                        ? `Consumió adelanto #${p.proveedor_adelanto_id}`
+                                                        : [p.metodo_pago?.nombre, p.cuenta?.nombre, p.referencia].filter(Boolean).join(' · ') || '—'}
+                                                </span>
+                                            </p>
+                                            {(p.observacion || p.user?.name) && (
+                                                <p className="truncate" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {[p.observacion, p.user?.name ? `por ${p.user.name}` : null].filter(Boolean).join(' · ')}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <span className="font-bold text-sm whitespace-nowrap" style={{ color: 'var(--color-danger)' }}>
+                                            −{money(p.monto)}
+                                        </span>
+                                        {esAdmin && (
+                                            <div className="flex items-center gap-1 flex-shrink-0">
+                                                <button onClick={() => abrirEditarPago(p)}
+                                                    className="p-1.5 rounded-lg hover:bg-black/5" title="Editar pago"
+                                                    style={{ color: 'var(--color-primary)' }}>
+                                                    <Pencil size={14} />
+                                                </button>
+                                                <button onClick={() => { setErrors({}); setMotivoAnular(''); setAnulandoPago(p); }}
+                                                    className="p-1.5 rounded-lg hover:bg-black/5" title="Anular pago"
+                                                    style={{ color: 'var(--color-danger)' }}>
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {esAdmin && detalle.pagos_parciales.length > 0 && (
+                            <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                Editar o anular un pago recalcula tesorería y el saldo de la compra automáticamente. Todo queda en auditoría.
+                            </p>
+                        )}
+                    </div>
+                )}
+            </Modal>
+
+            {/* Modal editar pago (admin) */}
+            <Modal isOpen={editandoPago !== null} onClose={() => setEditandoPago(null)}
+                title={editandoPago ? `Editar pago — ${money(editandoPago.monto)} del ${fdate(editandoPago.fecha)}` : ''} size="lg"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEditandoPago(null)}>Cancelar</Button>
+                        <Button onClick={submitEditarPago} disabled={saving}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button>
+                    </>
+                }
+            >
+                {editandoPago && (
+                    <div className="space-y-4">
+                        {editandoPago.proveedor_adelanto_id ? (
+                            <Callout variant="warning">
+                                Este pago consumió el adelanto #{editandoPago.proveedor_adelanto_id}: su <strong>monto no se edita</strong> (anúlalo y regístralo de nuevo si el monto está mal). Puedes corregir fecha, referencia y observación.
+                            </Callout>
+                        ) : (
+                            <Callout variant="info">
+                                Al guardar, el egreso en tesorería se revierte y se vuelve a asentar con los datos nuevos; el saldo de la compra se recalcula.
+                            </Callout>
+                        )}
+                        <div className="grid grid-cols-2 gap-3">
+                            <Input label="Monto" required type="number" min="0.01" step="0.01"
+                                value={formPago.monto}
+                                disabled={!!editandoPago.proveedor_adelanto_id}
+                                onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))}
+                                error={errors.monto}
+                            />
+                            <Input label="Fecha" required type="date" value={formPago.fecha}
+                                onChange={e => setFormPago(f => ({ ...f, fecha: e.target.value }))}
+                                error={errors.fecha}
+                            />
+                        </div>
+                        {!editandoPago.proveedor_adelanto_id && (
+                            <>
+                                <Select label="Método de pago"
+                                    options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
+                                    value={formPago.metodo_pago_id}
+                                    onChange={v => {
+                                        const cts = cuentasDeMetodo(String(v));
+                                        setFormPago(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' }));
+                                    }}
+                                    placeholder="— Seleccionar —"
+                                    error={errors.metodo_pago_id}
+                                />
+                                {cuentasDeMetodo(formPago.metodo_pago_id).length > 0 && (
+                                    <Select label="Cuenta origen"
+                                        options={cuentasDeMetodo(formPago.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                                        value={formPago.cuenta_id}
+                                        onChange={v => setFormPago(f => ({ ...f, cuenta_id: String(v) }))}
+                                        placeholder="— Seleccionar —"
+                                        error={errors.cuenta_id}
+                                    />
+                                )}
+                            </>
+                        )}
+                        <Input label="Referencia (operación, voucher...)" value={formPago.referencia}
+                            onChange={e => setFormPago(f => ({ ...f, referencia: e.target.value }))} />
+                        <Input label="Observación" value={formPago.observacion}
+                            onChange={e => setFormPago(f => ({ ...f, observacion: e.target.value }))} />
+                    </div>
+                )}
+            </Modal>
+
+            {/* Modal anular pago (admin) */}
+            <Modal isOpen={anulandoPago !== null} onClose={() => setAnulandoPago(null)}
+                title={anulandoPago ? `Anular pago — ${money(anulandoPago.monto)} del ${fdate(anulandoPago.fecha)}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setAnulandoPago(null)}>Cancelar</Button>
+                        <Button variant="danger" onClick={submitAnularPago} disabled={saving || motivoAnular.trim().length < 5}>
+                            {saving ? 'Anulando...' : 'Sí, anular pago'}
+                        </Button>
+                    </>
+                }
+            >
+                {anulandoPago && (
+                    <div className="space-y-3">
+                        <Callout variant="warning">
+                            {anulandoPago.proveedor_adelanto_id
+                                ? <>El monto volverá como saldo del <strong>adelanto #{anulandoPago.proveedor_adelanto_id}</strong> y la compra quedará con más saldo pendiente.</>
+                                : <>Se revierte el egreso en tesorería (el dinero "vuelve" a la cuenta) y la compra queda con más saldo pendiente.</>}
+                        </Callout>
+                        <Input label="Motivo (mínimo 5 caracteres)" required value={motivoAnular}
+                            onChange={e => setMotivoAnular(e.target.value)}
+                            placeholder="Ej.: se registró doble / monto equivocado"
+                            error={errors.motivo}
                         />
                     </div>
                 )}

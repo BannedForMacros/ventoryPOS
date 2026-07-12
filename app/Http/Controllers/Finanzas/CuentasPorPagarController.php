@@ -49,6 +49,7 @@ class CuentasPorPagarController extends Controller
         return Inertia::render('Finanzas/CuentasPorPagar', [
             'entradas'       => $entradas,
             'totalPendiente' => round($totalPendiente, 2),
+            'esAdmin'        => (bool) $user->rol->es_admin,
             'estado'         => $request->input('estado', 'pendientes'),
             'metodosPago'    => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
             'cuentas'        => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
@@ -136,5 +137,154 @@ class CuentasPorPagarController extends Controller
         });
 
         return back()->with('success', 'Pago al proveedor registrado correctamente.');
+    }
+
+    /**
+     * Edita un pago ya registrado (SOLO admin): monto, fecha, método/cuenta,
+     * referencia y observación. Revierte el asiento de tesorería original y
+     * lo vuelve a registrar con los datos nuevos; recalcula monto_pagado y
+     * estado_pago de la compra.
+     *
+     * Pagos hechos CONSUMIENDO UN ADELANTO: el monto no se edita aquí (el
+     * saldo del adelanto y su historial quedarían desalineados) — solo
+     * fecha/referencia/observación. Para corregir el monto: anular y volver
+     * a registrar.
+     */
+    public function editarPago(Request $request, EntradaPago $pago)
+    {
+        $user    = $request->user();
+        $entrada = $pago->entrada;
+
+        abort_if(!$entrada || $entrada->empresa_id !== $user->empresa_id, 403);
+        abort_unless($user->rol->es_admin, 403, 'Solo un administrador puede editar pagos registrados.');
+
+        $esAdelanto = !empty($pago->proveedor_adelanto_id);
+
+        // Tope del monto nuevo: el saldo actual + lo que ya aporta este pago.
+        $maxMonto = round($entrada->saldoPendiente() + (float) $pago->monto, 2);
+
+        $data = $request->validate([
+            'monto'          => [$esAdelanto ? 'prohibited' : 'required', 'numeric', 'min:0.01', "max:{$maxMonto}"],
+            'fecha'          => ['required', 'date'],
+            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'referencia'     => ['nullable', 'string', 'max:200'],
+            'observacion'    => ['nullable', 'string', 'max:500'],
+        ], [
+            'monto.prohibited' => 'Este pago consumió un adelanto: su monto no se edita. Anúlalo y regístralo de nuevo.',
+        ]);
+
+        $antes = [
+            'monto'          => (float) $pago->monto,
+            'fecha'          => $pago->fecha->toDateString(),
+            'metodo_pago_id' => $pago->metodo_pago_id,
+            'cuenta_id'      => $pago->cuenta_id,
+        ];
+
+        DB::transaction(function () use ($pago, $entrada, $user, $data, $esAdelanto, $antes) {
+            $montoNuevo = $esAdelanto ? (float) $pago->monto : (float) $data['monto'];
+
+            $pago->update([
+                'monto'          => $montoNuevo,
+                'fecha'          => $data['fecha'],
+                'metodo_pago_id' => $esAdelanto ? $pago->metodo_pago_id : ($data['metodo_pago_id'] ?? null),
+                'cuenta_id'      => $esAdelanto ? $pago->cuenta_id : ($data['cuenta_id'] ?? null),
+                'referencia'     => $data['referencia'] ?? null,
+                'observacion'    => $data['observacion'] ?? null,
+            ]);
+
+            // F7 — Rehacer el egreso de tesorería (solo pagos con dinero).
+            if (!$esAdelanto) {
+                $this->tesoreria->revertir('entrada_pago', $pago->id);
+                $prov = $entrada->proveedorRel?->razon_social ?? $entrada->proveedor ?? 'proveedor';
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                    $user,
+                    $data['fecha'],
+                    'egreso',
+                    $montoNuevo,
+                    "Pago a proveedor {$prov}" . ($entrada->numero_documento ? " ({$entrada->numero_documento})" : '') . ' [editado]',
+                    'entrada_pago',
+                    $pago->id,
+                );
+            }
+
+            // Recalcular lo pagado de la compra con el delta del monto.
+            $pagado = round((float) $entrada->monto_pagado - $antes['monto'] + $montoNuevo, 2);
+            $entrada->update([
+                'monto_pagado' => max(0, $pagado),
+                'estado_pago'  => $pagado >= (float) $entrada->total - 0.01 ? 'pagado' : ($pagado > 0 ? 'parcial' : 'pendiente'),
+            ]);
+
+            AuditoriaService::log('cxp.pago_editado', $entrada, [
+                'pago_id' => $pago->id,
+                'antes'   => $antes,
+                'despues' => [
+                    'monto'          => $montoNuevo,
+                    'fecha'          => $data['fecha'],
+                    'metodo_pago_id' => $pago->metodo_pago_id,
+                    'cuenta_id'      => $pago->cuenta_id,
+                ],
+            ], $user);
+        });
+
+        return back()->with('success', 'Pago actualizado: tesorería y el saldo de la compra se recalcularon.');
+    }
+
+    /**
+     * Anula un pago registrado (SOLO admin): revierte tesorería (o restaura
+     * el saldo del adelanto consumido), recalcula la compra y elimina el pago.
+     */
+    public function eliminarPago(Request $request, EntradaPago $pago)
+    {
+        $user    = $request->user();
+        $entrada = $pago->entrada;
+
+        abort_if(!$entrada || $entrada->empresa_id !== $user->empresa_id, 403);
+        abort_unless($user->rol->es_admin, 403, 'Solo un administrador puede anular pagos registrados.');
+
+        $data = $request->validate([
+            'motivo' => ['required', 'string', 'min:5', 'max:500'],
+        ]);
+
+        DB::transaction(function () use ($pago, $entrada, $user, $data) {
+            // Pago vía adelanto: devolver el saldo al adelanto y borrar su aplicación.
+            if ($pago->proveedor_adelanto_id) {
+                $adelanto = ProveedorAdelanto::where('id', $pago->proveedor_adelanto_id)->lockForUpdate()->first();
+                if ($adelanto) {
+                    $adelanto->update([
+                        'saldo'  => round((float) $adelanto->saldo + (float) $pago->monto, 2),
+                        'estado' => 'activo',
+                    ]);
+                    $adelanto->aplicaciones()
+                        ->where('entrada_id', $entrada->id)
+                        ->where('monto', $pago->monto)
+                        ->orderByDesc('id')
+                        ->first()?->delete();
+                }
+            } else {
+                // Pago con dinero: revertir el egreso de tesorería.
+                $this->tesoreria->revertir('entrada_pago', $pago->id);
+            }
+
+            $pagado = round((float) $entrada->monto_pagado - (float) $pago->monto, 2);
+            $entrada->update([
+                'monto_pagado' => max(0, $pagado),
+                'estado_pago'  => $pagado >= (float) $entrada->total - 0.01 ? 'pagado' : ($pagado > 0 ? 'parcial' : 'pendiente'),
+            ]);
+
+            AuditoriaService::log('cxp.pago_anulado', $entrada, [
+                'pago_id'      => $pago->id,
+                'monto'        => (float) $pago->monto,
+                'fecha'        => $pago->fecha->toDateString(),
+                'via_adelanto' => (bool) $pago->proveedor_adelanto_id,
+                'motivo'       => $data['motivo'],
+            ], $user);
+
+            $pago->delete();
+        });
+
+        return back()->with('success', 'Pago anulado: el saldo de la compra y tesorería se recalcularon.');
     }
 }

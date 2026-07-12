@@ -313,6 +313,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Cuentas por pagar (proveedores, con abonos parciales)
         Route::middleware('permiso:finanzas.cuentas-por-pagar,ver')->get('cuentas-por-pagar', [CuentasPorPagarController::class, 'index'])->name('cxp.index');
         Route::middleware('permiso:finanzas.cuentas-por-pagar,crear')->post('cuentas-por-pagar/{entrada}/abonar', [CuentasPorPagarController::class, 'abonar'])->name('cxp.abonar');
+        Route::middleware('permiso:finanzas.cuentas-por-pagar,editar')->put('cuentas-por-pagar/pagos/{pago}', [CuentasPorPagarController::class, 'editarPago'])->name('cxp.pagos.update');
+        Route::middleware('permiso:finanzas.cuentas-por-pagar,eliminar')->delete('cuentas-por-pagar/pagos/{pago}', [CuentasPorPagarController::class, 'eliminarPago'])->name('cxp.pagos.destroy');
 
         // Anticipos de clientes
         Route::middleware('permiso:finanzas.anticipos,ver')->get('anticipos', [AnticipoClienteController::class, 'index'])->name('anticipos.index');
