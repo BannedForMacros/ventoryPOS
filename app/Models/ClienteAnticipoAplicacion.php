@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ClienteAnticipoAplicacion extends Model
 {
@@ -26,4 +27,5 @@ class ClienteAnticipoAplicacion extends Model
     public function anticipo(): BelongsTo { return $this->belongsTo(ClienteAnticipo::class, 'cliente_anticipo_id'); }
     public function venta(): BelongsTo    { return $this->belongsTo(Venta::class); }
     public function user(): BelongsTo     { return $this->belongsTo(User::class); }
+    public function items(): HasMany      { return $this->hasMany(ClienteAnticipoAplicacionItem::class, 'cliente_anticipo_aplicacion_id'); }
 }

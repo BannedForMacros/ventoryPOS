@@ -47,6 +47,8 @@ class Venta extends Model
     public function pagos(): HasMany             { return $this->hasMany(VentaPago::class); }
     public function abonos(): HasMany            { return $this->hasMany(VentaAbono::class); }
     public function descuentosLog(): HasMany     { return $this->hasMany(DescuentoLog::class); }
+    /** Anticipos "pendiente por entregar" creados por esta venta desde el POS. */
+    public function anticipos(): HasMany         { return $this->hasMany(ClienteAnticipo::class, 'venta_id'); }
 
     public function scopeCompletadas(Builder $q): Builder        { return $q->where('estado', 'completada'); }
     public function scopeAnuladas(Builder $q): Builder           { return $q->where('estado', 'anulada'); }

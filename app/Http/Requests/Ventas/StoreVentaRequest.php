@@ -38,6 +38,12 @@ class StoreVentaRequest extends FormRequest
             // pagos parciales o sin pago inicial.
             'es_credito'             => ['nullable', 'boolean'],
             'fecha_vencimiento'      => ['nullable', 'date', 'after_or_equal:today'],
+            // Pendiente por entregar: el cliente paga TODO pero se lleva solo
+            // parte de la mercadería. El POS crea un anticipo material con los
+            // ítems pendientes (items.*.cantidad_pendiente) y el stock de lo
+            // pendiente se descuenta recién al entregarlo.
+            'entrega_pendiente'      => ['nullable', 'boolean'],
+            'fecha_entrega_estimada' => ['nullable', 'date', 'after_or_equal:today'],
             // Token unico generado por el frontend para prevenir duplicados por reintentos.
             // Si el cliente reenvia la misma venta (timeout, doble click, etc.) el backend
             // detecta el key y devuelve la venta ya creada en lugar de duplicarla.
@@ -62,6 +68,8 @@ class StoreVentaRequest extends FormRequest
             ],
             'items.*.producto_unidad_id'      => ['required', 'integer', 'exists:producto_unidades,id'],
             'items.*.cantidad'                => ['required', 'numeric', 'min:0.0001'],
+            // Cuánto de la línea queda SIN entregar (solo con entrega_pendiente).
+            'items.*.cantidad_pendiente'      => ['nullable', 'numeric', 'min:0'],
             'items.*.precio_unitario'         => ['required', 'numeric', 'min:0'],
             'items.*.descuento_item'          => ['nullable', 'numeric', 'min:0'],
             'items.*.descuento_concepto_id'   => [
@@ -115,7 +123,63 @@ class StoreVentaRequest extends FormRequest
             }
 
             $this->validarSobrepagoNoEfectivo($validator, $total, $empresaId);
+            $this->validarEntregaPendiente($validator, $empresaId);
         });
+    }
+
+    /**
+     * Pendiente por entregar (POS): reglas de consistencia.
+     *
+     *  - Requiere cliente identificado (no Cliente General): sin nombre no hay
+     *    a quién apuntarle la mercadería pendiente.
+     *  - Incompatible con venta a crédito: el anticipo material asume que el
+     *    dinero YA ingresó completo; mezclar ambos rompería la contabilidad.
+     *  - Cada cantidad_pendiente debe ser <= a la cantidad de su línea, y al
+     *    menos una línea debe dejar algo pendiente (si no, es venta normal).
+     */
+    private function validarEntregaPendiente($validator, int $empresaId): void
+    {
+        if (!$this->boolean('entrega_pendiente')) return;
+
+        if ($this->boolean('es_credito')) {
+            $validator->errors()->add(
+                'entrega_pendiente',
+                'No se puede combinar "Pendiente por entregar" con venta a crédito: el pendiente exige que la venta esté pagada.',
+            );
+        }
+
+        $clienteId = $this->input('cliente_id');
+        $esGeneral = !$clienteId || \App\Models\Cliente::where('id', $clienteId)
+            ->where('empresa_id', $empresaId)
+            ->value('es_cliente_general');
+        if ($esGeneral) {
+            $validator->errors()->add(
+                'cliente_id',
+                'Marcar mercadería pendiente por entregar requiere un cliente identificado (no Cliente General).',
+            );
+        }
+
+        $hayPendiente = false;
+        foreach ($this->input('items', []) as $index => $item) {
+            $cantidad  = (float) ($item['cantidad'] ?? 0);
+            $pendiente = (float) ($item['cantidad_pendiente'] ?? 0);
+            if ($pendiente < 0) continue; // min:0 ya lo atrapa
+
+            if ($pendiente > $cantidad + 0.00009) {
+                $validator->errors()->add(
+                    "items.{$index}.cantidad_pendiente",
+                    'La cantidad pendiente por entregar no puede superar la cantidad vendida de la línea.',
+                );
+            }
+            if ($pendiente > 0.00009) $hayPendiente = true;
+        }
+
+        if (!$hayPendiente) {
+            $validator->errors()->add(
+                'entrega_pendiente',
+                'Marcaste "Pendiente por entregar" pero ninguna línea tiene cantidad pendiente. Indica cuánto se queda o desmarca la opción.',
+            );
+        }
     }
 
     /**

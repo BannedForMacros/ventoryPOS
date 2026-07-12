@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict e6qrVYek2DaBwcUsF7fb920WM55Kw2OyU90mTt0l9m01eAAxVx0jqkWKNs7O8J4
+\restrict r7GBF2MvqkkcfD7Tjjb74TOmjf8c1tjRHlPoTuajSJnCOnFyBesXk0mIph1CDBU
 
 -- Dumped from database version 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)
 -- Dumped by pg_dump version 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)
@@ -3232,6 +3232,25 @@ COPY public.auditoria (id, empresa_id, user_id, user_name, accion, modelo_tipo, 
 411	1097	1296	Cajera 1	cxc.abono	App\\Models\\Venta	1101	{"monto": 263.5, "saldo": 0, "numero": "MIG-6a525d4c515e6"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 12:54:34
 412	1097	1296	Cajera 1	decolecta.ruc.consultado	\N	\N	{"ruc": "20607792225"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 14:28:36
 413	1097	1296	Cajera 1	decolecta.dni.consultado	\N	\N	{"dni": "47204340"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 15:14:58
+414	1097	1296	Cajera 1	decolecta.dni.consultado	\N	\N	{"dni": "48847080"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 15:28:08
+415	1097	1297	Cajera 2	cxc.abono	App\\Models\\Venta	1166	{"monto": 604.4, "saldo": 0, "numero": "V-0003"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 16:27:39
+416	1097	1297	Cajera 2	cxp.abono	App\\Models\\Entrada	75	{"monto": 26560, "saldo": 24480, "via_adelanto": false}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 16:30:16
+417	1097	1296	Cajera 1	decolecta.ruc.consultado	\N	\N	{"ruc": "20608526138"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 16:48:04
+418	1097	1295	Administrador H&C	permisos.modificados	App\\Models\\Rol	1169	{"rol_nombre": "Cajera", "permisos_nuevos": {"1": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "2": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "3": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "4": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "5": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "6": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "7": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "8": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "9": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "10": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "11": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "12": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "13": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "14": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "15": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "16": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "17": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "18": {"ver": true, "crear": true, "editar": true, "eliminar": false}, "20": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "21": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "22": {"ver": true, "crear": true, "editar": true, "eliminar": false}, "24": {"ver": true, "crear": true, "editar": false, "eliminar": false}, "26": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "27": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "28": {"ver": true, "crear": true, "editar": false, "eliminar": false}, "29": {"ver": true, "crear": true, "editar": false, "eliminar": false}, "30": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "31": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "32": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "33": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "34": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "35": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "36": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "37": {"ver": true, "crear": true, "editar": false, "eliminar": false}, "38": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "39": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "40": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "41": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "42": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "43": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "44": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "45": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "46": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "47": {"ver": true, "crear": false, "editar": false, "eliminar": false}, "48": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "49": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "50": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "51": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "52": {"ver": true, "crear": false, "editar": false, "eliminar": false}, "53": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "54": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "55": {"ver": false, "crear": false, "editar": false, "eliminar": false}}, "permisos_previos": {"1": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "2": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "3": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "4": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "5": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "6": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "7": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "8": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "9": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "10": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "11": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "12": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "13": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "14": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "15": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "16": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "17": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "18": {"ver": true, "crear": true, "editar": true, "eliminar": false}, "20": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "21": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "22": {"ver": true, "crear": true, "editar": true, "eliminar": false}, "24": {"ver": true, "crear": true, "editar": false, "eliminar": false}, "26": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "27": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "28": {"ver": true, "crear": true, "editar": false, "eliminar": false}, "29": {"ver": true, "crear": true, "editar": false, "eliminar": false}, "30": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "31": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "32": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "33": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "34": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "35": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "36": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "37": {"ver": true, "crear": true, "editar": false, "eliminar": false}, "38": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "39": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "40": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "41": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "42": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "43": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "44": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "45": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "46": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "47": {"ver": true, "crear": false, "editar": false, "eliminar": false}, "48": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "49": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "50": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "51": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "52": {"ver": true, "crear": false, "editar": false, "eliminar": false}, "53": {"ver": true, "crear": true, "editar": true, "eliminar": true}, "54": {"ver": false, "crear": false, "editar": false, "eliminar": false}, "55": {"ver": false, "crear": false, "editar": false, "eliminar": false}}}	38.25.4.52	Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1	2026-07-11 16:50:36
+419	1097	1297	Cajera 2	decolecta.ruc.consultado	\N	\N	{"ruc": "20479790214"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 16:56:21
+420	1097	1297	Cajera 2	decolecta.ruc.consultado	\N	\N	{"ruc": "20604078238"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 16:58:11
+421	1097	1297	Cajera 2	decolecta.ruc.consultado	\N	\N	{"ruc": "20606621109"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 17:00:23
+422	1097	1297	Cajera 2	cxc.abono	App\\Models\\Venta	1120	{"monto": 614, "saldo": 0, "numero": "MIG-6a525d4c52803"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 17:19:31
+423	1097	1297	Cajera 2	decolecta.ruc.consultado	\N	\N	{"ruc": "20615155412"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 17:20:54
+424	1097	1297	Cajera 2	decolecta.ruc.consultado	\N	\N	{"ruc": "20610167692"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 18:10:54
+425	1097	1297	Cajera 2	cxc.abono	App\\Models\\Venta	1142	{"monto": 4756, "saldo": 0, "numero": "MIG-6a525d4c53d07"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 18:14:23
+426	1097	1297	Cajera 2	cxc.abono	App\\Models\\Venta	1121	{"monto": 622, "saldo": 5918, "numero": "MIG-6a525d4c528e2"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 18:15:04
+427	1097	1297	Cajera 2	cxc.abono	App\\Models\\Venta	1105	{"monto": 1000, "saldo": 669, "numero": "MIG-6a525d4c519a0"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 18:15:24
+428	1097	1295	Administrador H&C	venta.editada	App\\Models\\Venta	1190	{"total": 10, "numero": "V-0024"}	38.25.4.52	Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1	2026-07-11 18:19:27
+429	1097	1296	Cajera 1	decolecta.dni.consultado	\N	\N	{"dni": "46539777"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 18:20:05
+430	1097	1295	Administrador H&C	deuda.anulada	App\\Models\\Deuda	73	{"saldo": 290, "motivo": "revisar"}	38.25.4.52	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 18:50:56
+431	1097	1295	Administrador H&C	deuda.anulada	App\\Models\\Deuda	68	{"saldo": 2500, "motivo": "ya se pago"}	38.25.4.52	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-11 18:51:16
+432	1097	1295	Administrador H&C	cxc.abono	App\\Models\\Venta	1160	{"monto": 15, "saldo": 0, "numero": "V-0017"}	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	2026-07-12 07:42:09
 \.
 
 
@@ -3428,24 +3447,26 @@ COPY public.balance_diario_items (id, balance_diario_id, seccion, categoria, des
 2277	67	contra	deuda	PALANA	deuda	72	20.00	f	f	8	2026-07-11 10:12:12	2026-07-11 10:12:12
 2278	67	contra	deuda	SALDO DE CEMENTO HOLCIM	deuda	71	290.00	f	f	9	2026-07-11 10:12:12	2026-07-11 10:12:12
 2279	67	contra	personal	PERSONAL (sueldos pendientes)	deuda	68	2500.00	f	f	10	2026-07-11 10:12:12	2026-07-11 10:12:12
-2388	68	favor	efectivo	Efectivo	cuenta	286	24611.99	f	f	1	2026-07-11 15:22:28	2026-07-11 15:22:28
-2389	68	favor	cuenta_bancaria	Cuenta BBVA Soles	cuenta	288	18064.07	f	f	2	2026-07-11 15:22:28	2026-07-11 15:22:28
-2390	68	favor	cuenta_bancaria	Cuenta BCP Dólares	cuenta	290	0.00	f	f	3	2026-07-11 15:22:28	2026-07-11 15:22:28
-2391	68	favor	cuenta_bancaria	Cuenta BCP Soles	cuenta	287	77877.79	f	f	4	2026-07-11 15:22:28	2026-07-11 15:22:28
-2392	68	favor	cuenta_bancaria	Yape	cuenta	289	2170.60	f	f	5	2026-07-11 15:22:28	2026-07-11 15:22:28
-2393	68	favor	stock	Stock (inventario valorizado)	\N	\N	213300.95	f	f	6	2026-07-11 15:22:28	2026-07-11 15:22:28
-2394	68	favor	cxc	Deudas por cobrar (ventas a crédito)	\N	\N	84239.28	f	f	7	2026-07-11 15:22:28	2026-07-11 15:22:28
-2395	68	favor	planilla_descuento	Por descontar en planilla (faltantes y cargos)	\N	\N	0.00	f	f	8	2026-07-11 15:22:28	2026-07-11 15:22:28
-2396	68	contra	cxp	Proveedores por pagar	\N	\N	136280.98	f	f	1	2026-07-11 15:22:28	2026-07-11 15:22:28
-2397	68	contra	anticipo_cliente	Clientes anticipos (a precio del día)	\N	\N	52303.24	f	f	2	2026-07-11 15:22:28	2026-07-11 15:22:28
-2398	68	contra	deuda	DEUDA BCP 1 - 7630	deuda	66	6173.81	f	f	3	2026-07-11 15:22:28	2026-07-11 15:22:28
-2399	68	contra	deuda	DEUDA BCP 2 - 5557	deuda	67	32546.43	f	f	4	2026-07-11 15:22:28	2026-07-11 15:22:28
-2400	68	contra	deuda	11 CUBOS AFIRMADO - FERROCONSTRUCTORA	deuda	73	290.00	f	f	5	2026-07-11 15:22:28	2026-07-11 15:22:28
-2401	68	contra	deuda	INVERSIONES & TRANSPORTES	deuda	70	55028.90	f	f	6	2026-07-11 15:22:28	2026-07-11 15:22:28
-2402	68	contra	deuda	MILAGROS	deuda	69	494.00	f	f	7	2026-07-11 15:22:28	2026-07-11 15:22:28
-2403	68	contra	deuda	PALANA	deuda	72	20.00	f	f	8	2026-07-11 15:22:28	2026-07-11 15:22:28
-2404	68	contra	deuda	SALDO DE CEMENTO HOLCIM	deuda	71	290.00	f	f	9	2026-07-11 15:22:28	2026-07-11 15:22:28
-2405	68	contra	personal	PERSONAL (sueldos pendientes)	deuda	68	2500.00	f	f	10	2026-07-11 15:22:28	2026-07-11 15:22:28
+2717	68	favor	efectivo	Efectivo	cuenta	286	37392.99	f	f	1	2026-07-12 07:31:41	2026-07-12 07:31:41
+2718	68	favor	cuenta_bancaria	Cuenta BBVA Soles	cuenta	288	18064.07	f	f	2	2026-07-12 07:31:41	2026-07-12 07:31:41
+2719	68	favor	cuenta_bancaria	Cuenta BCP Dólares	cuenta	290	0.00	f	f	3	2026-07-12 07:31:41	2026-07-12 07:31:41
+2720	68	favor	cuenta_bancaria	Cuenta BCP Soles	cuenta	287	82061.89	f	f	4	2026-07-12 07:31:41	2026-07-12 07:31:41
+2721	68	favor	cuenta_bancaria	Yape	cuenta	289	3263.60	f	f	5	2026-07-12 07:31:41	2026-07-12 07:31:41
+2722	68	favor	stock	Stock (inventario valorizado)	\N	\N	232673.59	f	f	6	2026-07-12 07:31:41	2026-07-12 07:31:41
+2723	68	favor	cxc	Deudas por cobrar (ventas a crédito)	\N	\N	78177.88	f	f	7	2026-07-12 07:31:41	2026-07-12 07:31:41
+2724	68	favor	planilla_descuento	Por descontar en planilla (faltantes y cargos)	\N	\N	0.00	f	f	8	2026-07-12 07:31:41	2026-07-12 07:31:41
+2725	68	contra	cxp	Proveedores por pagar	\N	\N	111016.98	f	f	1	2026-07-12 07:31:41	2026-07-12 07:31:41
+2726	68	contra	gastos_emitidos	Gastos emitidos — Efectivo	cuenta	286	6325.60	f	f	2	2026-07-12 07:31:41	2026-07-12 07:31:41
+2727	68	contra	gastos_emitidos	Gastos emitidos — Cuenta BBVA Soles	cuenta	288	2046.00	f	f	3	2026-07-12 07:31:41	2026-07-12 07:31:41
+2728	68	contra	gastos_emitidos	Gastos emitidos — Cuenta BCP Soles	cuenta	287	26560.00	f	f	4	2026-07-12 07:31:41	2026-07-12 07:31:41
+2729	68	contra	gastos_emitidos	Gastos emitidos — Yape	cuenta	289	370.40	f	f	5	2026-07-12 07:31:41	2026-07-12 07:31:41
+2730	68	contra	anticipo_cliente	Clientes anticipos (a precio del día)	\N	\N	52303.24	f	f	6	2026-07-12 07:31:41	2026-07-12 07:31:41
+2731	68	contra	deuda	DEUDA BCP 1 - 7630	deuda	66	6173.81	f	f	7	2026-07-12 07:31:41	2026-07-12 07:31:41
+2732	68	contra	deuda	DEUDA BCP 2 - 5557	deuda	67	32546.43	f	f	8	2026-07-12 07:31:41	2026-07-12 07:31:41
+2733	68	contra	deuda	INVERSIONES & TRANSPORTES	deuda	70	55028.90	f	f	9	2026-07-12 07:31:41	2026-07-12 07:31:41
+2734	68	contra	deuda	MILAGROS	deuda	69	494.00	f	f	10	2026-07-12 07:31:41	2026-07-12 07:31:41
+2735	68	contra	deuda	PALANA	deuda	72	20.00	f	f	11	2026-07-12 07:31:41	2026-07-12 07:31:41
+2736	68	contra	deuda	SALDO DE CEMENTO HOLCIM	deuda	71	290.00	f	f	12	2026-07-12 07:31:41	2026-07-12 07:31:41
 \.
 
 
@@ -3466,7 +3487,7 @@ COPY public.balances_diarios (id, empresa_id, user_id, fecha, estado, total_favo
 65	1097	1295	2026-07-08	confirmado	431393.96	272112.98	159280.98	158253.13	1027.85	350.00	1377.85	Snapshot migrado del Excel (montos, sin detalle)	2026-07-11 10:12:12	2026-07-11 10:12:12
 66	1097	1295	2026-07-09	confirmado	430259.37	270220.98	160038.39	159280.98	757.41	265.90	1023.31	Snapshot migrado del Excel (montos, sin detalle)	2026-07-11 10:12:12	2026-07-11 10:12:12
 67	1097	1295	2026-07-10	confirmado	446988.23	285927.36	161060.87	160038.39	1022.48	431.66	1454.14	\N	2026-07-11 10:12:12	2026-07-11 10:12:12
-68	1097	1295	2026-07-11	borrador	420264.68	285927.36	134337.32	161060.87	-26723.55	0.00	-26723.55	\N	2026-07-11 14:54:25	2026-07-11 15:22:28
+68	1097	1295	2026-07-11	borrador	451634.02	293175.36	158458.66	161060.87	-2602.21	6423.40	3821.19	\N	2026-07-11 14:54:25	2026-07-11 19:10:31
 \.
 
 
@@ -3475,18 +3496,18 @@ COPY public.balances_diarios (id, empresa_id, user_id, fecha, estado, total_favo
 --
 
 COPY public.cache (key, value, expiration) FROM stdin;
-laravel-cache-9d65c4a27a601e62a599f3059159476cd76933a4:timer	i:1783788750;	1783788750
-laravel-cache-9d65c4a27a601e62a599f3059159476cd76933a4	i:1;	1783788750
-laravel-cache-b3ad32a369754ee7acf23c5370ccf5b401604a78:timer	i:1783792108;	1783792108
-laravel-cache-b3ad32a369754ee7acf23c5370ccf5b401604a78	i:1;	1783792108
+laravel-cache-64c84e952453cd25d3097c7cfb8ba8178a0d109f:timer	i:1783813005;	1783813005
+laravel-cache-64c84e952453cd25d3097c7cfb8ba8178a0d109f	i:1;	1783813005
 laravel-cache-caja1@ferreteriahyc.com|38.25.4.52:timer	i:1783799519;	1783799519
 laravel-cache-caja1@ferreteriahyc.com|38.25.4.52	i:1;	1783799519
 laravel-cache-caja@ferreteriahyc.com|38.25.4.52:timer	i:1783799526;	1783799526
 laravel-cache-caja@ferreteriahyc.com|38.25.4.52	i:1;	1783799526
 laravel-cache-kolagmx@gmalito.com|38.25.4.52:timer	i:1783788183;	1783788183
 laravel-cache-kolagmx@gmalito.com|38.25.4.52	i:1;	1783788183
-laravel-cache-64c84e952453cd25d3097c7cfb8ba8178a0d109f:timer	i:1783801473;	1783801473
-laravel-cache-64c84e952453cd25d3097c7cfb8ba8178a0d109f	i:1;	1783801473
+laravel-cache-9d65c4a27a601e62a599f3059159476cd76933a4:timer	i:1783811620;	1783811620
+laravel-cache-9d65c4a27a601e62a599f3059159476cd76933a4	i:1;	1783811620
+laravel-cache-b3ad32a369754ee7acf23c5370ccf5b401604a78:timer	i:1783812027;	1783812027
+laravel-cache-b3ad32a369754ee7acf23c5370ccf5b401604a78	i:1;	1783812027
 \.
 
 
@@ -3719,6 +3740,10 @@ COPY public.clientes (id, empresa_id, tipo_documento, numero_documento, nombres,
 1661	1097	RUC	20607792225	\N	\N	VENTAS Y SERVICIOS A & G E.I.R.L	\N	\N	MZA. G6 LOTE 7 A.H. NUEVA ESPERANZA	\N	t	2026-07-11 14:28:38	2026-07-11 14:28:38	f
 1662	1097	DNI	\N	CORONADO DIAZ	ALEJANDRA KATIXA	\N	943227022	\N	MESONES MURO Y PIZARRO	\N	t	2026-07-11 15:09:21	2026-07-11 15:09:21	f
 1663	1097	DNI	47204340	ELMER	CERCADO CAMPOS	\N	998223001	\N	LA UNION - POR LA DISCOTECA KAOS	\N	t	2026-07-11 15:15:47	2026-07-11 15:15:47	f
+1664	1097	DNI	48847080	MILENA ELIZABETH	CACERES QUIROZ	\N	979361118	\N	LAS COLONIAS	\N	t	2026-07-11 15:28:36	2026-07-11 15:28:36	f
+1665	1097	RUC	20610167692	\N	\N	KT-A CONSTRUCTORA S.A.C.	\N	\N	AV. QUIÑONES NRO 208	\N	t	2026-07-11 18:10:58	2026-07-11 18:10:58	f
+1666	1097	DNI	46539777	LUZ DEYNI	VARGAS NAUCA	\N	20661899	\N	LA UNION	\N	t	2026-07-11 18:20:30	2026-07-11 18:20:30	f
+1667	1097	DNI	\N	MILAGROS	HERRERA	\N	\N	\N	PICSI	\N	t	2026-07-11 18:33:33	2026-07-11 18:33:33	f
 \.
 
 
@@ -3825,6 +3850,54 @@ COPY public.cuenta_movimientos (id, empresa_id, cuenta_id, user_id, fecha, tipo,
 490	1097	286	1296	2026-07-11	ingreso	120.00	Venta V-0012 — Efectivo	venta	1175	2026-07-11 15:22:13	2026-07-11 15:22:13	PEN	\N	\N
 491	1097	286	1296	2026-07-11	ingreso	3.00	Venta V-0013 — Efectivo	venta	1176	2026-07-11 15:23:03	2026-07-11 15:23:03	PEN	\N	\N
 492	1097	286	1296	2026-07-11	ingreso	2.50	Venta V-0014 — Efectivo	venta	1177	2026-07-11 15:23:33	2026-07-11 15:23:33	PEN	\N	\N
+493	1097	289	1296	2026-07-11	ingreso	15.00	Venta V-0015 — Yape	venta	1178	2026-07-11 15:27:14	2026-07-11 15:27:14	PEN	\N	\N
+494	1097	286	1296	2026-07-11	ingreso	77.00	Venta V-0016 — Efectivo	venta	1179	2026-07-11 15:31:19	2026-07-11 15:31:19	PEN	\N	\N
+495	1097	289	1296	2026-07-11	ingreso	185.00	Venta V-0017 — Yape	venta	1180	2026-07-11 15:32:35	2026-07-11 15:32:35	PEN	\N	\N
+496	1097	286	1296	2026-07-11	ingreso	6.00	Venta V-0018 — Efectivo	venta	1181	2026-07-11 15:33:23	2026-07-11 15:33:23	PEN	\N	\N
+497	1097	286	1296	2026-07-11	ingreso	10.00	Venta V-0019 — Efectivo	venta	1182	2026-07-11 15:35:36	2026-07-11 15:35:36	PEN	\N	\N
+498	1097	286	1296	2026-07-11	ingreso	36.00	Venta V-0020 — Efectivo	venta	1183	2026-07-11 15:36:55	2026-07-11 15:36:55	PEN	\N	\N
+499	1097	286	1296	2026-07-11	ingreso	5.00	Venta V-0021 — Efectivo	venta	1184	2026-07-11 15:37:32	2026-07-11 15:37:32	PEN	\N	\N
+500	1097	286	1296	2026-07-11	ingreso	17.50	Venta V-0022 — Efectivo	venta	1185	2026-07-11 15:38:55	2026-07-11 15:38:55	PEN	\N	\N
+501	1097	289	1296	2026-07-11	ingreso	500.00	Venta V-0023 — Yape	venta	1186	2026-07-11 15:49:52	2026-07-11 15:49:52	PEN	\N	\N
+502	1097	287	1296	2026-07-11	ingreso	707.70	Venta V-0023 — Transferencia	venta	1186	2026-07-11 15:49:52	2026-07-11 15:49:52	PEN	\N	\N
+503	1097	286	1297	2026-07-11	egreso	50.00	Gasto — Gasto operativo	gasto	58	2026-07-11 16:07:33	2026-07-11 16:07:33	PEN	\N	\N
+504	1097	286	1297	2026-07-11	egreso	5.00	Gasto — Gasto operativo	gasto	59	2026-07-11 16:09:50	2026-07-11 16:09:50	PEN	\N	\N
+505	1097	286	1297	2026-07-11	egreso	20.00	Gasto — Gasto operativo	gasto	60	2026-07-11 16:10:46	2026-07-11 16:10:46	PEN	\N	\N
+506	1097	286	1297	2026-07-11	egreso	36.00	Gasto — Gasto operativo	gasto	61	2026-07-11 16:13:52	2026-07-11 16:13:52	PEN	\N	\N
+507	1097	287	1297	2026-07-11	ingreso	604.40	Abono venta V-0003 — VENTAS Y SERVICIOS A & G E.I.R.L	venta_abono	12	2026-07-11 16:27:39	2026-07-11 16:27:39	PEN	\N	\N
+508	1097	287	1297	2026-07-11	egreso	26560.00	Pago a proveedor DEPOSITO PAKATNAMU S.A.C (MIG-DEPOSITO PAKATNAMU S)	entrada_pago	18	2026-07-11 16:30:16	2026-07-11 16:30:16	PEN	\N	\N
+509	1097	286	1296	2026-07-11	egreso	518.60	Pago a proveedor INVERSIONES & TRANSPORTES JH E.I.R.L.	entrada_pago	19	2026-07-11 16:54:30	2026-07-11 16:54:30	PEN	\N	\N
+510	1097	286	1297	2026-07-11	egreso	1004.00	Pago a proveedor FERROCONSTRUCTORA JH SERVICIOS GENERALES E.I.R.L.	entrada_pago	20	2026-07-11 16:59:34	2026-07-11 16:59:34	PEN	\N	\N
+511	1097	286	1297	2026-07-11	egreso	182.00	Pago a proveedor PINTURAS KOLORCIX E.I.R.L.	entrada_pago	21	2026-07-11 17:07:45	2026-07-11 17:07:45	PEN	\N	\N
+512	1097	286	1297	2026-07-11	ingreso	614.00	Abono venta MIG-6a525d4c52803 — JEINER HERRERA - FERRETERIA LA UNION	venta_abono	13	2026-07-11 17:19:31	2026-07-11 17:19:31	PEN	\N	\N
+513	1097	286	1297	2026-07-11	egreso	614.00	Pago a proveedor GRUPO CORPORATIVO HERRERA E.I.R.L.	entrada_pago	22	2026-07-11 17:25:39	2026-07-11 17:25:39	PEN	\N	\N
+514	1097	286	1296	2026-07-11	egreso	185.00	Gasto — Gasto operativo	gasto	62	2026-07-11 17:43:18	2026-07-11 17:43:18	PEN	\N	\N
+515	1097	286	1297	2026-07-11	ingreso	5449.00	Venta V-0019 — Efectivo	venta	1187	2026-07-11 18:00:38	2026-07-11 18:00:38	PEN	\N	\N
+516	1097	287	1297	2026-07-11	ingreso	2000.00	Venta V-0019 — Transferencia	venta	1187	2026-07-11 18:00:38	2026-07-11 18:00:38	PEN	\N	\N
+517	1097	286	1297	2026-07-11	ingreso	183.00	Venta V-0020 — Efectivo	venta	1188	2026-07-11 18:08:36	2026-07-11 18:08:36	PEN	\N	\N
+518	1097	289	1297	2026-07-11	ingreso	63.00	Venta V-0020 — Yape	venta	1188	2026-07-11 18:08:36	2026-07-11 18:08:36	PEN	\N	\N
+520	1097	286	1297	2026-07-11	ingreso	4756.00	Abono venta MIG-6a525d4c53d07 — TRANSPORTES MARIA ANTONIETA S.A.C.	venta_abono	14	2026-07-11 18:14:23	2026-07-11 18:14:23	PEN	\N	\N
+521	1097	286	1297	2026-07-11	ingreso	622.00	Abono venta MIG-6a525d4c528e2 — JHON SANCHEZ CEL. 915950023	venta_abono	15	2026-07-11 18:15:04	2026-07-11 18:15:04	PEN	\N	\N
+522	1097	286	1297	2026-07-11	ingreso	1000.00	Abono venta MIG-6a525d4c519a0 — DIAZ BARCO MAGDALENA	venta_abono	16	2026-07-11 18:15:24	2026-07-11 18:15:24	PEN	\N	\N
+523	1097	289	1295	2026-07-11	ingreso	10.00	Venta V-0024 — Yape	venta	1190	2026-07-11 18:19:27	2026-07-11 18:19:27	PEN	\N	\N
+524	1097	287	1296	2026-07-11	ingreso	578.00	Venta V-0025 — Transferencia	venta	1191	2026-07-11 18:23:37	2026-07-11 18:23:37	PEN	\N	\N
+525	1097	286	1297	2026-07-11	egreso	219.00	Gasto — Gasto operativo	gasto	63	2026-07-11 18:28:23	2026-07-11 18:28:23	PEN	\N	\N
+526	1097	286	1297	2026-07-11	egreso	447.00	Gasto — Gasto operativo	gasto	64	2026-07-11 18:28:41	2026-07-11 18:28:41	PEN	\N	\N
+527	1097	286	1297	2026-07-11	egreso	240.00	Gasto — Gasto operativo	gasto	65	2026-07-11 18:29:01	2026-07-11 18:29:01	PEN	\N	\N
+528	1097	286	1297	2026-07-11	egreso	200.00	Gasto — Gasto operativo	gasto	66	2026-07-11 18:29:23	2026-07-11 18:29:23	PEN	\N	\N
+529	1097	286	1297	2026-07-11	egreso	510.00	Gasto — Gasto operativo	gasto	67	2026-07-11 18:29:40	2026-07-11 18:29:40	PEN	\N	\N
+530	1097	289	1296	2026-07-11	ingreso	320.00	Venta V-0026 — Yape	venta	1192	2026-07-11 18:29:48	2026-07-11 18:29:48	PEN	\N	\N
+531	1097	286	1297	2026-07-11	egreso	310.00	Gasto — Gasto operativo	gasto	68	2026-07-11 18:30:01	2026-07-11 18:30:01	PEN	\N	\N
+532	1097	286	1297	2026-07-11	egreso	380.00	Gasto — Gasto operativo	gasto	69	2026-07-11 18:30:24	2026-07-11 18:30:24	PEN	\N	\N
+533	1097	286	1297	2026-07-11	egreso	60.00	Gasto — Gasto operativo	gasto	70	2026-07-11 18:32:30	2026-07-11 18:32:30	PEN	\N	\N
+534	1097	287	1296	2026-07-11	ingreso	294.00	Venta V-0027 — Transferencia	venta	1193	2026-07-11 18:35:45	2026-07-11 18:35:45	PEN	\N	\N
+535	1097	286	1297	2026-07-11	egreso	10.00	Gasto — Gasto operativo	gasto	71	2026-07-11 18:51:25	2026-07-11 18:51:25	PEN	\N	\N
+536	1097	288	1297	2026-07-11	egreso	2046.00	Gasto — Gasto operativo	gasto	72	2026-07-11 18:52:48	2026-07-11 18:52:48	PEN	\N	\N
+537	1097	289	1297	2026-07-11	egreso	39.50	Gasto — Gasto operativo	gasto	73	2026-07-11 18:53:34	2026-07-11 18:53:34	PEN	\N	\N
+538	1097	289	1297	2026-07-11	egreso	324.20	Gasto — Gasto operativo	gasto	74	2026-07-11 18:54:05	2026-07-11 18:54:05	PEN	\N	\N
+539	1097	289	1297	2026-07-11	egreso	6.70	Gasto — Gasto operativo	gasto	75	2026-07-11 18:54:50	2026-07-11 18:54:50	PEN	\N	\N
+540	1097	286	1297	2026-07-11	egreso	1335.00	Gasto — Gasto operativo	gasto	76	2026-07-11 19:07:57	2026-07-11 19:07:57	PEN	\N	\N
+541	1097	289	1295	2026-07-12	ingreso	15.00	Abono venta V-0017 — COFESEG	venta_abono	17	2026-07-12 07:42:09	2026-07-12 07:42:09	PEN	\N	\N
 \.
 
 
@@ -3893,12 +3966,12 @@ COPY public.deudas (id, empresa_id, user_id, direccion, tipo, nombre, monto_orig
 20	1	1	por_cobrar	trabajador	Préstamo moto — Carlos Uceda (almacén)	1350.00	1200.00	2026-07-01	\N	activa	Cuota semanal S/ 75 descontada en caja — saldo al implementar el sistema (préstamo original S/ 1,500)	2026-07-05 19:27:37	2026-07-05 19:27:37	PEN	\N	\N
 66	1097	1295	por_pagar	bancaria	DEUDA BCP 1 - 7630	6173.81	6173.81	2026-07-10	\N	activa	Préstamo bancario — saldo al implementar el sistema	2026-07-11 10:12:12	2026-07-11 10:12:12	PEN	\N	\N
 67	1097	1295	por_pagar	bancaria	DEUDA BCP 2 - 5557	32546.43	32546.43	2026-07-10	\N	activa	Préstamo bancario — saldo al implementar el sistema	2026-07-11 10:12:12	2026-07-11 10:12:12	PEN	\N	\N
-68	1097	1295	por_pagar	trabajador	PERSONAL (sueldos pendientes)	2500.00	2500.00	2026-07-10	\N	activa	Sueldos por pagar	2026-07-11 10:12:12	2026-07-11 10:12:12	PEN	\N	\N
 69	1097	1295	por_pagar	personal	MILAGROS	494.00	494.00	2026-07-10	\N	activa	Deuda personal	2026-07-11 10:12:12	2026-07-11 10:12:12	PEN	\N	\N
 70	1097	1295	por_pagar	personal	INVERSIONES & TRANSPORTES	55028.90	55028.90	2026-07-10	\N	activa	Deuda a proveedor de transporte	2026-07-11 10:12:12	2026-07-11 10:12:12	PEN	\N	\N
 71	1097	1295	por_pagar	personal	SALDO DE CEMENTO HOLCIM	290.00	290.00	2026-07-10	\N	activa	Saldo de cemento	2026-07-11 10:12:12	2026-07-11 10:12:12	PEN	\N	\N
 72	1097	1295	por_pagar	personal	PALANA	20.00	20.00	2026-07-10	\N	activa	Deuda menor	2026-07-11 10:12:12	2026-07-11 10:12:12	PEN	\N	\N
-73	1097	1295	por_pagar	personal	11 CUBOS AFIRMADO - FERROCONSTRUCTORA	290.00	290.00	2026-07-10	\N	activa	Saldo de agregados	2026-07-11 10:12:12	2026-07-11 10:12:12	PEN	\N	\N
+73	1097	1295	por_pagar	personal	11 CUBOS AFIRMADO - FERROCONSTRUCTORA	290.00	290.00	2026-07-10	\N	anulada	Saldo de agregados	2026-07-11 10:12:12	2026-07-11 18:50:56	PEN	\N	\N
+68	1097	1295	por_pagar	trabajador	PERSONAL (sueldos pendientes)	2500.00	2500.00	2026-07-10	\N	anulada	Sueldos por pagar	2026-07-11 10:12:12	2026-07-11 18:51:16	PEN	\N	\N
 \.
 
 
@@ -3959,6 +4032,11 @@ COPY public.entrada_pagos (id, entrada_id, user_id, metodo_pago_id, cuenta_id, p
 12	16	1	\N	14	\N	2026-07-03	5000.00	Transferencia BCP	\N	2026-07-05 19:27:37	2026-07-05 19:27:37	PEN	\N	\N
 13	14	1	\N	14	\N	2026-07-05	2000.00	Transferencia BCP	\N	2026-07-05 19:27:37	2026-07-05 19:27:37	PEN	\N	\N
 17	20	1	2	4	\N	2026-07-05	8000.00	\N	\N	2026-07-05 19:49:21	2026-07-05 19:49:21	PEN	\N	\N
+18	75	1297	5460	287	\N	2026-07-11	26560.00	06011400	SE PAGO CEMENTO AZUL PACASMAYO	2026-07-11 16:30:16	2026-07-11 16:30:16	PEN	\N	\N
+19	79	1296	5456	\N	\N	2026-07-11	518.60	\N	\N	2026-07-11 16:54:30	2026-07-11 16:54:30	PEN	\N	\N
+20	81	1297	5456	\N	\N	2026-07-11	1004.00	\N	\N	2026-07-11 16:59:34	2026-07-11 16:59:34	PEN	\N	\N
+21	82	1297	5456	\N	\N	2026-07-11	182.00	\N	\N	2026-07-11 17:07:45	2026-07-11 17:07:45	PEN	\N	\N
+22	83	1297	5456	\N	\N	2026-07-11	614.00	\N	\N	2026-07-11 17:25:39	2026-07-11 17:25:39	PEN	\N	\N
 \.
 
 
@@ -3968,7 +4046,6 @@ COPY public.entrada_pagos (id, entrada_id, user_id, metodo_pago_id, cuenta_id, p
 
 COPY public.entradas (id, empresa_id, almacen_id, user_id, numero_documento, proveedor, tipo, fecha, estado, observacion, total, created_at, updated_at, proveedor_id, estado_pago, metodo_pago_id, cuenta_id, monto_pagado, moneda, tipo_cambio, monto_moneda) FROM stdin;
 74	1097	1110	1295	MIG-CORPORACION HERRERA 	CORPORACION HERRERA S.A.C.	compra	2026-07-10	confirmado	Saldo migrado del sistema anterior	347.60	2026-07-11 10:12:12	2026-07-11 10:12:12	50	pendiente	\N	\N	0.00	PEN	\N	\N
-75	1097	1110	1295	MIG-DEPOSITO PAKATNAMU S	DEPOSITO PAKATNAMU S.A.C	compra	2026-07-06	confirmado	Saldo migrado del sistema anterior	51040.00	2026-07-11 10:12:12	2026-07-11 10:12:12	51	pendiente	\N	\N	0.00	PEN	\N	\N
 76	1097	1110	1295	MIG-FERRONOR SAC.	FERRONOR SAC.	compra	2026-06-10	confirmado	Saldo migrado del sistema anterior	18767.00	2026-07-11 10:12:12	2026-07-11 10:12:12	52	pendiente	\N	\N	0.00	PEN	\N	\N
 77	1097	1110	1295	MIG-LADRILLERA RAMOS	LADRILLERA RAMOS	compra	2026-04-25	confirmado	Saldo migrado del sistema anterior	1900.00	2026-07-11 10:12:12	2026-07-11 10:12:12	53	pendiente	\N	\N	0.00	PEN	\N	\N
 78	1097	1110	1295	MIG-SERVICIOS GENERALES 	SERVICIOS GENERALES ADJ EIRL	compra	2026-07-06	confirmado	Saldo migrado del sistema anterior	64226.38	2026-07-11 10:12:12	2026-07-11 10:12:12	54	pendiente	\N	\N	0.00	PEN	\N	\N
@@ -3977,6 +4054,12 @@ COPY public.entradas (id, empresa_id, almacen_id, user_id, numero_documento, pro
 17	1	1	1	F004-0089	UYUSTOOLS PERU SAC	compra	2026-07-03	confirmado	\N	14700.00	2026-07-05 19:27:37	2026-07-05 19:27:37	13	pendiente	\N	\N	0.00	PEN	\N	\N
 14	1	1	1	F001-8934	FERRONOR EIRL	compra	2026-07-02	confirmado	\N	48500.00	2026-07-05 19:27:37	2026-07-05 19:27:37	10	parcial	\N	\N	22000.00	PEN	\N	\N
 20	1	1	1	\N	COFESA SAC	compra	2026-07-05	confirmado	\N	20000.00	2026-07-05 19:49:21	2026-07-05 19:49:21	12	parcial	2	4	8000.00	PEN	\N	\N
+75	1097	1110	1295	MIG-DEPOSITO PAKATNAMU S	DEPOSITO PAKATNAMU S.A.C	compra	2026-07-06	confirmado	Saldo migrado del sistema anterior	51040.00	2026-07-11 10:12:12	2026-07-11 16:30:16	51	parcial	\N	\N	26560.00	PEN	\N	\N
+79	1097	1110	1296	\N	INVERSIONES & TRANSPORTES JH E.I.R.L.	compra	2026-07-11	confirmado	\N	518.60	2026-07-11 16:54:30	2026-07-11 16:54:30	55	pagado	5456	\N	518.60	PEN	\N	\N
+80	1097	1110	1297	\N	CORPORACION HERRERA S.A.C.	compra	2026-07-11	confirmado	\N	570.00	2026-07-11 16:56:52	2026-07-11 16:56:52	50	pendiente	\N	\N	0.00	PEN	\N	\N
+81	1097	1110	1297	\N	FERROCONSTRUCTORA JH SERVICIOS GENERALES E.I.R.L.	compra	2026-07-11	confirmado	\N	1004.00	2026-07-11 16:59:34	2026-07-11 16:59:34	56	pagado	5456	\N	1004.00	PEN	\N	\N
+82	1097	1110	1297	\N	PINTURAS KOLORCIX E.I.R.L.	compra	2026-07-11	confirmado	\N	182.00	2026-07-11 17:07:45	2026-07-11 17:07:45	57	pagado	5456	\N	182.00	PEN	\N	\N
+83	1097	1110	1297	\N	GRUPO CORPORATIVO HERRERA E.I.R.L.	compra	2026-07-11	confirmado	\N	1340.00	2026-07-11 17:25:39	2026-07-11 17:25:39	58	parcial	5456	\N	614.00	PEN	\N	\N
 \.
 
 
@@ -3986,6 +4069,16 @@ COPY public.entradas (id, empresa_id, almacen_id, user_id, numero_documento, pro
 
 COPY public.entradas_detalle (id, entrada_id, producto_id, unidad_medida_id, cantidad, factor_conversion, cantidad_base, precio_costo, subtotal, created_at, updated_at, numero_documento) FROM stdin;
 64	20	311	1	100.0000	1.0000	100.0000	200.0000	20000.00	2026-07-05 19:49:21	2026-07-05 19:49:21	\N
+71	79	7473	1092	100.0000	1.0000	100.0000	0.5000	50.00	2026-07-11 16:54:30	2026-07-11 16:54:30	\N
+72	79	7471	1092	12.0000	1.0000	12.0000	2.8000	33.60	2026-07-11 16:54:30	2026-07-11 16:54:30	\N
+73	79	7474	1092	500.0000	1.0000	500.0000	0.8700	435.00	2026-07-11 16:54:30	2026-07-11 16:54:30	\N
+74	80	7470	1092	20.0000	1.0000	20.0000	28.5000	570.00	2026-07-11 16:56:52	2026-07-11 16:56:52	\N
+75	81	6544	1092	10.0000	1.0000	10.0000	28.0000	280.00	2026-07-11 16:59:34	2026-07-11 16:59:34	\N
+76	81	6558	1092	18.0000	1.0000	18.0000	38.0000	684.00	2026-07-11 16:59:34	2026-07-11 16:59:34	\N
+77	81	6560	1092	2.0000	1.0000	2.0000	20.0000	40.00	2026-07-11 16:59:34	2026-07-11 16:59:34	\N
+78	82	7475	1092	4.0000	1.0000	4.0000	13.0000	52.00	2026-07-11 17:07:45	2026-07-11 17:07:45	\N
+79	82	7138	1092	10.0000	1.0000	10.0000	13.0000	130.00	2026-07-11 17:07:45	2026-07-11 17:07:45	\N
+80	83	7476	1092	2000.0000	1.0000	2000.0000	0.6700	1340.00	2026-07-11 17:25:39	2026-07-11 17:25:39	\N
 \.
 
 
@@ -4053,6 +4146,25 @@ COPY public.gastos (id, empresa_id, local_id, user_id, turno_id, gasto_tipo_id, 
 20	1	1	2	212	25	51	100.00	2026-07-05	Combustible JBC	2026-07-05 19:27:37	2026-07-05 19:27:37	1	PEN	\N	\N
 21	1	1	2	212	28	62	20.00	2026-07-05	Sr. de limpieza	2026-07-05 19:27:37	2026-07-05 19:27:37	1	PEN	\N	\N
 22	1	1	2	212	28	61	10.00	2026-07-05	Desayuno Modesto	2026-07-05 19:27:37	2026-07-05 19:27:37	1	PEN	\N	\N
+58	1097	1092	1297	643	43	78	50.00	2026-07-11	COMBUSTIBLE JBC	2026-07-11 16:07:33	2026-07-11 16:07:33	286	PEN	\N	\N
+59	1097	1092	1297	643	43	78	5.00	2026-07-11	PASAJE JHON -COMPRA DE CONTOMETRO	2026-07-11 16:09:50	2026-07-11 16:09:50	286	PEN	\N	\N
+60	1097	1092	1297	643	43	78	20.00	2026-07-11	CORTE DE LUZ - JORDIN	2026-07-11 16:10:46	2026-07-11 16:10:46	286	PEN	\N	\N
+61	1097	1092	1297	643	43	78	36.00	2026-07-11	CHANCHO JEINER	2026-07-11 16:13:52	2026-07-11 16:13:52	286	PEN	\N	\N
+62	1097	1092	1296	644	43	78	185.00	2026-07-11	FLETE VOLQUETE PLOMO-SR BETO	2026-07-11 17:43:18	2026-07-11 17:43:18	286	PEN	\N	\N
+63	1097	1092	1297	643	43	78	219.00	2026-07-11	DARWIN BARBOZA	2026-07-11 18:28:23	2026-07-11 18:28:23	286	PEN	\N	\N
+64	1097	1092	1297	643	43	78	447.00	2026-07-11	PAGO ANGEL MORENO	2026-07-11 18:28:41	2026-07-11 18:28:41	286	PEN	\N	\N
+65	1097	1092	1297	643	43	78	240.00	2026-07-11	DON MARCOS	2026-07-11 18:29:01	2026-07-11 18:29:01	286	PEN	\N	\N
+66	1097	1092	1297	643	43	78	200.00	2026-07-11	GAONA	2026-07-11 18:29:23	2026-07-11 18:29:23	286	PEN	\N	\N
+67	1097	1092	1297	643	43	78	510.00	2026-07-11	LUCAS HERRERA	2026-07-11 18:29:40	2026-07-11 18:29:40	286	PEN	\N	\N
+68	1097	1092	1297	643	43	78	310.00	2026-07-11	JULIAN	2026-07-11 18:30:01	2026-07-11 18:30:01	286	PEN	\N	\N
+69	1097	1092	1297	643	43	78	380.00	2026-07-11	MODESTO TORRES	2026-07-11 18:30:24	2026-07-11 18:30:24	286	PEN	\N	\N
+70	1097	1092	1297	643	43	78	60.00	2026-07-11	MIGUEL DELGADO	2026-07-11 18:32:30	2026-07-11 18:32:30	286	PEN	\N	\N
+71	1097	1092	1297	643	43	78	10.00	2026-07-11	ALUMERZO MODESTO	2026-07-11 18:51:25	2026-07-11 18:51:25	286	PEN	\N	\N
+72	1097	1092	1297	643	43	78	2046.00	2026-07-11	RECIBO DE LUZ	2026-07-11 18:52:48	2026-07-11 18:52:48	288	PEN	\N	\N
+73	1097	1092	1297	643	43	78	39.50	2026-07-11	RECIBO DE LUZ	2026-07-11 18:53:34	2026-07-11 18:53:34	289	PEN	\N	\N
+74	1097	1092	1297	643	43	78	324.20	2026-07-11	RECIBO DE LUZ	2026-07-11 18:54:05	2026-07-11 18:54:05	289	PEN	\N	\N
+75	1097	1092	1297	643	43	78	6.70	2026-07-11	RECIBO DE LUZ	2026-07-11 18:54:50	2026-07-11 18:54:50	289	PEN	\N	\N
+76	1097	1092	1297	643	43	78	1335.00	2026-07-11	PAGO ADMINISTRATIVO	2026-07-11 19:07:57	2026-07-11 19:07:57	286	PEN	\N	\N
 \.
 
 
@@ -4283,7 +4395,6 @@ COPY public.permisos (id, rol_id, modulo_id, ver, crear, editar, eliminar, creat
 119	1169	34	t	t	t	t	2026-07-11 10:50:40	2026-07-11 10:50:40
 124	1169	54	f	f	f	f	2026-07-11 10:50:40	2026-07-11 10:50:40
 129	1169	55	f	f	f	f	2026-07-11 10:50:40	2026-07-11 10:50:40
-130	1169	36	f	f	f	f	2026-07-11 10:50:40	2026-07-11 10:50:40
 131	1169	45	f	f	f	f	2026-07-11 10:50:40	2026-07-11 10:50:40
 132	1169	30	f	f	f	f	2026-07-11 10:50:40	2026-07-11 10:50:40
 133	1169	31	f	f	f	f	2026-07-11 10:50:40	2026-07-11 10:50:40
@@ -4302,6 +4413,7 @@ COPY public.permisos (id, rol_id, modulo_id, ver, crear, editar, eliminar, creat
 127	1169	51	t	t	t	t	2026-07-11 10:50:40	2026-07-11 11:43:12
 121	1169	47	t	f	f	f	2026-07-11 10:50:40	2026-07-11 11:43:44
 128	1169	52	t	f	f	f	2026-07-11 10:50:40	2026-07-11 11:43:44
+130	1169	36	t	t	t	t	2026-07-11 10:50:40	2026-07-11 16:50:36
 \.
 
 
@@ -5337,9 +5449,13 @@ COPY public.producto_unidades (id, producto_id, unidad_medida_id, es_base, facto
 7476	6699	1092	t	1.0000	fijo	2.04	0.00	t	2026-07-11 14:50:18	2026-07-11 14:50:18
 7477	6700	1092	t	1.0000	fijo	0.60	0.00	t	2026-07-11 14:50:31	2026-07-11 14:50:31
 7472	7003	1092	t	1.0000	referencial	18.00	0.00	t	2026-07-11 11:20:31	2026-07-11 11:20:31
+7478	7473	1092	t	1.0000	referencial	0.50	0.00	t	2026-07-11 15:30:40	2026-07-11 15:30:40
 7473	7471	1092	t	1.0000	referencial	3.00	0.00	t	2026-07-11 14:27:04	2026-07-11 14:27:04
+7479	7474	1092	t	1.0000	fijo	0.86	0.00	t	2026-07-11 15:44:56	2026-07-11 15:44:56
 7474	7472	1092	t	1.0000	referencial	1.00	0.00	t	2026-07-11 14:39:28	2026-07-11 14:39:28
+7480	7475	1092	t	1.0000	referencial	18.00	0.00	t	2026-07-11 17:04:56	2026-07-11 17:04:56
 6698	6698	1092	t	1.0000	fijo	33.21	0.00	t	2026-07-11 10:12:12	2026-07-11 14:49:11
+7481	7476	1092	t	1.0000	referencial	0.65	0.00	t	2026-07-11 17:22:09	2026-07-11 17:22:09
 7475	6625	1092	t	1.0000	fijo	30.60	0.00	t	2026-07-11 14:50:05	2026-07-11 14:50:05
 \.
 
@@ -6369,6 +6485,10 @@ COPY public.productos (id, empresa_id, categoria_id, codigo, nombre, descripcion
 6698	1097	1111	FERHC-0179	Cemento Azul Antisalitre PACASMAYO	\N	producto	fijo	0.00	0.00	\N	t	2026-07-11 10:12:12	2026-07-11 14:49:11	t	t	\N
 7470	1097	1111	\N	CEMENTO ROJO QHUNA	\N	producto	fijo	0.00	0.00	\N	t	2026-07-11 10:51:48	2026-07-11 14:49:30	t	\N	\N
 6625	1097	1111	FERHC-0106	CEMENTO ROJO PACASMAYO	\N	producto	fijo	0.00	0.00	\N	t	2026-07-11 10:12:12	2026-07-11 14:50:05	t	t	\N
+7473	1097	1113	\N	LADRILLO ARTESANAL KINK KONK	\N	producto	fijo	0.00	0.00	\N	t	2026-07-11 15:30:40	2026-07-11 15:30:40	t	\N	\N
+7474	1097	1113	\N	LADRILLO ESTANDAR 18 HUECOS FORTES	\N	producto	fijo	0.00	0.00	\N	t	2026-07-11 15:44:56	2026-07-11 15:44:56	t	\N	\N
+7475	1097	1104	\N	PINTURA EN BALDE CREMA KOLORCIX	\N	producto	fijo	0.00	0.00	\N	t	2026-07-11 17:04:56	2026-07-11 17:04:56	f	\N	\N
+7476	1097	1113	\N	Ladrillo Artesanal Bodoque King Kong S/M	\N	producto	fijo	0.00	0.00	\N	t	2026-07-11 17:22:09	2026-07-11 17:22:09	t	\N	\N
 \.
 
 
@@ -6405,6 +6525,10 @@ COPY public.proveedores (id, empresa_id, tipo_documento, numero_documento, razon
 52	1097	RUC	20103134065	FERRONOR SAC.	\N	\N	\N	\N	\N	\N	t	2026-07-11 10:12:12	2026-07-11 10:12:12
 53	1097	RUC	\N	LADRILLERA RAMOS	\N	\N	\N	\N	\N	\N	t	2026-07-11 10:12:12	2026-07-11 10:12:12
 54	1097	RUC	20496166273	SERVICIOS GENERALES ADJ EIRL	\N	\N	\N	\N	\N	\N	t	2026-07-11 10:12:12	2026-07-11 10:12:12
+55	1097	RUC	20608526138	INVERSIONES & TRANSPORTES JH E.I.R.L.	\N	\N	\N	\N	CAL. SAN FRANCISCO MZA. E LOTE 05 CPM. SAN FRANCISCO DE ASI	\N	t	2026-07-11 16:54:11	2026-07-11 16:54:11
+56	1097	RUC	20604078238	FERROCONSTRUCTORA JH SERVICIOS GENERALES E.I.R.L.	\N	\N	\N	\N	CAR. A POMALCA URB. LOS PRECURSORES KM. 3.5	\N	t	2026-07-11 16:58:15	2026-07-11 16:58:15
+57	1097	RUC	20606621109	PINTURAS KOLORCIX E.I.R.L.	\N	\N	\N	\N	AV. VENEZUELA NRO 3480 P.J. SAN LORENZO II ETAPA	\N	t	2026-07-11 17:00:25	2026-07-11 17:00:25
+58	1097	RUC	20615155412	GRUPO CORPORATIVO HERRERA E.I.R.L.	\N	\N	\N	\N	MZA. 15 LOTE 8 C.P. LA UNION	\N	t	2026-07-11 17:20:55	2026-07-11 17:20:55
 \.
 
 
@@ -6452,11 +6576,8 @@ COPY public.salidas_detalle (id, salida_id, producto_id, unidad_medida_id, canti
 --
 
 COPY public.sessions (id, user_id, ip_address, user_agent, payload, last_activity) FROM stdin;
-MeZ9bG0LSUPmb50S47ZnO61GRLUSUsrX6Go3IcTi	\N	172.70.17.38	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36 (compatible; +https://developers.cloudflare.com/security-center/)	YToyOntzOjY6Il90b2tlbiI7czo0MDoiSlZTenNuck9WSHhaQjFPd0psRWJEWVVPb1RnWXF3Uk5hR2xWNnZWZiI7czo2OiJfZmxhc2giO2E6Mjp7czozOiJvbGQiO2E6MDp7fXM6MzoibmV3IjthOjA6e319fQ==	1783793135
-xYVVC3t6liX5VHJomddOLrlc40hmcBB43c02rtSG	1295	132.184.55.153	Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1	YTo0OntzOjY6Il90b2tlbiI7czo0MDoiSkZoSm5zTkVtMmxKRXRiZWo2RkhUcGRvS0hZQks3WEJpQ2tvMldhMSI7czo5OiJfcHJldmlvdXMiO2E6Mjp7czozOiJ1cmwiO3M6NTE6Imh0dHBzOi8vdmVudG9yeXBvcy5tYWNzb2Z0cGVydS5jb20vZmluYW56YXMvYmFsYW5jZSI7czo1OiJyb3V0ZSI7czoyMjoiZmluYW56YXMuYmFsYW5jZS5pbmRleCI7fXM6NjoiX2ZsYXNoIjthOjI6e3M6Mzoib2xkIjthOjA6e31zOjM6Im5ldyI7YTowOnt9fXM6NTA6ImxvZ2luX3dlYl81OWJhMzZhZGRjMmIyZjk0MDE1ODBmMDE0YzdmNThlYTRlMzA5ODlkIjtpOjEyOTU7fQ==	1783795129
-8tuXZfeoT7B77V3dyj9hAcKB0FXb2m9DPXi88IC7	1295	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	YTo0OntzOjY6Il90b2tlbiI7czo0MDoieFpTMWlwUFpnZ2lGS1FLQ1dOdDN3ZlJ3bzlKMUhXYkF4dGJVZ1VEciI7czo2OiJfZmxhc2giO2E6Mjp7czozOiJvbGQiO2E6MDp7fXM6MzoibmV3IjthOjA6e319czo1MDoibG9naW5fd2ViXzU5YmEzNmFkZGMyYjJmOTQwMTU4MGYwMTRjN2Y1OGVhNGUzMDk4OWQiO2k6MTI5NTtzOjk6Il9wcmV2aW91cyI7YToyOntzOjM6InVybCI7czo2MjoiaHR0cHM6Ly92ZW50b3J5cG9zLm1hY3NvZnRwZXJ1LmNvbS9maW5hbnphcy9iYWxhbmNlLzIwMjYtMDctMTEiO3M6NToicm91dGUiO3M6MjE6ImZpbmFuemFzLmJhbGFuY2Uuc2hvdyI7fX0=	1783801348
-Pz39PSwprDGQeO4jc6I4Z7QsqjYmEG9TuKnxIyuh	1296	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	YTo0OntzOjY6Il90b2tlbiI7czo0MDoiR0F1NzFIZU9yM1lRenE5Q290bDlIcGpSUXFMN21FM1U4ZjhaSVZpSiI7czo5OiJfcHJldmlvdXMiO2E6Mjp7czozOiJ1cmwiO3M6Mzg6Imh0dHBzOi8vdmVudG9yeXBvcy5tYWNzb2Z0cGVydS5jb20vcG9zIjtzOjU6InJvdXRlIjtzOjk6InBvcy5pbmRleCI7fXM6NjoiX2ZsYXNoIjthOjI6e3M6Mzoib2xkIjthOjA6e31zOjM6Im5ldyI7YTowOnt9fXM6NTA6ImxvZ2luX3dlYl81OWJhMzZhZGRjMmIyZjk0MDE1ODBmMDE0YzdmNThlYTRlMzA5ODlkIjtpOjEyOTY7fQ==	1783801467
-ivOpsBogfpVNd2mp4bSVcTTc1vmHeUZISthHGSxB	\N	172.70.17.38	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36 (compatible; +https://developers.cloudflare.com/security-center/)	YToyOntzOjY6Il90b2tlbiI7czo0MDoieTRBSDE5ZjBlZXdCUGtUbW9aMU50aFpMUGJDczVDMEczY0N5bnUwQiI7czo2OiJfZmxhc2giO2E6Mjp7czozOiJvbGQiO2E6MDp7fXM6MzoibmV3IjthOjA6e319fQ==	1783793135
+YI9Oa3vIZjJhgaosmCsPZO0cSThwheBAZHAu9i7E	\N	205.210.31.27	Hello from Palo Alto Networks, find out more about our scans in https://docs-cortex.paloaltonetworks.com/r/1/Cortex-Xpanse/Scanning-activity	YTozOntzOjY6Il90b2tlbiI7czo0MDoiaXNoNmZuaHZiN2ZnUXJ2dXZQQklPa3pwZXlkdDVHcEJwVFFDbHlrQiI7czo5OiJfcHJldmlvdXMiO2E6Mjp7czozOiJ1cmwiO3M6MzQ6Imh0dHBzOi8vdmVudG9yeXBvcy5tYWNzb2Z0cGVydS5jb20iO3M6NToicm91dGUiO047fXM6NjoiX2ZsYXNoIjthOjI6e3M6Mzoib2xkIjthOjA6e31zOjM6Im5ldyI7YTowOnt9fX0=	1783864966
+KYisFAAkxPGa2gR9oDAODV9zuR7damrZkjgYUOgx	1295	38.25.4.52	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36	YTo0OntzOjY6Il90b2tlbiI7czo0MDoib2x0dUdiNWlIdjAxTEVpejVMYkFJWHloWDhRdmx1Q3l3bjduTGVNciI7czo2OiJfZmxhc2giO2E6Mjp7czozOiJvbGQiO2E6MDp7fXM6MzoibmV3IjthOjA6e319czo1MDoibG9naW5fd2ViXzU5YmEzNmFkZGMyYjJmOTQwMTU4MGYwMTRjN2Y1OGVhNGUzMDk4OWQiO2k6MTI5NTtzOjk6Il9wcmV2aW91cyI7YToyOntzOjM6InVybCI7czo0NDoiaHR0cHM6Ly92ZW50b3J5cG9zLm1hY3NvZnRwZXJ1LmNvbS9kYXNoYm9hcmQiO3M6NToicm91dGUiO3M6OToiZGFzaGJvYXJkIjt9fQ==	1783860221
 \.
 
 
@@ -6550,21 +6671,20 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7130	1110	6538	58.0000	2.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7131	1110	6539	67.0000	1.1000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7132	1110	6540	95.0000	0.8600	2026-07-11 10:12:12	2026-07-11 10:12:12
-7133	1110	6541	122.0000	0.4800	2026-07-11 10:12:12	2026-07-11 10:12:12
 7134	1110	6542	115.0000	1.6500	2026-07-11 10:12:12	2026-07-11 10:12:12
 7135	1110	6543	60.0000	0.5500	2026-07-11 10:12:12	2026-07-11 10:12:12
 7137	1110	6545	0.0000	7.3000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7138	1110	6546	794.0000	3.0400	2026-07-11 10:12:12	2026-07-11 10:12:12
 7140	1110	6548	6.0000	31.4000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7141	1110	6549	15.0000	1.1000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7142	1110	6550	12.0000	8.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7143	1110	6551	4.0000	7.7800	2026-07-11 10:12:12	2026-07-11 10:12:12
-7136	1110	6544	5.5000	27.0000	2026-07-11 10:12:12	2026-07-11 11:06:10
 7113	1110	6521	12.0000	10.8000	2026-07-11 10:12:12	2026-07-11 15:12:09
+7133	1110	6541	120.0000	0.4800	2026-07-11 10:12:12	2026-07-11 15:27:14
+7138	1110	6546	779.0000	3.0400	2026-07-11 10:12:12	2026-07-11 15:49:52
+7136	1110	6544	15.5000	27.6452	2026-07-11 10:12:12	2026-07-11 16:59:34
 7144	1110	6552	3.0000	6.7600	2026-07-11 10:12:12	2026-07-11 10:12:12
 7145	1110	6553	2.0000	9.4000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7146	1110	6554	9.0000	2.2500	2026-07-11 10:12:12	2026-07-11 10:12:12
-7147	1110	6555	27.0000	4.0700	2026-07-11 10:12:12	2026-07-11 10:12:12
 7148	1110	6556	11.0000	3.7800	2026-07-11 10:12:12	2026-07-11 10:12:12
 7149	1110	6557	16.0000	5.7200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7151	1110	6559	0.0100	0.3500	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6600,7 +6720,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7182	1110	6590	5.0000	2.0300	2026-07-11 10:12:12	2026-07-11 10:12:12
 7183	1110	6591	2.0000	1.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7184	1110	6592	7.0000	4.5100	2026-07-11 10:12:12	2026-07-11 10:12:12
-7185	1110	6593	5.0000	3.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7186	1110	6594	2.0000	1.3000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7187	1110	6595	9.0000	0.9000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7188	1110	6596	21.0000	0.5400	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6616,7 +6735,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7198	1110	6606	8.0000	0.6000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7199	1110	6607	2.0000	17.1200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7200	1110	6608	937.0000	2.1700	2026-07-11 10:12:12	2026-07-11 10:12:12
-7201	1110	6609	849.2000	1.6900	2026-07-11 10:12:12	2026-07-11 10:12:12
 7202	1110	6610	9.0000	20.2100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7203	1110	6611	12.0000	8.9600	2026-07-11 10:12:12	2026-07-11 10:12:12
 7204	1110	6612	13.0000	9.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6631,7 +6749,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7213	1110	6621	9.0000	100.0100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7214	1110	6622	3.0000	0.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7215	1110	6623	11.0000	30.8000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7217	1110	6625	412.0000	30.6000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7218	1110	6626	2.0000	4.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7219	1110	6627	5.0000	9.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7220	1110	6628	3.0000	1.4000	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6649,14 +6766,16 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7232	1110	6640	140.0000	0.0700	2026-07-11 10:12:12	2026-07-11 10:12:12
 7233	1110	6641	508.0000	0.0400	2026-07-11 10:12:12	2026-07-11 10:12:12
 7234	1110	6642	524.0000	0.0900	2026-07-11 10:12:12	2026-07-11 10:12:12
-7235	1110	6643	11.7500	4.4000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7236	1110	6644	29.1000	5.9900	2026-07-11 10:12:12	2026-07-11 10:12:12
 7237	1110	6645	41.1500	4.9200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7238	1110	6646	28.0000	1.7900	2026-07-11 10:12:12	2026-07-11 10:12:12
-7239	1110	6647	153.0000	0.7400	2026-07-11 10:12:12	2026-07-11 10:12:12
 7240	1110	6648	136.0000	0.6400	2026-07-11 10:12:12	2026-07-11 10:12:12
-7152	1110	6560	0.0000	20.0000	2026-07-11 10:12:12	2026-07-11 15:10:10
+7152	1110	6560	0.0000	20.0000	2026-07-11 10:12:12	2026-07-11 18:29:48
 7216	1110	6624	227.0000	1.8500	2026-07-11 10:12:12	2026-07-11 15:21:00
+7239	1110	6647	152.0000	0.7400	2026-07-11 10:12:12	2026-07-11 15:27:14
+7201	1110	6609	749.2000	1.6900	2026-07-11 10:12:12	2026-07-11 15:32:35
+7147	1110	6555	26.0000	4.0700	2026-07-11 10:12:12	2026-07-11 15:33:23
+7235	1110	6643	11.2500	4.4000	2026-07-11 10:12:12	2026-07-11 15:37:32
 7241	1110	6649	44.0000	3.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7243	1110	6651	42.0000	3.5600	2026-07-11 10:12:12	2026-07-11 10:12:12
 7244	1110	6652	11.0000	6.2500	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6716,9 +6835,7 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7301	1110	6709	25.0000	5.7600	2026-07-11 10:12:12	2026-07-11 10:12:12
 7302	1110	6710	9.0000	2.1000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7303	1110	6711	1.0000	17.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7304	1110	6712	42.0000	0.3400	2026-07-11 10:12:12	2026-07-11 10:12:12
 7305	1110	6713	45.0000	0.7400	2026-07-11 10:12:12	2026-07-11 10:12:12
-7306	1110	6714	7.0000	17.4100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7307	1110	6715	6.0000	22.0400	2026-07-11 10:12:12	2026-07-11 10:12:12
 7308	1110	6716	161.5000	0.1300	2026-07-11 10:12:12	2026-07-11 10:12:12
 7309	1110	6717	148.0000	0.2200	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6731,7 +6848,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7319	1110	6727	72.0000	0.8500	2026-07-11 10:12:12	2026-07-11 10:12:12
 7320	1110	6728	66.0000	2.1200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7321	1110	6729	16.0000	2.9000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7322	1110	6730	82.0000	1.4000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7323	1110	6731	6.0000	2.0100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7324	1110	6732	43.0000	4.4500	2026-07-11 10:12:12	2026-07-11 10:12:12
 7325	1110	6733	21.0000	2.2400	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6746,13 +6862,14 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7334	1110	6742	6.0000	1.6000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7335	1110	6743	52.0000	1.5600	2026-07-11 10:12:12	2026-07-11 10:12:12
 7336	1110	6744	85.0000	1.6600	2026-07-11 10:12:12	2026-07-11 10:12:12
-7337	1110	6745	176.0000	0.8600	2026-07-11 10:12:12	2026-07-11 10:12:12
 7312	1110	6720	83.4500	3.6000	2026-07-11 10:12:12	2026-07-11 15:23:33
+7304	1110	6712	41.0000	0.3400	2026-07-11 10:12:12	2026-07-11 15:27:14
 7299	1110	6707	20.0000	2.9900	2026-07-11 10:12:12	2026-07-11 11:49:42
-7311	1110	6719	651.5000	3.4300	2026-07-11 10:12:12	2026-07-11 12:14:43
 7268	1110	6676	242.0000	1.5000	2026-07-11 10:12:12	2026-07-11 14:43:09
-7242	1110	6650	45.0000	6.8400	2026-07-11 10:12:12	2026-07-11 15:04:31
+7337	1110	6745	173.0000	0.8600	2026-07-11 10:12:12	2026-07-11 18:08:36
 7290	1110	6698	456.0000	33.2100	2026-07-11 10:12:12	2026-07-11 15:17:45
+7242	1110	6650	44.0000	6.8400	2026-07-11 10:12:12	2026-07-11 15:35:36
+7306	1110	6714	6.0000	17.4100	2026-07-11 10:12:12	2026-07-11 18:08:36
 7338	1110	6746	30.0000	5.3500	2026-07-11 10:12:12	2026-07-11 10:12:12
 7339	1110	6747	32.0000	3.1700	2026-07-11 10:12:12	2026-07-11 10:12:12
 7340	1110	6748	23.0000	9.1800	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6770,7 +6887,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7353	1110	6761	7.0000	3.3000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7354	1110	6762	4.0000	5.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7355	1110	6763	56.0000	3.1000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7356	1110	6764	10.0000	4.9200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7357	1110	6765	34.0000	6.4700	2026-07-11 10:12:12	2026-07-11 10:12:12
 7358	1110	6766	18.0000	10.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7359	1110	6767	23.0000	2.0100	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6849,10 +6965,10 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7434	1110	6842	2.0000	1.8300	2026-07-11 10:12:12	2026-07-11 10:12:12
 7348	1110	6756	432.0000	0.3100	2026-07-11 10:12:12	2026-07-11 14:43:09
 7432	1110	6840	13.0000	1.6800	2026-07-11 10:12:12	2026-07-11 15:21:00
+7356	1110	6764	9.0000	4.9200	2026-07-11 10:12:12	2026-07-11 18:08:36
 7435	1110	6843	159.0000	60.9200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7436	1110	6844	140.0000	51.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7437	1110	6845	2.0000	15.4200	2026-07-11 10:12:12	2026-07-11 10:12:12
-7438	1110	6846	272.0000	6.0700	2026-07-11 10:12:12	2026-07-11 10:12:12
 7439	1110	6847	22.0000	1.8200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7440	1110	6848	41.0000	3.2900	2026-07-11 10:12:12	2026-07-11 10:12:12
 7441	1110	6849	41.0000	4.7700	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6879,7 +6995,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7462	1110	6870	7.0000	5.2000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7464	1110	6872	184.0000	29.6700	2026-07-11 10:12:12	2026-07-11 10:12:12
 7465	1110	6873	12.0000	74.2700	2026-07-11 10:12:12	2026-07-11 10:12:12
-7467	1110	6875	228.0000	49.9800	2026-07-11 10:12:12	2026-07-11 10:12:12
 7470	1110	6878	5.0000	4.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7471	1110	6879	8.0000	5.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7472	1110	6880	3.0000	11.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6941,9 +7056,10 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7529	1110	6937	1.0000	0.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7530	1110	6938	4.0000	16.6900	2026-07-11 10:12:12	2026-07-11 10:12:12
 7531	1110	6939	6.0000	14.0100	2026-07-11 10:12:12	2026-07-11 10:12:12
+7468	1110	6876	357.0000	7.2600	2026-07-11 10:12:12	2026-07-11 18:08:36
 7492	1110	6900	6.0000	3.9600	2026-07-11 10:12:12	2026-07-11 15:14:09
-7468	1110	6876	360.0000	7.2600	2026-07-11 10:12:12	2026-07-11 15:17:45
-7469	1110	6877	526.0000	13.0200	2026-07-11 10:12:12	2026-07-11 15:17:45
+7469	1110	6877	474.0000	13.0200	2026-07-11 10:12:12	2026-07-11 18:23:37
+7438	1110	6846	222.0000	6.0700	2026-07-11 10:12:12	2026-07-11 18:00:38
 7532	1110	6940	1.0000	17.9400	2026-07-11 10:12:12	2026-07-11 10:12:12
 7533	1110	6941	12.0000	16.3100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7534	1110	6942	4.0000	20.1000	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -6972,7 +7088,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7557	1110	6965	28.0000	1.2500	2026-07-11 10:12:12	2026-07-11 10:12:12
 7558	1110	6966	33.0000	1.2400	2026-07-11 10:12:12	2026-07-11 10:12:12
 7559	1110	6967	3.0000	19.3500	2026-07-11 10:12:12	2026-07-11 10:12:12
-7560	1110	6968	8.0000	32.5300	2026-07-11 10:12:12	2026-07-11 10:12:12
 7561	1110	6969	7.0000	11.5500	2026-07-11 10:12:12	2026-07-11 10:12:12
 7562	1110	6970	2.0000	18.3500	2026-07-11 10:12:12	2026-07-11 10:12:12
 7563	1110	6971	5.0000	16.4300	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7007,7 +7122,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7592	1110	7000	5.0000	26.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7593	1110	7001	9.0000	24.8900	2026-07-11 10:12:12	2026-07-11 10:12:12
 7594	1110	7002	4.0000	27.2700	2026-07-11 10:12:12	2026-07-11 10:12:12
-7596	1110	7004	4.0000	13.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7597	1110	7005	120.0000	3.7300	2026-07-11 10:12:12	2026-07-11 10:12:12
 7598	1110	7006	26.0000	1.3100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7599	1110	7007	47.0000	3.6900	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7023,7 +7137,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7609	1110	7017	16.0000	1.2000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7610	1110	7018	162.0000	1.4800	2026-07-11 10:12:12	2026-07-11 10:12:12
 7611	1110	7019	108.0000	1.6500	2026-07-11 10:12:12	2026-07-11 10:12:12
-7612	1110	7020	61.7000	4.9000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7613	1110	7021	33.5000	1.6300	2026-07-11 10:12:12	2026-07-11 10:12:12
 7614	1110	7022	192.0000	1.1300	2026-07-11 10:12:12	2026-07-11 10:12:12
 7615	1110	7023	51.0000	1.7000	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7040,6 +7153,9 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7626	1110	7034	46.0000	1.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7627	1110	7035	94.0000	0.7000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7628	1110	7036	47.0000	0.8000	2026-07-11 10:12:12	2026-07-11 10:12:12
+7596	1110	7004	3.0000	13.0000	2026-07-11 10:12:12	2026-07-11 15:36:55
+7560	1110	6968	7.0000	32.5300	2026-07-11 10:12:12	2026-07-11 18:00:38
+7612	1110	7020	60.7000	4.9000	2026-07-11 10:12:12	2026-07-11 18:08:36
 7629	1110	7037	98.0000	0.6400	2026-07-11 10:12:12	2026-07-11 10:12:12
 7630	1110	7038	5.0000	0.7200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7631	1110	7039	6.0000	13.4300	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7128,7 +7244,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7714	1110	7122	9.0000	38.4000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7716	1110	7124	12.0000	4.0100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7717	1110	7125	4.0000	14.4000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7718	1110	7126	105.0000	3.2800	2026-07-11 10:12:12	2026-07-11 10:12:12
 7719	1110	7127	99.0000	16.3000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7720	1110	7128	162.0000	7.7300	2026-07-11 10:12:12	2026-07-11 10:12:12
 7721	1110	7129	22.0000	1.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7136,11 +7251,11 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7724	1110	7132	5.0000	1.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7723	1110	7131	2.5000	40.0000	2026-07-11 10:12:12	2026-07-11 11:00:54
 7715	1110	7123	10.0000	26.1000	2026-07-11 10:12:12	2026-07-11 14:43:09
+7718	1110	7126	103.0000	3.2800	2026-07-11 10:12:12	2026-07-11 18:08:36
 7726	1110	7134	6.0000	60.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7727	1110	7135	2.0000	0.5800	2026-07-11 10:12:12	2026-07-11 10:12:12
 7728	1110	7136	4.0000	0.6700	2026-07-11 10:12:12	2026-07-11 10:12:12
 7729	1110	7137	4.0000	13.4000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7730	1110	7138	3.0000	13.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7731	1110	7139	11.0000	13.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7732	1110	7140	7.0000	13.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7733	1110	7141	11.0000	2.9500	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7232,6 +7347,7 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7770	1110	7178	2.0000	27.0600	2026-07-11 10:12:12	2026-07-11 11:45:06
 7814	1110	7222	5.0000	21.3000	2026-07-11 10:12:12	2026-07-11 15:06:24
 7817	1110	7225	0.0000	5.2500	2026-07-11 10:12:12	2026-07-11 15:12:09
+7730	1110	7138	13.0000	13.0000	2026-07-11 10:12:12	2026-07-11 17:07:45
 7823	1110	7231	12.0000	8.7100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7824	1110	7232	63.7500	16.8200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7825	1110	7233	12.0000	7.3300	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7279,7 +7395,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7868	1110	7276	3.0000	9.1300	2026-07-11 10:12:12	2026-07-11 10:12:12
 7869	1110	7277	100.0000	0.3000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7870	1110	7278	100.0000	0.2000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7871	1110	7279	8.0000	14.4700	2026-07-11 10:12:12	2026-07-11 10:12:12
 7872	1110	7280	2.0000	16.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7873	1110	7281	7.0000	3.3000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7874	1110	7282	7.0000	10.7300	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7319,19 +7434,18 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7912	1110	7320	89.0000	0.2600	2026-07-11 10:12:12	2026-07-11 10:12:12
 7913	1110	7321	52.0000	1.1000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7914	1110	7322	23.0000	0.9000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7915	1110	7323	13.0000	0.8000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7916	1110	7324	25.0000	1.6200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7917	1110	7325	50.0000	1.0400	2026-07-11 10:12:12	2026-07-11 10:12:12
 7918	1110	7326	22.0000	2.3000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7919	1110	7327	53.0000	1.3900	2026-07-11 10:12:12	2026-07-11 10:12:12
-7894	1110	7302	83.0000	7.0400	2026-07-11 10:12:12	2026-07-11 11:12:15
 7909	1110	7317	49.0000	2.1800	2026-07-11 10:12:12	2026-07-11 11:14:26
 7827	1110	7235	729.0000	0.0500	2026-07-11 10:12:12	2026-07-11 11:45:06
 7910	1110	7318	48.0000	0.4000	2026-07-11 10:12:12	2026-07-11 11:51:30
+7871	1110	7279	7.0000	14.4700	2026-07-11 10:12:12	2026-07-11 15:38:55
+7894	1110	7302	81.0000	7.0400	2026-07-11 10:12:12	2026-07-11 18:29:48
 7920	1110	7328	37.0000	0.5900	2026-07-11 10:12:12	2026-07-11 10:12:12
 7921	1110	7329	25.0000	1.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7922	1110	7330	131.0000	1.4000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7923	1110	7331	39.0000	1.1100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7924	1110	7332	25.0000	1.5800	2026-07-11 10:12:12	2026-07-11 10:12:12
 7926	1110	7334	914.0000	0.0200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7928	1110	7336	1000.0000	0.0200	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7372,7 +7486,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7965	1110	7373	6.0000	4.1100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7966	1110	7374	15.0000	9.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7967	1110	7375	76.0000	1.1100	2026-07-11 10:12:12	2026-07-11 10:12:12
-7968	1110	7376	58.0000	1.8200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7969	1110	7377	12.0000	2.0100	2026-07-11 10:12:12	2026-07-11 10:12:12
 7970	1110	7378	10.0000	6.0500	2026-07-11 10:12:12	2026-07-11 10:12:12
 7971	1110	7379	7.0000	9.6500	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7387,7 +7500,6 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 7980	1110	7388	26.0000	9.9900	2026-07-11 10:12:12	2026-07-11 10:12:12
 7981	1110	7389	31.0000	17.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7982	1110	7390	24.0000	9.7000	2026-07-11 10:12:12	2026-07-11 10:12:12
-7983	1110	7391	69.0000	12.7000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7984	1110	7392	1.0000	13.7000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7985	1110	7393	9.0000	12.0000	2026-07-11 10:12:12	2026-07-11 10:12:12
 7986	1110	7394	7.0000	15.1000	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7413,16 +7525,18 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 8009	1110	7417	44.0000	2.9300	2026-07-11 10:12:12	2026-07-11 10:12:12
 8010	1110	7418	23.0000	0.5000	2026-07-11 10:12:12	2026-07-11 10:12:12
 8011	1110	7419	23.0000	1.5600	2026-07-11 10:12:12	2026-07-11 10:12:12
-8013	1110	7421	44.0000	0.8000	2026-07-11 10:12:12	2026-07-11 10:12:12
 8014	1110	7422	85.0000	0.3700	2026-07-11 10:12:12	2026-07-11 10:12:12
 8015	1110	7423	138.0000	0.2000	2026-07-11 10:12:12	2026-07-11 10:12:12
 8016	1110	7424	66.0000	1.1200	2026-07-11 10:12:12	2026-07-11 10:12:12
 7989	1110	7397	19.0000	32.0000	2026-07-11 10:12:12	2026-07-11 11:15:45
 7993	1110	7401	131.0000	4.8000	2026-07-11 10:12:12	2026-07-11 14:43:09
-7991	1110	7399	139.0000	33.5000	2026-07-11 10:12:12	2026-07-11 15:04:31
+7923	1110	7331	38.0000	1.1100	2026-07-11 10:12:12	2026-07-11 18:08:36
 7927	1110	7335	585.0000	0.0200	2026-07-11 10:12:12	2026-07-11 15:12:09
 7959	1110	7367	1119.0000	0.1800	2026-07-11 10:12:12	2026-07-11 15:12:09
 8012	1110	7420	25.0000	1.5000	2026-07-11 10:12:12	2026-07-11 15:23:02
+8013	1110	7421	42.0000	0.8000	2026-07-11 10:12:12	2026-07-11 15:27:14
+7991	1110	7399	129.0000	33.5000	2026-07-11 10:12:12	2026-07-11 18:00:38
+7968	1110	7376	57.0000	1.8200	2026-07-11 10:12:12	2026-07-11 18:08:36
 8017	1110	7425	48.0000	2.1400	2026-07-11 10:12:12	2026-07-11 10:12:12
 8018	1110	7426	22.0000	1.5900	2026-07-11 10:12:12	2026-07-11 10:12:12
 8019	1110	7427	18.0000	2.1200	2026-07-11 10:12:12	2026-07-11 10:12:12
@@ -7469,19 +7583,30 @@ COPY public.stock (id, almacen_id, producto_id, cantidad, costo_promedio, create
 8055	1110	7463	5.0000	3.9100	2026-07-11 10:12:12	2026-07-11 12:07:03
 8048	1110	7456	761.0000	3.3000	2026-07-11 10:12:12	2026-07-11 15:05:43
 7314	1110	6722	78.1000	3.6700	2026-07-11 10:12:12	2026-07-11 10:41:05
-8088	1110	7470	-20.0000	0.0000	2026-07-11 17:14:44	2026-07-11 12:14:43
-7466	1110	6874	372.0000	18.1400	2026-07-11 10:12:12	2026-07-11 12:14:43
-7463	1110	6871	481.0000	32.3200	2026-07-11 10:12:12	2026-07-11 14:43:09
-7150	1110	6558	20.5000	38.0000	2026-07-11 10:12:12	2026-07-11 15:22:13
-7725	1110	7133	7.5000	66.0000	2026-07-11 10:12:12	2026-07-11 15:22:13
+7915	1110	7323	12.0000	0.8000	2026-07-11 10:12:12	2026-07-11 18:00:38
+7983	1110	7391	49.0000	12.7000	2026-07-11 10:12:12	2026-07-11 18:00:38
+7467	1110	6875	210.0000	49.9800	2026-07-11 10:12:12	2026-07-11 18:23:37
+7217	1110	6625	302.0000	30.6000	2026-07-11 10:12:12	2026-07-11 18:29:48
+8088	1110	7470	0.0000	0.0000	2026-07-11 17:14:44	2026-07-11 16:56:52
+7466	1110	6874	342.0000	18.1400	2026-07-11 10:12:12	2026-07-11 18:00:38
+7185	1110	6593	4.0000	2.4000	2026-07-11 10:12:12	2026-07-11 18:19:27
+7311	1110	6719	650.5000	3.4247	2026-07-11 10:12:12	2026-07-11 18:19:27
+7463	1110	6871	410.0000	32.3200	2026-07-11 10:12:12	2026-07-11 18:23:37
+7150	1110	6558	32.7500	38.0000	2026-07-11 10:12:12	2026-07-11 18:35:45
+7725	1110	7133	4.0000	66.0000	2026-07-11 10:12:12	2026-07-11 18:35:45
 7376	1110	6784	24.0000	4.8500	2026-07-11 10:12:12	2026-07-11 10:59:25
-8101	1110	7471	-12.0000	0.0000	2026-07-11 19:43:10	2026-07-11 14:43:09
+8101	1110	7471	0.0000	0.0000	2026-07-11 19:43:10	2026-07-11 16:54:30
 7760	1110	7168	265.0000	8.8700	2026-07-11 10:12:12	2026-07-11 11:01:43
 7925	1110	7333	153.0000	1.1800	2026-07-11 10:12:12	2026-07-11 15:04:31
 7899	1110	7307	346.0000	2.1400	2026-07-11 10:12:12	2026-07-11 11:02:41
-7139	1110	6547	2194.0000	2.7861	2026-07-11 10:12:12	2026-07-11 15:04:31
+7322	1110	6730	81.0000	1.4000	2026-07-11 10:12:12	2026-07-11 15:27:14
+7139	1110	6547	2174.0000	2.7861	2026-07-11 10:12:12	2026-07-11 15:49:52
+8131	1110	7473	0.0000	0.0000	2026-07-11 20:31:20	2026-07-11 16:54:30
 7937	1110	7345	60.0000	6.2400	2026-07-11 10:12:12	2026-07-11 11:14:26
-7595	1110	7003	3.0000	12.5000	2026-07-11 10:12:12	2026-07-11 11:37:10
+8140	1110	7474	0.0000	0.0000	2026-07-11 20:49:52	2026-07-11 16:54:30
+7595	1110	7003	2.0000	12.5000	2026-07-11 10:12:12	2026-07-11 15:36:55
+8152	1110	7475	4.0000	13.0000	2026-07-11 22:07:45	2026-07-11 17:07:45
+8154	1110	7476	0.0000	0.6700	2026-07-11 22:25:39	2026-07-11 18:12:40
 \.
 
 
@@ -7627,8 +7752,8 @@ COPY public.users (id, empresa_id, local_id, rol_id, name, email, email_verified
 1	1	1	1	Jesús	jesus@gmail.com	2026-05-18 01:53:39	$2y$12$zlXBFY8O1fDfJUR0.w.9P.GvI0NIzJcYaHEmn6SHtjUIAUVkFZ.VC	t	\N	2026-05-18 01:53:39	2026-05-18 01:53:39
 2	1	1	2	Cajera	cajera@gmail.com	2026-05-18 01:53:39	$2y$12$nK5vzxRZrV/hA7kOEuwy5eIHNn6JQuk142w2wpS2knYUK3.Y1lVK6	t	\N	2026-05-18 01:53:39	2026-05-18 01:53:39
 1297	1097	1092	1169	Cajera 2	cajera2@ferreteriahyc.com	2026-07-11 10:12:11	$2y$12$O0kxCIhh2veBHpk.Spd3pe0q8CmxyFA835k9Jc1k16UKMG0rJgS8C	t	\N	2026-07-11 10:12:12	2026-07-11 10:12:12
-1295	1097	1092	1168	Administrador H&C	admin@ferreteriahyc.com	2026-07-11 10:12:11	$2y$12$hMO3.gY7aFAjB4XfIXl0iOY8yuKD.271K0RjkdDIoYCt8I3iPLlRy	t	YMscnQDkWeUNu2YacuRbrIsJNM0kEs4sEvI6mVuRUy28APchIR79PSuQwjgY	2026-07-11 10:12:11	2026-07-11 10:12:11
 1296	1097	1092	1169	Cajera 1	cajera1@ferreteriahyc.com	2026-07-11 10:12:11	$2y$12$MdrXJByLMLtb36iID5kDoug3mieApnTRVOwWezb.vwUFYlIzt89lu	t	2MH6qj7VSuZlwQ8gynSLVvcvlvoNQ4S1Dx1Q8MG8Jy6gd8dtn4be2w1IUk2l	2026-07-11 10:12:11	2026-07-11 10:12:11
+1295	1097	1092	1168	Administrador H&C	admin@ferreteriahyc.com	2026-07-11 10:12:11	$2y$12$hMO3.gY7aFAjB4XfIXl0iOY8yuKD.271K0RjkdDIoYCt8I3iPLlRy	t	XYquuK2xSKRv8MVW8VcOVoBQgPApbBmDrTIA8MC7o5LpEsNVIymTdyB3KmQt	2026-07-11 10:12:11	2026-07-11 10:12:11
 \.
 
 
@@ -7642,6 +7767,12 @@ COPY public.venta_abonos (id, venta_id, user_id, metodo_pago_id, cuenta_id, fech
 9	170	1	5	15	2026-07-05	168.60	\N	\N	2026-07-05 20:19:19	2026-07-05 20:19:19	PEN	\N	\N
 10	169	1	5	15	2026-07-09	700.00	\N	\N	2026-07-09 19:58:41	2026-07-09 19:58:41	PEN	\N	\N
 11	1101	1296	5460	287	2026-07-11	263.50	1819948	\N	2026-07-11 12:54:34	2026-07-11 12:54:34	PEN	\N	\N
+12	1166	1297	5460	287	2026-07-11	604.40	03428427	A FAVOR 10 SOLES	2026-07-11 16:27:39	2026-07-11 16:27:39	PEN	\N	\N
+13	1120	1297	5456	286	2026-07-11	614.00	\N	\N	2026-07-11 17:19:31	2026-07-11 17:19:31	PEN	\N	\N
+14	1142	1297	5456	286	2026-07-11	4756.00	\N	\N	2026-07-11 18:14:23	2026-07-11 18:14:23	PEN	\N	\N
+15	1121	1297	5456	286	2026-07-11	622.00	\N	\N	2026-07-11 18:15:04	2026-07-11 18:15:04	PEN	\N	\N
+16	1105	1297	5456	286	2026-07-11	1000.00	\N	\N	2026-07-11 18:15:24	2026-07-11 18:15:24	PEN	\N	\N
+17	1160	1295	5458	289	2026-07-12	15.00	05564	\N	2026-07-12 07:42:09	2026-07-12 07:42:09	PEN	\N	\N
 \.
 
 
@@ -7742,6 +7873,58 @@ COPY public.venta_items (id, venta_id, producto_id, producto_unidad_id, producto
 525	1175	7133	7133	Piedra Chancada 1/2 S/M	Unidad	1.0000	1.0000	1.0000	70.00	66.00	0.00	\N	70.00	2026-07-11 15:22:13	2026-07-11 15:22:13	t
 526	1176	7420	7420	Union Pvc 1/2 Mixta PAVCO	Unidad	1.0000	1.0000	1.0000	3.00	1.50	0.00	\N	3.00	2026-07-11 15:23:02	2026-07-11 15:23:02	t
 527	1177	6720	6720	Clavo P/Madera 2 Confer CONFER	Unidad	0.5000	1.0000	0.5000	5.00	3.60	0.00	\N	2.50	2026-07-11 15:23:33	2026-07-11 15:23:33	t
+528	1178	6541	6541	Adaptador Pvc 1/2 PLASTICA	Unidad	2.0000	1.0000	2.0000	1.00	0.48	0.00	\N	2.00	2026-07-11 15:27:14	2026-07-11 15:27:14	t
+529	1178	6647	6647	CODO PVC 1/2 SP PLASTICA	Unidad	1.0000	1.0000	1.0000	2.00	0.74	0.00	\N	2.00	2026-07-11 15:27:14	2026-07-11 15:27:14	t
+530	1178	6712	6712	Cinta Teflon 1/2 X 12m C&A	Unidad	1.0000	1.0000	1.0000	1.00	0.34	0.00	\N	1.00	2026-07-11 15:27:14	2026-07-11 15:27:14	t
+531	1178	7421	7421	Union Pvc 1/2 Mixta PLASTICA	Unidad	2.0000	1.0000	2.0000	1.50	0.80	0.00	\N	3.00	2026-07-11 15:27:14	2026-07-11 15:27:14	t
+532	1178	6730	6730	Codo Fierro G. 1/2 FIERRO G	Unidad	1.0000	1.0000	1.0000	2.50	1.40	0.00	\N	2.50	2026-07-11 15:27:14	2026-07-11 15:27:14	t
+533	1178	7126	7126	Pegamento Azul C/Brocha DATEY	Unidad	1.0000	1.0000	1.0000	4.50	3.28	0.00	\N	4.50	2026-07-11 15:27:14	2026-07-11 15:27:14	t
+534	1179	7473	7478	LADRILLO ARTESANAL KINK KONK	Unidad	100.0000	1.0000	100.0000	0.60	0.50	0.00	\N	60.00	2026-07-11 15:31:19	2026-07-11 15:31:19	t
+535	1179	6558	6558	Arena Amarilla S/M	Unidad	0.2500	1.0000	0.2500	68.00	38.00	0.00	\N	17.00	2026-07-11 15:31:19	2026-07-11 15:31:19	t
+536	1180	6609	6609	CABLE THW-90 + PLUS, 14 AWG INDECO	Unidad	100.0000	1.0000	100.0000	1.85	1.69	0.00	\N	185.00	2026-07-11 15:32:35	2026-07-11 15:32:35	t
+537	1181	6555	6555	Anillo De Cera C/G METUSA	Unidad	1.0000	1.0000	1.0000	6.00	4.07	0.00	\N	6.00	2026-07-11 15:33:23	2026-07-11 15:33:23	t
+538	1182	6650	6650	CODO SAL 4 PAVCO	Unidad	1.0000	1.0000	1.0000	10.00	6.84	0.00	\N	10.00	2026-07-11 15:35:36	2026-07-11 15:35:36	t
+539	1183	7003	7472	MACHETE CAÑERO M/MADERA C/GANCHO 14 BELLOTA	Unidad	1.0000	1.0000	1.0000	18.00	18.00	0.00	\N	18.00	2026-07-11 15:36:55	2026-07-11 15:36:55	t
+540	1183	7004	7004	MACHETE T/SABLE M/NEGRO 22 PL BELLOTA	Unidad	1.0000	1.0000	1.0000	18.00	13.00	0.00	\N	18.00	2026-07-11 15:36:55	2026-07-11 15:36:55	t
+541	1184	6643	6643	CLAVO P/MADERA 1 1/2 CONFER CONFER	Unidad	0.5000	1.0000	0.5000	10.00	4.40	0.00	\N	5.00	2026-07-11 15:37:32	2026-07-11 15:37:32	t
+542	1185	7279	7279	THINER ACRILICO FMQ FM	Unidad	1.0000	1.0000	1.0000	17.50	14.47	0.00	\N	17.50	2026-07-11 15:38:55	2026-07-11 15:38:55	t
+543	1186	7474	7479	LADRILLO ESTANDAR 18 HUECOS FORTES	Unidad	500.0000	1.0000	500.0000	0.95	0.86	0.00	\N	475.00	2026-07-11 15:49:52	2026-07-11 15:49:52	t
+544	1186	6871	6871	Fierro 1/2 SIDERPERU	Unidad	11.0000	1.0000	11.0000	33.20	32.32	0.00	\N	365.20	2026-07-11 15:49:52	2026-07-11 15:49:52	t
+545	1186	6875	6875	Fierro 5/8 SIDERPERU	Unidad	4.0000	1.0000	4.0000	52.50	49.98	0.00	\N	210.00	2026-07-11 15:49:52	2026-07-11 15:49:52	t
+546	1186	6546	6546	Alambre Negro 08 PRODAC	Unidad	15.0000	1.0000	15.0000	4.50	3.04	0.00	\N	67.50	2026-07-11 15:49:52	2026-07-11 15:49:52	t
+547	1186	6547	6547	Alambre Negro 16 PRODAC	Unidad	20.0000	1.0000	20.0000	4.50	3.04	0.00	\N	90.00	2026-07-11 15:49:52	2026-07-11 15:49:52	t
+548	1187	7323	7323	Tapon Hembra Pvc 3/4 Sp INYECTOPLAST	Unidad	1.0000	1.0000	1.0000	2.00	0.80	0.00	\N	2.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+549	1187	6625	7475	CEMENTO ROJO PACASMAYO	Unidad	100.0000	1.0000	100.0000	31.20	30.60	0.00	\N	3120.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+550	1187	6968	6968	Llanta Completa P/Carretilla Ref C/Aro C&A	Unidad	1.0000	1.0000	1.0000	46.00	32.53	0.00	\N	46.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+551	1187	6871	6871	Fierro 1/2 SIDERPERU	Unidad	50.0000	1.0000	50.0000	32.50	32.32	0.00	\N	1625.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+552	1187	6877	6877	Fierro 8 MM SIDERPERU	Unidad	50.0000	1.0000	50.0000	13.20	13.02	0.00	\N	660.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+553	1187	6846	6846	FIERRO 6MM PRODAC	Unidad	50.0000	1.0000	50.0000	6.50	6.07	0.00	\N	325.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+554	1187	6875	6875	Fierro 5/8 SIDERPERU	Unidad	10.0000	1.0000	10.0000	52.00	49.98	0.00	\N	520.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+555	1187	6874	6874	Fierro 3/8 SIDERPERU	Unidad	30.0000	1.0000	30.0000	18.20	18.14	0.00	\N	546.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+556	1187	7399	7399	Tubo Sal 4 PAVCO	Unidad	10.0000	1.0000	10.0000	33.50	33.50	0.00	\N	335.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+557	1187	7391	7391	Tubo Pvc C-10 1/2 Sp PAVCO	Unidad	20.0000	1.0000	20.0000	13.50	12.70	0.00	\N	270.00	2026-07-11 18:00:38	2026-07-11 18:00:38	t
+558	1188	7331	7331	Tapon Sal 2 PAVCO	Unidad	1.0000	1.0000	1.0000	3.00	1.11	0.00	\N	3.00	2026-07-11 18:08:36	2026-07-11 18:08:36	t
+559	1188	6745	6745	Codo Sal 2 PLASTICA	Unidad	3.0000	1.0000	3.0000	2.00	0.86	0.00	\N	6.00	2026-07-11 18:08:36	2026-07-11 18:08:36	t
+560	1188	7020	7020	Malla Plastificada Verde Pesada 1/2 X 3pl X 25kg VARIOS	Unidad	1.0000	1.0000	1.0000	8.50	4.90	0.00	\N	8.50	2026-07-11 18:08:36	2026-07-11 18:08:36	t
+561	1188	7126	7126	Pegamento Azul C/Brocha DATEY	Unidad	1.0000	1.0000	1.0000	5.50	3.28	0.00	\N	5.50	2026-07-11 18:08:36	2026-07-11 18:08:36	t
+562	1188	6625	7475	CEMENTO ROJO PACASMAYO	Unidad	5.0000	1.0000	5.0000	32.00	30.60	0.00	\N	160.00	2026-07-11 18:08:36	2026-07-11 18:08:36	t
+563	1188	6876	6876	Fierro 6 MM SIDERPERU	Unidad	3.0000	1.0000	3.0000	8.50	7.26	0.00	\N	25.50	2026-07-11 18:08:36	2026-07-11 18:08:36	t
+564	1188	7376	7376	Tomacorriente Triple Sobreponer HOME LIGHT	Unidad	1.0000	1.0000	1.0000	5.00	1.82	0.00	\N	5.00	2026-07-11 18:08:36	2026-07-11 18:08:36	t
+565	1188	6714	6714	Cizalla 12 M/Tubular C&A C&A	Unidad	1.0000	1.0000	1.0000	24.00	17.41	0.00	\N	24.00	2026-07-11 18:08:36	2026-07-11 18:08:36	t
+566	1188	6764	6764	DISCO CORTE MADERA 4 1/2 24T KAMASA	Unidad	1.0000	1.0000	1.0000	8.50	4.92	0.00	\N	8.50	2026-07-11 18:08:36	2026-07-11 18:08:36	t
+567	1189	7476	7481	Ladrillo Artesanal Bodoque King Kong S/M	Unidad	2000.0000	1.0000	2000.0000	0.70	0.65	0.00	\N	1400.00	2026-07-11 18:12:40	2026-07-11 18:12:40	t
+570	1190	6593	6593	Broca Para Fierro Hss 5/16 VARIOS	Unidad	1.0000	1.0000	1.0000	5.50	3.00	0.00	\N	5.50	2026-07-11 18:19:27	2026-07-11 18:19:27	t
+571	1190	6719	6719	Clavo P/Madera 2 1/2 Confer CONFER	Unidad	1.0000	1.0000	1.0000	4.50	3.43	0.00	\N	4.50	2026-07-11 18:19:27	2026-07-11 18:19:27	t
+572	1191	6871	6871	Fierro 1/2 SIDERPERU	Unidad	10.0000	1.0000	10.0000	33.80	32.32	0.00	\N	338.00	2026-07-11 18:23:37	2026-07-11 18:23:37	t
+573	1191	6875	6875	Fierro 5/8 SIDERPERU	Unidad	4.0000	1.0000	4.0000	53.00	49.98	0.00	\N	212.00	2026-07-11 18:23:37	2026-07-11 18:23:37	t
+574	1191	6877	6877	Fierro 8 MM SIDERPERU	Unidad	2.0000	1.0000	2.0000	14.00	13.02	0.00	\N	28.00	2026-07-11 18:23:37	2026-07-11 18:23:37	t
+575	1192	6560	6560	Arenilla S/M	Unidad	2.0000	1.0000	2.0000	35.00	20.00	0.00	\N	70.00	2026-07-11 18:29:48	2026-07-11 18:29:48	t
+576	1192	7133	7133	Piedra Chancada 1/2 S/M	Unidad	0.5000	1.0000	0.5000	70.00	66.00	0.00	\N	35.00	2026-07-11 18:29:48	2026-07-11 18:29:48	t
+577	1192	6558	6558	Arena Amarilla S/M	Unidad	0.5000	1.0000	0.5000	50.00	38.00	0.00	\N	25.00	2026-07-11 18:29:48	2026-07-11 18:29:48	t
+578	1192	6625	7475	CEMENTO ROJO PACASMAYO	Unidad	5.0000	1.0000	5.0000	32.00	30.60	0.00	\N	160.00	2026-07-11 18:29:48	2026-07-11 18:29:48	t
+579	1192	7302	7302	TUBO PVC C-10 1/2 SP PLASTICA	Unidad	2.0000	1.0000	2.0000	15.00	7.04	0.00	\N	30.00	2026-07-11 18:29:48	2026-07-11 18:29:48	t
+580	1193	6558	6558	Arena Amarilla S/M	Unidad	5.0000	1.0000	5.0000	45.00	38.00	0.00	\N	225.00	2026-07-11 18:35:45	2026-07-11 18:35:45	t
+581	1193	7133	7133	Piedra Chancada 1/2 S/M	Unidad	3.0000	1.0000	3.0000	68.00	66.00	0.00	\N	204.00	2026-07-11 18:35:45	2026-07-11 18:35:45	t
 \.
 
 
@@ -7793,6 +7976,24 @@ COPY public.venta_pagos (id, venta_id, metodo_pago_id, cuenta_metodo_pago_id, mo
 451	1175	5456	\N	120.00	\N	0.00	2026-07-11 15:22:13	2026-07-11 15:22:13	PEN	\N	\N
 452	1176	5456	\N	3.00	\N	0.00	2026-07-11 15:23:02	2026-07-11 15:23:02	PEN	\N	\N
 453	1177	5456	\N	2.50	\N	0.00	2026-07-11 15:23:33	2026-07-11 15:23:33	PEN	\N	\N
+454	1178	5458	38	15.00	\N	0.00	2026-07-11 15:27:14	2026-07-11 15:27:14	PEN	\N	\N
+455	1179	5456	\N	77.00	\N	0.00	2026-07-11 15:31:19	2026-07-11 15:31:19	PEN	\N	\N
+456	1180	5458	38	185.00	\N	0.00	2026-07-11 15:32:35	2026-07-11 15:32:35	PEN	\N	\N
+457	1181	5456	\N	6.00	\N	0.00	2026-07-11 15:33:23	2026-07-11 15:33:23	PEN	\N	\N
+458	1182	5456	\N	10.00	\N	0.00	2026-07-11 15:35:36	2026-07-11 15:35:36	PEN	\N	\N
+459	1183	5456	\N	36.00	\N	0.00	2026-07-11 15:36:55	2026-07-11 15:36:55	PEN	\N	\N
+460	1184	5456	\N	5.00	\N	0.00	2026-07-11 15:37:32	2026-07-11 15:37:32	PEN	\N	\N
+461	1185	5456	\N	17.50	\N	0.00	2026-07-11 15:38:55	2026-07-11 15:38:55	PEN	\N	\N
+462	1186	5458	38	500.00	\N	0.00	2026-07-11 15:49:52	2026-07-11 15:49:52	PEN	\N	\N
+463	1186	5460	44	707.70	\N	0.00	2026-07-11 15:49:52	2026-07-11 15:49:52	PEN	\N	\N
+464	1187	5456	\N	5449.00	\N	0.00	2026-07-11 18:00:38	2026-07-11 18:00:38	PEN	\N	\N
+465	1187	5460	44	2000.00	\N	0.00	2026-07-11 18:00:38	2026-07-11 18:00:38	PEN	\N	\N
+466	1188	5456	\N	183.00	\N	0.00	2026-07-11 18:08:36	2026-07-11 18:08:36	PEN	\N	\N
+467	1188	5458	38	63.00	\N	0.00	2026-07-11 18:08:36	2026-07-11 18:08:36	PEN	\N	\N
+469	1190	5458	38	10.00	\N	0.00	2026-07-11 18:19:27	2026-07-11 18:19:27	PEN	\N	\N
+470	1191	5460	44	578.00	\N	0.00	2026-07-11 18:23:37	2026-07-11 18:23:37	PEN	\N	\N
+471	1192	5458	38	320.00	\N	0.00	2026-07-11 18:29:48	2026-07-11 18:29:48	PEN	\N	\N
+472	1193	5460	44	294.00	\N	0.00	2026-07-11 18:35:45	2026-07-11 18:35:45	PEN	\N	\N
 \.
 
 
@@ -7825,7 +8026,6 @@ COPY public.ventas (id, empresa_id, local_id, turno_id, caja_id, user_id, client
 167	1	1	212	1	2	1	V-0501	ticket	1660.00	0.00	\N	0.00	1660.00	completada	\N	2026-07-05 09:05:00	2026-07-05 19:27:37	2026-07-05 19:27:37	\N	f	1660.00	0.00	\N	PEN	\N	\N
 168	1	1	212	1	2	341	V-0502	ticket	877.50	0.00	\N	0.00	877.50	completada	\N	2026-07-05 10:35:00	2026-07-05 19:27:37	2026-07-05 19:27:37	\N	f	877.50	0.00	\N	PEN	\N	\N
 161	1	1	210	1	2	338	V-0202	ticket	42875.00	0.00	\N	0.00	42875.00	completada	\N	2026-07-03 16:05:00	2026-07-05 19:27:37	2026-07-05 19:27:37	\N	t	11500.00	31375.00	2026-07-25	PEN	\N	\N
-1105	1097	1092	638	1100	1295	1596	MIG-6a525d4c519a0	ticket	1669.00	0.00	\N	0.00	1669.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	1669.00	\N	PEN	\N	\N
 1106	1097	1092	638	1100	1295	1597	MIG-6a525d4c51a8d	ticket	2710.00	0.00	\N	0.00	2710.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	2710.00	\N	PEN	\N	\N
 1107	1097	1092	638	1100	1295	1598	MIG-6a525d4c51b81	ticket	2740.80	0.00	\N	0.00	2740.80	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	2740.80	\N	PEN	\N	\N
 170	1	1	213	312	1	4	V-0001	ticket	268.60	0.00	\N	40.97	268.60	completada	\N	2026-07-05 20:17:50	2026-07-05 20:17:50	2026-07-05 20:19:19	0a7a7b1f-10e6-4f2e-af12-def8a86f3942	t	268.60	0.00	\N	PEN	\N	\N
@@ -7838,11 +8038,10 @@ COPY public.ventas (id, empresa_id, local_id, turno_id, caja_id, user_id, client
 1114	1097	1092	638	1100	1295	1605	MIG-6a525d4c52273	ticket	737.00	0.00	\N	0.00	737.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	737.00	\N	PEN	\N	\N
 1115	1097	1092	638	1100	1295	1606	MIG-6a525d4c52360	ticket	338.00	0.00	\N	0.00	338.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	338.00	\N	PEN	\N	\N
 1116	1097	1092	638	1100	1295	1607	MIG-6a525d4c52447	ticket	100.40	0.00	\N	0.00	100.40	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	100.40	\N	PEN	\N	\N
+1105	1097	1092	638	1100	1295	1596	MIG-6a525d4c519a0	ticket	1669.00	0.00	\N	0.00	1669.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 18:15:24	\N	t	1000.00	669.00	\N	PEN	\N	\N
 1117	1097	1092	638	1100	1295	1608	MIG-6a525d4c52540	ticket	4468.00	0.00	\N	0.00	4468.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	4468.00	\N	PEN	\N	\N
 1118	1097	1092	638	1100	1295	1609	MIG-6a525d4c5262b	ticket	1380.00	0.00	\N	0.00	1380.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	1380.00	\N	PEN	\N	\N
 1119	1097	1092	638	1100	1295	1610	MIG-6a525d4c52726	ticket	3180.59	0.00	\N	0.00	3180.59	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	3180.59	\N	PEN	\N	\N
-1120	1097	1092	638	1100	1295	1611	MIG-6a525d4c52803	ticket	614.00	0.00	\N	0.00	614.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	614.00	\N	PEN	\N	\N
-1121	1097	1092	638	1100	1295	1612	MIG-6a525d4c528e2	ticket	6540.00	0.00	\N	0.00	6540.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	6540.00	\N	PEN	\N	\N
 1122	1097	1092	638	1100	1295	1613	MIG-6a525d4c529ce	ticket	498.00	0.00	\N	0.00	498.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	498.00	\N	PEN	\N	\N
 1123	1097	1092	638	1100	1295	1614	MIG-6a525d4c52abb	ticket	150.00	0.00	\N	0.00	150.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	150.00	\N	PEN	\N	\N
 1124	1097	1092	638	1100	1295	1615	MIG-6a525d4c52ba3	ticket	89.00	0.00	\N	0.00	89.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	89.00	\N	PEN	\N	\N
@@ -7863,7 +8062,6 @@ COPY public.ventas (id, empresa_id, local_id, turno_id, caja_id, user_id, client
 1139	1097	1092	638	1100	1295	1630	MIG-6a525d4c53a38	ticket	205.70	0.00	\N	0.00	205.70	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	205.70	\N	PEN	\N	\N
 1140	1097	1092	638	1100	1295	1631	MIG-6a525d4c53b2b	ticket	1078.00	0.00	\N	0.00	1078.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	1078.00	\N	PEN	\N	\N
 1141	1097	1092	638	1100	1295	1632	MIG-6a525d4c53c17	ticket	56.00	0.00	\N	0.00	56.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	56.00	\N	PEN	\N	\N
-1142	1097	1092	638	1100	1295	1633	MIG-6a525d4c53d07	ticket	4756.00	0.00	\N	0.00	4756.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	4756.00	\N	PEN	\N	\N
 1143	1097	1092	638	1100	1295	1634	MIG-6a525d4c53e08	ticket	539.00	0.00	\N	0.00	539.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 10:12:12	\N	t	0.00	539.00	\N	PEN	\N	\N
 1147	1097	1092	643	1101	1297	1582	V-0004	ticket	15.00	0.00	\N	2.29	15.00	completada	\N	2026-07-11 11:00:54	2026-07-11 11:00:54	2026-07-11 11:00:54	c3320328-616e-42be-99b0-ff40e33bce7d	f	15.00	0.00	\N	PEN	\N	\N
 1144	1097	1092	643	1101	1297	1582	V-0001	ticket	10.00	0.00	\N	1.53	10.00	completada	\N	2026-07-11 10:41:05	2026-07-11 10:41:05	2026-07-11 10:41:05	dff50f59-b206-4a4a-badf-9c443a1bafe9	f	10.00	0.00	\N	PEN	\N	\N
@@ -7872,12 +8070,16 @@ COPY public.ventas (id, empresa_id, local_id, turno_id, caja_id, user_id, client
 1148	1097	1092	643	1101	1297	1582	V-0005	ticket	50.00	0.00	\N	7.63	50.00	completada	\N	2026-07-11 11:01:43	2026-07-11 11:01:43	2026-07-11 11:01:43	b2980eb8-72b2-4454-96ac-2542eb6b970d	f	50.00	0.00	\N	PEN	\N	\N
 1149	1097	1092	643	1101	1297	1582	V-0006	ticket	6.00	0.00	\N	0.92	6.00	completada	\N	2026-07-11 11:02:41	2026-07-11 11:02:41	2026-07-11 11:02:41	f517c15a-c28c-4cef-bd03-02a188606afc	f	6.00	0.00	\N	PEN	\N	\N
 1150	1097	1092	643	1101	1297	1582	V-0007	ticket	5.00	0.00	\N	0.76	5.00	completada	\N	2026-07-11 11:03:13	2026-07-11 11:03:13	2026-07-11 11:03:13	e79ef105-bc6e-4e35-9fc4-2d3fb5eba710	f	5.00	0.00	\N	PEN	\N	\N
+1120	1097	1092	638	1100	1295	1611	MIG-6a525d4c52803	ticket	614.00	0.00	\N	0.00	614.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 17:19:31	\N	t	614.00	0.00	\N	PEN	\N	\N
+1142	1097	1092	638	1100	1295	1633	MIG-6a525d4c53d07	ticket	4756.00	0.00	\N	0.00	4756.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 18:14:23	\N	t	4756.00	0.00	\N	PEN	\N	\N
+1121	1097	1092	638	1100	1295	1612	MIG-6a525d4c528e2	ticket	6540.00	0.00	\N	0.00	6540.00	completada	Saldo migrado del sistema anterior	2026-07-10 12:00:00	2026-07-11 10:12:12	2026-07-11 18:15:04	\N	t	622.00	5918.00	\N	PEN	\N	\N
 1151	1097	1092	643	1101	1297	1659	V-0008	ticket	50.00	0.00	\N	7.63	50.00	completada	\N	2026-07-11 11:06:10	2026-07-11 11:06:10	2026-07-11 11:06:10	e48d5c01-ddbe-4eda-9e60-9d44532e1189	f	50.00	0.00	\N	PEN	\N	\N
 1170	1097	1092	644	1100	1296	1662	V-0007	ticket	70.00	0.00	\N	10.68	70.00	completada	\N	2026-07-11 15:10:10	2026-07-11 15:10:10	2026-07-11 15:10:10	a2c06dc9-fbce-4bec-a1e1-7ee96d925dfe	f	70.00	0.00	\N	PEN	\N	\N
 1153	1097	1092	643	1101	1297	1582	V-0010	ticket	10.00	0.00	\N	1.53	10.00	completada	\N	2026-07-11 11:12:15	2026-07-11 11:12:15	2026-07-11 11:12:15	47076de9-3b53-4498-bc8f-55e3e8145902	f	10.00	0.00	\N	PEN	\N	\N
 1154	1097	1092	643	1101	1297	1582	V-0011	ticket	14.50	0.00	\N	2.21	14.50	completada	\N	2026-07-11 11:14:26	2026-07-11 11:14:26	2026-07-11 11:14:26	26d2a992-dac9-4488-995d-f05cbdd8eea2	f	14.50	0.00	\N	PEN	\N	\N
 1165	1097	1092	644	1100	1296	1660	V-0002	ticket	1125.10	0.00	\N	171.63	1125.10	completada	\N	2026-07-11 12:14:43	2026-07-11 12:14:43	2026-07-11 12:14:43	9d5b5d6f-8347-45e5-af8e-b5de035e590b	f	1125.10	0.00	\N	PEN	\N	\N
 1155	1097	1092	643	1101	1297	1602	V-0012	ticket	99.00	0.00	\N	15.10	99.00	completada	\N	2026-07-11 11:15:45	2026-07-11 11:15:45	2026-07-11 11:15:45	e5c9a1d3-94ec-42e4-8235-34ff6354f304	f	99.00	0.00	\N	PEN	\N	\N
+1178	1097	1092	644	1100	1296	1582	V-0015	ticket	15.00	0.00	\N	2.29	15.00	completada	\N	2026-07-11 15:27:14	2026-07-11 15:27:14	2026-07-11 15:27:14	66156a24-da31-46d3-829b-df0b51ce5e4b	f	15.00	0.00	\N	PEN	\N	\N
 1156	1097	1092	643	1101	1297	1582	V-0013	ticket	18.00	0.00	\N	2.75	18.00	completada	\N	2026-07-11 11:37:10	2026-07-11 11:37:10	2026-07-11 11:37:10	16020416-676d-49ce-ad89-0a04d700c04d	f	18.00	0.00	\N	PEN	\N	\N
 1152	1097	1092	643	1101	1297	1602	V-0009	ticket	620.00	0.00	\N	94.58	620.00	completada	\N	2026-07-11 11:11:04	2026-07-11 11:11:04	2026-07-11 12:47:29	5abec891-0698-4080-938d-5e7bb8ac4bea	f	620.00	0.00	\N	PEN	\N	\N
 1157	1097	1092	643	1101	1297	1582	V-0014	ticket	103.50	0.00	\N	15.79	103.50	completada	\N	2026-07-11 11:38:35	2026-07-11 11:38:35	2026-07-11 11:38:35	10cc58d7-d981-427f-b571-6b1f79fdbe00	f	103.50	0.00	\N	PEN	\N	\N
@@ -7885,8 +8087,6 @@ COPY public.ventas (id, empresa_id, local_id, turno_id, caja_id, user_id, client
 1158	1097	1092	643	1101	1297	1582	V-0015	ticket	5.00	0.00	\N	0.76	5.00	completada	\N	2026-07-11 11:39:48	2026-07-11 11:39:48	2026-07-11 11:39:48	f9f788eb-3096-4e9a-ad0d-eccec8d526fa	f	5.00	0.00	\N	PEN	\N	\N
 1159	1097	1092	643	1101	1297	1582	V-0016	ticket	35.50	0.00	\N	5.42	35.50	completada	\N	2026-07-11 11:45:06	2026-07-11 11:45:06	2026-07-11 11:45:06	0bf65c9d-0247-4f8a-beeb-1c9ab5f7efb7	f	35.50	0.00	\N	PEN	\N	\N
 1171	1097	1092	644	1100	1296	1582	V-0008	ticket	30.00	0.00	\N	4.58	30.00	completada	\N	2026-07-11 15:12:09	2026-07-11 15:12:09	2026-07-11 15:12:09	8066d1f6-e7f2-43fa-a447-a34766ad6d57	f	30.00	0.00	\N	PEN	\N	\N
-1160	1097	1092	643	1101	1297	1593	V-0017	ticket	15.00	0.00	\N	2.29	15.00	completada	\N	2026-07-11 11:49:42	2026-07-11 11:49:42	2026-07-11 11:49:42	a1781e4d-8159-40f2-93b9-54734e9f4ecb	t	0.00	15.00	2026-07-12	PEN	\N	\N
-1166	1097	1092	644	1100	1296	1661	V-0003	ticket	604.40	0.00	\N	92.20	604.40	completada	\N	2026-07-11 14:43:09	2026-07-11 14:43:09	2026-07-11 14:43:09	7c56e0b8-ae2f-4baa-9593-3395bfbb9267	t	0.00	604.40	2026-07-12	PEN	\N	\N
 1161	1097	1092	643	1101	1297	1582	V-0018	ticket	1.00	0.00	\N	0.15	1.00	completada	\N	2026-07-11 11:51:30	2026-07-11 11:51:30	2026-07-11 11:51:30	b10f7d40-969d-45c6-a920-75e97d6699f1	f	1.00	0.00	\N	PEN	\N	\N
 1162	1097	1092	644	1100	1296	1582	V-0001	ticket	7.00	0.00	\N	1.07	7.00	completada	\N	2026-07-11 12:07:03	2026-07-11 12:07:03	2026-07-11 12:07:03	8af8b0e1-b843-461d-bc10-7fe8891b4f3d	f	7.00	0.00	\N	PEN	\N	\N
 1167	1097	1092	644	1100	1296	1582	V-0004	ticket	92.50	0.00	\N	14.11	92.50	completada	\N	2026-07-11 15:04:31	2026-07-11 15:04:31	2026-07-11 15:04:31	ebbd1057-85f2-4e35-9899-7419425ff241	f	92.50	0.00	\N	PEN	\N	\N
@@ -7897,7 +8097,24 @@ COPY public.ventas (id, empresa_id, local_id, turno_id, caja_id, user_id, client
 1173	1097	1092	644	1100	1296	1663	V-0010	ticket	403.50	0.00	\N	61.55	403.50	completada	\N	2026-07-11 15:17:45	2026-07-11 15:17:45	2026-07-11 15:17:45	0b30af55-cf94-492e-95bf-81a25366361c	f	403.50	0.00	\N	PEN	\N	\N
 1176	1097	1092	644	1100	1296	1582	V-0013	ticket	3.00	0.00	\N	0.46	3.00	completada	\N	2026-07-11 15:23:02	2026-07-11 15:23:02	2026-07-11 15:23:03	550942e1-a3e3-4f93-822b-a57ce59e67a0	f	3.00	0.00	\N	PEN	\N	\N
 1174	1097	1092	644	1100	1296	1582	V-0011	ticket	6.00	0.00	\N	0.92	6.00	completada	\N	2026-07-11 15:21:00	2026-07-11 15:21:00	2026-07-11 15:21:00	5c6dee54-f2da-47da-aff1-07c79dbe91b7	f	6.00	0.00	\N	PEN	\N	\N
+1181	1097	1092	644	1100	1296	1582	V-0018	ticket	6.00	0.00	\N	0.92	6.00	completada	\N	2026-07-11 15:33:23	2026-07-11 15:33:23	2026-07-11 15:33:23	7a2ed013-e82c-44ff-8991-6461bdb512d2	f	6.00	0.00	\N	PEN	\N	\N
 1177	1097	1092	644	1100	1296	1582	V-0014	ticket	2.50	0.00	\N	0.38	2.50	completada	\N	2026-07-11 15:23:33	2026-07-11 15:23:33	2026-07-11 15:23:33	7248c8cf-fd11-42b3-88bb-430489aed72d	f	2.50	0.00	\N	PEN	\N	\N
+1180	1097	1092	644	1100	1296	1582	V-0017	ticket	185.00	0.00	\N	28.22	185.00	completada	\N	2026-07-11 15:32:35	2026-07-11 15:32:35	2026-07-11 15:32:35	80448930-5d13-4f4a-bf8e-34c1122c33e2	f	185.00	0.00	\N	PEN	\N	\N
+1179	1097	1092	644	1100	1296	1664	V-0016	ticket	77.00	0.00	\N	11.75	77.00	completada	\N	2026-07-11 15:31:19	2026-07-11 15:31:19	2026-07-11 15:31:19	45eb45ac-ddae-4950-b87b-50de7ae4dcd6	f	77.00	0.00	\N	PEN	\N	\N
+1182	1097	1092	644	1100	1296	1582	V-0019	ticket	10.00	0.00	\N	1.53	10.00	completada	\N	2026-07-11 15:35:36	2026-07-11 15:35:36	2026-07-11 15:35:36	456ac25d-2f4e-4534-a3a5-9fd39727da54	f	10.00	0.00	\N	PEN	\N	\N
+1183	1097	1092	644	1100	1296	1582	V-0020	ticket	36.00	0.00	\N	5.49	36.00	completada	\N	2026-07-11 15:36:55	2026-07-11 15:36:55	2026-07-11 15:36:55	36b33b17-4083-4c2b-a77c-af95f42aa999	f	36.00	0.00	\N	PEN	\N	\N
+1184	1097	1092	644	1100	1296	1582	V-0021	ticket	5.00	0.00	\N	0.76	5.00	completada	\N	2026-07-11 15:37:32	2026-07-11 15:37:32	2026-07-11 15:37:32	61d7ea27-6614-4a45-a114-126bd45b06c8	f	5.00	0.00	\N	PEN	\N	\N
+1185	1097	1092	644	1100	1296	1582	V-0022	ticket	17.50	0.00	\N	2.67	17.50	completada	\N	2026-07-11 15:38:55	2026-07-11 15:38:55	2026-07-11 15:38:55	e3db1e68-b174-400b-b2fc-c9a78ab0f8b6	f	17.50	0.00	\N	PEN	\N	\N
+1166	1097	1092	644	1100	1296	1661	V-0003	ticket	604.40	0.00	\N	92.20	604.40	completada	\N	2026-07-11 14:43:09	2026-07-11 14:43:09	2026-07-11 16:27:39	7c56e0b8-ae2f-4baa-9593-3395bfbb9267	t	604.40	0.00	2026-07-12	PEN	\N	\N
+1160	1097	1092	643	1101	1297	1593	V-0017	ticket	15.00	0.00	\N	2.29	15.00	completada	\N	2026-07-11 11:49:42	2026-07-11 11:49:42	2026-07-12 07:42:09	a1781e4d-8159-40f2-93b9-54734e9f4ecb	t	15.00	0.00	2026-07-12	PEN	\N	\N
+1186	1097	1092	644	1100	1296	1582	V-0023	ticket	1207.70	0.00	\N	184.23	1207.70	completada	\N	2026-07-11 15:49:52	2026-07-11 15:49:52	2026-07-11 15:49:52	1a2593e3-0cf1-4922-bc13-9e158df4c11f	f	1207.70	0.00	\N	PEN	\N	\N
+1187	1097	1092	643	1101	1297	1582	V-0019	ticket	7449.00	0.00	\N	1136.29	7449.00	completada	\N	2026-07-11 18:00:38	2026-07-11 18:00:38	2026-07-11 18:00:38	79caf365-97f1-4eab-9f89-d69badeb19f5	f	7449.00	0.00	\N	PEN	\N	\N
+1188	1097	1092	643	1101	1297	1582	V-0020	ticket	246.00	0.00	\N	37.53	246.00	completada	\N	2026-07-11 18:08:36	2026-07-11 18:08:36	2026-07-11 18:08:36	db800941-03a8-48fb-a818-a900fe10b8c1	f	246.00	0.00	\N	PEN	\N	\N
+1189	1097	1092	643	1101	1297	1665	V-0021	ticket	1400.00	0.00	\N	213.56	1400.00	completada	\N	2026-07-11 18:12:40	2026-07-11 18:12:40	2026-07-11 18:12:40	f0d58b46-1b41-4db7-94d5-e8e309d887a6	t	0.00	1400.00	\N	PEN	\N	\N
+1190	1097	1092	644	1100	1296	1582	V-0024	ticket	10.00	0.00	\N	1.53	10.00	completada	\N	2026-07-11 18:13:32	2026-07-11 18:13:32	2026-07-11 18:19:27	21bb0769-09fd-4652-a206-6103fc94b229	f	10.00	0.00	\N	PEN	\N	\N
+1191	1097	1092	644	1100	1296	1666	V-0025	ticket	578.00	0.00	\N	88.17	578.00	completada	\N	2026-07-11 18:23:37	2026-07-11 18:23:37	2026-07-11 18:23:37	da44eff6-14f4-4256-8bcf-c13283236e79	f	578.00	0.00	\N	PEN	\N	\N
+1192	1097	1092	644	1100	1296	1582	V-0026	ticket	320.00	0.00	\N	48.81	320.00	completada	\N	2026-07-11 18:29:48	2026-07-11 18:29:48	2026-07-11 18:29:48	a45ec52d-1891-42b0-b545-6e6317a0ab6f	f	320.00	0.00	\N	PEN	\N	\N
+1193	1097	1092	644	1100	1296	1667	V-0027	ticket	429.00	0.00	\N	65.44	429.00	completada	\N	2026-07-11 18:35:45	2026-07-11 18:35:45	2026-07-11 18:35:45	4e8d2b54-8d51-4baa-8f79-d79896b1e682	t	294.00	135.00	\N	PEN	\N	\N
 \.
 
 
@@ -7912,14 +8129,14 @@ SELECT pg_catalog.setval('public.almacenes_id_seq', 1114, true);
 -- Name: auditoria_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.auditoria_id_seq', 413, true);
+SELECT pg_catalog.setval('public.auditoria_id_seq', 432, true);
 
 
 --
 -- Name: balance_diario_items_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.balance_diario_items_id_seq', 2405, true);
+SELECT pg_catalog.setval('public.balance_diario_items_id_seq', 2736, true);
 
 
 --
@@ -7989,7 +8206,7 @@ SELECT pg_catalog.setval('public.cliente_anticipos_id_seq', 199, true);
 -- Name: clientes_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.clientes_id_seq', 1663, true);
+SELECT pg_catalog.setval('public.clientes_id_seq', 1667, true);
 
 
 --
@@ -8003,7 +8220,7 @@ SELECT pg_catalog.setval('public.cuenta_metodo_pago_id_seq', 44, true);
 -- Name: cuenta_movimientos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.cuenta_movimientos_id_seq', 492, true);
+SELECT pg_catalog.setval('public.cuenta_movimientos_id_seq', 541, true);
 
 
 --
@@ -8080,21 +8297,21 @@ SELECT pg_catalog.setval('public.empresas_id_seq', 1101, true);
 -- Name: entrada_pagos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.entrada_pagos_id_seq', 17, true);
+SELECT pg_catalog.setval('public.entrada_pagos_id_seq', 22, true);
 
 
 --
 -- Name: entradas_detalle_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.entradas_detalle_id_seq', 70, true);
+SELECT pg_catalog.setval('public.entradas_detalle_id_seq', 80, true);
 
 
 --
 -- Name: entradas_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.entradas_id_seq', 78, true);
+SELECT pg_catalog.setval('public.entradas_id_seq', 83, true);
 
 
 --
@@ -8122,7 +8339,7 @@ SELECT pg_catalog.setval('public.gasto_tipos_id_seq', 47, true);
 -- Name: gastos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.gastos_id_seq', 57, true);
+SELECT pg_catalog.setval('public.gastos_id_seq', 76, true);
 
 
 --
@@ -8178,14 +8395,14 @@ SELECT pg_catalog.setval('public.planilla_descuentos_id_seq', 9, true);
 -- Name: producto_unidades_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.producto_unidades_id_seq', 7477, true);
+SELECT pg_catalog.setval('public.producto_unidades_id_seq', 7481, true);
 
 
 --
 -- Name: productos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.productos_id_seq', 7472, true);
+SELECT pg_catalog.setval('public.productos_id_seq', 7476, true);
 
 
 --
@@ -8206,7 +8423,7 @@ SELECT pg_catalog.setval('public.proveedor_adelantos_id_seq', 9, true);
 -- Name: proveedores_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.proveedores_id_seq', 54, true);
+SELECT pg_catalog.setval('public.proveedores_id_seq', 58, true);
 
 
 --
@@ -8241,7 +8458,7 @@ SELECT pg_catalog.setval('public.salidas_id_seq', 1, true);
 -- Name: stock_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.stock_id_seq', 8124, true);
+SELECT pg_catalog.setval('public.stock_id_seq', 8190, true);
 
 
 --
@@ -8332,28 +8549,28 @@ SELECT pg_catalog.setval('public.users_id_seq', 1301, true);
 -- Name: venta_abonos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.venta_abonos_id_seq', 11, true);
+SELECT pg_catalog.setval('public.venta_abonos_id_seq', 17, true);
 
 
 --
 -- Name: venta_items_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.venta_items_id_seq', 527, true);
+SELECT pg_catalog.setval('public.venta_items_id_seq', 581, true);
 
 
 --
 -- Name: venta_pagos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.venta_pagos_id_seq', 453, true);
+SELECT pg_catalog.setval('public.venta_pagos_id_seq', 472, true);
 
 
 --
 -- Name: ventas_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.ventas_id_seq', 1177, true);
+SELECT pg_catalog.setval('public.ventas_id_seq', 1193, true);
 
 
 --
@@ -11017,5 +11234,5 @@ ALTER TABLE ONLY public.ventas
 -- PostgreSQL database dump complete
 --
 
-\unrestrict e6qrVYek2DaBwcUsF7fb920WM55Kw2OyU90mTt0l9m01eAAxVx0jqkWKNs7O8J4
+\unrestrict r7GBF2MvqkkcfD7Tjjb74TOmjf8c1tjRHlPoTuajSJnCOnFyBesXk0mIph1CDBU
 
