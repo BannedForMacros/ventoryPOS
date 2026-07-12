@@ -609,32 +609,45 @@ class BalanceDiarioController extends Controller
                 ]);
             }
 
-            // ── Deudas por cobrar: por fecha de venta, con vendedor ─────
+            // ── Deudas por cobrar A LA FECHA del balance ─────────────────
+            // Ventas a crédito nacidas hasta la fecha, con el saldo QUE TENÍAN
+            // ese día (abonos posteriores se devuelven; ventas posteriores no
+            // aparecen). El historial solo muestra pagos hasta la fecha.
             case 'cxc': {
-                $ventas = Venta::deEmpresa($empresaId)->conSaldoPendiente()
+                $ventas = Venta::deEmpresa($empresaId)
+                    ->where('es_credito', true)->where('estado', 'completada')
+                    ->where('fecha_venta', '<=', $fecha . ' 23:59:59')
                     ->with(['cliente:id,nombres,apellidos,razon_social', 'user:id,name',
                             'pagos.metodoPago:id,nombre',
                             'abonos.metodoPago:id,nombre', 'abonos.cuenta:id,nombre', 'abonos.user:id,name'])
                     ->orderByDesc('fecha_venta')
                     ->limit(500)
-                    ->get();
+                    ->get()
+                    // Saldo a la fecha = saldo actual + abonos posteriores.
+                    ->map(function ($v) use ($fecha) {
+                        $abonosPost = (float) $v->abonos->filter(fn ($a) => $a->fecha->toDateString() > $fecha)->sum('monto');
+                        $v->setAttribute('saldo_corte', round((float) $v->saldo_pendiente + $abonosPost, 2));
+                        return $v;
+                    })
+                    ->filter(fn ($v) => (float) $v->saldo_corte > 0.01)
+                    ->values();
 
                 $grupos = $ventas->groupBy(fn ($v) => $v->fecha_venta->format('Y-m-d'))
                     ->map(fn ($rows, $f) => [
                         'id'      => $f,
                         'titulo'  => $f,
                         'esFecha' => true,
-                        'monto'   => round((float) $rows->sum('saldo_pendiente'), 2),
+                        'monto'   => round((float) $rows->sum('saldo_corte'), 2),
                         'tipo'    => 'neutro',
                         'items'   => $rows->map(fn ($v) => [
                             'descripcion' => "{$v->numero} — " . $nombreCliente($v->cliente),
                             'sub'         => 'Vendida el ' . $v->fecha_venta->format('d/m/Y h:i a'),
                             'total'       => 'S/ ' . number_format((float) $v->total, 2),
-                            'pagado'      => 'S/ ' . number_format((float) $v->monto_pagado, 2),
+                            'pagado'      => 'S/ ' . number_format(max(0, (float) $v->total - (float) $v->saldo_corte), 2),
                             'vence'       => $v->fecha_vencimiento?->format('d/m/Y') ?? '—',
-                            'monto'       => (float) $v->saldo_pendiente,
+                            'monto'       => (float) $v->saldo_corte,
                             'user'        => $v->user?->name,
-                            // Trazabilidad: pago inicial del POS + cada abono posterior.
+                            // Trazabilidad: pago inicial del POS + abonos HASTA la fecha.
                             'historial'   => $v->pagos
                                 ->filter(fn ($p) => (float) $p->monto - (float) $p->vuelto > 0)
                                 ->map(fn ($p) => [
@@ -644,7 +657,8 @@ class BalanceDiarioController extends Controller
                                     'monto'       => round((float) $p->monto - (float) $p->vuelto, 2),
                                     'user'        => $v->user?->name,
                                 ])
-                                ->concat($v->abonos->sortBy('fecha')->values()->map(fn ($a) => [
+                                ->concat($v->abonos->filter(fn ($a) => $a->fecha->toDateString() <= $fecha)
+                                    ->sortBy('fecha')->values()->map(fn ($a) => [
                                     'fecha'       => $a->fecha->format('d/m/Y'),
                                     'descripcion' => 'Abono'
                                         . ($a->metodoPago ? " · {$a->metodoPago->nombre}" : '')
@@ -659,7 +673,7 @@ class BalanceDiarioController extends Controller
                 return response()->json([
                     'tipo'  => 'grupos',
                     'cards' => [
-                        ['label' => 'Total por cobrar', 'valor' => round((float) $ventas->sum('saldo_pendiente'), 2), 'color' => 'danger'],
+                        ['label' => "Por cobrar al {$fecha}", 'valor' => round((float) $ventas->sum('saldo_corte'), 2), 'color' => 'danger'],
                         ['label' => 'Ventas a crédito con saldo', 'valor' => $ventas->count(), 'esNumero' => true],
                     ],
                     'itemCols' => [
@@ -673,34 +687,43 @@ class BalanceDiarioController extends Controller
                 ]);
             }
 
-            // ── Proveedores por pagar: por fecha, con quién registró ────
+            // ── Proveedores por pagar A LA FECHA del balance ─────────────
+            // Compras hasta la fecha con el saldo que tenían ese día (pagos
+            // posteriores se devuelven; compras posteriores no aparecen).
             case 'cxp': {
                 $entradas = Entrada::deEmpresa($empresaId)->confirmado()
-                    ->where('estado_pago', '!=', 'pagado')
-                    ->whereRaw('total - monto_pagado > 0.01')
+                    ->whereDate('fecha', '<=', $fecha)
                     ->with(['proveedorRel:id,razon_social,nombre_comercial', 'user:id,name',
                             'pagosParciales.metodoPago:id,nombre', 'pagosParciales.cuenta:id,nombre', 'pagosParciales.user:id,name'])
                     ->orderByDesc('fecha')
                     ->limit(500)
-                    ->get();
+                    ->get()
+                    ->map(function ($e) use ($fecha) {
+                        $pagosPost = (float) $e->pagosParciales->filter(fn ($p) => $p->fecha->toDateString() > $fecha)->sum('monto');
+                        $e->setAttribute('saldo_corte', round(max(0, $e->saldoPendiente()) + $pagosPost, 2));
+                        return $e;
+                    })
+                    ->filter(fn ($e) => (float) $e->saldo_corte > 0.01)
+                    ->values();
 
                 $grupos = $entradas->groupBy(fn ($e) => $e->fecha->format('Y-m-d'))
                     ->map(fn ($rows, $f) => [
                         'id'      => $f,
                         'titulo'  => $f,
                         'esFecha' => true,
-                        'monto'   => round((float) $rows->sum(fn ($e) => $e->saldoPendiente()), 2),
+                        'monto'   => round((float) $rows->sum('saldo_corte'), 2),
                         'tipo'    => 'egreso',
                         'items'   => $rows->map(fn ($e) => [
                             'descripcion' => $e->proveedorRel?->razon_social ?? $e->proveedorRel?->nombre_comercial ?? $e->proveedor ?? 'Proveedor',
                             'sub'         => 'Compra del ' . $e->fecha->format('d/m/Y')
                                 . ($e->numero_documento ? " · Doc. {$e->numero_documento}" : ''),
                             'total'       => 'S/ ' . number_format((float) $e->total, 2),
-                            'pagado'      => 'S/ ' . number_format((float) $e->monto_pagado, 2),
-                            'monto'       => $e->saldoPendiente(),
+                            'pagado'      => 'S/ ' . number_format(max(0, (float) $e->total - (float) $e->saldo_corte), 2),
+                            'monto'       => (float) $e->saldo_corte,
                             'user'        => $e->user?->name,
-                            // Trazabilidad: cada pago realizado a esta compra.
-                            'historial'   => $e->pagosParciales->sortBy('fecha')->values()->map(fn ($p) => [
+                            // Trazabilidad: pagos realizados HASTA la fecha del balance.
+                            'historial'   => $e->pagosParciales->filter(fn ($p) => $p->fecha->toDateString() <= $fecha)
+                                ->sortBy('fecha')->values()->map(fn ($p) => [
                                 'fecha'       => $p->fecha->format('d/m/Y'),
                                 'descripcion' => ($p->proveedor_adelanto_id ? "Consumo de adelanto #{$p->proveedor_adelanto_id}" : 'Pago')
                                     . ($p->metodoPago ? " · {$p->metodoPago->nombre}" : '')
@@ -715,7 +738,7 @@ class BalanceDiarioController extends Controller
                 return response()->json([
                     'tipo'  => 'grupos',
                     'cards' => [
-                        ['label' => 'Total por pagar', 'valor' => round((float) $entradas->sum(fn ($e) => $e->saldoPendiente()), 2), 'color' => 'danger'],
+                        ['label' => "Por pagar al {$fecha}", 'valor' => round((float) $entradas->sum('saldo_corte'), 2), 'color' => 'danger'],
                         ['label' => 'Compras con saldo', 'valor' => $entradas->count(), 'esNumero' => true],
                     ],
                     'itemCols' => [
@@ -728,28 +751,56 @@ class BalanceDiarioController extends Controller
                 ]);
             }
 
-            // ── Anticipos de clientes: por fecha, valorizados hoy ───────
+            // ── Anticipos de clientes A LA FECHA del balance ─────────────
+            // Nacidos hasta la fecha, con el saldo/pendiente que tenían ese
+            // día (entregas posteriores se devuelven; anticipos posteriores
+            // no aparecen).
             case 'anticipo_cliente': {
-                $anticipos = ClienteAnticipo::deEmpresa($empresaId)->activo()
+                $anticipos = ClienteAnticipo::deEmpresa($empresaId)
+                    ->whereIn('estado', ['activo', 'aplicado'])
+                    ->whereDate('fecha', '<=', $fecha)
                     ->with(['cliente:id,nombres,apellidos,razon_social', 'producto:id,nombre,precio_venta', 'user:id,name',
                             'items', 'venta:id,numero',
-                            'aplicaciones.user:id,name'])
+                            'aplicaciones.user:id,name', 'aplicaciones.items'])
                     ->orderByDesc('fecha')
                     ->limit(500)
-                    ->get();
+                    ->get()
+                    ->map(function (ClienteAnticipo $a) use ($fecha) {
+                        // Entregas POSTERIORES al corte → se devuelven al pendiente.
+                        $post = $a->aplicaciones->filter(fn ($ap) => $ap->fecha->toDateString() > $fecha);
+                        $a->setAttribute('post_por_item', $post->flatMap(fn ($ap) => $ap->items)
+                            ->groupBy('cliente_anticipo_item_id')->map(fn ($g) => (float) $g->sum('cantidad')));
 
-                // Modalidad legible: multi-producto (pendiente del POS) lista
-                // sus ítems pendientes; material clásico muestra su producto.
+                        if ($a->items->isNotEmpty()) {
+                            $valor = round((float) $a->saldo + (float) $post->sum('monto'), 2);
+                        } elseif ($a->tipo_valorizacion === 'material' && $a->producto && $a->cantidad_pendiente !== null) {
+                            $cant  = (float) $a->cantidad_pendiente + (float) $post->sum(fn ($ap) => (float) ($ap->cantidad ?? 0));
+                            $valor = round($cant * (float) $a->producto->precio_venta, 2);
+                            $a->setAttribute('cant_corte', $cant);
+                        } else {
+                            $valor = round((float) $a->saldo + (float) $post->sum('monto'), 2);
+                        }
+                        $a->setAttribute('valor_corte', $valor);
+                        return $a;
+                    })
+                    ->filter(fn ($a) => (float) $a->valor_corte > 0.01)
+                    ->values();
+
+                // Modalidad legible AL CORTE: multi-producto (pendiente del POS)
+                // lista sus ítems pendientes; material clásico su producto.
                 $fmtCant   = fn ($n) => rtrim(rtrim(number_format((float) $n, 2, '.', ''), '0'), '.');
                 $modalidad = function (ClienteAnticipo $a) use ($fmtCant) {
                     if ($a->items->isNotEmpty()) {
-                        $lista = $a->items->filter(fn ($i) => (float) $i->cantidad_pendiente > 0.0001)
-                            ->map(fn ($i) => $fmtCant($i->cantidad_pendiente) . ' × ' . $i->producto_nombre)
+                        $postItem = $a->post_por_item;
+                        $lista = $a->items
+                            ->map(fn ($i) => ['n' => $i->producto_nombre, 'c' => (float) $i->cantidad_pendiente + (float) ($postItem[$i->id] ?? 0)])
+                            ->filter(fn ($x) => $x['c'] > 0.0001)
+                            ->map(fn ($x) => $fmtCant($x['c']) . ' × ' . $x['n'])
                             ->implode(', ');
                         return 'Por entregar' . ($a->venta?->numero ? " (Venta {$a->venta->numero})" : '') . ': ' . ($lista ?: '—');
                     }
                     if ($a->tipo_valorizacion === 'material') {
-                        return "{$a->producto?->nombre} × " . (float) $a->cantidad_pendiente
+                        return "{$a->producto?->nombre} × " . (float) ($a->cant_corte ?? $a->cantidad_pendiente)
                             . ' a S/' . number_format((float) ($a->producto?->precio_venta ?? 0), 2) . ' del día';
                     }
                     return 'Dinero';
@@ -760,17 +811,18 @@ class BalanceDiarioController extends Controller
                         'id'      => $f,
                         'titulo'  => $f,
                         'esFecha' => true,
-                        'monto'   => round((float) $rows->sum(fn ($a) => $a->valorPasivoHoy()), 2),
+                        'monto'   => round((float) $rows->sum('valor_corte'), 2),
                         'tipo'    => 'egreso',
                         'items'   => $rows->map(fn ($a) => [
                             'descripcion' => $nombreCliente($a->cliente),
                             'sub'         => 'Recibido el ' . $a->fecha->format('d/m/Y'),
                             'modalidad'   => $modalidad($a),
                             'recibido'    => 'S/ ' . number_format((float) $a->monto, 2),
-                            'monto'       => $a->valorPasivoHoy(),
+                            'monto'       => (float) $a->valor_corte,
                             'user'        => $a->user?->name,
-                            // Trazabilidad: entregas de material / usos del anticipo.
-                            'historial'   => $a->aplicaciones->sortBy('fecha')->values()->map(fn ($ap) => [
+                            // Trazabilidad: entregas HASTA la fecha del balance.
+                            'historial'   => $a->aplicaciones->filter(fn ($ap) => $ap->fecha->toDateString() <= $fecha)
+                                ->sortBy('fecha')->values()->map(fn ($ap) => [
                                 'fecha'       => $ap->fecha->format('d/m/Y'),
                                 'descripcion' => 'Entrega'
                                     . ($ap->cantidad ? ' de ' . (float) $ap->cantidad . ' und' : '')
@@ -784,15 +836,15 @@ class BalanceDiarioController extends Controller
                 return response()->json([
                     'tipo'  => 'grupos',
                     'cards' => [
-                        ['label' => 'Pasivo a precio del día', 'valor' => round((float) $anticipos->sum(fn ($a) => $a->valorPasivoHoy()), 2), 'color' => 'danger'],
-                        ['label' => 'Anticipos activos', 'valor' => $anticipos->count(), 'esNumero' => true],
+                        ['label' => "Pasivo al {$fecha}", 'valor' => round((float) $anticipos->sum('valor_corte'), 2), 'color' => 'danger'],
+                        ['label' => 'Anticipos con pendiente', 'valor' => $anticipos->count(), 'esNumero' => true],
                     ],
                     'itemCols' => [
                         ['campo' => 'descripcion', 'label' => 'Cliente'],
                         ['campo' => 'modalidad',   'label' => 'Modalidad / Material'],
                         ['campo' => 'recibido',    'label' => 'Recibido'],
                     ],
-                    'montoLabel' => 'Pasivo hoy',
+                    'montoLabel' => 'Pasivo',
                     'grupos' => $grupos,
                 ]);
             }

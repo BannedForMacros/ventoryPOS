@@ -90,6 +90,79 @@ it('un pago a proveedor de HOY no borra la CxP del balance de AYER', function ()
     expect((float) $hoyBal->items->firstWhere('categoria', 'cxp')->monto)->toBe(0.0);
 });
 
+it('el DETALLE de deudas por cobrar de AYER no lista la venta a crédito de HOY', function () {
+    $cliente = Cliente::create([
+        'empresa_id' => $this->env->empresa->id,
+        'nombres' => 'Cliente', 'apellidos' => 'DetalleHoy',
+        'tipo_documento' => 'DNI', 'numero_documento' => '55555555', 'activo' => true,
+    ]);
+    $producto = $this->env->crearProducto(['precio_venta' => 80, 'stock_inicial' => 10]);
+
+    // HOY: venta a crédito de S/80.
+    $this->ventas->crear([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $cliente->id,
+        'es_credito'       => true,
+        'items' => [[
+            'producto_id'        => $producto->id,
+            'producto_unidad_id' => $producto->unidadBase->id,
+            'cantidad'           => 1,
+            'precio_unitario'    => 80,
+        ]],
+        'pagos' => [],
+    ], $this->env->admin, $this->turno);
+
+    // Detalle CxC del balance de AYER: vacío (la venta es de hoy).
+    $ayer = now()->subDay()->toDateString();
+    $json = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $ayer, 'categoria' => 'cxc']))->json();
+    expect((float) collect($json['cards'])->firstWhere('label', "Por cobrar al {$ayer}")['valor'])->toBe(0.0);
+    expect($json['grupos'])->toBeEmpty();
+
+    // Detalle CxC de HOY: sí la lista.
+    $hoy = now()->toDateString();
+    $json = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $hoy, 'categoria' => 'cxc']))->json();
+    expect((float) collect($json['cards'])->firstWhere('label', "Por cobrar al {$hoy}")['valor'])->toBe(80.0);
+});
+
+it('el DETALLE de CxC de AYER muestra el saldo de ese día aunque hoy se haya abonado', function () {
+    $cliente = Cliente::create([
+        'empresa_id' => $this->env->empresa->id,
+        'nombres' => 'Cliente', 'apellidos' => 'AbonoHoy',
+        'tipo_documento' => 'DNI', 'numero_documento' => '66666666', 'activo' => true,
+    ]);
+    $producto = $this->env->crearProducto(['precio_venta' => 100, 'stock_inicial' => 10]);
+
+    // AYER: crédito de S/100 (backdate). HOY: abona 100 (saldada).
+    $venta = $this->ventas->crear([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $cliente->id,
+        'es_credito'       => true,
+        'fecha_venta'      => now()->subDay()->toDateString(),
+        'items' => [[
+            'producto_id'        => $producto->id,
+            'producto_unidad_id' => $producto->unidadBase->id,
+            'cantidad'           => 1,
+            'precio_unitario'    => 100,
+        ]],
+        'pagos' => [],
+    ], $this->env->admin, $this->turno);
+    VentaAbono::create([
+        'venta_id' => $venta->id, 'user_id' => $this->env->admin->id,
+        'fecha' => now()->toDateString(), 'monto' => 100,
+    ]);
+    $venta->update(['monto_pagado' => 100, 'saldo_pendiente' => 0]);
+
+    // Detalle de AYER: la venta aparece con S/100 de saldo (el abono es de hoy).
+    $ayer = now()->subDay()->toDateString();
+    $json = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $ayer, 'categoria' => 'cxc']))->json();
+    expect((float) collect($json['cards'])->firstWhere('label', "Por cobrar al {$ayer}")['valor'])->toBe(100.0);
+
+    // Detalle de HOY: ya no aparece.
+    $hoy = now()->toDateString();
+    $json = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $hoy, 'categoria' => 'cxc']))->json();
+    expect((float) collect($json['cards'])->firstWhere('label', "Por cobrar al {$hoy}")['valor'])->toBe(0.0);
+});
+
 it('una venta a crédito creada HOY no aparece en el balance de AYER', function () {
     $cliente = Cliente::create([
         'empresa_id' => $this->env->empresa->id,
