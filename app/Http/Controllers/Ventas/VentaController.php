@@ -92,6 +92,30 @@ class VentaController extends Controller
         if (!$turno && $puedeEditarVenta) {
             $turno = $ventaObjetivo->turno?->loadMissing('caja');
         }
+
+        // Modo turno específico (?turno_id=, solo admin): operar el POS sobre un
+        // turno abierto ajeno — típicamente uno REABIERTO de un día anterior para
+        // registrar una venta olvidada. Las ventas se guardan con la FECHA del
+        // turno (backdate), no con la de hoy.
+        $turnoBackdate = null;
+        if (($turnoIdQ = $request->query('turno_id')) && $user->rol->es_admin) {
+            $turnoEspecifico = Turno::with(['caja', 'user'])
+                ->where('id', $turnoIdQ)
+                ->where('empresa_id', $user->empresa_id)
+                ->where('estado', 'abierto')
+                ->first();
+            if ($turnoEspecifico) {
+                $turno = $turnoEspecifico;
+                $turnoBackdate = [
+                    'turno_id' => $turnoEspecifico->id,
+                    'fecha'    => $turnoEspecifico->fecha_apertura?->toDateString(),
+                    'cajera'   => $turnoEspecifico->user?->name,
+                    'caja'     => $turnoEspecifico->caja?->nombre,
+                    'es_hoy'   => $turnoEspecifico->fecha_apertura?->isToday() ?? true,
+                ];
+            }
+        }
+
         if (!$turno) {
             return redirect()->route('turnos.index')
                 ->with('error', 'Debes tener un turno activo para acceder al POS.');
@@ -109,6 +133,11 @@ class VentaController extends Controller
         $almacenVentas = ($puedeEditarVenta
             ? $this->scope->almacenVentasDeLocal($ventaObjetivo->empresa_id, $ventaObjetivo->local_id)
             : null)
+            // Modo turno específico: stock del local DE ESE TURNO (el admin
+            // puede no tener local propio).
+            ?? ($turnoBackdate
+                ? $this->scope->almacenVentasDeLocal($user->empresa_id, $turno->local_id)
+                : null)
             ?? $this->scope->almacenParaVentas($user);
         $stockMap = $almacenVentas
             ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)->pluck('cantidad', 'producto_id')
@@ -226,7 +255,10 @@ class VentaController extends Controller
         // Cargar el POS, llenar el carrito e intentar cobrar al final daba un
         // 422 sorpresa. Ahora el frontend recibe esta bandera y deshabilita el
         // botón "Cobrar" con un mensaje claro desde el primer momento.
-        $puedeVender    = $this->scope->puedeVender($user);
+        $puedeVender    = $this->scope->puedeVender($user)
+            // En modo turno específico basta con que el local del turno tenga
+            // almacén de ventas (el admin vende "en nombre de" ese turno).
+            || ($turnoBackdate && $almacenVentas !== null);
         $razonNoVender  = null;
         if (!$puedeVender) {
             $razonNoVender = $user->empresa->usaCentralYLocal() && !$user->local_id
@@ -242,6 +274,7 @@ class VentaController extends Controller
             'conceptosDescuento' => $conceptosDescuento,
             'citaPrellenada'     => $citaPrellenada,
             'ventaEnEdicion'     => $ventaEnEdicion,
+            'turnoBackdate'      => $turnoBackdate,
             'puedeVender'        => $puedeVender,
             'razonNoVender'      => $razonNoVender,
             // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
@@ -332,14 +365,40 @@ class VentaController extends Controller
 
     public function store(StoreVentaRequest $request)
     {
-        $user  = $request->user();
-        $turno = Turno::turnoActivoDelUsuario($user->id);
+        $user = $request->user();
+        $data = $request->validated();
+
+        // Backdate de admin: registrar la venta en un turno abierto específico
+        // (típicamente uno REABIERTO de otro día/cajera) con la fecha real de
+        // la operación. Solo admins; la fecha se acota al rango [apertura del
+        // turno, hoy] para que no se pueda inventar cualquier día.
+        $turno = null;
+        if (!empty($data['turno_id']) && $user->rol->es_admin) {
+            $turno = Turno::where('id', $data['turno_id'])
+                ->where('empresa_id', $user->empresa_id)
+                ->where('estado', 'abierto')
+                ->first();
+            if (!$turno) {
+                return back()->withErrors(['turno' => 'El turno indicado no está abierto.']);
+            }
+
+            $fechaVenta = $data['fecha_venta'] ?? $turno->fecha_apertura?->toDateString();
+            $minFecha   = $turno->fecha_apertura?->toDateString();
+            if ($fechaVenta && $minFecha && ($fechaVenta < $minFecha || $fechaVenta > now()->toDateString())) {
+                return back()->withErrors(['fecha_venta' => "La fecha de la venta debe estar entre la apertura del turno ({$minFecha}) y hoy."]);
+            }
+            $data['fecha_venta'] = $fechaVenta;
+        } else {
+            // Flujo normal: turno propio activo, fecha = ahora (sin backdate).
+            unset($data['fecha_venta']);
+            $turno = Turno::turnoActivoDelUsuario($user->id);
+        }
 
         if (!$turno) {
             return back()->withErrors(['turno' => 'No tienes un turno activo.']);
         }
 
-        $venta = $this->ventaService->crear($request->validated(), $user, $turno);
+        $venta = $this->ventaService->crear($data, $user, $turno);
 
         // Si la venta vino desde una cita prellenada, vincular y marcar la cita
         // como completada. Falla silenciosamente si la cita no existe / no aplica.

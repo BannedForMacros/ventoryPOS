@@ -44,6 +44,11 @@ class StoreVentaRequest extends FormRequest
             // pendiente se descuenta recién al entregarlo.
             'entrega_pendiente'      => ['nullable', 'boolean'],
             'fecha_entrega_estimada' => ['nullable', 'date', 'after_or_equal:today'],
+            // Backdate de admin: registrar la venta en un turno REABIERTO ajeno
+            // con la fecha real en que ocurrió. Solo se honran si el usuario es
+            // admin (guardas en el controlador).
+            'turno_id'               => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $empresaId)],
+            'fecha_venta'            => ['nullable', 'date', 'before_or_equal:today'],
             // Token unico generado por el frontend para prevenir duplicados por reintentos.
             // Si el cliente reenvia la misma venta (timeout, doble click, etc.) el backend
             // detecta el key y devuelve la venta ya creada en lugar de duplicarla.

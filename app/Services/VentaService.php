@@ -46,8 +46,21 @@ class VentaService
         }
 
         return DB::transaction(function () use ($data, $user, $turno, $idempotencyKey) {
-            $almacen = $this->scope->almacenParaVentas($user)
+            // El stock se mueve en el almacén del local DEL TURNO (no el del
+            // usuario): un admin puede registrar ventas en el turno reabierto
+            // de una cajera de otro local sin desviar inventario.
+            $almacen = $this->scope->almacenVentasDeLocal($user->empresa_id, $turno->local_id)
+                ?? $this->scope->almacenParaVentas($user)
                 ?? abort(422, 'No se encontró un almacén de ventas configurado.');
+
+            // Backdate (solo lo inyecta el controlador para admins operando un
+            // turno reabierto): la venta se asienta en la FECHA REAL en que
+            // ocurrió — reportes, tesorería y balance de ese día la recogen.
+            $fechaVenta = now();
+            if (!empty($data['fecha_venta'])) {
+                $f = \Illuminate\Support\Carbon::parse($data['fecha_venta']);
+                $fechaVenta = $f->isToday() ? now() : $f->setTimeFromTimeString(now()->format('H:i:s'));
+            }
 
             // Config de empresa: permitir que la venta deje stock negativo.
             // Si esta apagado, Stock::ajustar lanza InsufficientStockException
@@ -74,7 +87,7 @@ class VentaService
             if ($moneda !== 'PEN') {
                 $factor = (!empty($data['tipo_cambio']) && (float) $data['tipo_cambio'] > 0)
                     ? (float) $data['tipo_cambio']                       // el TC que vio la cajera manda
-                    : $this->tipoCambio->tasaPara(now()->toDateString(), $moneda);
+                    : $this->tipoCambio->tasaPara($fechaVenta->toDateString(), $moneda);
                 $tipoCambio = round($factor, 6);
             }
             if ($esCredito) {
@@ -117,7 +130,7 @@ class VentaService
                         'es_credito'            => $esCredito,
                         'fecha_vencimiento'     => $esCredito ? ($data['fecha_vencimiento'] ?? null) : null,
                         'observacion'           => $data['observacion'] ?? null,
-                        'fecha_venta'           => now(),
+                        'fecha_venta'           => $fechaVenta,
                     ]);
                 } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
                     // Caso idempotency_key: si la venta original ya existe con el
@@ -300,11 +313,13 @@ class VentaService
             ]);
 
             $netoPen = round($monto - $vuelto, 2);
+            // Fecha del asiento = fecha de la venta (respeta el backdate de un
+            // turno reabierto: el dinero entró ese día, no hoy).
             $this->tesoreria->registrar(
                 $user->empresa_id,
                 $this->tesoreria->resolverCuenta($user->empresa_id, $pagoData['cuenta_metodo_pago_id'] ?? null, $pagoData['metodo_pago_id']),
                 $user,
-                now()->toDateString(),
+                $venta->fecha_venta?->toDateString() ?? now()->toDateString(),
                 'ingreso',
                 $netoPen,
                 "Venta {$venta->numero} — " . ($metodo?->nombre ?? 'pago'),
@@ -338,7 +353,7 @@ class VentaService
                 'cliente_id'             => $venta->cliente_id,
                 'user_id'                => $user->id,
                 'venta_id'               => $venta->id,
-                'fecha'                  => now()->toDateString(),
+                'fecha'                  => $venta->fecha_venta?->toDateString() ?? now()->toDateString(),
                 'monto'                  => $montoPendiente,
                 'saldo'                  => $montoPendiente,
                 'tipo_valorizacion'      => 'material',

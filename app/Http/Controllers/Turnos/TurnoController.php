@@ -229,7 +229,10 @@ class TurnoController extends Controller
     public function cerrarPage(Request $request, Turno $turno)
     {
         $user = $request->user();
-        abort_if($turno->user_id !== $user->id, 403);
+        // La cajera cierra SU turno; el admin puede cerrar cualquier turno
+        // abierto de la empresa (p. ej. uno reabierto para regularizar ventas).
+        abort_if($turno->user_id !== $user->id
+            && !($user->rol->es_admin && $turno->empresa_id === $user->empresa_id), 403);
         abort_if($turno->estado !== 'abierto', 422);
 
         $turno->load(['caja', 'gastos.tipo', 'gastos.concepto',
@@ -285,7 +288,10 @@ class TurnoController extends Controller
 
     public function cerrar(CerrarTurnoRequest $request, Turno $turno)
     {
-        abort_if($turno->user_id !== $request->user()->id, 403);
+        $user = $request->user();
+        // Mismo criterio que cerrarPage: dueña del turno, o admin de la empresa.
+        abort_if($turno->user_id !== $user->id
+            && !($user->rol->es_admin && $turno->empresa_id === $user->empresa_id), 403);
         abort_if($turno->estado !== 'abierto', 422);
 
         $turno->loadMissing('local');

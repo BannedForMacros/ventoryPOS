@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
-    AlertTriangle, ArrowLeft, ArrowRight, Clock,
+    AlertTriangle, ArrowLeft, ArrowRight, Clock, Lock,
     RotateCcw, ShoppingCart, TrendingDown, Wallet,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
@@ -89,6 +89,19 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
                             <Button variant="ghost" onClick={() => setModalReabrir(true)}>
                                 <RotateCcw size={14} className="mr-1" />Reabrir turno
                             </Button>
+                        )}
+                        {/* Turno abierto (p. ej. reabierto para regularizar): el admin
+                            puede registrar ventas EN este turno (con la fecha del turno)
+                            y volver a cerrarlo, aunque no sea suyo. */}
+                        {esAdmin && turno.estado === 'abierto' && (
+                            <>
+                                <Button onClick={() => router.visit(route('pos.index', { turno_id: turno.id }))}>
+                                    <ShoppingCart size={14} className="mr-1" />Registrar ventas
+                                </Button>
+                                <Button variant="ghost" onClick={() => router.visit(route('turnos.cerrar.page', turno.id))}>
+                                    <Lock size={14} className="mr-1" />Cerrar turno
+                                </Button>
+                            </>
                         )}
                         <Button variant="ghost" onClick={() => router.visit(route('turnos.index'))}>
                             <ArrowLeft size={14} className="mr-1" />Volver
