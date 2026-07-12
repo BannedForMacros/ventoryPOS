@@ -685,10 +685,28 @@ class BalanceDiarioController extends Controller
             case 'anticipo_cliente': {
                 $anticipos = ClienteAnticipo::deEmpresa($empresaId)->activo()
                     ->with(['cliente:id,nombres,apellidos,razon_social', 'producto:id,nombre,precio_venta', 'user:id,name',
+                            'items', 'venta:id,numero',
                             'aplicaciones.user:id,name'])
                     ->orderByDesc('fecha')
                     ->limit(500)
                     ->get();
+
+                // Modalidad legible: multi-producto (pendiente del POS) lista
+                // sus ítems pendientes; material clásico muestra su producto.
+                $fmtCant   = fn ($n) => rtrim(rtrim(number_format((float) $n, 2, '.', ''), '0'), '.');
+                $modalidad = function (ClienteAnticipo $a) use ($fmtCant) {
+                    if ($a->items->isNotEmpty()) {
+                        $lista = $a->items->filter(fn ($i) => (float) $i->cantidad_pendiente > 0.0001)
+                            ->map(fn ($i) => $fmtCant($i->cantidad_pendiente) . ' × ' . $i->producto_nombre)
+                            ->implode(', ');
+                        return 'Por entregar' . ($a->venta?->numero ? " (Venta {$a->venta->numero})" : '') . ': ' . ($lista ?: '—');
+                    }
+                    if ($a->tipo_valorizacion === 'material') {
+                        return "{$a->producto?->nombre} × " . (float) $a->cantidad_pendiente
+                            . ' a S/' . number_format((float) ($a->producto?->precio_venta ?? 0), 2) . ' del día';
+                    }
+                    return 'Dinero';
+                };
 
                 $grupos = $anticipos->groupBy(fn ($a) => $a->fecha->format('Y-m-d'))
                     ->map(fn ($rows, $f) => [
@@ -700,9 +718,7 @@ class BalanceDiarioController extends Controller
                         'items'   => $rows->map(fn ($a) => [
                             'descripcion' => $nombreCliente($a->cliente),
                             'sub'         => 'Recibido el ' . $a->fecha->format('d/m/Y'),
-                            'modalidad'   => $a->tipo_valorizacion === 'material'
-                                ? "{$a->producto?->nombre} × " . (float) $a->cantidad_pendiente . ' a S/' . number_format((float) ($a->producto?->precio_venta ?? 0), 2) . ' del día'
-                                : 'Dinero',
+                            'modalidad'   => $modalidad($a),
                             'recibido'    => 'S/ ' . number_format((float) $a->monto, 2),
                             'monto'       => $a->valorPasivoHoy(),
                             'user'        => $a->user?->name,

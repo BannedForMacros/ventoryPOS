@@ -335,7 +335,7 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
 
             {/* Modal detalle movimientos */}
             <Modal isOpen={detalle !== null} onClose={() => setDetalle(null)}
-                title={detalle ? `Movimientos — ${detalle.nombre}` : ''} size="md"
+                title={detalle ? `Movimientos — ${detalle.nombre}` : ''} size="2xl"
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (

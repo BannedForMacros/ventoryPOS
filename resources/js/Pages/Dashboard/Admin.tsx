@@ -1,20 +1,29 @@
 import { Link } from '@inertiajs/react';
 import {
-    AlertTriangle, ArrowRight, ArrowUpRight, Banknote, ClipboardList,
-    Coins, CreditCard, Package, ShoppingCart, TrendingUp, Undo2, Users,
+    AlertTriangle, ArrowRight, ArrowUpRight, Banknote, CircleDollarSign, ClipboardList,
+    Coins, CreditCard, Package, ShoppingCart, TrendingUp, Truck, Undo2, Users,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
+import { AreaChart, DonutChart } from '@/Components/UI/Charts';
 import type { PageProps } from '@/types';
 
 interface KpiBlock { cant: number; total: number; }
 interface Kpis {
     ventas_hoy: KpiBlock;
+    ventas_ayer: number;
     ventas_mes: KpiBlock;
+    ticket_promedio: number;
+    utilidad_bruta_mes: number;
+    utilidad_neta_mes: number;
+    margen_bruto_mes: number | null;
     devoluciones_mes: KpiBlock;
     gastos_mes: number;
     stock_valorizado: number;
     diferencia_caja_mes: number;
+    cxc: KpiBlock;
+    pendientes_entrega: { cant: number; valor: number };
 }
+interface SerieDia { dia: string; total: number; }
 interface StockBajoRow { id: number; nombre: string; codigo: string | null; cantidad: string; almacen_id: number; }
 interface TopProductoRow { producto_id: number; nombre: string; cantidad: string; total: string; }
 interface MetodoRow { nombre: string; tipo: string; total: string; }
@@ -32,6 +41,7 @@ interface UltimaVentaRow {
 
 interface Props extends PageProps {
     kpis: Kpis;
+    serie30: SerieDia[];
     stockBajo: StockBajoRow[];
     topProductos: TopProductoRow[];
     ventasPorMetodo: MetodoRow[];
@@ -84,10 +94,19 @@ function KpiCard({ label, value, sub, icon, color }: KpiCardProps) {
 }
 
 export default function DashboardAdmin({
-    kpis, stockBajo, topProductos, ventasPorMetodo, turnosAbiertos, ultimasVentas,
+    kpis, serie30, stockBajo, topProductos, ventasPorMetodo, turnosAbiertos, ultimasVentas,
 }: Props) {
     const maxTopTotal = Math.max(1, ...topProductos.map(p => Number(p.total)));
     const totalMetodos = ventasPorMetodo.reduce((acc, m) => acc + Number(m.total), 0);
+
+    // Comparativa hoy vs ayer para el sub del KPI.
+    const deltaAyer = kpis.ventas_ayer > 0
+        ? Math.round(((kpis.ventas_hoy.total - kpis.ventas_ayer) / kpis.ventas_ayer) * 100)
+        : null;
+    const serieChart = serie30.map(s => ({
+        label: new Date(s.dia + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' }),
+        total: s.total,
+    }));
 
     return (
         <AppLayout title="Dashboard">
@@ -98,22 +117,44 @@ export default function DashboardAdmin({
                 </p>
             </div>
 
-            {/* KPIs */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            {/* KPIs — primera fila: lo que pasa HOY y lo que DEJA el mes */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <KpiCard
                     label="Ventas hoy"
                     value={sol(kpis.ventas_hoy.total)}
-                    sub={`${kpis.ventas_hoy.cant} comprobantes`}
+                    sub={`${kpis.ventas_hoy.cant} comprobantes${deltaAyer !== null ? ` · ${deltaAyer >= 0 ? '+' : ''}${deltaAyer}% vs ayer` : ''}`}
                     icon={<ShoppingCart size={20} />}
                     color="var(--color-primary)"
                 />
                 <KpiCard
                     label="Ventas del mes"
                     value={sol(kpis.ventas_mes.total)}
-                    sub={`${kpis.ventas_mes.cant} comprobantes`}
+                    sub={`${kpis.ventas_mes.cant} comprobantes · ticket prom. ${sol(kpis.ticket_promedio)}`}
                     icon={<TrendingUp size={20} />}
                     color="var(--color-success)"
                 />
+                <Link href={route('reportes.utilidad')}>
+                    <KpiCard
+                        label="Utilidad bruta del mes"
+                        value={sol(kpis.utilidad_bruta_mes)}
+                        sub={kpis.margen_bruto_mes !== null ? `margen ${kpis.margen_bruto_mes}% · ver reporte →` : 'ver reporte →'}
+                        icon={<CircleDollarSign size={20} />}
+                        color="var(--color-success)"
+                    />
+                </Link>
+                <Link href={route('reportes.utilidad')}>
+                    <KpiCard
+                        label="Utilidad neta del mes"
+                        value={sol(kpis.utilidad_neta_mes)}
+                        sub="bruta − gastos − devoluciones"
+                        icon={<CircleDollarSign size={20} />}
+                        color={kpis.utilidad_neta_mes >= 0 ? 'var(--color-success)' : 'var(--color-danger, #dc2626)'}
+                    />
+                </Link>
+            </div>
+
+            {/* KPIs — segunda fila: patrimonio y riesgos */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
                 <KpiCard
                     label="Stock valorizado"
                     value={sol(kpis.stock_valorizado)}
@@ -122,10 +163,17 @@ export default function DashboardAdmin({
                     color="var(--color-secondary)"
                 />
                 <KpiCard
-                    label="Devoluciones del mes"
-                    value={sol(kpis.devoluciones_mes.total)}
-                    sub={`${kpis.devoluciones_mes.cant} devoluciones`}
-                    icon={<Undo2 size={20} />}
+                    label="Por cobrar (créditos)"
+                    value={sol(kpis.cxc.total)}
+                    sub={`${kpis.cxc.cant} ventas con saldo`}
+                    icon={<CreditCard size={20} />}
+                    color="#8b5cf6"
+                />
+                <KpiCard
+                    label="Pendiente por entregar"
+                    value={sol(kpis.pendientes_entrega.valor)}
+                    sub={`${kpis.pendientes_entrega.cant} anticipos activos`}
+                    icon={<Truck size={20} />}
                     color="var(--color-warning)"
                 />
                 <KpiCard
@@ -136,11 +184,42 @@ export default function DashboardAdmin({
                     color="#f97316"
                 />
                 <KpiCard
+                    label="Devoluciones del mes"
+                    value={sol(kpis.devoluciones_mes.total)}
+                    sub={`${kpis.devoluciones_mes.cant} devoluciones`}
+                    icon={<Undo2 size={20} />}
+                    color="var(--color-warning)"
+                />
+                <KpiCard
                     label="Diferencia de caja del mes"
                     value={sol(kpis.diferencia_caja_mes)}
                     sub={kpis.diferencia_caja_mes < 0 ? 'Faltante acumulado' : kpis.diferencia_caja_mes > 0 ? 'Sobrante acumulado' : 'Sin diferencias'}
                     icon={<Coins size={20} />}
                     color={kpis.diferencia_caja_mes < 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success)'}
+                />
+            </div>
+
+            {/* Tendencia de ventas — últimos 30 días */}
+            <div
+                className="rounded-lg border p-5 mb-6"
+                style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            >
+                <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold" style={{ color: 'var(--color-text)' }}>
+                        Ventas — últimos 30 días
+                    </h3>
+                    <Link
+                        href={route('reportes.ventas')}
+                        className="text-xs font-medium inline-flex items-center gap-1 hover:underline"
+                        style={{ color: 'var(--color-primary)' }}
+                    >
+                        Ver reporte <ArrowRight size={12} />
+                    </Link>
+                </div>
+                <AreaChart
+                    data={serieChart}
+                    series={[{ key: 'total', label: 'Ventas', relleno: true }]}
+                    height={200}
                 />
             </div>
 
@@ -209,25 +288,11 @@ export default function DashboardAdmin({
                             Sin datos.
                         </p>
                     ) : (
-                        <div className="space-y-3">
-                            {ventasPorMetodo.map(m => {
-                                const pct = totalMetodos > 0 ? (Number(m.total) / totalMetodos) * 100 : 0;
-                                return (
-                                    <div key={m.nombre}>
-                                        <div className="flex items-center gap-2 text-sm mb-1">
-                                            <CreditCard size={14} style={{ color: 'var(--color-text-muted)' }} />
-                                            <span className="flex-1 font-medium" style={{ color: 'var(--color-text)' }}>{m.nombre}</span>
-                                            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                {pct.toFixed(0)}%
-                                            </span>
-                                        </div>
-                                        <div className="flex items-baseline gap-2">
-                                            <span className="font-semibold text-sm" style={{ color: 'var(--color-text)' }}>{sol(m.total)}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                        <DonutChart
+                            data={ventasPorMetodo.map(m => ({ label: m.nombre, valor: Number(m.total) }))}
+                            centro={{ valor: sol(totalMetodos), label: 'total mes' }}
+                            size={140}
+                        />
                     )}
                 </div>
             </div>

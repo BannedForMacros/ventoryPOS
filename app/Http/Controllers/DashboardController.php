@@ -132,15 +132,68 @@ class DashboardController extends Controller
             ->where('fecha_cierre', '>=', $mesIni)
             ->sum('diferencia');
 
+        // ── Tendencia: ventas de los últimos 30 días (para el gráfico) ──
+        $serieIni = Carbon::today()->subDays(29);
+        $ventasPorDia = Venta::where('empresa_id', $empresaId)
+            ->where('estado', 'completada')
+            ->where('fecha_venta', '>=', $serieIni)
+            ->selectRaw('DATE(fecha_venta) as dia, SUM(total) as total, COUNT(*) as ventas')
+            ->groupBy('dia')
+            ->pluck('total', 'dia');
+        $serie30 = [];
+        for ($d = $serieIni->copy(); $d->lte(Carbon::today()); $d->addDay()) {
+            $k = $d->toDateString();
+            $serie30[] = ['dia' => $k, 'total' => round((float) ($ventasPorDia[$k] ?? 0), 2)];
+        }
+
+        // Comparativa: hoy vs ayer.
+        $ventasAyer = (float) Venta::where('empresa_id', $empresaId)
+            ->where('estado', 'completada')
+            ->whereBetween('fecha_venta', [Carbon::yesterday(), Carbon::yesterday()->endOfDay()])
+            ->sum('total');
+
+        // ── Utilidad del mes (costo congelado por ítem, criterio del reporte) ──
+        $costoSql = "COALESCE(NULLIF(venta_items.costo_unitario_base, 0), NULLIF(productos.precio_costo, 0),
+            (SELECT s.costo_promedio FROM stock s WHERE s.producto_id = productos.id AND s.costo_promedio > 0 ORDER BY s.id LIMIT 1), 0)";
+        $cogsMes = (float) VentaItem::join('ventas', 'ventas.id', '=', 'venta_items.venta_id')
+            ->join('productos', 'productos.id', '=', 'venta_items.producto_id')
+            ->where('ventas.empresa_id', $empresaId)
+            ->where('ventas.estado', 'completada')
+            ->where('ventas.fecha_venta', '>=', $mesIni)
+            ->selectRaw("COALESCE(SUM(venta_items.cantidad_base * {$costoSql}), 0) as c")
+            ->value('c');
+        $utilidadBrutaMes = round((float) $ventasMes->total - $cogsMes, 2);
+        $utilidadNetaMes  = round($utilidadBrutaMes - $gastosMes - (float) $devolucionesMes->total, 2);
+
+        // ── Por cobrar (créditos con saldo) y pendientes por entregar ──
+        $cxc = Venta::where('empresa_id', $empresaId)->conSaldoPendiente()
+            ->selectRaw('COUNT(*) as cant, COALESCE(SUM(saldo_pendiente),0) as total')->first();
+
+        $pendientesEntrega = \App\Models\ClienteAnticipo::deEmpresa($empresaId)->activo()
+            ->where('tipo_valorizacion', 'material')
+            ->with(['producto', 'items.unidad'])->get();
+        $pendEntrega = [
+            'cant'  => $pendientesEntrega->count(),
+            'valor' => round($pendientesEntrega->sum(fn ($a) => $a->valorPasivoHoy()), 2),
+        ];
+
         return Inertia::render('Dashboard/Admin', [
             'kpis' => [
                 'ventas_hoy'        => ['cant' => (int) $ventasHoy->cant,    'total' => (float) $ventasHoy->total],
+                'ventas_ayer'       => $ventasAyer,
                 'ventas_mes'        => ['cant' => (int) $ventasMes->cant,    'total' => (float) $ventasMes->total],
+                'ticket_promedio'   => (int) $ventasMes->cant > 0 ? round((float) $ventasMes->total / (int) $ventasMes->cant, 2) : 0,
+                'utilidad_bruta_mes'=> $utilidadBrutaMes,
+                'utilidad_neta_mes' => $utilidadNetaMes,
+                'margen_bruto_mes'  => (float) $ventasMes->total > 0 ? round($utilidadBrutaMes / (float) $ventasMes->total * 100, 1) : null,
                 'devoluciones_mes'  => ['cant' => (int) $devolucionesMes->cant, 'total' => (float) $devolucionesMes->total],
                 'gastos_mes'        => $gastosMes,
                 'stock_valorizado'  => $stockValor,
                 'diferencia_caja_mes' => $diferenciaMes,
+                'cxc'               => ['cant' => (int) $cxc->cant, 'total' => (float) $cxc->total],
+                'pendientes_entrega'=> $pendEntrega,
             ],
+            'serie30'          => $serie30,
             'stockBajo'        => $stockBajo,
             'topProductos'     => $topProductos,
             'ventasPorMetodo'  => $ventasPorMetodo,

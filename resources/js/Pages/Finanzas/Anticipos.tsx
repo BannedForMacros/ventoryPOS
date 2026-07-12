@@ -96,9 +96,9 @@ const pendienteTotal = (a: Anticipo) =>
 /** Pasivo actual del anticipo: el backend lo calcula (multi-item o clásico). */
 const valorHoy = (a: Anticipo) => {
     if (a.valor_pasivo_hoy !== undefined && a.valor_pasivo_hoy !== null) return Number(a.valor_pasivo_hoy);
-    if (esMultiItem(a))
-        return (a.items ?? []).reduce((s, i) =>
-            s + Number(i.cantidad_pendiente) * Number(i.unidad?.precio_venta ?? i.precio_unitario), 0);
+    // Pendiente del POS: se debe lo PAGADO no entregado (precio congelado de
+    // la venta), no la revalorización a precio del día.
+    if (esMultiItem(a)) return Number(a.saldo);
     return a.tipo_valorizacion === 'material' && a.producto && a.cantidad_pendiente !== null
         ? Number(a.cantidad_pendiente) * Number(a.producto.precio_venta)
         : Number(a.saldo);

@@ -53,17 +53,18 @@ class ClienteAnticipo extends Model
      *   producto (precio del día). Si el ladrillo subió, la deuda en
      *   mercadería vale más — exactamente como lo calcula el cliente en su
      *   Excel. Fallback al saldo en soles si el producto ya no existe.
-     * - 'material' multi-producto (pendiente por entregar del POS): suma de
-     *   los ítems pendientes, cada uno a precio del día de su presentación.
+     * - 'material' multi-producto (pendiente por entregar del POS): el cliente
+     *   YA PAGÓ esos productos a un precio concreto; se le debe exactamente lo
+     *   pagado y no entregado (el saldo, congelado al precio de la venta). NO
+     *   se revaloriza a precio del día: la deuda es de esa venta, de ese día.
      */
     public function valorPasivoHoy(): float
     {
         if ($this->tipo_valorizacion === 'material') {
-            // Multi-producto (venta POS con pendiente por entregar)
+            // Multi-producto (venta POS con pendiente por entregar): pasivo =
+            // saldo pagado no entregado, a precio congelado de la venta.
             if ($this->relationLoaded('items') ? $this->items->isNotEmpty() : $this->items()->exists()) {
-                $this->loadMissing('items.unidad');
-
-                return round($this->items->sum(fn (ClienteAnticipoItem $i) => $i->valorPasivoHoy()), 2);
+                return (float) $this->saldo;
             }
 
             if ($this->producto && $this->cantidad_pendiente !== null) {
