@@ -81,6 +81,8 @@ interface Props extends PageProps {
     saldosCuentas: { nombre: string; banco: string | null; es_efectivo: boolean; saldo: number }[];
     variaciones: Variacion[];
     balanceAnteriorFecha: string | null;
+    esAdmin?: boolean;
+    puedeReabrir?: boolean;
 }
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
@@ -114,13 +116,18 @@ const CATEGORIA_LABEL: Record<string, string> = {
     otro_contra:        'Otro',
 };
 
-export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas, variaciones, balanceAnteriorFecha }: Props) {
+export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas, variaciones, balanceAnteriorFecha, puedeReabrir }: Props) {
     const { flash } = usePage<Props>().props;
     const editable = balance.estado === 'borrador';
 
     const [agregandoEn, setAgregandoEn]   = useState<'favor' | 'contra' | null>(null);
     const [movAbiertos, setMovAbiertos]   = useState<string[]>([]);
     const [confirmando, setConfirmando]   = useState(false);
+    // Reapertura (admin, solo el último confirmado): vuelve el balance a
+    // borrador y lo regenera — p. ej. tras registrar una venta olvidada con
+    // fecha de ese día en un turno reabierto.
+    const [reabriendo, setReabriendo]     = useState(false);
+    const [motivoReabrir, setMotivoReabrir] = useState('');
     const [saving, setSaving]             = useState(false);
     const [errors, setErrors]             = useState<Record<string, string>>({});
     const [formLinea, setFormLinea]       = useState({ descripcion: '', monto: '' });
@@ -385,8 +392,44 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             </Button>
                         </>
                     )}
+                    {!editable && puedeReabrir && (
+                        <Button variant="ghost" onClick={() => setReabriendo(true)}>
+                            <RefreshCw size={14} className="mr-1" />Reabrir balance
+                        </Button>
+                    )}
                 </div>
             </div>
+
+            {/* Modal reabrir balance (admin) */}
+            <Modal isOpen={reabriendo} onClose={() => setReabriendo(false)} title="Reabrir balance confirmado" size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setReabriendo(false)}>Cancelar</Button>
+                        <Button variant="danger" disabled={saving || motivoReabrir.trim().length < 10}
+                            onClick={() => {
+                                setSaving(true);
+                                router.post(route('finanzas.balance.reabrir', balance.id), { motivo: motivoReabrir.trim() }, {
+                                    onFinish: () => setSaving(false),
+                                    onSuccess: () => { setReabriendo(false); setMotivoReabrir(''); },
+                                    onError: (errs: any) => { const m = Object.values(errs)[0]; if (m) toast.error(m as string); },
+                                });
+                            }}>
+                            {saving ? 'Reabriendo…' : 'Sí, reabrir'}
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-3">
+                    <Callout variant="warning">
+                        El balance vuelve a <strong>borrador</strong> y sus líneas automáticas se recalculan con los datos actuales
+                        (por ejemplo, una venta registrada después con fecha de este día). Las líneas manuales se conservan.
+                        Al terminar, <strong>confírmalo de nuevo</strong> — es la referencia del día siguiente.
+                    </Callout>
+                    <Input label="Motivo (mínimo 10 caracteres)" required value={motivoReabrir}
+                        onChange={e => setMotivoReabrir(e.target.value)}
+                        placeholder="Ej.: venta del 11/07 registrada tarde (turno reabierto)" />
+                </div>
+            </Modal>
 
             {/* Resumen */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">

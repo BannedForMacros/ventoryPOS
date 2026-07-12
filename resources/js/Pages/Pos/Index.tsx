@@ -78,6 +78,17 @@ interface VentaEnEdicion {
     pagos:                 VentaEnEdicionPago[];
 }
 
+// Modo turno específico (admin): el POS opera sobre un turno abierto ajeno —
+// típicamente uno REABIERTO de un día anterior. Las ventas se guardan con la
+// FECHA del turno (backdate), no con la de hoy.
+interface TurnoBackdate {
+    turno_id: number;
+    fecha:    string | null;   // fecha de apertura del turno (la fecha de la venta)
+    cajera:   string | null;
+    caja:     string | null;
+    es_hoy:   boolean;
+}
+
 interface Props extends PageProps {
     turno:              Turno;
     productos:          Producto[];
@@ -86,6 +97,7 @@ interface Props extends PageProps {
     conceptosDescuento: DescuentoConcepto[];
     citaPrellenada?:    CitaPrellenada | null;
     ventaEnEdicion?:    VentaEnEdicion | null;
+    turnoBackdate?:     TurnoBackdate | null;
     // A14: el backend valida que el usuario pueda operar el POS al CARGAR la
     // pantalla (admin sin local_id en modo central_y_local, almacén
     // desactivado, etc.). Si puedeVender=false bloqueamos el botón cobrar
@@ -194,7 +206,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total };
 }
 
-export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, ventaEnEdicion, puedeVender, razonNoVender, monedas, tipoCambioHoy }: Props) {
+export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy }: Props) {
     // Tasa de IGV de la empresa (configurable por tenant). Default 18% si no llega.
     const empresaAuth = usePage().props.auth?.user?.empresa as { tasa_igv?: number | string } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
@@ -658,6 +670,10 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             fecha_entrega_estimada: entregaPendiente && fechaEntrega ? fechaEntrega : null,
             moneda,
             tipo_cambio:           moneda === 'USD' ? (tipoCambioHoy ?? null) : null,
+            // Modo turno específico (admin): la venta va a ESE turno con la
+            // fecha del turno (backdate). El backend valida admin + turno abierto.
+            turno_id:              turnoBackdate?.turno_id ?? null,
+            fecha_venta:           turnoBackdate?.fecha ?? null,
             // Se reenvia el mismo key en cada reintento. El backend desduplica.
             idempotency_key:       idempotencyKey,
             // Si vino de una cita, lo enviamos para que el backend la vincule.
@@ -769,6 +785,38 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         className="text-xs font-medium underline hover:opacity-80"
                         style={{ color: 'var(--color-warning)' }}>
                         Cancelar
+                    </Link>
+                </div>
+            )}
+
+            {/* Banner de turno específico/backdate (POS abierto con ?turno_id=) */}
+            {turnoBackdate && !ventaEnEdicion && (
+                <div
+                    className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 flex-shrink-0 border-b text-sm"
+                    style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-danger) 12%, var(--color-bg))',
+                        borderColor: 'var(--color-danger)',
+                        color: 'var(--color-text)',
+                    }}
+                >
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                            style={{ backgroundColor: 'var(--color-danger)', color: '#fff' }}>
+                            Turno #{turnoBackdate.turno_id}{turnoBackdate.caja ? ` · ${turnoBackdate.caja}` : ''}
+                        </span>
+                        <span style={{ color: 'var(--color-text)' }}>
+                            {turnoBackdate.cajera && <>Turno de <strong>{turnoBackdate.cajera}</strong> · </>}
+                            {turnoBackdate.es_hoy
+                                ? 'Las ventas se registran en este turno.'
+                                : <>Las ventas se guardarán con fecha <strong>
+                                    {turnoBackdate.fecha ? new Date(turnoBackdate.fecha + 'T00:00:00').toLocaleDateString('es-PE') : '—'}
+                                  </strong> (la del turno, no la de hoy).</>}
+                        </span>
+                    </div>
+                    <Link href={route('turnos.show', turnoBackdate.turno_id)}
+                        className="text-xs font-medium underline hover:opacity-80"
+                        style={{ color: 'var(--color-danger)' }}>
+                        Ver turno
                     </Link>
                 </div>
             )}

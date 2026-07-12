@@ -196,6 +196,12 @@ class BalanceDiarioController extends Controller
             ->sortByDesc(fn ($v) => abs($v['delta']))
             ->values();
 
+        // ¿Se puede reabrir? Solo el ÚLTIMO balance confirmado (los siguientes
+        // se encadenan sobre él) y solo por un admin.
+        $esUltimoConfirmado = $balance->estado === 'confirmado'
+            && !BalanceDiario::deEmpresa($user->empresa_id)->confirmado()
+                ->where('fecha', '>', $balance->fecha->toDateString())->exists();
+
         return Inertia::render('Finanzas/BalanceDiarioDetalle', [
             'balance'        => $balance,
             'gastos'         => $gastos,
@@ -204,7 +210,57 @@ class BalanceDiarioController extends Controller
             'saldosCuentas'  => $saldosCuentas,
             'variaciones'    => $variaciones,
             'balanceAnteriorFecha' => $anterior?->fecha?->toDateString(),
+            'esAdmin'            => (bool) $user->rol->es_admin,
+            'puedeReabrir'       => $esUltimoConfirmado && (bool) $user->rol->es_admin,
         ]);
+    }
+
+    /**
+     * Reabre (des-confirma) un balance para regenerarlo — p. ej. después de
+     * registrar una venta olvidada con fecha de ese día en un turno reabierto.
+     *
+     * Solo el ÚLTIMO balance confirmado puede reabrirse: los balances
+     * posteriores usan su neto como "BALANCE AYER" y se descuadrarían. Al
+     * volver a borrador, show() regenera las líneas automáticas con los datos
+     * actuales (las manuales se preservan) y el admin lo confirma de nuevo.
+     */
+    public function reabrir(Request $request, BalanceDiario $balance)
+    {
+        $user = $request->user();
+        abort_if($balance->empresa_id !== $user->empresa_id, 403);
+        abort_unless($user->rol->es_admin, 403, 'Solo un administrador puede reabrir un balance.');
+        abort_unless($balance->estado === 'confirmado', 422, 'El balance no está confirmado.');
+
+        $data = $request->validate([
+            'motivo' => ['required', 'string', 'min:10', 'max:500'],
+        ]);
+
+        $haySiguiente = BalanceDiario::deEmpresa($user->empresa_id)->confirmado()
+            ->where('fecha', '>', $balance->fecha->toDateString())
+            ->exists();
+        if ($haySiguiente) {
+            return back()->withErrors([
+                'balance' => 'Solo se puede reabrir el último balance confirmado: los días siguientes ya se encadenaron sobre este. Reabre primero (de atrás hacia adelante) los balances posteriores.',
+            ]);
+        }
+
+        $snapshot = [
+            'total_favor'   => (float) $balance->total_favor,
+            'total_contra'  => (float) $balance->total_contra,
+            'balance_neto'  => (float) $balance->balance_neto,
+            'utilidad_real' => $balance->utilidad_real !== null ? (float) $balance->utilidad_real : null,
+        ];
+
+        $balance->update(['estado' => 'borrador']);
+
+        \App\Services\AuditoriaService::log('balance.reabierto', $balance, [
+            'fecha'            => $balance->fecha->toDateString(),
+            'motivo'           => $data['motivo'],
+            'totales_previos'  => $snapshot,
+        ], $user);
+
+        return redirect()->route('finanzas.balance.show', $balance->fecha->toDateString())
+            ->with('success', 'Balance reabierto y regenerado con los datos actuales. Revísalo y confírmalo de nuevo.');
     }
 
 

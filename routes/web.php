@@ -353,6 +353,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.balance,editar')->post('balance/{balance}/items', [BalanceDiarioController::class, 'agregarItem'])->name('balance.items.store');
         Route::middleware('permiso:finanzas.balance,editar')->delete('balance/items/{item}', [BalanceDiarioController::class, 'eliminarItem'])->name('balance.items.destroy');
         Route::middleware('permiso:finanzas.balance,editar')->post('balance/{balance}/confirmar', [BalanceDiarioController::class, 'confirmar'])->name('balance.confirmar');
+        Route::middleware('permiso:finanzas.balance,editar')->post('balance/{balance}/reabrir', [BalanceDiarioController::class, 'reabrir'])->name('balance.reabrir');
     });
 
     // ── REPORTES ─────────────────────────────────────────────────────────
