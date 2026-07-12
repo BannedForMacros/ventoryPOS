@@ -360,6 +360,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('reportes')->name('reportes.')->group(function () {
         Route::middleware('permiso:reportes.descuentos,ver')->get('descuentos',   [DescuentoLogController::class,        'index'])->name('descuentos');
         Route::middleware('permiso:reportes.ventas,ver')->get('ventas',           [ReporteVentaController::class,        'index'])->name('ventas');
+        Route::middleware('permiso:reportes.utilidad,ver')->get('utilidad',       [\App\Http\Controllers\Reportes\ReporteUtilidadController::class, 'index'])->name('utilidad');
         Route::middleware('permiso:reportes.productos,ver')->get('productos',     [ReporteProductoController::class,     'index'])->name('productos');
         Route::middleware('permiso:reportes.caja,ver')->get('caja',               [ReporteCajaController::class,         'index'])->name('caja');
         Route::middleware('permiso:reportes.gastos,ver')->get('gastos',           [ReporteGastoController::class,        'index'])->name('gastos');

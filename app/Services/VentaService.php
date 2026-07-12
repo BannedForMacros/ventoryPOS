@@ -204,6 +204,16 @@ class VentaService
                 ? min(max(0, (float) ($itemData['cantidad_pendiente'] ?? 0)), $cantidad)
                 : 0.0;
 
+            // Costo CONGELADO por unidad base (criterio canónico del balance:
+            // precio_costo del producto, o costo_promedio real si está en 0).
+            // Fija el margen del Reporte de Utilidad al día de la venta.
+            $costoBase = (float) ($producto->precio_costo ?? 0);
+            if ($costoBase <= 0) {
+                $costoBase = (float) (Stock::where('almacen_id', $almacen->id)
+                    ->where('producto_id', $producto->id)
+                    ->value('costo_promedio') ?? 0);
+            }
+
             $item = VentaItem::create([
                 'venta_id'             => $venta->id,
                 'producto_id'          => $producto->id,
@@ -219,6 +229,7 @@ class VentaService
                 'descuento_concepto_id'=> $itemData['descuento_concepto_id'] ?? null,
                 'subtotal'             => $subtotal,
                 'incluye_igv'          => $producto->incluye_igv,
+                'costo_unitario_base'  => round($costoBase, 4),
             ]);
 
             if ($this->config->deboDescontarStock($producto, $turno->local)) {
@@ -390,15 +401,22 @@ class VentaService
                 abort(422, 'No se puede editar una venta anulada.');
             }
 
-            // Una venta con mercadería pendiente por entregar no se edita: el
-            // anticipo material vinculado quedaría desalineado (stock retenido,
-            // saldos, entregas ya registradas). Para corregirla: anular y
-            // volver a registrar.
-            if ($venta->anticipos()->where('estado', 'activo')->exists()) {
-                abort(422, 'Esta venta tiene mercadería pendiente por entregar. Para corregirla, anúlala y regístrala de nuevo.');
+            // Pendiente por entregar en edición:
+            //  - Si ya hubo ENTREGAS registradas (aplicaciones del anticipo),
+            //    la edición se bloquea: el histórico de despachos y el stock
+            //    ya movido quedarían desalineados. Anular y rehacer.
+            //  - Si aún NO hay entregas, el anticipo vinculado se ANULA y se
+            //    vuelve a crear desde el detalle nuevo (aplicarItemsPagos),
+            //    devolviendo/ajustando el stock según el pendiente nuevo.
+            $tieneEntregas = $venta->anticipos()
+                ->whereIn('estado', ['activo', 'aplicado'])
+                ->whereHas('aplicaciones')
+                ->exists();
+            if ($tieneEntregas) {
+                abort(422, 'Esta venta tiene entregas de mercadería pendiente ya registradas. Para corregirla, anúlala y regístrala de nuevo.');
             }
-            // Defensa: la edición tampoco acepta crear nuevos pendientes.
-            unset($data['entrega_pendiente'], $data['fecha_entrega_estimada']);
+
+            $anticiposPendientes = $venta->anticipos()->where('estado', 'activo')->with('items')->get();
 
             $venta->loadMissing('items', 'local', 'turno.local');
             $turno   = $venta->turno ?? abort(422, 'La venta no tiene turno asociado.');
@@ -410,13 +428,38 @@ class VentaService
                 ?? abort(422, 'No se encontró un almacén de ventas para el local de la venta.');
             $permitirStockNegativo = $this->config->permiteStockNegativo($user->empresa_id);
 
-            // 1) Revertir efectos de la versión anterior
+            // 1) Revertir efectos de la versión anterior.
+            // El stock pendiente por entregar NUNCA salió del almacén, así que
+            // solo se restaura lo efectivamente descontado (llevado en la venta).
+            $pendienteBasePorItem = [];
+            foreach ($anticiposPendientes as $ant) {
+                foreach ($ant->items as $ai) {
+                    if ($ai->venta_item_id) {
+                        $pendienteBasePorItem[$ai->venta_item_id] = ($pendienteBasePorItem[$ai->venta_item_id] ?? 0)
+                            + round((float) $ai->cantidad_pendiente * (float) $ai->factor_conversion, 4);
+                    }
+                }
+            }
+
             foreach ($venta->items as $item) {
                 $producto = Producto::find($item->producto_id);
                 if ($producto && $this->config->deboDescontarStock($producto, $venta->local)) {
-                    Stock::ajustar($almacen->id, $producto->id, (float) $item->cantidad_base); // restaurar
+                    $restaurar = round((float) $item->cantidad_base - ($pendienteBasePorItem[$item->id] ?? 0), 4);
+                    if ($restaurar > 0.00009) {
+                        Stock::ajustar($almacen->id, $producto->id, $restaurar); // restaurar
+                    }
                 }
             }
+
+            // El anticipo anterior se anula; aplicarItemsPagos creará el nuevo
+            // según el pendiente indicado en la edición (si lo hay).
+            foreach ($anticiposPendientes as $ant) {
+                $ant->update(['estado' => 'anulado']);
+                \App\Services\AuditoriaService::log('anticipo_cliente.anulado', $ant, [
+                    'motivo' => "Edición de la venta {$venta->numero}: el pendiente se reemplaza por el detalle nuevo",
+                ], $user);
+            }
+
             $this->tesoreria->revertir('venta', $venta->id);
             $venta->items()->delete();
             $venta->pagos()->delete();

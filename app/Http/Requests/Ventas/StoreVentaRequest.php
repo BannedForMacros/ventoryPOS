@@ -42,8 +42,10 @@ class StoreVentaRequest extends FormRequest
             // parte de la mercadería. El POS crea un anticipo material con los
             // ítems pendientes (items.*.cantidad_pendiente) y el stock de lo
             // pendiente se descuenta recién al entregarlo.
+            // La fecha estimada es informativa: puede quedar en el pasado al
+            // EDITAR una venta vieja o al backdatear un turno reabierto.
             'entrega_pendiente'      => ['nullable', 'boolean'],
-            'fecha_entrega_estimada' => ['nullable', 'date', 'after_or_equal:today'],
+            'fecha_entrega_estimada' => ['nullable', 'date'],
             // Backdate de admin: registrar la venta en un turno REABIERTO ajeno
             // con la fecha real en que ocurrió. Solo se honran si el usuario es
             // admin (guardas en el controlador).

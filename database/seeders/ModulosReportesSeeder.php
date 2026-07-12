@@ -29,6 +29,7 @@ class ModulosReportesSeeder extends Seeder
 
         $hijos = [
             ['slug' => 'reportes.ventas',       'nombre' => 'Ventas',        'icono' => 'TrendingUp',  'ruta' => '/reportes/ventas',       'orden' => 2],
+            ['slug' => 'reportes.utilidad',    'nombre' => 'Utilidad',      'icono' => 'CircleDollarSign', 'ruta' => '/reportes/utilidad', 'orden' => 2],
             ['slug' => 'reportes.productos',   'nombre' => 'Productos',     'icono' => 'Package',     'ruta' => '/reportes/productos',    'orden' => 3],
             ['slug' => 'reportes.caja',        'nombre' => 'Caja / Turnos', 'icono' => 'Wallet',      'ruta' => '/reportes/caja',         'orden' => 4],
             ['slug' => 'reportes.gastos',      'nombre' => 'Gastos',        'icono' => 'TrendingDown', 'ruta' => '/reportes/gastos',      'orden' => 5],

@@ -144,9 +144,72 @@ it('anular la venta restaura solo el stock entregado y anula el anticipo', funct
     expect($anticipo->estado)->toBe('anulado');
 });
 
-it('bloquea editar una venta con pendiente por entregar activo', function () {
+it('editar la venta permite cambiar el pendiente: anula el anticipo anterior, crea el nuevo y ajusta stock', function () {
+    [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipoOriginal = ClienteAnticipo::where('venta_id', $venta->id)->first();
+
+    // Al vender: fierro 50 - 3 llevados = 47 (7 pendientes retenidos).
+    expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(47.0);
+
+    // Edición: ahora se lleva 8 y deja solo 2 pendientes.
+    $this->service->actualizar($venta, [
+        'tipo_comprobante'  => 'ticket',
+        'cliente_id'        => $this->cliente->id,
+        'entrega_pendiente' => true,
+        'items' => [[
+            'producto_id'        => $fierro->id,
+            'producto_unidad_id' => $fierro->unidadBase->id,
+            'cantidad'           => 10,
+            'precio_unitario'    => 20,
+            'cantidad_pendiente' => 2,
+        ]],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 200]],
+    ], $this->env->admin);
+
+    // Stock: salieron 8 → 50 - 8 = 42.
+    expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(42.0);
+
+    // El anticipo viejo quedó anulado y hay uno nuevo activo con 2 pendientes.
+    expect($anticipoOriginal->fresh()->estado)->toBe('anulado');
+    $nuevo = ClienteAnticipo::where('venta_id', $venta->id)->where('estado', 'activo')->first();
+    expect($nuevo)->not->toBeNull();
+    expect($nuevo->items)->toHaveCount(1);
+    expect((float) $nuevo->items->first()->cantidad_pendiente)->toBe(2.0);
+    expect((float) $nuevo->monto)->toBe(40.0); // 2 × 20
+});
+
+it('editar la venta puede QUITAR el pendiente por completo (todo entregado) devolviendo consistencia al stock', function () {
     [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
 
+    // Edición sin pendiente: se lo llevó todo.
+    $this->service->actualizar($venta, [
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $this->cliente->id,
+        'items' => [[
+            'producto_id'        => $fierro->id,
+            'producto_unidad_id' => $fierro->unidadBase->id,
+            'cantidad'           => 10,
+            'precio_unitario'    => 20,
+        ]],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 200]],
+    ], $this->env->admin);
+
+    // Stock: salieron los 10 → 50 - 10 = 40. Sin anticipos activos.
+    expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(40.0);
+    expect(ClienteAnticipo::where('venta_id', $venta->id)->where('estado', 'activo')->exists())->toBeFalse();
+});
+
+it('bloquea editar una venta cuyo pendiente ya tiene entregas registradas', function () {
+    [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+
+    // Se registra una entrega parcial (2 de 7).
+    $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
+        'fecha' => now()->toDateString(),
+        'items' => [['id' => $anticipo->items->first()->id, 'cantidad' => 2]],
+    ])->assertSessionHasNoErrors();
+
+    // Ahora la edición se bloquea: el histórico de despachos quedaría desalineado.
     $this->service->actualizar($venta, [
         'tipo_comprobante' => 'ticket',
         'cliente_id'       => $this->cliente->id,

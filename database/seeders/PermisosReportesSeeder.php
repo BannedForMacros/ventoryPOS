@@ -14,6 +14,7 @@ class PermisosReportesSeeder extends Seeder
         $slugs = [
             'reportes',
             'reportes.ventas',
+            'reportes.utilidad',
             'reportes.productos',
             'reportes.caja',
             'reportes.gastos',

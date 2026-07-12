@@ -16,6 +16,7 @@ class VentaItem extends Model
         'precio_unitario', 'precio_original',
         'descuento_item', 'descuento_concepto_id',
         'subtotal', 'incluye_igv',
+        'costo_unitario_base',
     ];
 
     protected function casts(): array
@@ -29,6 +30,9 @@ class VentaItem extends Model
             'descuento_item'    => 'decimal:2',
             'subtotal'          => 'decimal:2',
             'incluye_igv'       => 'boolean',
+            // Costo por unidad base CONGELADO al momento de la venta (Reporte
+            // de Utilidad). Null solo en filas muy viejas sin backfill.
+            'costo_unitario_base' => 'decimal:4',
         ];
     }
 

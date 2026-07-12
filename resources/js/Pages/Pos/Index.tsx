@@ -53,6 +53,7 @@ interface VentaEnEdicionItem {
     producto_nombre:       string;
     unidad_nombre:         string;
     cantidad:              number;
+    cantidad_pendiente?:   number;
     precio_unitario:       number;
     descuento_item:        number;
     descuento_concepto_id: number | null;
@@ -74,6 +75,11 @@ interface VentaEnEdicion {
     es_admin:              boolean;
     expira_en:             string | null;
     cliente:               Cliente | null;
+    // Pendiente por entregar existente (prellenado del panel). Si ya hubo
+    // entregas registradas, la edición está bloqueada en el backend.
+    entrega_pendiente?:      boolean;
+    fecha_entrega_estimada?: string | null;
+    pendiente_bloqueado?:    boolean;
     items:                 VentaEnEdicionItem[];
     pagos:                 VentaEnEdicionPago[];
 }
@@ -312,9 +318,19 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // `pendientes` guarda por línea (key del carrito) cuánto QUEDA pendiente;
     // el POS crea automáticamente el anticipo material en finanzas y el stock
     // pendiente sale del almacén recién al registrarse la entrega.
-    const [entregaPendiente, setEntregaPendiente]   = useState(false);
-    const [fechaEntrega, setFechaEntrega]           = useState('');
-    const [pendientes, setPendientes]               = useState<Record<string, number>>({});
+    // En EDICIÓN se prellena con el pendiente actual de la venta (editar lo
+    // reemplaza: el anticipo anterior se anula y se recrea con lo nuevo).
+    const [entregaPendiente, setEntregaPendiente]   = useState(!!ventaEnEdicion?.entrega_pendiente);
+    const [fechaEntrega, setFechaEntrega]           = useState(ventaEnEdicion?.fecha_entrega_estimada ?? '');
+    const [pendientes, setPendientes]               = useState<Record<string, number>>(() => {
+        const m: Record<string, number> = {};
+        ventaEnEdicion?.items.forEach(it => {
+            if (it.cantidad_pendiente && it.cantidad_pendiente > 0) {
+                m[`${it.producto_id}-${it.producto_unidad_id}`] = it.cantidad_pendiente;
+            }
+        });
+        return m;
+    });
     const [modalCliente, setModalCliente]   = useState(false);
     // Alta de cliente sin salir del POS (se abre desde el modal de selección).
     const [modalCrearCliente, setModalCrearCliente] = useState(false);
@@ -748,8 +764,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     }
 
     const propsPendiente = {
-        // En edición no se pueden crear pendientes (el backend también lo bloquea).
-        permitirPendiente:     !ventaEnEdicion,
+        // Editable también en edición de venta, SALVO que ya haya entregas
+        // registradas del pendiente (el backend bloquea toda la edición ahí).
+        permitirPendiente:     !ventaEnEdicion?.pendiente_bloqueado,
         entregaPendiente,
         fechaEntrega,
         pendienteDe,
@@ -779,6 +796,11 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         <span style={{ color: 'var(--color-text-muted)' }}>
                             Modifica productos, cantidades, precios o pagos y guarda los cambios.
                             {!ventaEnEdicion.es_admin && ' Tienes 3 minutos desde que se creó la venta.'}
+                            {ventaEnEdicion.pendiente_bloqueado && (
+                                <strong style={{ color: 'var(--color-danger)' }}>
+                                    {' '}Esta venta ya tiene entregas del pendiente registradas: no se puede editar (anúlala y regístrala de nuevo).
+                                </strong>
+                            )}
                         </span>
                     </div>
                     <Link href={route('ventas.index')}

@@ -219,6 +219,24 @@ class VentaController extends Controller
                 $factor = ($v->moneda && $v->moneda !== 'PEN' && $v->tipo_cambio)
                     ? (float) $v->tipo_cambio : 1.0;
 
+                // Pendiente por entregar de la venta (para prellenar el panel).
+                // Si ya hubo ENTREGAS registradas, la edición está bloqueada en
+                // el backend; el POS lo avisa desde el inicio.
+                $anticiposPend = $v->anticipos()->where('estado', 'activo')->with('items')->get();
+                $pendPorItem   = [];
+                foreach ($anticiposPend as $ant) {
+                    foreach ($ant->items as $ai) {
+                        if ($ai->venta_item_id) {
+                            $pendPorItem[$ai->venta_item_id] = ($pendPorItem[$ai->venta_item_id] ?? 0)
+                                + (float) $ai->cantidad_pendiente;
+                        }
+                    }
+                }
+                $pendienteBloqueado = $v->anticipos()
+                    ->whereIn('estado', ['activo', 'aplicado'])
+                    ->whereHas('aplicaciones')
+                    ->exists();
+
                 $ventaEnEdicion = [
                     'id'                    => $v->id,
                     'numero'                => $v->numero,
@@ -229,12 +247,16 @@ class VentaController extends Controller
                     'es_admin'              => (bool) $user->rol->es_admin,
                     'expira_en'             => $v->created_at?->addSeconds(self::EDIT_WINDOW_SECONDS)->toIso8601String(),
                     'cliente'               => $v->cliente,
+                    'entrega_pendiente'     => $anticiposPend->isNotEmpty(),
+                    'fecha_entrega_estimada'=> $anticiposPend->first()?->fecha_entrega_estimada?->toDateString(),
+                    'pendiente_bloqueado'   => $pendienteBloqueado,
                     'items'                 => $v->items->map(fn($it) => [
                         'producto_id'           => $it->producto_id,
                         'producto_unidad_id'    => $it->producto_unidad_id,
                         'producto_nombre'       => $it->producto_nombre,
                         'unidad_nombre'         => $it->unidad_nombre,
                         'cantidad'              => (float) $it->cantidad,
+                        'cantidad_pendiente'    => (float) ($pendPorItem[$it->id] ?? 0),
                         'precio_unitario'       => $factor > 0 ? round((float) $it->precio_unitario / $factor, 2) : (float) $it->precio_unitario,
                         'descuento_item'        => $factor > 0 ? round((float) $it->descuento_item / $factor, 2) : (float) $it->descuento_item,
                         'descuento_concepto_id' => $it->descuento_concepto_id,
