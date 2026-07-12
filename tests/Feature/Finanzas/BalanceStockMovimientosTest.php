@@ -55,12 +55,12 @@ it('el detalle de stock lista las ventas del día como salida de inventario', fu
     expect((float) $explicado['valor'])->toBe(-100.0);
 });
 
-it('la línea "stock" (no _mov) muestra el stock actual valorizado', function () {
+it('la línea "stock" (no _mov) muestra el stock valorizado a la fecha', function () {
     $this->env->crearProducto(['nombre' => 'Arena Z', 'precio_costo' => 8, 'stock_inicial' => 50]);
     $hoy = now()->toDateString();
     $json = $this->getJson(route('finanzas.balance.detalle', ['fecha' => $hoy, 'categoria' => 'stock']))->json();
 
-    $card = collect($json['cards'])->firstWhere('label', 'Valor total del inventario');
+    $card = collect($json['cards'])->firstWhere('label', "Valor del inventario al {$hoy}");
     expect($card)->not->toBeNull();
     $prod = collect($json['grupos'])->firstWhere('titulo', 'Arena Z');
     expect($prod)->not->toBeNull();

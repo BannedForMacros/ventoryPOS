@@ -459,7 +459,9 @@ class BalanceDiarioController extends Controller
                 ]);
             }
 
-            // ── Stock ACTUAL: producto por producto (valor del inventario hoy)
+            // ── Stock A LA FECHA del balance: producto por producto ─────
+            // Para fechas pasadas se reconstruye revirtiendo los movimientos
+            // posteriores al corte (mismo criterio que la línea del balance).
             case 'stock': {
                 // Costo efectivo: precio_costo del producto; si está en 0, el
                 // costo_promedio real del inventario (mismo criterio que el balance).
@@ -467,23 +469,68 @@ class BalanceDiarioController extends Controller
                     ->join('productos', 'productos.id', '=', 'stock.producto_id')
                     ->where('productos.empresa_id', $empresaId)
                     ->where('productos.activo', true)
-                    ->where('stock.cantidad', '!=', 0)
-                    ->selectRaw('productos.nombre,
+                    ->selectRaw('productos.id as producto_id, productos.nombre,
                                  SUM(stock.cantidad) as cantidad,
-                                 SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio))
-                                     / NULLIF(SUM(stock.cantidad), 0) as costo,
-                                 SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)) as valor')
+                                 COALESCE(NULLIF(MIN(productos.precio_costo), 0),
+                                          MAX(stock.costo_promedio), 0) as costo')
                     ->groupBy('productos.id', 'productos.nombre')
-                    ->orderByDesc('valor')
-                    ->limit(1000)
                     ->get();
+
+                // Movimientos posteriores al corte por producto (para fechas pasadas):
+                // cantidad al corte = actual + ventas_post + salidas_post
+                //                     − entradas_post − devoluciones_post − ajustes_post
+                $esPasado = $fecha < now()->toDateString();
+                if ($esPasado) {
+                    $delta = []; // producto_id => ajuste de cantidad
+                    $acum = function ($rows, int $signo) use (&$delta) {
+                        foreach ($rows as $r) {
+                            $delta[$r->pid] = ($delta[$r->pid] ?? 0) + $signo * (float) $r->c;
+                        }
+                    };
+
+                    $acum(DB::table('venta_items as vi')->join('ventas as v', 'v.id', '=', 'vi.venta_id')
+                        ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
+                        ->whereDate('v.fecha_venta', '>', $fecha)
+                        ->selectRaw('vi.producto_id as pid, SUM(vi.cantidad_base) as c')->groupBy('vi.producto_id')->get(), +1);
+                    $acum(DB::table('salidas_detalle as sd')->join('salidas as s', 's.id', '=', 'sd.salida_id')
+                        ->where('s.empresa_id', $empresaId)->where('s.estado', 'confirmado')
+                        ->whereDate('s.fecha', '>', $fecha)
+                        ->selectRaw('sd.producto_id as pid, SUM(sd.cantidad_base) as c')->groupBy('sd.producto_id')->get(), +1);
+                    $acum(DB::table('entradas_detalle as ed')->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
+                        ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')
+                        ->whereDate('e.fecha', '>', $fecha)
+                        ->selectRaw('ed.producto_id as pid, SUM(ed.cantidad_base) as c')->groupBy('ed.producto_id')->get(), -1);
+                    $acum(DB::table('devoluciones_detalle as dd')->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
+                        ->where('d.empresa_id', $empresaId)->where('d.estado', 'completada')->where('dd.restock', true)
+                        ->whereDate('d.fecha', '>', $fecha)
+                        ->selectRaw('dd.producto_id as pid, SUM(dd.cantidad_base) as c')->groupBy('dd.producto_id')->get(), -1);
+                    $acum(DB::table('cierres_inventario_items as ci')->join('cierres_inventario as c', 'c.id', '=', 'ci.cierre_id')
+                        ->where('c.empresa_id', $empresaId)->where('c.estado', 'confirmado')
+                        ->whereDate('c.fecha', '>', $fecha)
+                        ->selectRaw('ci.producto_id as pid, SUM(ci.diferencia) as c')->groupBy('ci.producto_id')->get(), -1);
+
+                    $filas = $filas->map(function ($f) use ($delta) {
+                        $f->cantidad = round((float) $f->cantidad + ($delta[$f->producto_id] ?? 0), 4);
+                        return $f;
+                    });
+                }
+
+                $filas = $filas
+                    ->map(function ($f) {
+                        $f->valor = round((float) $f->cantidad * (float) $f->costo, 2);
+                        return $f;
+                    })
+                    ->filter(fn ($f) => abs((float) $f->cantidad) > 0.0001)
+                    ->sortByDesc('valor')
+                    ->take(1000)
+                    ->values();
 
                 $fmtCant = fn ($n) => rtrim(rtrim(number_format((float) $n, 2), '0'), '.');
 
                 return response()->json([
                     'tipo'  => 'grupos',
                     'cards' => [
-                        ['label' => 'Valor total del inventario', 'valor' => round((float) $filas->sum('valor'), 2), 'color' => 'success'],
+                        ['label' => 'Valor del inventario al ' . $fecha, 'valor' => round((float) $filas->sum('valor'), 2), 'color' => 'success'],
                         ['label' => 'Productos con stock', 'valor' => $filas->count(), 'esNumero' => true],
                     ],
                     'grupos' => $filas->map(fn ($f, $i) => [

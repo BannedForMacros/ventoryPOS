@@ -117,16 +117,11 @@ class BalanceDiarioService
                 ];
             });
 
-        // Stock valorizado a costo del día. Se usa precio_costo del producto, y
-        // si está en 0 (p. ej. lo borró una edición de producto) se cae al
-        // costo_promedio real del inventario. Así el balance no pierde valor
-        // por costos en blanco y editar productos ya no lo descuadra.
-        $stockValorizado = (float) DB::table('stock')
-            ->join('productos', 'productos.id', '=', 'stock.producto_id')
-            ->where('productos.empresa_id', $empresaId)
-            ->where('productos.activo', true)
-            ->selectRaw('COALESCE(SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)), 0) as v')
-            ->value('v');
+        // Stock valorizado A LA FECHA DEL BALANCE (no el actual): si el balance
+        // del sábado se cuadra el domingo, la línea de stock debe ser la del
+        // sábado — se reconstruye desde el stock actual revirtiendo los
+        // movimientos posteriores al corte (ventas/entradas/salidas/etc.).
+        $stockValorizado = $this->stockValorizadoA($empresaId, $fechaCorte);
 
         $items[] = [
             'seccion' => 'favor', 'categoria' => 'stock',
@@ -243,6 +238,87 @@ class BalanceDiarioService
         foreach ($items as $item) {
             $balance->items()->create($item + ['es_manual' => false, 'conciliado' => false]);
         }
+    }
+
+    /**
+     * Valor del inventario A UNA FECHA de corte (fin de ese día).
+     *
+     * El stock es una tabla viva (sin kardex), así que para fechas pasadas se
+     * parte del stock ACTUAL y se revierten los movimientos POSTERIORES al
+     * corte, valorizados con el mismo costo canónico (precio_costo del
+     * producto, o costo_promedio real si está en 0):
+     *
+     *   valor(F) = valor_actual − entradas_post + ventas_post + salidas_post
+     *              − devoluciones_post − ajustes_de_cierre_post
+     *
+     * Las ventas anuladas no cuentan (su stock ya se restauró) y las ventas
+     * backdated caen en su fecha real. Si el corte es hoy o futuro, devuelve
+     * el valor actual directo (camino rápido, comportamiento histórico).
+     */
+    private function stockValorizadoA(int $empresaId, string $fechaCorte): float
+    {
+        $actual = (float) DB::table('stock')
+            ->join('productos', 'productos.id', '=', 'stock.producto_id')
+            ->where('productos.empresa_id', $empresaId)
+            ->where('productos.activo', true)
+            ->selectRaw('COALESCE(SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)), 0) as v')
+            ->value('v');
+
+        if ($fechaCorte >= now()->toDateString()) {
+            return round($actual, 2);
+        }
+
+        // Costo canónico por producto (mismo criterio que la línea de stock).
+        $costo = "COALESCE(NULLIF(p.precio_costo, 0),
+            (SELECT s2.costo_promedio FROM stock s2 WHERE s2.producto_id = p.id AND s2.costo_promedio > 0 ORDER BY s2.id LIMIT 1), 0)";
+
+        // Ventas posteriores al corte (salieron DESPUÉS → se devuelven).
+        $ventasPost = (float) DB::table('venta_items as vi')
+            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
+            ->join('productos as p', 'p.id', '=', 'vi.producto_id')
+            ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
+            ->where('p.activo', true)
+            ->whereDate('v.fecha_venta', '>', $fechaCorte)
+            ->selectRaw("COALESCE(SUM(vi.cantidad_base * {$costo}), 0) as t")->value('t');
+
+        // Salidas de inventario posteriores (se devuelven).
+        $salidasPost = (float) DB::table('salidas_detalle as sd')
+            ->join('salidas as s', 's.id', '=', 'sd.salida_id')
+            ->join('productos as p', 'p.id', '=', 'sd.producto_id')
+            ->where('s.empresa_id', $empresaId)->where('s.estado', 'confirmado')
+            ->where('p.activo', true)
+            ->whereDate('s.fecha', '>', $fechaCorte)
+            ->selectRaw("COALESCE(SUM(sd.cantidad_base * {$costo}), 0) as t")->value('t');
+
+        // Entradas (compras) posteriores (entraron DESPUÉS → se restan).
+        $entradasPost = (float) DB::table('entradas_detalle as ed')
+            ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
+            ->join('productos as p', 'p.id', '=', 'ed.producto_id')
+            ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')
+            ->where('p.activo', true)
+            ->whereDate('e.fecha', '>', $fechaCorte)
+            ->selectRaw("COALESCE(SUM(ed.cantidad_base * {$costo}), 0) as t")->value('t');
+
+        // Devoluciones con reingreso posteriores (entraron DESPUÉS → se restan).
+        $devolucionesPost = (float) DB::table('devoluciones_detalle as dd')
+            ->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
+            ->join('productos as p', 'p.id', '=', 'dd.producto_id')
+            ->where('d.empresa_id', $empresaId)->where('d.estado', 'completada')
+            ->where('dd.restock', true)
+            ->where('p.activo', true)
+            ->whereDate('d.fecha', '>', $fechaCorte)
+            ->selectRaw("COALESCE(SUM(dd.cantidad_base * {$costo}), 0) as t")->value('t');
+
+        // Ajustes de cierre de inventario posteriores (diferencia ±, se restan).
+        $ajustesPost = (float) DB::table('cierres_inventario_items as ci')
+            ->join('cierres_inventario as c', 'c.id', '=', 'ci.cierre_id')
+            ->join('productos as p', 'p.id', '=', 'ci.producto_id')
+            ->where('c.empresa_id', $empresaId)->where('c.estado', 'confirmado')
+            ->where('p.activo', true)
+            ->whereDate('c.fecha', '>', $fechaCorte)
+            ->selectRaw("COALESCE(SUM(ci.diferencia * {$costo}), 0) as t")->value('t');
+
+        return round($actual + $ventasPost + $salidasPost - $entradasPost - $devolucionesPost - $ajustesPost, 2);
     }
 
     /**
