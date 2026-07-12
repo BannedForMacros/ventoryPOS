@@ -321,10 +321,15 @@ class EntradaController extends Controller
             // NULL = hereda numero_documento de la cabecera al mostrar; no se copia el valor
             // para que cambiar la cabecera actualice los items que no tienen factura propia.
             'detalles.*.numero_documento'  => 'nullable|string|max:50',
-            // NOTA: update() ya NO toca el pago. Los pagos son un track independiente
-            // con su propia trazabilidad (entrada_pagos + tesorería): se registran al
-            // crear, con el botón "Pagar" del listado o abonando en Cuentas por Pagar.
-            // Aquí solo se resincroniza estado_pago si cambió el total.
+            // Pagos NUEVOS registrados desde la edición (p. ej. se agregó un
+            // producto y se paga la diferencia ahí mismo). Los pagos existentes
+            // no se tocan aquí (su track vive en entrada_pagos + tesorería; se
+            // corrigen en Finanzas → Cuentas por pagar).
+            'pagos'                    => 'nullable|array|max:10',
+            'pagos.*.metodo_pago_id'   => ['required', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.monto'            => 'required|numeric|min:0.01',
+            'pagos.*.referencia'       => 'nullable|string|max:200',
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
@@ -395,7 +400,7 @@ class EntradaController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($data, $entrada, $eraConfirmada, $almacenAnterior) {
+            DB::transaction(function () use ($data, $entrada, $eraConfirmada, $almacenAnterior, $user) {
                 // 1) Si era confirmada, revertir el stock que aporto cada detalle viejo.
                 //    permitirNegativo=true porque es transitorio: al final reaplicamos
                 //    los nuevos. La validacion previa ya garantizo que el saldo final >= 0.
@@ -453,6 +458,20 @@ class EntradaController extends Controller
                 // registrados no cambian; si el total subió puede volver a
                 // 'parcial', si bajó puede quedar 'pagado').
                 $entrada->aplicarPago(0);
+
+                // Pagos NUEVOS desde la edición (mismo track que los iniciales:
+                // entrada_pagos + egreso en tesorería + sincroniza estado_pago).
+                $lineas = $data['pagos'] ?? [];
+                if (!empty($lineas)) {
+                    $suma  = round(collect($lineas)->sum(fn ($l) => (float) $l['monto']), 2);
+                    $saldo = $entrada->refresh()->saldoPendiente();
+                    if ($suma > $saldo + 0.01) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'pagos' => "Los pagos nuevos (S/ {$suma}) superan el saldo pendiente de la compra (S/ " . number_format($saldo, 2) . ').',
+                        ]);
+                    }
+                    $this->registrarPagosIniciales($entrada, $lineas, $user->id);
+                }
 
                 // 3) Si era confirmada, aplicar el stock nuevo y reconstruir CPP para
                 //    cada (almacen, producto) afectado. Reconstruir es necesario porque

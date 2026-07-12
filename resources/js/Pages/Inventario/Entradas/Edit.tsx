@@ -141,6 +141,27 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
 
     const total = detalles.reduce((sum, d) => sum + subtotal(d), 0);
 
+    // ── Pagos NUEVOS desde la edición ─────────────────────────────────
+    // Los pagos ya registrados no se tocan aquí (se corrigen en Finanzas →
+    // Cuentas por pagar); esto permite pagar el saldo — p. ej. cuando se
+    // agrega un producto y el total sube.
+    interface LineaPago { key: string; metodo_pago_id: number | ''; cuenta_id: number | ''; monto: string; }
+    const nuevaLinea = (monto = ''): LineaPago =>
+        ({ key: Math.random().toString(36).slice(2), metodo_pago_id: '', cuenta_id: '', monto });
+    const [pagosNuevos, setPagosNuevos] = useState<LineaPago[]>([]);
+
+    const cuentasDeLinea = (l: LineaPago) =>
+        metodosPago.find(m => m.id === l.metodo_pago_id)?.cuentas ?? [];
+    function setPago(key: string, patch: Partial<LineaPago>) {
+        setPagosNuevos(prev => prev.map(p => p.key === key ? { ...p, ...patch } : p));
+    }
+
+    const montoPagado    = Number(entrada.monto_pagado ?? 0);
+    // Saldo contra el total ACTUAL del formulario (si agregaste un producto, sube en vivo).
+    const saldoActual    = Math.max(0, Math.round((total - montoPagado) * 100) / 100);
+    const totalPagoNuevo = pagosNuevos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+    const saldoDespues   = Math.max(0, Math.round((saldoActual - totalPagoNuevo) * 100) / 100);
+
     /**
      * Restricciones: si la entrada estaba confirmada, calculamos para cada producto
      * cuanto puede reducirse sin dejar stock negativo. Si la entrada original aporto
@@ -206,6 +227,16 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
     function validar(): string[] {
         const errs: string[] = [];
         if (!almacenId) errs.push('Selecciona el almacén destino');
+
+        pagosNuevos.forEach((p, idx) => {
+            const n = idx + 1;
+            if (!p.metodo_pago_id) errs.push(`Pago nuevo #${n}: falta el método de pago`);
+            const m = parseFloat(p.monto);
+            if (!p.monto || isNaN(m) || m <= 0) errs.push(`Pago nuevo #${n}: el monto debe ser mayor a 0`);
+        });
+        if (totalPagoNuevo > saldoActual + 0.009) {
+            errs.push(`Los pagos nuevos (S/ ${totalPagoNuevo.toFixed(2)}) superan el saldo pendiente (S/ ${saldoActual.toFixed(2)})`);
+        }
         if (!tipo)      errs.push('Selecciona el tipo de entrada');
         if (!fecha)     errs.push('Indica la fecha');
 
@@ -273,6 +304,11 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                 producto_id: d.producto_id, unidad_medida_id: d.unidad_medida_id,
                 cantidad: d.cantidad, factor_conversion: d.factor_conversion, precio_costo: d.precio_costo,
                 numero_documento: facturaPorItem ? (d.numero_documento.trim() || null) : null,
+            })),
+            pagos: pagosNuevos.map(p => ({
+                metodo_pago_id: p.metodo_pago_id,
+                cuenta_id:      p.cuenta_id || null,
+                monto:          p.monto,
             })),
         }, {
             onSuccess: () => setProcessing(false),
@@ -529,9 +565,9 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                     </div>
                 </section>
 
-                {/* ── Pago (solo lectura: los pagos tienen su propia trazabilidad) ── */}
+                {/* ── Pago al proveedor: resumen + registrar pagos NUEVOS del saldo ── */}
                 <section
-                    className="rounded-2xl border p-6 space-y-3"
+                    className="rounded-2xl border p-6 space-y-4"
                     style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
                 >
                     <div className="flex items-center gap-2">
@@ -542,23 +578,111 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                     </div>
                     <div className="flex flex-wrap items-center gap-5 text-sm">
                         <span style={{ color: 'var(--color-text-muted)' }}>
-                            Pagado:{' '}
-                            <strong style={{ color: 'var(--color-success)' }}>S/ {Number(entrada.monto_pagado ?? 0).toFixed(2)}</strong>
+                            Ya pagado:{' '}
+                            <strong style={{ color: 'var(--color-success)' }}>S/ {montoPagado.toFixed(2)}</strong>
                         </span>
                         <span style={{ color: 'var(--color-text-muted)' }}>
-                            Saldo:{' '}
-                            <strong style={{ color: Number(entrada.total) - Number(entrada.monto_pagado ?? 0) > 0.01 ? 'var(--color-danger)' : 'var(--color-text)' }}>
-                                S/ {Math.max(0, Number(entrada.total) - Number(entrada.monto_pagado ?? 0)).toFixed(2)}
+                            Saldo (con el total actual):{' '}
+                            <strong style={{ color: saldoActual > 0.01 ? 'var(--color-danger)' : 'var(--color-text)' }}>
+                                S/ {saldoActual.toFixed(2)}
                             </strong>
                         </span>
-                        <Badge variant={entrada.estado_pago === 'pagado' ? 'success' : entrada.estado_pago === 'parcial' ? 'warning' : 'secondary'}>
-                            {entrada.estado_pago === 'pagado' ? 'Pagado' : entrada.estado_pago === 'parcial' ? 'Parcial' : 'Pendiente'}
+                        <Badge variant={saldoDespues <= 0.009 ? 'success' : montoPagado + totalPagoNuevo > 0 ? 'warning' : 'secondary'}>
+                            {saldoDespues <= 0.009 ? 'Quedará pagada' : montoPagado + totalPagoNuevo > 0 ? 'Parcial' : 'Pendiente'}
                         </Badge>
                     </div>
+
+                    {saldoActual <= 0.009 && pagosNuevos.length === 0 ? (
+                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            La compra está completamente pagada con el total actual. Si agregas productos o subes precios, aquí podrás pagar la diferencia.
+                        </p>
+                    ) : (
+                        <div className="space-y-3">
+                            {pagosNuevos.map((p, idx) => {
+                                const cuentas = cuentasDeLinea(p);
+                                return (
+                                    <div key={p.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_140px_auto] gap-3 items-end">
+                                        <Select
+                                            label={idx === 0 ? 'Método de pago' : undefined}
+                                            required
+                                            placeholder="Seleccionar método"
+                                            value={p.metodo_pago_id}
+                                            onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: '' })}
+                                            options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                                        />
+                                        <Select
+                                            label={idx === 0 ? 'Cuenta' : undefined}
+                                            placeholder={cuentas.length ? '(Opcional) elegir cuenta' : 'Se asigna sola'}
+                                            value={p.cuenta_id}
+                                            onChange={v => setPago(p.key, { cuenta_id: v === '' ? '' : Number(v) })}
+                                            options={cuentas.map(c => ({
+                                                value: c.id,
+                                                label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
+                                            }))}
+                                            disabled={cuentas.length === 0}
+                                        />
+                                        <Input
+                                            label={idx === 0 ? 'Monto (S/)' : undefined}
+                                            required type="number" min="0.01" step="0.01"
+                                            value={p.monto}
+                                            onChange={e => setPago(p.key, { monto: e.target.value })}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setPagosNuevos(prev => prev.filter(x => x.key !== p.key))}
+                                            className="p-2 mb-0.5 rounded-lg hover:bg-black/5"
+                                            title="Quitar línea de pago"
+                                            style={{ color: 'var(--color-danger)' }}
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+
+                            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                                <div className="flex gap-2">
+                                    <Button type="button" variant="ghost" size="sm"
+                                        onClick={() => setPagosNuevos(prev => [...prev, nuevaLinea()])}>
+                                        <Plus size={14} className="mr-1" />
+                                        {pagosNuevos.length === 0 ? 'Registrar pago del saldo' : 'Agregar otro método'}
+                                    </Button>
+                                    {pagosNuevos.length === 0 && saldoActual > 0.009 && (
+                                        <Button type="button" variant="secondary" size="sm"
+                                            onClick={() => setPagosNuevos([nuevaLinea(saldoActual.toFixed(2))])}>
+                                            Pagar todo el saldo (S/ {saldoActual.toFixed(2)})
+                                        </Button>
+                                    )}
+                                </div>
+                                {pagosNuevos.length > 0 && (
+                                    <div className="flex items-center gap-5 text-sm">
+                                        <span style={{ color: 'var(--color-text-muted)' }}>
+                                            Pagos nuevos:{' '}
+                                            <strong style={{ color: totalPagoNuevo > saldoActual + 0.009 ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                                                S/ {totalPagoNuevo.toFixed(2)}
+                                            </strong>
+                                        </span>
+                                        <span style={{ color: 'var(--color-text-muted)' }}>
+                                            Quedará como deuda:{' '}
+                                            <strong style={{ color: saldoDespues > 0 ? 'var(--color-danger)' : 'var(--color-text)' }}>
+                                                S/ {saldoDespues.toFixed(2)}
+                                            </strong>
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                            {totalPagoNuevo > saldoActual + 0.009 && (
+                                <p className="text-xs" style={{ color: 'var(--color-danger)' }}>
+                                    Los pagos nuevos superan el saldo pendiente.
+                                </p>
+                            )}
+                            {errors.pagos && <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{errors.pagos}</p>}
+                        </div>
+                    )}
+
                     <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        Los pagos no se editan aquí (tienen su propia trazabilidad): usa el botón "Pagar" del listado
-                        o registra abonos en Finanzas → Cuentas por pagar. Si cambias cantidades/precios, el estado
-                        del pago se recalcula solo contra el nuevo total.
+                        Los pagos que registres aquí se asientan en tesorería con la fecha de la entrada. Los pagos
+                        anteriores se corrigen en Finanzas → Cuentas por pagar (el admin puede editarlos o anularlos).
                     </p>
                 </section>
 

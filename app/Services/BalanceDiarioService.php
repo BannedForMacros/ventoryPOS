@@ -129,44 +129,86 @@ class BalanceDiarioService
             'monto' => round($stockValorizado, 2), 'orden' => ++$orden,
         ];
 
-        // Deudas por cobrar: ventas a crédito con saldo.
-        $cxc = (float) Venta::deEmpresa($empresaId)->conSaldoPendiente()->sum('saldo_pendiente');
+        // Deudas por cobrar A LA FECHA: ventas a crédito nacidas hasta el corte,
+        // con el saldo QUE TENÍAN ese día (los abonos posteriores se devuelven:
+        // un abono del 12 no puede borrar la deuda del balance del 11).
+        $cxcActual = (float) Venta::deEmpresa($empresaId)
+            ->where('es_credito', true)->where('estado', 'completada')
+            ->where('fecha_venta', '<=', $fechaCorte . ' 23:59:59')
+            ->sum('saldo_pendiente');
+        $abonosPost = (float) DB::table('venta_abonos as a')
+            ->join('ventas as v', 'v.id', '=', 'a.venta_id')
+            ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
+            ->where('v.fecha_venta', '<=', $fechaCorte . ' 23:59:59')
+            ->where('a.fecha', '>', $fechaCorte)
+            ->sum('a.monto');
+        $cxc = $cxcActual + $abonosPost;
         $items[] = [
             'seccion' => 'favor', 'categoria' => 'cxc',
             'descripcion' => 'Deudas por cobrar (ventas a crédito)',
             'monto' => round($cxc, 2), 'orden' => ++$orden,
         ];
 
+        // Ajuste por deuda: pagos POSTERIORES al corte (amortización devuelve
+        // saldo; incremento lo resta). Sirve para ambas direcciones.
+        $ajusteDeudaPost = DB::table('deuda_pagos as dp')
+            ->join('deudas as d', 'd.id', '=', 'dp.deuda_id')
+            ->where('d.empresa_id', $empresaId)
+            ->where('dp.fecha', '>', $fechaCorte)
+            ->selectRaw("dp.deuda_id, SUM(CASE WHEN dp.tipo = 'amortizacion' THEN dp.monto ELSE -dp.monto END) as ajuste")
+            ->groupBy('dp.deuda_id')
+            ->pluck('ajuste', 'deuda_id');
+        $saldoDeudaAlCorte = fn (Deuda $d) => round((float) $d->saldo + (float) ($ajusteDeudaPost[$d->id] ?? 0), 2);
+
         // Préstamos otorgados a terceros (una línea por deuda, como el Excel).
-        Deuda::deEmpresa($empresaId)->porCobrar()->activa()->orderBy('nombre')->get()
-            ->each(function (Deuda $d) use (&$items, &$orden) {
+        // Se incluyen las pagadas DESPUÉS del corte (ese día aún tenían saldo).
+        Deuda::deEmpresa($empresaId)->porCobrar()
+            ->whereIn('estado', ['activa', 'pagada'])
+            ->where(fn ($q) => $q->whereDate('fecha_inicio', '<=', $fechaCorte)->orWhereNull('fecha_inicio'))
+            ->orderBy('nombre')->get()
+            ->each(function (Deuda $d) use (&$items, &$orden, $saldoDeudaAlCorte) {
+                $saldo = $saldoDeudaAlCorte($d);
+                if ($saldo <= 0.01) return;
                 $items[] = [
                     'seccion' => 'favor', 'categoria' => 'prestamo_otorgado',
                     'descripcion' => $d->nombre,
                     'ref_tipo' => 'deuda', 'ref_id' => $d->id,
-                    'monto' => (float) $d->saldo, 'orden' => ++$orden,
+                    'monto' => $saldo, 'orden' => ++$orden,
                 ];
             });
 
-        // Adelantos a proveedores (una línea por adelanto activo).
-        ProveedorAdelanto::deEmpresa($empresaId)->activo()->with('proveedor')->get()
-            ->each(function (ProveedorAdelanto $a) use (&$items, &$orden) {
+        // Adelantos a proveedores al corte: consumos posteriores se devuelven.
+        $consumoAdelantoPost = DB::table('proveedor_adelanto_aplicaciones as pa')
+            ->join('proveedor_adelantos as p', 'p.id', '=', 'pa.proveedor_adelanto_id')
+            ->where('p.empresa_id', $empresaId)
+            ->where('pa.fecha', '>', $fechaCorte)
+            ->selectRaw('pa.proveedor_adelanto_id as aid, SUM(pa.monto) as t')
+            ->groupBy('pa.proveedor_adelanto_id')
+            ->pluck('t', 'aid');
+
+        ProveedorAdelanto::deEmpresa($empresaId)
+            ->whereIn('estado', ['activo', 'aplicado'])
+            ->whereDate('fecha', '<=', $fechaCorte)
+            ->with('proveedor')->get()
+            ->each(function (ProveedorAdelanto $a) use (&$items, &$orden, $consumoAdelantoPost) {
+                $saldo = round((float) $a->saldo + (float) ($consumoAdelantoPost[$a->id] ?? 0), 2);
+                if ($saldo <= 0.01) return;
                 $prov = $a->proveedor?->razon_social ?? $a->proveedor?->nombre_comercial ?? 'Proveedor';
                 $items[] = [
                     'seccion' => 'favor', 'categoria' => 'adelanto_proveedor',
                     'descripcion' => "Adelanto a {$prov}",
                     'ref_tipo' => 'proveedor_adelanto', 'ref_id' => $a->id,
-                    'monto' => (float) $a->saldo, 'orden' => ++$orden,
+                    'monto' => $saldo, 'orden' => ++$orden,
                 ];
             });
 
-        // Descuentos de planilla PENDIENTES: dinero por recuperar del personal
-        // (faltantes de caja, cargos). Es un activo: cuando el faltante ocurrió
-        // el egreso ya golpeó EN CONTRA (gastos emitidos); esta línea refleja
-        // el derecho a descontarlo del sueldo. Al APLICARSE el descuento la
-        // línea baja — ese es el movimiento del balance al aplicar.
+        // Descuentos de planilla PENDIENTES A LA FECHA: registrados hasta el
+        // corte y aún sin aplicar ese día (los aplicados después cuentan).
         $planillaPendiente = (float) \App\Models\PlanillaDescuento::deEmpresa($empresaId)
-            ->pendiente()->sum('monto');
+            ->whereDate('fecha', '<=', $fechaCorte)
+            ->where(fn ($q) => $q->where('estado', 'pendiente')
+                ->orWhere(fn ($q2) => $q2->where('estado', 'aplicado')->whereDate('fecha_aplicacion', '>', $fechaCorte)))
+            ->sum('monto');
         $items[] = [
             'seccion' => 'favor', 'categoria' => 'planilla_descuento',
             'descripcion' => 'Por descontar en planilla (faltantes y cargos)',
@@ -176,13 +218,21 @@ class BalanceDiarioService
         // ── EN CONTRA ────────────────────────────────────────────────────
         $orden = 0;
 
-        // Proveedores por pagar: entradas confirmadas con saldo.
-        $cxp = (float) Entrada::deEmpresa($empresaId)
+        // Proveedores por pagar A LA FECHA: compras hasta el corte con el saldo
+        // que tenían ese día (pagos posteriores se devuelven — pagar el 12 no
+        // borra la deuda del balance del 11).
+        $cxpActual = (float) Entrada::deEmpresa($empresaId)
             ->confirmado()
-            ->whereRaw('total - monto_pagado > 0.01')
-            ->where('estado_pago', '!=', 'pagado')
-            ->selectRaw('COALESCE(SUM(total - monto_pagado), 0) as v')
+            ->whereDate('fecha', '<=', $fechaCorte)
+            ->selectRaw('COALESCE(SUM(GREATEST(total - monto_pagado, 0)), 0) as v')
             ->value('v');
+        $pagosCxpPost = (float) DB::table('entrada_pagos as ep')
+            ->join('entradas as e', 'e.id', '=', 'ep.entrada_id')
+            ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')
+            ->whereDate('e.fecha', '<=', $fechaCorte)
+            ->where('ep.fecha', '>', $fechaCorte)
+            ->sum('ep.monto');
+        $cxp = $cxpActual + $pagosCxpPost;
 
         $items[] = [
             'seccion' => 'contra', 'categoria' => 'cxp',
@@ -212,10 +262,39 @@ class BalanceDiarioService
                 ];
             });
 
-        // Anticipos de clientes valorizados A PRECIO DEL DÍA (incluye los
-        // multi-producto "pendiente por entregar" creados desde el POS).
-        $anticipos = ClienteAnticipo::deEmpresa($empresaId)->activo()->with(['producto', 'items.unidad'])->get()
-            ->sum(fn (ClienteAnticipo $a) => $a->valorPasivoHoy());
+        // Anticipos de clientes A LA FECHA: nacidos hasta el corte, con el
+        // saldo/pendiente que tenían ese día (las entregas posteriores se
+        // devuelven). Material clásico se valoriza a precio del día; los
+        // "pendiente por entregar" del POS valen su saldo pagado congelado.
+        $aplAnticipoPost = DB::table('cliente_anticipo_aplicaciones as ca')
+            ->join('cliente_anticipos as c', 'c.id', '=', 'ca.cliente_anticipo_id')
+            ->where('c.empresa_id', $empresaId)
+            ->where('ca.fecha', '>', $fechaCorte)
+            ->selectRaw('ca.cliente_anticipo_id as aid, SUM(ca.monto) as monto, SUM(COALESCE(ca.cantidad, 0)) as cantidad')
+            ->groupBy('ca.cliente_anticipo_id')
+            ->get()->keyBy('aid');
+
+        $anticipos = ClienteAnticipo::deEmpresa($empresaId)
+            ->whereIn('estado', ['activo', 'aplicado'])
+            ->whereDate('fecha', '<=', $fechaCorte)
+            ->with(['producto', 'items'])->get()
+            ->sum(function (ClienteAnticipo $a) use ($aplAnticipoPost) {
+                $post = $aplAnticipoPost->get($a->id);
+
+                // Pendiente del POS (multi-producto): saldo pagado al corte.
+                if ($a->items->isNotEmpty()) {
+                    return round((float) $a->saldo + (float) ($post->monto ?? 0), 2);
+                }
+
+                // Material clásico: cantidad pendiente al corte × precio del día.
+                if ($a->tipo_valorizacion === 'material' && $a->producto && $a->cantidad_pendiente !== null) {
+                    $cant = (float) $a->cantidad_pendiente + (float) ($post->cantidad ?? 0);
+                    return round($cant * (float) $a->producto->precio_venta, 2);
+                }
+
+                // Dinero: saldo al corte.
+                return round((float) $a->saldo + (float) ($post->monto ?? 0), 2);
+            });
 
         $items[] = [
             'seccion' => 'contra', 'categoria' => 'anticipo_cliente',
@@ -223,15 +302,21 @@ class BalanceDiarioService
             'monto' => round((float) $anticipos, 2), 'orden' => ++$orden,
         ];
 
-        // Deudas por pagar: bancarias, personales, al personal (línea por deuda).
-        Deuda::deEmpresa($empresaId)->porPagar()->activa()->orderBy('tipo')->orderBy('nombre')->get()
-            ->each(function (Deuda $d) use (&$items, &$orden) {
+        // Deudas por pagar A LA FECHA: bancarias, personales, al personal
+        // (línea por deuda; cuotas pagadas después del corte se devuelven).
+        Deuda::deEmpresa($empresaId)->porPagar()
+            ->whereIn('estado', ['activa', 'pagada'])
+            ->where(fn ($q) => $q->whereDate('fecha_inicio', '<=', $fechaCorte)->orWhereNull('fecha_inicio'))
+            ->orderBy('tipo')->orderBy('nombre')->get()
+            ->each(function (Deuda $d) use (&$items, &$orden, $saldoDeudaAlCorte) {
+                $saldo = $saldoDeudaAlCorte($d);
+                if ($saldo <= 0.01) return;
                 $items[] = [
                     'seccion' => 'contra',
                     'categoria' => $d->tipo === 'trabajador' ? 'personal' : 'deuda',
                     'descripcion' => $d->nombre,
                     'ref_tipo' => 'deuda', 'ref_id' => $d->id,
-                    'monto' => (float) $d->saldo, 'orden' => ++$orden,
+                    'monto' => $saldo, 'orden' => ++$orden,
                 ];
             });
 
