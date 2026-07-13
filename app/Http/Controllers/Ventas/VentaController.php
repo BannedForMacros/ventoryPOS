@@ -207,6 +207,50 @@ class VentaController extends Controller
             }
         }
 
+        // Si el POS se abre desde una cotización (cotizacion_id en query),
+        // prellenar carrito + cliente con los PRECIOS COTIZADOS (congelados),
+        // patrón idéntico al de citaPrellenada.
+        $cotizacionPrellenada = null;
+        if ($cotizacionId = $request->query('cotizacion_id')) {
+            $cotizacion = \App\Models\Cotizacion::with(['cliente', 'items.producto', 'items.productoUnidad.unidadMedida'])
+                ->where('id', $cotizacionId)
+                ->where('empresa_id', $user->empresa_id)
+                ->first();
+
+            if ($cotizacion && $cotizacion->esConvertible()) {
+                // Flags de frescura por ítem: entre cotizar y cobrar pueden
+                // pasar días y el admin pudo desactivar producto/presentación.
+                // El cajero lo ve en rojo y resuelve antes de cobrar.
+                $items = $cotizacion->items->map(function ($it) {
+                    $productoActivo = (bool) ($it->producto?->activo);
+                    $unidadActiva   = (bool) ($it->productoUnidad?->activo);
+
+                    return [
+                        'producto_id'        => $it->producto_id,
+                        'producto_unidad_id' => $it->producto_unidad_id,
+                        'producto_nombre'    => $it->producto_nombre,
+                        'unidad_nombre'      => $it->unidad_nombre,
+                        'cantidad'           => (float) $it->cantidad,
+                        'precio_unitario'    => (float) $it->precio_unitario, // precio cotizado (congelado)
+                        'descuento_item'     => (float) $it->descuento_item,
+                        'incluye_igv'        => (bool) ($it->producto?->incluye_igv ?? true),
+                        'producto_activo'    => $productoActivo,
+                        'unidad_activa'      => $unidadActiva,
+                        'inactivo'           => !($productoActivo && $unidadActiva),
+                    ];
+                });
+
+                $cotizacionPrellenada = [
+                    'id'              => $cotizacion->id,
+                    'numero'          => $cotizacion->numero,
+                    'referencia'      => $cotizacion->referencia,
+                    'cliente'         => $cotizacion->cliente,
+                    'items'           => $items,
+                    'tiene_inactivos' => $items->contains(fn ($i) => $i['inactivo']),
+                ];
+            }
+        }
+
         // Edición de venta desde el POS (?venta_id=): precarga el carrito, cliente
         // y pagos de la venta ya cargada arriba ($ventaObjetivo). La cajera solo
         // dentro de los 3 min; el admin sin límite. El submit irá a ventas.update.
@@ -295,6 +339,7 @@ class VentaController extends Controller
             'metodosPago'        => $metodosPago,
             'conceptosDescuento' => $conceptosDescuento,
             'citaPrellenada'     => $citaPrellenada,
+            'cotizacionPrellenada' => $cotizacionPrellenada,
             'ventaEnEdicion'     => $ventaEnEdicion,
             'turnoBackdate'      => $turnoBackdate,
             'puedeVender'        => $puedeVender,
@@ -438,6 +483,26 @@ class VentaController extends Controller
                         'error'    => $e->getMessage(),
                     ]);
                 }
+            }
+        }
+
+        // Si la venta vino desde una cotización prellenada, vincular y marcar
+        // la cotización como convertida (precio cotizado honrado en el POS).
+        if ($cotizacionId = $request->input('cotizacion_id')) {
+            $cotizacion = \App\Models\Cotizacion::where('id', $cotizacionId)
+                ->where('empresa_id', $user->empresa_id)
+                ->first();
+            if ($cotizacion && $cotizacion->esConvertible()) {
+                $cotizacion->update([
+                    'venta_id' => $venta->id,
+                    'estado'   => \App\Models\Cotizacion::ESTADO_CONVERTIDA,
+                ]);
+                \App\Services\AuditoriaService::log('cotizacion.convertida', $cotizacion, [
+                    'numero'       => $cotizacion->numero,
+                    'venta_id'     => $venta->id,
+                    'numero_venta' => $venta->numero,
+                    'total_venta'  => (float) $venta->total,
+                ], $user);
             }
         }
 

@@ -149,17 +149,22 @@ class Cotizacion extends Model
         ]);
     }
 
-    /** Etiqueta legible del estado para UI y mensajes. */
-    public function getEstadoLabelAttribute(): string
+    /** Etiqueta legible de un estado para UI y mensajes. */
+    public static function labelDe(string $estado): string
     {
-        return match ($this->estado) {
+        return match ($estado) {
             self::ESTADO_VIGENTE    => 'Vigente',
             self::ESTADO_ACEPTADA   => 'Aceptada',
             self::ESTADO_RECHAZADA  => 'Rechazada',
             self::ESTADO_VENCIDA    => 'Vencida',
             self::ESTADO_CONVERTIDA => 'Convertida',
             self::ESTADO_ANULADA    => 'Anulada',
-            default                 => $this->estado,
+            default                 => $estado,
         };
+    }
+
+    public function getEstadoLabelAttribute(): string
+    {
+        return self::labelDe($this->estado);
     }
 }

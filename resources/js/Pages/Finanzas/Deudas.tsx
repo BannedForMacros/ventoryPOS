@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, RotateCcw } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -49,6 +49,7 @@ interface Props extends PageProps {
     estado: string;
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
+    puede: { editar: boolean; eliminar: boolean };
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -65,7 +66,7 @@ const emptyForm = () => ({
     monto_original: '', fecha_inicio: hoy(), fecha_vencimiento: '', observacion: '',
 });
 
-export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }: Props) {
+export default function Deudas({ deudas, totales, estado, metodosPago, cuentas, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo] = useState(false);
     const [pagando, setPagando]       = useState<Deuda | null>(null);
@@ -76,6 +77,68 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
     const [form, setForm]             = useState(emptyForm());
     const [formPago, setFormPago]     = useState({ tipo: 'amortizacion', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', observacion: '' });
     const [motivoAnular, setMotivoAnular] = useState('');
+    // Edición / eliminación / reactivación (según permisos).
+    const [editando, setEditando]         = useState<Deuda | null>(null);
+    const [formEditar, setFormEditar]     = useState({ tipo: 'bancaria', nombre: '', monto_original: '', fecha_inicio: hoy(), fecha_vencimiento: '', observacion: '' });
+    const [eliminando, setEliminando]     = useState<Deuda | null>(null);
+    const [reactivando, setReactivando]   = useState<Deuda | null>(null);
+    const [eliminandoPago, setEliminandoPago] = useState<Pago | null>(null);
+    const [motivo, setMotivo]             = useState('');
+
+    function abrirEditar(d: Deuda) {
+        setErrors({});
+        setFormEditar({
+            tipo:              d.tipo,
+            nombre:            d.nombre,
+            monto_original:    String(Number(d.monto_original)),
+            fecha_inicio:      d.fecha_inicio.slice(0, 10),
+            fecha_vencimiento: d.fecha_vencimiento ? d.fecha_vencimiento.slice(0, 10) : '',
+            observacion:       d.observacion ?? '',
+        });
+        setEditando(d);
+    }
+
+    function submitEditar() {
+        if (!editando) return;
+        setSaving(true);
+        router.put(route('finanzas.deudas.update', editando.id), {
+            ...formEditar,
+            fecha_vencimiento: formEditar.fecha_vencimiento || null,
+            observacion:       formEditar.observacion || null,
+        } as any, {
+            onSuccess: () => { setEditando(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    function submitEliminar() {
+        if (!eliminando) return;
+        setSaving(true);
+        router.delete(route('finanzas.deudas.destroy', eliminando.id), {
+            data: { motivo: motivo.trim() },
+            onSuccess: () => { setEliminando(null); setMotivo(''); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        } as any);
+    }
+
+    function submitReactivar() {
+        if (!reactivando) return;
+        setSaving(true);
+        router.post(route('finanzas.deudas.reactivar', reactivando.id), { motivo: motivo.trim() } as any, {
+            onSuccess: () => { setReactivando(null); setMotivo(''); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    function submitEliminarPago() {
+        if (!eliminandoPago) return;
+        setSaving(true);
+        router.delete(route('finanzas.deudas.pagos.destroy', eliminandoPago.id), {
+            data: { motivo: motivo.trim() },
+            onSuccess: () => { setEliminandoPago(null); setMotivo(''); setDetalle(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        } as any);
+    }
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -171,6 +234,27 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
                                 <Ban size={15} />
                             </button>
                         </>
+                    )}
+                    {puede.editar && d.estado !== 'anulada' && (
+                        <button onClick={() => abrirEditar(d)}
+                            className="p-1.5 rounded-lg hover:bg-black/5" title="Editar deuda"
+                            style={{ color: 'var(--color-primary)' }}>
+                            <Pencil size={15} />
+                        </button>
+                    )}
+                    {puede.editar && d.estado === 'anulada' && (
+                        <button onClick={() => { setErrors({}); setMotivo(''); setReactivando(d); }}
+                            className="p-1.5 rounded-lg hover:bg-black/5" title="Reactivar deuda"
+                            style={{ color: 'var(--color-primary)' }}>
+                            <RotateCcw size={15} />
+                        </button>
+                    )}
+                    {puede.eliminar && (
+                        <button onClick={() => { setErrors({}); setMotivo(''); setEliminando(d); }}
+                            className="p-1.5 rounded-lg hover:bg-black/5" title="Eliminar deuda"
+                            style={{ color: 'var(--color-danger)' }}>
+                            <Trash2 size={15} />
+                        </button>
                     )}
                 </div>
             ),
@@ -338,7 +422,58 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
                 title={detalle ? `Movimientos — ${detalle.nombre}` : ''} size="2xl"
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
-                {detalle && (
+                {detalle && (puede.eliminar ? (
+                    <div className="space-y-4">
+                        {detalle.pagos.length === 0 ? (
+                            <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>Sin movimientos registrados</p>
+                        ) : (
+                            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                {detalle.pagos.map((p, idx) => (
+                                    <div key={p.id} className="flex items-center gap-3 px-4 py-2.5"
+                                        style={{
+                                            borderBottom: idx < detalle.pagos.length - 1 ? '1px solid var(--color-border)' : undefined,
+                                            backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
+                                        }}>
+                                        <Badge variant={p.tipo === 'amortizacion' ? 'success' : 'warning'}>
+                                            {p.tipo === 'amortizacion' ? 'Amortización' : 'Incremento'}
+                                        </Badge>
+                                        <div className="flex-1 min-w-0 text-xs">
+                                            <p className="font-medium" style={{ color: 'var(--color-text)' }}>
+                                                {new Date(p.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')}
+                                                <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {[p.metodo_pago?.nombre, p.cuenta?.nombre].filter(Boolean).join(' · ') || '—'}
+                                                </span>
+                                            </p>
+                                            {(p.observacion || p.user?.name) && (
+                                                <p className="truncate" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {[p.observacion, p.user?.name ? `por ${p.user.name}` : null].filter(Boolean).join(' · ')}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <span className="font-bold text-sm whitespace-nowrap"
+                                            style={{ color: p.tipo === 'amortizacion' ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                            {p.tipo === 'amortizacion' ? '−' : '+'}{money(p.monto)}
+                                        </span>
+                                        <button onClick={() => { setErrors({}); setMotivo(''); setEliminandoPago(p); }}
+                                            className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Eliminar movimiento"
+                                            style={{ color: 'var(--color-danger)' }}>
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <Callout variant="info" title="Registro de la deuda"
+                            aside={money(detalle.monto_original)}>
+                            {new Date(detalle.fecha_inicio.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')} · {detalle.observacion ?? 'Saldo inicial de la deuda'}
+                        </Callout>
+                        {detalle.pagos.length > 0 && (
+                            <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                Eliminar un movimiento revierte su efecto en tesorería y recalcula el saldo de la deuda. Todo queda en auditoría.
+                            </p>
+                        )}
+                    </div>
+                ) : (
                     <Timeline
                         emptyMessage="Sin movimientos registrados"
                         items={[
@@ -362,6 +497,129 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas }
                             },
                         ]}
                     />
+                ))}
+            </Modal>
+
+            {/* Modal editar deuda */}
+            <Modal isOpen={editando !== null} onClose={() => setEditando(null)}
+                title={editando ? `Editar deuda — ${editando.nombre}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEditando(null)}>Cancelar</Button>
+                        <Button onClick={submitEditar} disabled={saving}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button>
+                    </>
+                }
+            >
+                {editando && (
+                    <div className="space-y-4">
+                        <Callout variant="info">
+                            El saldo se ajustará por la diferencia del monto original.
+                        </Callout>
+                        <Select label="Tipo" required
+                            options={[
+                                { value: 'bancaria',   label: 'Bancaria (préstamo de banco)' },
+                                { value: 'personal',   label: 'Personal (persona natural / tercero)' },
+                                { value: 'trabajador', label: 'Al personal (sueldos, adelantos de personal)' },
+                                { value: 'otro',       label: 'Otro' },
+                            ]}
+                            value={formEditar.tipo}
+                            onChange={v => setFormEditar(f => ({ ...f, tipo: String(v) }))}
+                            error={errors.tipo}
+                        />
+                        <Input label="Nombre / descripción" required placeholder='Ej: "Deuda BCP 1 - 7630", "Jeiner Herrera"'
+                            value={formEditar.nombre}
+                            onChange={e => setFormEditar(f => ({ ...f, nombre: e.target.value }))}
+                            error={errors.nombre}
+                        />
+                        <div className="grid grid-cols-2 gap-3">
+                            <Input label="Monto original" required type="number" min="0.01" step="0.01" value={formEditar.monto_original}
+                                onChange={e => setFormEditar(f => ({ ...f, monto_original: e.target.value }))} error={errors.monto_original} />
+                            <Input label="Fecha de inicio" required type="date" value={formEditar.fecha_inicio}
+                                onChange={e => setFormEditar(f => ({ ...f, fecha_inicio: e.target.value }))} error={errors.fecha_inicio} />
+                        </div>
+                        <Input label="Fecha de vencimiento (opcional)" type="date" value={formEditar.fecha_vencimiento}
+                            onChange={e => setFormEditar(f => ({ ...f, fecha_vencimiento: e.target.value }))} error={errors.fecha_vencimiento} />
+                        <Input label="Observación" value={formEditar.observacion}
+                            onChange={e => setFormEditar(f => ({ ...f, observacion: e.target.value }))} />
+                    </div>
+                )}
+            </Modal>
+
+            {/* Modal eliminar deuda */}
+            <Modal isOpen={eliminando !== null} onClose={() => setEliminando(null)}
+                title={eliminando ? `Eliminar deuda — ${eliminando.nombre}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEliminando(null)}>Cancelar</Button>
+                        <Button variant="danger" onClick={submitEliminar} disabled={saving || motivo.trim().length < 5}>
+                            {saving ? 'Eliminando...' : 'Sí, eliminar deuda'}
+                        </Button>
+                    </>
+                }
+            >
+                {eliminando && (
+                    <div className="space-y-3">
+                        <Callout variant="warning">
+                            Se revertirán los movimientos de tesorería de sus cuotas.
+                        </Callout>
+                        <Input label="Motivo (mínimo 5 caracteres)" required value={motivo}
+                            onChange={e => setMotivo(e.target.value)}
+                            placeholder="Ej.: se registró doble / deuda inexistente"
+                            error={errors.motivo}
+                        />
+                    </div>
+                )}
+            </Modal>
+
+            {/* Modal reactivar deuda anulada */}
+            <Modal isOpen={reactivando !== null} onClose={() => setReactivando(null)}
+                title={reactivando ? `Reactivar deuda — ${reactivando.nombre}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setReactivando(null)}>Cancelar</Button>
+                        <Button onClick={submitReactivar} disabled={saving || motivo.trim().length < 5}>
+                            {saving ? 'Reactivando...' : 'Reactivar'}
+                        </Button>
+                    </>
+                }
+            >
+                {reactivando && (
+                    <div className="space-y-3">
+                        <Callout variant="info">
+                            La deuda volverá a estar activa con su saldo anterior.
+                        </Callout>
+                        <Input label="Motivo (mínimo 5 caracteres)" required value={motivo}
+                            onChange={e => setMotivo(e.target.value)}
+                            placeholder="Ej.: se anuló por error"
+                            error={errors.motivo}
+                        />
+                    </div>
+                )}
+            </Modal>
+
+            {/* Modal eliminar movimiento de deuda */}
+            <Modal isOpen={eliminandoPago !== null} onClose={() => setEliminandoPago(null)}
+                title={eliminandoPago ? `Eliminar movimiento — ${money(eliminandoPago.monto)} del ${new Date(eliminandoPago.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEliminandoPago(null)}>Cancelar</Button>
+                        <Button variant="danger" onClick={submitEliminarPago} disabled={saving || motivo.trim().length < 5}>
+                            {saving ? 'Eliminando...' : 'Sí, eliminar movimiento'}
+                        </Button>
+                    </>
+                }
+            >
+                {eliminandoPago && (
+                    <div className="space-y-3">
+                        <Callout variant="warning">
+                            Se revierte su efecto en tesorería y el saldo de la deuda se recalcula.
+                        </Callout>
+                        <Input label="Motivo (mínimo 5 caracteres)" required value={motivo}
+                            onChange={e => setMotivo(e.target.value)}
+                            placeholder="Ej.: se registró doble / monto equivocado"
+                            error={errors.motivo}
+                        />
+                    </div>
                 )}
             </Modal>
         </AppLayout>

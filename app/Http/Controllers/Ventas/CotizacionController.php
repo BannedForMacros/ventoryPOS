@@ -211,7 +211,7 @@ class CotizacionController extends Controller
             // El motivo queda en la bitácora de seguimiento, con fecha.
             'notas_seguimiento' => !empty($data['motivo'])
                 ? trim(($cotizacion->notas_seguimiento ? $cotizacion->notas_seguimiento . "\n" : '')
-                    . '[' . now()->toDateString() . "] {$cotizacion->estadoLabelDe($data['estado'])}: {$data['motivo']}")
+                    . '[' . now()->toDateString() . '] ' . Cotizacion::labelDe($data['estado']) . ": {$data['motivo']}")
                 : $cotizacion->notas_seguimiento,
         ]);
 

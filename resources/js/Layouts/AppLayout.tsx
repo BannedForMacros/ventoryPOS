@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import { Toaster } from 'react-hot-toast';
-import { ChevronDown, ChevronRight, LogOut, Menu, User, X } from 'lucide-react';
+import { Bell, ChevronDown, ChevronRight, LogOut, Menu, User, X } from 'lucide-react';
 import type { PageProps, ModuloMenu } from '@/types';
 import DynamicIcon from '@/Components/DynamicIcon';
 import { ColorPaletteProvider } from '@/Components/ColorPaletteProvider';
@@ -295,6 +295,44 @@ function UserMenu({ onLogout }: { onLogout: () => void }) {
     );
 }
 
+/**
+ * Campanita de cotizaciones: visible solo cuando hay algo que atender
+ * (por vencer en ≤3 días o vencidas sin respuesta). Lleva al módulo con el
+ * filtro "alerta" ya aplicado. El backend solo envía la prop a usuarios con
+ * permiso de ver cotizaciones.
+ */
+function CampanitaCotizaciones() {
+    const { alertasCotizaciones } = usePage<PageProps>().props;
+    const porVencer = alertasCotizaciones?.por_vencer ?? 0;
+    const vencidas  = alertasCotizaciones?.vencidas_sin_respuesta ?? 0;
+    const total     = porVencer + vencidas;
+
+    if (!alertasCotizaciones || total <= 0) return null;
+
+    const detalle = [
+        porVencer > 0 ? `${porVencer} cotización(es) por vencer en ≤3 días` : null,
+        vencidas > 0 ? `${vencidas} vencida(s) sin respuesta del cliente` : null,
+    ].filter(Boolean).join(' · ');
+
+    return (
+        <Link
+            href={route('cotizaciones.index', { estado: 'alerta' })}
+            title={detalle}
+            aria-label={`Alertas de cotizaciones: ${detalle}`}
+            className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-200 hover:bg-black/5 active:scale-95"
+            style={{ color: 'var(--color-text)' }}
+        >
+            <Bell size={19} />
+            <span
+                className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white shadow-sm"
+                style={{ backgroundColor: vencidas > 0 ? 'var(--color-danger)' : 'var(--color-warning)' }}
+            >
+                {total > 99 ? '99+' : total}
+            </span>
+        </Link>
+    );
+}
+
 export default function AppLayout({ children, title }: AppLayoutProps) {
     const { modules = [] } = usePage<PageProps>().props;
 
@@ -400,6 +438,8 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                             )}
 
                             <span className="flex-1" />
+
+                            <CampanitaCotizaciones />
 
                             <UserMenu onLogout={logout} />
                         </div>

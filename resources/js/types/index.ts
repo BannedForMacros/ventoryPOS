@@ -430,6 +430,12 @@ export interface ModuloMenu {
     hijos: ModuloMenu[];
 }
 
+/** Campanita de cotizaciones (header). null si el usuario no puede verlas. */
+export interface AlertasCotizaciones {
+    por_vencer:             number;
+    vencidas_sin_respuesta: number;
+}
+
 export type PageProps<T extends Record<string, unknown> = Record<string, unknown>> = T & {
     auth: {
         user: User & {
@@ -441,4 +447,5 @@ export type PageProps<T extends Record<string, unknown> = Record<string, unknown
     modules:      ModuloMenu[];
     flash:        Flash;
     turno_activo: (Turno & { caja: Caja }) | null;
+    alertasCotizaciones?: AlertasCotizaciones | null;
 };

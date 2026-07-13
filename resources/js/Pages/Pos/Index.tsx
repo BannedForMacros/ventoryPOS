@@ -45,6 +45,21 @@ interface CitaPrellenada {
     tiene_inactivos:  boolean;
 }
 
+// Cotización prellenada (POS abierto con ?cotizacion_id=): mismo patrón que
+// la cita, pero con PRECIOS COTIZADOS congelados (incluye descuento por línea).
+interface CotizacionPrellenadaItem extends CitaPrellenadaItem {
+    descuento_item: number;
+}
+
+interface CotizacionPrellenada {
+    id:              number;
+    numero:          string;
+    referencia:      string | null;
+    cliente:         Cliente;
+    items:           CotizacionPrellenadaItem[];
+    tiene_inactivos: boolean;
+}
+
 // Venta precargada para EDICIÓN (POS abierto con ?venta_id=). El submit del POS
 // irá a ventas.update en vez de ventas.store.
 interface VentaEnEdicionItem {
@@ -102,6 +117,7 @@ interface Props extends PageProps {
     metodosPago:        MetodoPagoConCuentas[];
     conceptosDescuento: DescuentoConcepto[];
     citaPrellenada?:    CitaPrellenada | null;
+    cotizacionPrellenada?: CotizacionPrellenada | null;
     ventaEnEdicion?:    VentaEnEdicion | null;
     turnoBackdate?:     TurnoBackdate | null;
     // A14: el backend valida que el usuario pueda operar el POS al CARGAR la
@@ -212,7 +228,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total };
 }
 
-export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy }: Props) {
+export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy }: Props) {
     // Tasa de IGV de la empresa (configurable por tenant). Default 18% si no llega.
     const empresaAuth = usePage().props.auth?.user?.empresa as { tasa_igv?: number | string } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
@@ -225,11 +241,15 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         ?? clientes.find(c => c.numero_documento === '99999999')
         ?? null;
 
-    // Si venimos desde una cita, prellenar carrito y cliente automaticamente.
-    // Cada linea propaga su flag `inactivo` para que CarritoItem la pinte en rojo
-    // y el boton de cobrar quede deshabilitado mientras existan inactivos.
-    const carritoInicial: LineaCarrito[] = citaPrellenada?.items.map(it => {
-        const subtotal = it.precio_unitario * it.cantidad;
+    // Si venimos desde una cita O una cotización, prellenar carrito y cliente
+    // automaticamente. Cada linea propaga su flag `inactivo` para que
+    // CarritoItem la pinte en rojo y el boton de cobrar quede deshabilitado
+    // mientras existan inactivos. La cotización además trae su descuento por
+    // línea con el precio COTIZADO (congelado), que se respeta tal cual.
+    const itemsPrellenados = citaPrellenada?.items ?? cotizacionPrellenada?.items ?? null;
+    const carritoInicial: LineaCarrito[] = itemsPrellenados?.map(it => {
+        const descuentoItem = (it as CotizacionPrellenadaItem).descuento_item ?? 0;
+        const subtotal = (it.precio_unitario - descuentoItem) * it.cantidad;
         const motivo = !it.producto_activo
             ? `El producto "${it.producto_nombre}" fue desactivado.`
             : !it.unidad_activa
@@ -250,7 +270,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             stock_disponible:      prodCatalogo?.stock_disponible ?? null,
             factor_conversion:     uniCatalogo ? (parseFloat(uniCatalogo.factor_conversion) || 1) : 1,
             cantidad:              it.cantidad,
-            descuento_item:        0,
+            descuento_item:        descuentoItem,
             descuento_concepto_id: null,
             subtotal,
             incluye_igv:           it.incluye_igv,
@@ -298,7 +318,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     }) ?? [];
 
     const clienteInicial: Cliente | null =
-        ventaEnEdicion?.cliente ?? citaPrellenada?.cliente ?? clienteGeneral;
+        ventaEnEdicion?.cliente ?? citaPrellenada?.cliente ?? cotizacionPrellenada?.cliente ?? clienteGeneral;
 
     const [busqueda, setBusqueda]           = useState('');
     const [carrito, setCarrito]             = useState<LineaCarrito[]>(ventaEnEdicion ? carritoEdicion : carritoInicial);
@@ -380,14 +400,22 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         });
     }
 
-    // Aviso inmediato al cajero cuando se abre el POS desde una cita con items
-    // desactivados. Solo se dispara una vez al montar; despues se ven los flags
-    // por linea y el banner persistente.
+    // Aviso inmediato al cajero cuando se abre el POS desde una cita o una
+    // cotización con items desactivados. Solo se dispara una vez al montar;
+    // despues se ven los flags por linea y el banner persistente.
     useEffect(() => {
         if (citaPrellenada?.tiene_inactivos) {
             const inactivos = citaPrellenada.items.filter(i => i.inactivo);
             toast.error(
                 `Esta cita tiene ${inactivos.length} ítem(s) desactivado(s) desde que se agendó. ` +
+                'Revisa el carrito antes de cobrar.',
+                { duration: 6000 },
+            );
+        }
+        if (cotizacionPrellenada?.tiene_inactivos) {
+            const inactivos = cotizacionPrellenada.items.filter(i => i.inactivo);
+            toast.error(
+                `Esta cotización tiene ${inactivos.length} ítem(s) desactivado(s) desde que se cotizó. ` +
                 'Revisa el carrito antes de cobrar.',
                 { duration: 6000 },
             );
@@ -694,6 +722,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             idempotency_key:       idempotencyKey,
             // Si vino de una cita, lo enviamos para que el backend la vincule.
             cita_id:               citaPrellenada?.id ?? null,
+            // Si vino de una cotización, el backend la marca 'convertida' y
+            // le guarda el venta_id.
+            cotizacion_id:         cotizacionPrellenada?.id ?? null,
             items: carrito.map(i => ({
                 producto_id:           i.producto_id,
                 producto_unidad_id:    i.producto_unidad_id,
@@ -877,6 +908,44 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         className="text-xs font-medium underline hover:opacity-80"
                         style={{ color: 'var(--color-primary)' }}>
                         Ver cita
+                    </Link>
+                </div>
+            )}
+
+            {/* Banner de cotización (cuando se llega desde el módulo Cotizaciones) */}
+            {cotizacionPrellenada && (
+                <div
+                    className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 flex-shrink-0 border-b text-sm"
+                    style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-success) 12%, var(--color-bg))',
+                        borderColor: 'var(--color-success)',
+                        color: 'var(--color-text)',
+                    }}
+                >
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                            style={{ backgroundColor: 'var(--color-success)', color: '#fff' }}>
+                            Cotización {cotizacionPrellenada.numero}
+                        </span>
+                        <span style={{ color: 'var(--color-text)' }}>
+                            <strong>
+                                {cotizacionPrellenada.cliente.razon_social
+                                    ?? `${cotizacionPrellenada.cliente.nombres ?? ''} ${cotizacionPrellenada.cliente.apellidos ?? ''}`.trim()}
+                            </strong>
+                        </span>
+                        {cotizacionPrellenada.referencia && (
+                            <span style={{ color: 'var(--color-text-muted)' }}>
+                                · Ref: <strong>{cotizacionPrellenada.referencia}</strong>
+                            </span>
+                        )}
+                        <span className="text-xs opacity-70" style={{ color: 'var(--color-text-muted)' }}>
+                            · Carrito con los precios cotizados; al cobrar quedará convertida en venta
+                        </span>
+                    </div>
+                    <Link href={route('cotizaciones.index')}
+                        className="text-xs font-medium underline hover:opacity-80"
+                        style={{ color: 'var(--color-success)' }}>
+                        Ver cotizaciones
                     </Link>
                 </div>
             )}

@@ -57,6 +57,8 @@ class StoreVentaRequest extends FormRequest
             'idempotency_key'        => ['nullable', 'string', 'min:10', 'max:100'],
             // Si la venta nace de una cita prellenada en el POS. Opcional.
             'cita_id'                => ['nullable', 'integer', Rule::exists('citas', 'id')->where('empresa_id', $empresaId)],
+            // Si la venta nace de una cotización prellenada en el POS. Opcional.
+            'cotizacion_id'          => ['nullable', 'integer', Rule::exists('cotizaciones', 'id')->where('empresa_id', $empresaId)],
             'descuento_concepto_id'  => [
                 'nullable', 'integer',
                 Rule::exists('descuento_conceptos', 'id')

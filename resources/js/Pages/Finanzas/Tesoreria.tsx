@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Coins, Landmark, Scale, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Coins, Landmark, Scale, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
+import Select from '@/Components/UI/Select';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
@@ -39,6 +40,7 @@ interface Props extends PageProps {
     cuentas: CuentaSaldo[];
     cuentaId: number;
     movimientos: Paginado<Movimiento>;
+    puede: { ajustar: boolean; crear: boolean };
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -62,12 +64,29 @@ const ORIGEN_LABEL: Record<string, string> = {
     ajuste:                        'Ajuste manual',
 };
 
-export default function Tesoreria({ cuentas, cuentaId, movimientos }: Props) {
+export default function Tesoreria({ cuentas, cuentaId, movimientos, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [ajustando, setAjustando] = useState(false);
     const [saving, setSaving]       = useState(false);
     const [errors, setErrors]       = useState<Record<string, string>>({});
     const [form, setForm]           = useState({ fecha: hoy(), saldo_real: '', motivo: '' });
+    // Movimiento manual de ajuste con monto exacto.
+    const [modalMovimiento, setModalMovimiento] = useState(false);
+    const [formMov, setFormMov] = useState({ cuenta_id: '', fecha: hoy(), tipo: 'ingreso', monto: '', descripcion: '' });
+
+    function abrirMovimiento() {
+        setErrors({});
+        setFormMov({ cuenta_id: String(cuentaId), fecha: hoy(), tipo: 'ingreso', monto: '', descripcion: '' });
+        setModalMovimiento(true);
+    }
+
+    function submitMovimiento() {
+        setSaving(true);
+        router.post(route('finanzas.tesoreria.movimiento'), formMov as any, {
+            onSuccess: () => { setModalMovimiento(false); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -129,9 +148,18 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos }: Props) {
                 title="Tesorería"
                 subtitle="Cada sol que entra o sale, con su origen. Nada se digita a mano."
                 actions={
-                    <Button onClick={() => { setErrors({}); setForm({ fecha: hoy(), saldo_real: '', motivo: '' }); setAjustando(true); }}>
-                        <Scale size={15} className="mr-1 flex-shrink-0" />Ajustar saldo
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        {puede.crear && (
+                            <Button variant="secondary" onClick={abrirMovimiento}>
+                                <ArrowLeftRight size={15} className="mr-1 flex-shrink-0" />Movimiento manual
+                            </Button>
+                        )}
+                        {puede.ajustar && (
+                            <Button onClick={() => { setErrors({}); setForm({ fecha: hoy(), saldo_real: '', motivo: '' }); setAjustando(true); }}>
+                                <Scale size={15} className="mr-1 flex-shrink-0" />Ajustar saldo
+                            </Button>
+                        )}
+                    </div>
                 }
             />
 
@@ -201,6 +229,53 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos }: Props) {
                         placeholder='Ej: "Saldo inicial al implementar el sistema", "Sencillo no registrado"'
                         value={form.motivo}
                         onChange={e => setForm(f => ({ ...f, motivo: e.target.value }))} error={errors.motivo} />
+                </div>
+            </Modal>
+
+            {/* Modal movimiento manual (monto exacto) */}
+            <Modal isOpen={modalMovimiento} onClose={() => setModalMovimiento(false)}
+                title="Movimiento manual" size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setModalMovimiento(false)}>Cancelar</Button>
+                        <Button onClick={submitMovimiento}
+                            disabled={saving || formMov.cuenta_id === '' || formMov.monto === ''
+                                || Number(formMov.monto) <= 0 || formMov.descripcion.trim() === ''}>
+                            {saving ? 'Guardando...' : 'Registrar movimiento'}
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <Callout variant="info">
+                        Queda auditado con tu usuario y aparece como «Ajuste manual» en el libro.
+                    </Callout>
+                    <Select label="Cuenta" required
+                        options={cuentas.map(c => ({ value: String(c.id), label: c.nombre }))}
+                        value={formMov.cuenta_id}
+                        onChange={v => setFormMov(f => ({ ...f, cuenta_id: String(v) }))}
+                        placeholder="— Seleccionar —"
+                        error={errors.cuenta_id}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                        <Input label="Fecha" required type="date" value={formMov.fecha}
+                            onChange={e => setFormMov(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                        <Select label="Tipo" required
+                            options={[
+                                { value: 'ingreso', label: 'Ingreso (+)' },
+                                { value: 'egreso',  label: 'Egreso (−)' },
+                            ]}
+                            value={formMov.tipo}
+                            onChange={v => setFormMov(f => ({ ...f, tipo: String(v) }))}
+                            error={errors.tipo}
+                        />
+                    </div>
+                    <Input label="Monto (S/)" required type="number" min="0.01" step="0.01" value={formMov.monto}
+                        onChange={e => setFormMov(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                    <Input label="Descripción" required
+                        placeholder="Ej.: ajuste de cuenta — no cuadra el arqueo"
+                        value={formMov.descripcion}
+                        onChange={e => setFormMov(f => ({ ...f, descripcion: e.target.value }))} error={errors.descripcion} />
                 </div>
             </Modal>
         </AppLayout>

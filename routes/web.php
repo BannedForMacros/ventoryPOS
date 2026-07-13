@@ -30,6 +30,7 @@ use App\Http\Controllers\Reportes\ReporteDevolucionController;
 use App\Http\Controllers\Reportes\ReporteGastoController;
 use App\Http\Controllers\Reportes\ReporteProductoController;
 use App\Http\Controllers\Reportes\ReporteVentaController;
+use App\Http\Controllers\Ventas\CotizacionController;
 use App\Http\Controllers\Ventas\DescuentoConceptoController;
 use App\Http\Controllers\Ventas\DescuentoLogController;
 use App\Http\Controllers\Ventas\VentaController;
@@ -275,6 +276,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // (el guard de tiempo lo aplica el controlador). Reutiliza el editor del POS.
         Route::middleware(['permiso:ventas,editar', 'throttle:60,1'])->put('/{venta}', [VentaController::class, 'update'])->name('update');
         Route::middleware('permiso:ventas,editar')->post('/{venta}/anular', [VentaController::class, 'anular'])->name('anular');
+    });
+
+    // ── COTIZACIONES ─────────────────────────────────────────────────────
+    // Proformas con precios congelados y seguimiento. La conversión a venta
+    // se hace desde el POS (?cotizacion_id=), no aquí.
+    Route::prefix('cotizaciones')->name('cotizaciones.')->group(function () {
+        Route::middleware('permiso:ventas.cotizaciones,ver')->get('/', [CotizacionController::class, 'index'])->name('index');
+        Route::middleware('permiso:ventas.cotizaciones,crear')->post('/', [CotizacionController::class, 'store'])->name('store');
+        Route::middleware('permiso:ventas.cotizaciones,editar')->put('/{cotizacion}', [CotizacionController::class, 'update'])->name('update');
+        Route::middleware('permiso:ventas.cotizaciones,editar')->post('/{cotizacion}/estado', [CotizacionController::class, 'cambiarEstado'])->name('estado');
+        Route::middleware('permiso:ventas.cotizaciones,editar')->post('/{cotizacion}/contacto', [CotizacionController::class, 'registrarContacto'])->name('contacto');
     });
 
     // ── CONCEPTOS DE DESCUENTO ───────────────────────────────────────────

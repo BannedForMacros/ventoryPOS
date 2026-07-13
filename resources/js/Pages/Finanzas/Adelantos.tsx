@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Eye, Ban, Handshake, TrendingUp } from 'lucide-react';
+import { Plus, Eye, Ban, Handshake, TrendingUp, Pencil, RotateCcw } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -35,6 +35,8 @@ interface Adelanto extends Record<string, unknown> {
     referencia: string | null;
     observacion: string | null;
     proveedor?: { id: number; razon_social?: string; nombre_comercial?: string } | null;
+    metodo_pago_id?: number | null;
+    cuenta_id?: number | null;
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
     aplicaciones: Aplicacion[];
@@ -49,6 +51,7 @@ interface Props extends PageProps {
     proveedores: { id: number; razon_social?: string; nombre_comercial?: string }[];
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
+    puede: { editar: boolean; eliminar: boolean };
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -62,7 +65,7 @@ const emptyForm = () => ({
     proveedor_id: '', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
 });
 
-export default function Adelantos({ adelantos, totalActivo, estado, proveedores, metodosPago, cuentas }: Props) {
+export default function Adelantos({ adelantos, totalActivo, estado, proveedores, metodosPago, cuentas, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo] = useState(false);
     const [anulando, setAnulando]     = useState<Adelanto | null>(null);
@@ -71,6 +74,53 @@ export default function Adelantos({ adelantos, totalActivo, estado, proveedores,
     const [errors, setErrors]         = useState<Record<string, string>>({});
     const [form, setForm]             = useState(emptyForm());
     const [formAnular, setFormAnular] = useState({ accion: 'devuelto', motivo: '' });
+    // Edición / reactivación (según permisos).
+    const [editando, setEditando]         = useState<Adelanto | null>(null);
+    const [reactivando, setReactivando]   = useState<Adelanto | null>(null);
+    const [motivoReactivar, setMotivoReactivar] = useState('');
+    const [formEditar, setFormEditar] = useState({
+        monto: '', fecha: hoy(), metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
+    });
+
+    function abrirEditar(a: Adelanto) {
+        setErrors({});
+        setFormEditar({
+            monto:          String(Number(a.monto)),
+            fecha:          a.fecha.slice(0, 10),
+            metodo_pago_id: a.metodo_pago_id ? String(a.metodo_pago_id) : '',
+            cuenta_id:      a.cuenta_id ? String(a.cuenta_id) : '',
+            referencia:     a.referencia ?? '',
+            observacion:    a.observacion ?? '',
+        });
+        setEditando(a);
+    }
+
+    function submitEditar() {
+        if (!editando) return;
+        setSaving(true);
+        const tieneConsumos = editando.aplicaciones.length > 0;
+        router.put(route('finanzas.adelantos.update', editando.id), {
+            // Con consumos el monto no se edita (el backend lo prohíbe).
+            ...(tieneConsumos ? {} : { monto: formEditar.monto }),
+            fecha:          formEditar.fecha,
+            metodo_pago_id: formEditar.metodo_pago_id || null,
+            cuenta_id:      formEditar.cuenta_id || null,
+            referencia:     formEditar.referencia || null,
+            observacion:    formEditar.observacion || null,
+        } as any, {
+            onSuccess: () => { setEditando(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    function submitReactivar() {
+        if (!reactivando) return;
+        setSaving(true);
+        router.post(route('finanzas.adelantos.reactivar', reactivando.id), { motivo: motivoReactivar.trim() } as any, {
+            onSuccess: () => { setReactivando(null); setMotivoReactivar(''); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -142,11 +192,25 @@ export default function Adelantos({ adelantos, totalActivo, estado, proveedores,
                         style={{ color: 'var(--color-text-muted)' }}>
                         <Eye size={15} />
                     </button>
+                    {a.estado === 'activo' && puede.editar && (
+                        <button onClick={() => abrirEditar(a)}
+                            className="p-1.5 rounded-lg hover:bg-black/5" title="Editar adelanto"
+                            style={{ color: 'var(--color-primary)' }}>
+                            <Pencil size={15} />
+                        </button>
+                    )}
                     {a.estado === 'activo' && (
                         <button onClick={() => { setErrors({}); setFormAnular({ accion: 'devuelto', motivo: '' }); setAnulando(a); }}
                             className="p-1.5 rounded-lg hover:bg-black/5" title="Devolver / anular"
                             style={{ color: 'var(--color-danger)' }}>
                             <Ban size={15} />
+                        </button>
+                    )}
+                    {(a.estado === 'anulado' || a.estado === 'devuelto') && puede.editar && (
+                        <button onClick={() => { setErrors({}); setMotivoReactivar(''); setReactivando(a); }}
+                            className="p-1.5 rounded-lg hover:bg-black/5" title="Reactivar adelanto"
+                            style={{ color: 'var(--color-primary)' }}>
+                            <RotateCcw size={15} />
                         </button>
                     )}
                 </div>
@@ -258,9 +322,93 @@ export default function Adelantos({ adelantos, totalActivo, estado, proveedores,
                         value={formAnular.accion}
                         onChange={v => setFormAnular(f => ({ ...f, accion: String(v) }))}
                     />
+                    {errors.accion && (
+                        <Callout variant="danger">{errors.accion}</Callout>
+                    )}
                     <Input label="Motivo" required value={formAnular.motivo}
                         onChange={e => setFormAnular(f => ({ ...f, motivo: e.target.value }))} error={errors.motivo} />
                 </div>
+            </Modal>
+
+            {/* Modal editar adelanto */}
+            <Modal isOpen={editando !== null} onClose={() => setEditando(null)}
+                title={editando ? `Editar adelanto — ${nombreProveedor(editando.proveedor)}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEditando(null)}>Cancelar</Button>
+                        <Button onClick={submitEditar} disabled={saving}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button>
+                    </>
+                }
+            >
+                {editando && (
+                    <div className="space-y-4">
+                        {editando.aplicaciones.length > 0 ? (
+                            <Callout variant="warning">
+                                Este adelanto ya tiene consumos: el monto no se edita. Puedes corregir fecha, método, cuenta, referencia y observación.
+                            </Callout>
+                        ) : (
+                            <Callout variant="info">
+                                Al guardar, el egreso en tesorería se revierte y se vuelve a asentar con los datos nuevos.
+                            </Callout>
+                        )}
+                        <div className="grid grid-cols-2 gap-3">
+                            <Input label="Fecha" required type="date" value={formEditar.fecha}
+                                onChange={e => setFormEditar(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                            <Input label="Monto entregado" required type="number" min="0.01" step="0.01"
+                                value={formEditar.monto}
+                                disabled={editando.aplicaciones.length > 0}
+                                onChange={e => setFormEditar(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                        </div>
+                        <Select label="Método de pago"
+                            options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
+                            value={formEditar.metodo_pago_id}
+                            onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormEditar(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
+                            placeholder="— Seleccionar —"
+                            error={errors.metodo_pago_id}
+                        />
+                        {cuentasDeMetodo(formEditar.metodo_pago_id).length > 0 && (
+                            <Select label="Cuenta origen"
+                                options={cuentasDeMetodo(formEditar.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                                value={formEditar.cuenta_id}
+                                onChange={v => setFormEditar(f => ({ ...f, cuenta_id: String(v) }))}
+                                placeholder="— Seleccionar —"
+                                error={errors.cuenta_id}
+                            />
+                        )}
+                        <Input label="Referencia (operación, voucher...)" value={formEditar.referencia}
+                            onChange={e => setFormEditar(f => ({ ...f, referencia: e.target.value }))} />
+                        <Input label="Observación" value={formEditar.observacion}
+                            onChange={e => setFormEditar(f => ({ ...f, observacion: e.target.value }))} />
+                    </div>
+                )}
+            </Modal>
+
+            {/* Modal reactivar adelanto */}
+            <Modal isOpen={reactivando !== null} onClose={() => setReactivando(null)}
+                title={reactivando ? `Reactivar adelanto — ${nombreProveedor(reactivando.proveedor)}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setReactivando(null)}>Cancelar</Button>
+                        <Button onClick={submitReactivar} disabled={saving || motivoReactivar.trim().length < 5}>
+                            {saving ? 'Reactivando...' : 'Reactivar'}
+                        </Button>
+                    </>
+                }
+            >
+                {reactivando && (
+                    <div className="space-y-3">
+                        <Callout variant="info">
+                            {reactivando.estado === 'anulado'
+                                ? <>El adelanto estaba <strong>anulado</strong>: al reactivarlo se vuelve a asentar el egreso en tesorería (el dinero vuelve a salir de la cuenta).</>
+                                : <>El adelanto estaba <strong>devuelto</strong>: al reactivarlo se revierte el ingreso de la devolución en tesorería.</>}
+                        </Callout>
+                        <Input label="Motivo (mínimo 5 caracteres)" required value={motivoReactivar}
+                            onChange={e => setMotivoReactivar(e.target.value)}
+                            placeholder="Ej.: se cerró por error"
+                            error={errors.motivo}
+                        />
+                    </div>
+                )}
             </Modal>
 
             {/* Modal detalle aplicaciones */}

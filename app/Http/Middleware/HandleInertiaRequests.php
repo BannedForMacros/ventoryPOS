@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Cotizacion;
 use App\Models\Modulo;
 use App\Models\Turno;
 use Illuminate\Http\Request;
@@ -37,6 +38,43 @@ class HandleInertiaRequests extends Middleware
                 'success' => session('success'),
                 'error'   => session('error'),
             ],
+            // Campanita del header: cotizaciones por vencer / vencidas sin
+            // respuesta. Solo para quien puede VER cotizaciones. Lazy: se
+            // evalúa una única vez por request (queries baratas apoyadas en
+            // los índices empresa+estado y empresa+fecha_vencimiento).
+            'alertasCotizaciones' => fn () => $user && $user->tienePermiso('ventas.cotizaciones', 'ver')
+                ? $this->alertasCotizaciones($user->empresa_id)
+                : null,
+        ];
+    }
+
+    /**
+     * Conteos para la campanita de cotizaciones:
+     *  - por_vencer: vigentes que vencen entre hoy y +3 días.
+     *  - vencidas_sin_respuesta: vencidas (o vigentes ya pasadas de fecha,
+     *    aún no marcadas por el update masivo del index) sin contacto
+     *    registrado después del vencimiento.
+     */
+    private function alertasCotizaciones(int $empresaId): array
+    {
+        $hoy    = now()->toDateString();
+        $limite = now()->addDays(3)->toDateString();
+
+        $porVencer = Cotizacion::deEmpresa($empresaId)
+            ->vigente()
+            ->whereBetween('fecha_vencimiento', [$hoy, $limite])
+            ->count();
+
+        $vencidas = Cotizacion::deEmpresa($empresaId)
+            ->where(fn ($q) => $q->where('estado', Cotizacion::ESTADO_VENCIDA)
+                ->orWhere(fn ($v) => $v->vigente()->where('fecha_vencimiento', '<', $hoy)))
+            ->where(fn ($q) => $q->whereNull('ultimo_contacto')
+                ->orWhereColumn('ultimo_contacto', '<', 'fecha_vencimiento'))
+            ->count();
+
+        return [
+            'por_vencer'             => $porVencer,
+            'vencidas_sin_respuesta' => $vencidas,
         ];
     }
 
