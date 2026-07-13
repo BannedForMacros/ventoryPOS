@@ -42,7 +42,7 @@ function crearEntradaBorrador($test, float $cantidad = 5): Entrada
     return $entrada;
 }
 
-function payloadEdicion($test, float $cantidad, array $pagos = []): array
+function payloadEdicionEntrada($test, float $cantidad, array $pagos = []): array
 {
     return [
         'almacen_id' => $test->env->almacen->id,
@@ -63,7 +63,7 @@ it('al editar se puede registrar el pago del saldo (entrada_pagos + tesorería +
     $entrada = crearEntradaBorrador($this, 5); // total 50, pendiente
 
     // Edición: sube a 8 und (total 80) y paga TODO ahí mismo.
-    $this->put(route('inventario.entradas.update', $entrada), payloadEdicion($this, 8, [
+    $this->put(route('inventario.entradas.update', $entrada), payloadEdicionEntrada($this, 8, [
         ['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'cuenta_id' => null, 'monto' => 80],
     ]))->assertSessionHasNoErrors();
 
@@ -80,7 +80,7 @@ it('al editar se puede registrar el pago del saldo (entrada_pagos + tesorería +
 it('acepta pago parcial en la edición y queda como parcial', function () {
     $entrada = crearEntradaBorrador($this, 5); // total 50
 
-    $this->put(route('inventario.entradas.update', $entrada), payloadEdicion($this, 5, [
+    $this->put(route('inventario.entradas.update', $entrada), payloadEdicionEntrada($this, 5, [
         ['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'cuenta_id' => null, 'monto' => 20],
     ]))->assertSessionHasNoErrors();
 
@@ -92,7 +92,7 @@ it('acepta pago parcial en la edición y queda como parcial', function () {
 it('rechaza pagos que superan el saldo pendiente', function () {
     $entrada = crearEntradaBorrador($this, 5); // total 50
 
-    $this->put(route('inventario.entradas.update', $entrada), payloadEdicion($this, 5, [
+    $this->put(route('inventario.entradas.update', $entrada), payloadEdicionEntrada($this, 5, [
         ['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'cuenta_id' => null, 'monto' => 70],
     ]))->assertSessionHasErrors(['pagos']);
 
@@ -104,7 +104,7 @@ it('rechaza pagos que superan el saldo pendiente', function () {
 it('editar sin pagos nuevos no toca los pagos existentes (comportamiento actual intacto)', function () {
     $entrada = crearEntradaBorrador($this, 5);
 
-    $this->put(route('inventario.entradas.update', $entrada), payloadEdicion($this, 6, []))
+    $this->put(route('inventario.entradas.update', $entrada), payloadEdicionEntrada($this, 6, []))
         ->assertSessionHasNoErrors();
 
     $entrada->refresh();

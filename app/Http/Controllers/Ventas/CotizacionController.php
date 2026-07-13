@@ -261,7 +261,8 @@ class CotizacionController extends Controller
         $empresaId = $request->user()->empresa_id;
 
         return $request->validate([
-            'cliente_id'             => ['required', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $empresaId)->where('activo', true)->where('es_cliente_general', false)],
+            // es_cliente_general = 0 (no false: PDO+PG bindea false como '' y revienta el exists)
+            'cliente_id'             => ['required', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $empresaId)->where('activo', true)->where('es_cliente_general', 0)],
             'referencia'             => ['nullable', 'string', 'max:200'],
             'fecha'                  => ['required', 'date'],
             'fecha_vencimiento'      => ['nullable', 'date', 'after_or_equal:fecha'],

@@ -177,6 +177,29 @@ class DashboardController extends Controller
             'valor' => round($pendientesEntrega->sum(fn ($a) => $a->valorPasivoHoy()), 2),
         ];
 
+        // ── Cotizaciones: seguimiento comercial ─────────────────────────
+        // Por vencer (≤3 días) y vencidas sin respuesta del cliente: son las
+        // que hay que llamar HOY para no perder la venta.
+        $hoy = Carbon::today()->toDateString();
+        $cotizaciones = [
+            'vigentes'      => (int) \App\Models\Cotizacion::deEmpresa($empresaId)->where('estado', 'vigente')->count(),
+            'monto_vigente' => round((float) \App\Models\Cotizacion::deEmpresa($empresaId)->where('estado', 'vigente')->sum('total'), 2),
+            'por_vencer'    => \App\Models\Cotizacion::deEmpresa($empresaId)
+                ->where('estado', 'vigente')
+                ->whereBetween('fecha_vencimiento', [$hoy, Carbon::today()->addDays(3)->toDateString()])
+                ->with('cliente:id,nombres,apellidos,razon_social,telefono')
+                ->orderBy('fecha_vencimiento')
+                ->limit(6)
+                ->get(['id', 'numero', 'cliente_id', 'referencia', 'total', 'fecha_vencimiento', 'ultimo_contacto']),
+            'vencidas_sin_respuesta' => \App\Models\Cotizacion::deEmpresa($empresaId)
+                ->where('estado', 'vencida')
+                ->where(fn ($q) => $q->whereNull('ultimo_contacto')->orWhereColumn('ultimo_contacto', '<', 'fecha_vencimiento'))
+                ->with('cliente:id,nombres,apellidos,razon_social,telefono')
+                ->orderByDesc('fecha_vencimiento')
+                ->limit(6)
+                ->get(['id', 'numero', 'cliente_id', 'referencia', 'total', 'fecha_vencimiento', 'ultimo_contacto']),
+        ];
+
         return Inertia::render('Dashboard/Admin', [
             'kpis' => [
                 'ventas_hoy'        => ['cant' => (int) $ventasHoy->cant,    'total' => (float) $ventasHoy->total],
@@ -194,6 +217,7 @@ class DashboardController extends Controller
                 'pendientes_entrega'=> $pendEntrega,
             ],
             'serie30'          => $serie30,
+            'cotizaciones'     => $cotizaciones,
             'stockBajo'        => $stockBajo,
             'topProductos'     => $topProductos,
             'ventasPorMetodo'  => $ventasPorMetodo,

@@ -1,7 +1,7 @@
 import { Link } from '@inertiajs/react';
 import {
     AlertTriangle, ArrowRight, ArrowUpRight, Banknote, CircleDollarSign, ClipboardList,
-    Coins, CreditCard, Package, ShoppingCart, TrendingUp, Truck, Undo2, Users,
+    Coins, CreditCard, FileText, Package, Phone, ShoppingCart, TrendingUp, Truck, Undo2, Users,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { AreaChart, DonutChart } from '@/Components/UI/Charts';
@@ -24,6 +24,22 @@ interface Kpis {
     pendientes_entrega: { cant: number; valor: number };
 }
 interface SerieDia { dia: string; total: number; }
+
+interface CotizacionAlerta {
+    id: number;
+    numero: string;
+    referencia: string | null;
+    total: string;
+    fecha_vencimiento: string | null;
+    ultimo_contacto: string | null;
+    cliente: { id: number; nombres: string | null; apellidos: string | null; razon_social: string | null; telefono: string | null } | null;
+}
+interface CotizacionesBlock {
+    vigentes: number;
+    monto_vigente: number;
+    por_vencer: CotizacionAlerta[];
+    vencidas_sin_respuesta: CotizacionAlerta[];
+}
 interface StockBajoRow { id: number; nombre: string; codigo: string | null; cantidad: string; almacen_id: number; }
 interface TopProductoRow { producto_id: number; nombre: string; cantidad: string; total: string; }
 interface MetodoRow { nombre: string; tipo: string; total: string; }
@@ -42,6 +58,7 @@ interface UltimaVentaRow {
 interface Props extends PageProps {
     kpis: Kpis;
     serie30: SerieDia[];
+    cotizaciones?: CotizacionesBlock;
     stockBajo: StockBajoRow[];
     topProductos: TopProductoRow[];
     ventasPorMetodo: MetodoRow[];
@@ -94,8 +111,12 @@ function KpiCard({ label, value, sub, icon, color }: KpiCardProps) {
 }
 
 export default function DashboardAdmin({
-    kpis, serie30, stockBajo, topProductos, ventasPorMetodo, turnosAbiertos, ultimasVentas,
+    kpis, serie30, cotizaciones, stockBajo, topProductos, ventasPorMetodo, turnosAbiertos, ultimasVentas,
 }: Props) {
+    const alertasCotiz = [
+        ...(cotizaciones?.por_vencer ?? []).map(c => ({ ...c, _tipo: 'por_vencer' as const })),
+        ...(cotizaciones?.vencidas_sin_respuesta ?? []).map(c => ({ ...c, _tipo: 'vencida' as const })),
+    ];
     const maxTopTotal = Math.max(1, ...topProductos.map(p => Number(p.total)));
     const totalMetodos = ventasPorMetodo.reduce((acc, m) => acc + Number(m.total), 0);
 
@@ -198,6 +219,77 @@ export default function DashboardAdmin({
                     color={kpis.diferencia_caja_mes < 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success)'}
                 />
             </div>
+
+            {/* Cotizaciones que necesitan seguimiento: por vencer o vencidas
+                sin respuesta del cliente — llamar HOY para no perder la venta. */}
+            {alertasCotiz.length > 0 && (
+                <div
+                    className="rounded-lg border p-5 mb-6"
+                    style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-warning) 6%, var(--color-surface))',
+                        borderColor: 'color-mix(in srgb, var(--color-warning) 45%, var(--color-border))',
+                    }}
+                >
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
+                            <FileText size={16} style={{ color: 'var(--color-warning)' }} />
+                            Cotizaciones que necesitan seguimiento
+                        </h3>
+                        <Link
+                            href={route('cotizaciones.index')}
+                            className="text-xs font-medium inline-flex items-center gap-1 hover:underline"
+                            style={{ color: 'var(--color-primary)' }}
+                        >
+                            Ver cotizaciones <ArrowRight size={12} />
+                        </Link>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        {alertasCotiz.map(c => {
+                            const nombre = c.cliente?.razon_social
+                                ?? [c.cliente?.nombres, c.cliente?.apellidos].filter(Boolean).join(' ')
+                                ?? 'Cliente';
+                            const tel = c.cliente?.telefono?.replace(/\D/g, '');
+                            return (
+                                <div key={`${c._tipo}-${c.id}`}
+                                    className="rounded-md border p-3 flex items-center gap-3"
+                                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                                            {c.numero} — {nombre}
+                                        </p>
+                                        <p className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>
+                                            {c.referencia ? `${c.referencia} · ` : ''}{sol(c.total)}
+                                            {c.fecha_vencimiento && (
+                                                <span className="ml-1 font-semibold"
+                                                    style={{ color: c._tipo === 'vencida' ? 'var(--color-danger, #dc2626)' : 'var(--color-warning)' }}>
+                                                    {c._tipo === 'vencida'
+                                                        ? `· venció ${new Date(c.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-PE')} sin respuesta`
+                                                        : `· vence ${new Date(c.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-PE')}`}
+                                                </span>
+                                            )}
+                                        </p>
+                                    </div>
+                                    {tel && (
+                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                            <a href={`tel:${tel}`} title={`Llamar a ${nombre}`}
+                                                className="p-1.5 rounded-lg hover:bg-black/5"
+                                                style={{ color: 'var(--color-primary)' }}>
+                                                <Phone size={15} />
+                                            </a>
+                                            <a href={`https://wa.me/51${tel}`} target="_blank" rel="noreferrer"
+                                                title="WhatsApp"
+                                                className="text-[11px] font-bold px-1.5 py-0.5 rounded"
+                                                style={{ color: '#16a34a', backgroundColor: 'color-mix(in srgb, #16a34a 12%, transparent)' }}>
+                                                WA
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* Tendencia de ventas — últimos 30 días */}
             <div
