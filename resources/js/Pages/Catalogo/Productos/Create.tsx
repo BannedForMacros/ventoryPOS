@@ -341,8 +341,8 @@ export default function Create({ categorias, unidades }: Props) {
                                         if (!nombreBase || !nombreActual) {
                                             return 'Selecciona primero la presentación principal y esta presentación para ver el cálculo de stock.';
                                         }
-                                        if (!factor || factor < 2) {
-                                            return `Indica cuántas "${nombreBase}" contiene 1 "${nombreActual}".`;
+                                        if (!factor || factor <= 0) {
+                                            return `Indica a cuántas "${nombreBase}" equivale 1 "${nombreActual}".`;
                                         }
                                         return `Vender 1 "${nombreActual}" descontará ${factor} "${nombreBase}" del inventario.`;
                                     })();
@@ -359,15 +359,16 @@ export default function Create({ categorias, unidades }: Props) {
                                                 <input
                                                     type="checkbox"
                                                     checked={esAgrupacion}
-                                                    onChange={e => setUnidad(i, 'factor_conversion', e.target.checked ? '2' : '1')}
+                                                    onChange={e => setUnidad(i, 'factor_conversion', e.target.checked ? '' : '1')}
                                                     className="mt-0.5 accent-[var(--color-primary)]"
                                                 />
                                                 <span>
                                                     <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                                                        Esta presentación contiene varias unidades base
+                                                        Esta presentación equivale a una cantidad distinta de la base
                                                     </span>
                                                     <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                                        Marca esto solo si vendes una <strong>agrupación</strong> (ej: caja x12, six-pack).
+                                                        Úsalo para <strong>agrupaciones</strong> (caja x12, six-pack → 12) o para{' '}
+                                                        <strong>fracciones</strong> de la base (ej: 1 balde = 0.02 m³).
                                                         Para variantes simples (talla, color) déjalo desmarcado.
                                                     </span>
                                                 </span>
@@ -376,10 +377,10 @@ export default function Create({ categorias, unidades }: Props) {
                                             {esAgrupacion && (
                                                 <Input
                                                     label={nombreBase
-                                                        ? `¿Cuántas "${nombreBase}" contiene esta presentación?`
-                                                        : '¿Cuántas unidades base contiene?'}
-                                                    type="number" min="2" step="1"
-                                                    placeholder="Ej: 12"
+                                                        ? `¿A cuántas "${nombreBase}" equivale 1 de esta presentación?`
+                                                        : '¿A cuántas unidades base equivale?'}
+                                                    type="number" min="0.0001" step="any"
+                                                    placeholder="Ej: 12 (caja) o 0.02 (fracción)"
                                                     value={u.factor_conversion}
                                                     onChange={e => setUnidad(i, 'factor_conversion', e.target.value)}
                                                     hint={hintDinamico}
