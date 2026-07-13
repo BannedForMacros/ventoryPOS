@@ -52,6 +52,12 @@ class TesoreriaController extends Controller
             'cuentas'     => $cuentas,
             'cuentaId'    => $cuentaId,
             'movimientos' => $movimientos,
+            // Acciones visibles según la matriz de permisos del rol (los
+            // ajustes se otorgan desde Configuración → Roles, nada hardcodeado).
+            'puede'       => [
+                'ajustar' => $user->tienePermiso('finanzas.tesoreria', 'editar'),
+                'crear'   => $user->tienePermiso('finanzas.tesoreria', 'crear'),
+            ],
         ]);
     }
 
@@ -77,5 +83,48 @@ class TesoreriaController extends Controller
         return back()->with('success', $mov
             ? 'Ajuste registrado: ' . ($mov->tipo === 'ingreso' ? '+' : '−') . 'S/ ' . number_format((float) $mov->monto, 2)
             : 'El saldo ya cuadra, no se generó ajuste.');
+    }
+
+    /**
+     * Movimiento MANUAL de ajuste: ingreso o egreso directo sobre una cuenta,
+     * con monto exacto y descripción (p. ej. "no cuadra: salida de S/ 700 de
+     * BCP — ajuste de cuenta"). A diferencia de ajustar() (que declara el
+     * saldo real), aquí el usuario indica el movimiento tal cual. Se gobierna
+     * por la matriz de permisos (finanzas.tesoreria, crear) y queda auditado.
+     */
+    public function movimiento(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'cuenta_id'   => ['required', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'fecha'       => ['required', 'date'],
+            'tipo'        => ['required', Rule::in(['ingreso', 'egreso'])],
+            'monto'       => ['required', 'numeric', 'min:0.01'],
+            'descripcion' => ['required', 'string', 'min:5', 'max:250'],
+        ]);
+
+        $mov = $this->tesoreria->registrar(
+            $user->empresa_id,
+            (int) $data['cuenta_id'],
+            $user,
+            $data['fecha'],
+            $data['tipo'],
+            (float) $data['monto'],
+            'Ajuste manual — ' . $data['descripcion'],
+            'ajuste',
+            null,
+        );
+
+        \App\Services\AuditoriaService::log('tesoreria.movimiento_manual', $mov, [
+            'cuenta_id'   => (int) $data['cuenta_id'],
+            'tipo'        => $data['tipo'],
+            'monto'       => (float) $data['monto'],
+            'fecha'       => $data['fecha'],
+            'descripcion' => $data['descripcion'],
+        ], $user);
+
+        return back()->with('success', 'Movimiento de ajuste registrado: '
+            . ($data['tipo'] === 'ingreso' ? '+' : '−') . 'S/ ' . number_format((float) $data['monto'], 2));
     }
 }

@@ -451,4 +451,64 @@ class AnticipoClienteController extends Controller
 
         return back()->with('success', $data['accion'] === 'devuelto' ? 'Anticipo marcado como devuelto.' : 'Anticipo anulado.');
     }
+
+    /**
+     * Reactiva un anticipo cerrado por error:
+     *  - anulado  → vuelve a activo re-asentando el ingreso original.
+     *  - devuelto → vuelve a activo revirtiendo el egreso de la devolución.
+     * Los pendientes del POS (venta_id) no se reactivan aquí: nacen y mueren
+     * con su venta.
+     */
+    public function reactivar(Request $request, ClienteAnticipo $anticipo)
+    {
+        $user = $request->user();
+        abort_if($anticipo->empresa_id !== $user->empresa_id, 403);
+        abort_unless(in_array($anticipo->estado, ['anulado', 'devuelto'], true), 422, 'Solo se reactivan anticipos anulados o devueltos.');
+
+        if ($anticipo->venta_id) {
+            throw ValidationException::withMessages([
+                'anticipo' => 'Este pendiente proviene de una venta del POS: se maneja desde la venta (regístrala de nuevo si la anulaste).',
+            ]);
+        }
+
+        $data = $request->validate(['motivo' => ['required', 'string', 'min:5', 'max:500']]);
+
+        $estadoPrevio = $anticipo->estado;
+
+        DB::transaction(function () use ($anticipo, $user, $estadoPrevio) {
+            if ($estadoPrevio === 'anulado') {
+                // El ingreso original fue revertido al anular: re-asentarlo.
+                $anticipo->load('cliente');
+                $nombre = $anticipo->cliente?->razon_social
+                    ?? trim(($anticipo->cliente?->nombres ?? '') . ' ' . ($anticipo->cliente?->apellidos ?? ''));
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $anticipo->cuenta_id ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $anticipo->metodo_pago_id),
+                    $user,
+                    $anticipo->fecha->toDateString(),
+                    'ingreso',
+                    (float) $anticipo->monto,
+                    "Anticipo de cliente — {$nombre} [reactivado]",
+                    'cliente_anticipo',
+                    $anticipo->id,
+                );
+            } else {
+                // La devolución generó un egreso: revertirlo.
+                $this->tesoreria->revertir('cliente_anticipo_devolucion', $anticipo->id);
+            }
+
+            $agotado = $anticipo->tipo_valorizacion === 'material'
+                ? ($anticipo->cantidad_pendiente !== null && (float) $anticipo->cantidad_pendiente <= 0.0001)
+                : ((float) $anticipo->saldo <= 0.01);
+            $anticipo->update(['estado' => $agotado ? 'aplicado' : 'activo']);
+        });
+
+        AuditoriaService::log('anticipo_cliente.reactivado', $anticipo, [
+            'estado_previo' => $estadoPrevio,
+            'motivo'        => $data['motivo'],
+            'saldo'         => (float) $anticipo->saldo,
+        ], $user);
+
+        return back()->with('success', 'Anticipo reactivado: tesorería quedó consistente.');
+    }
 }

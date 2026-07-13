@@ -124,4 +124,105 @@ class CuentasPorCobrarController extends Controller
 
         return back()->with('success', 'Abono registrado correctamente.');
     }
+
+    /**
+     * Edita un abono ya registrado: monto, fecha, método/cuenta, referencia.
+     * Revierte el ingreso original en tesorería y lo vuelve a asentar con los
+     * datos nuevos; recalcula el saldo de la venta. Espejo del editar pago
+     * de Cuentas por Pagar. Todo queda en auditoría.
+     */
+    public function editarAbono(Request $request, VentaAbono $abono)
+    {
+        $user  = $request->user();
+        $venta = $abono->venta;
+        abort_if(!$venta || $venta->empresa_id !== $user->empresa_id, 403);
+
+        // Tope: el saldo actual + lo que ya aporta este abono.
+        $maxMonto = round((float) $venta->saldo_pendiente + (float) $abono->monto, 2);
+
+        $data = $request->validate([
+            'monto'          => ['required', 'numeric', 'min:0.01', "max:{$maxMonto}"],
+            'fecha'          => ['required', 'date'],
+            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'referencia'     => ['nullable', 'string', 'max:200'],
+            'observacion'    => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $antes = [
+            'monto' => (float) $abono->monto,
+            'fecha' => $abono->fecha->toDateString(),
+        ];
+
+        DB::transaction(function () use ($abono, $venta, $user, $data, $antes) {
+            $abono->update($data);
+
+            $this->tesoreria->revertir('venta_abono', $abono->id);
+            $clienteNombre = $venta->cliente?->razon_social
+                ?? trim(($venta->cliente?->nombres ?? '') . ' ' . ($venta->cliente?->apellidos ?? ''));
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                $user,
+                $data['fecha'],
+                'ingreso',
+                (float) $data['monto'],
+                "Abono venta {$venta->numero} — {$clienteNombre} [editado]",
+                'venta_abono',
+                $abono->id,
+            );
+
+            $pagado = round((float) $venta->monto_pagado - $antes['monto'] + (float) $data['monto'], 2);
+            $venta->update([
+                'monto_pagado'    => max(0, $pagado),
+                'saldo_pendiente' => max(0, round((float) $venta->total - $pagado, 2)),
+            ]);
+
+            AuditoriaService::log('cxc.abono_editado', $venta, [
+                'abono_id' => $abono->id,
+                'antes'    => $antes,
+                'despues'  => ['monto' => (float) $data['monto'], 'fecha' => $data['fecha']],
+                'saldo'    => (float) $venta->saldo_pendiente,
+            ], $user);
+        });
+
+        return back()->with('success', 'Abono actualizado: tesorería y el saldo de la venta se recalcularon.');
+    }
+
+    /**
+     * Anula un abono: revierte el ingreso en tesorería y la venta recupera
+     * su saldo pendiente. Con motivo auditado.
+     */
+    public function eliminarAbono(Request $request, VentaAbono $abono)
+    {
+        $user  = $request->user();
+        $venta = $abono->venta;
+        abort_if(!$venta || $venta->empresa_id !== $user->empresa_id, 403);
+
+        $data = $request->validate([
+            'motivo' => ['required', 'string', 'min:5', 'max:500'],
+        ]);
+
+        DB::transaction(function () use ($abono, $venta, $user, $data) {
+            $this->tesoreria->revertir('venta_abono', $abono->id);
+
+            $pagado = round((float) $venta->monto_pagado - (float) $abono->monto, 2);
+            $venta->update([
+                'monto_pagado'    => max(0, $pagado),
+                'saldo_pendiente' => max(0, round((float) $venta->total - $pagado, 2)),
+            ]);
+
+            AuditoriaService::log('cxc.abono_anulado', $venta, [
+                'abono_id' => $abono->id,
+                'monto'    => (float) $abono->monto,
+                'fecha'    => $abono->fecha->toDateString(),
+                'motivo'   => $data['motivo'],
+                'saldo'    => (float) $venta->saldo_pendiente,
+            ], $user);
+
+            $abono->delete();
+        });
+
+        return back()->with('success', 'Abono anulado: la venta recuperó su saldo pendiente.');
+    }
 }

@@ -309,6 +309,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Cuentas por cobrar (ventas a crédito)
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,ver')->get('cuentas-por-cobrar', [CuentasPorCobrarController::class, 'index'])->name('cxc.index');
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,crear')->post('cuentas-por-cobrar/{venta}/abonar', [CuentasPorCobrarController::class, 'abonar'])->name('cxc.abonar');
+        Route::middleware('permiso:finanzas.cuentas-por-cobrar,editar')->put('cuentas-por-cobrar/abonos/{abono}', [CuentasPorCobrarController::class, 'editarAbono'])->name('cxc.abonos.update');
+        Route::middleware('permiso:finanzas.cuentas-por-cobrar,eliminar')->delete('cuentas-por-cobrar/abonos/{abono}', [CuentasPorCobrarController::class, 'eliminarAbono'])->name('cxc.abonos.destroy');
 
         // Cuentas por pagar (proveedores, con abonos parciales)
         Route::middleware('permiso:finanzas.cuentas-por-pagar,ver')->get('cuentas-por-pagar', [CuentasPorPagarController::class, 'index'])->name('cxp.index');
@@ -321,11 +323,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.anticipos,crear')->post('anticipos', [AnticipoClienteController::class, 'store'])->name('anticipos.store');
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/aplicar', [AnticipoClienteController::class, 'aplicar'])->name('anticipos.aplicar');
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/anular', [AnticipoClienteController::class, 'anular'])->name('anticipos.anular');
+        Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/reactivar', [AnticipoClienteController::class, 'reactivar'])->name('anticipos.reactivar');
 
         // Adelantos a proveedores
         Route::middleware('permiso:finanzas.adelantos,ver')->get('adelantos', [AdelantoProveedorController::class, 'index'])->name('adelantos.index');
         Route::middleware('permiso:finanzas.adelantos,crear')->post('adelantos', [AdelantoProveedorController::class, 'store'])->name('adelantos.store');
         Route::middleware('permiso:finanzas.adelantos,editar')->post('adelantos/{adelanto}/anular', [AdelantoProveedorController::class, 'anular'])->name('adelantos.anular');
+        Route::middleware('permiso:finanzas.adelantos,editar')->put('adelantos/{adelanto}', [AdelantoProveedorController::class, 'update'])->name('adelantos.update');
+        Route::middleware('permiso:finanzas.adelantos,editar')->post('adelantos/{adelanto}/reactivar', [AdelantoProveedorController::class, 'reactivar'])->name('adelantos.reactivar');
 
         // Deudas y préstamos
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas', [DeudaController::class, 'index'])->name('deudas.index');
@@ -346,10 +351,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.planilla-descuentos,crear')->post('descuentos-planilla', [PlanillaDescuentoController::class, 'store'])->name('planilla-descuentos.store');
         Route::middleware('permiso:finanzas.planilla-descuentos,editar')->post('descuentos-planilla/{descuento}/aplicar', [PlanillaDescuentoController::class, 'aplicar'])->name('planilla-descuentos.aplicar');
         Route::middleware('permiso:finanzas.planilla-descuentos,editar')->post('descuentos-planilla/{descuento}/anular', [PlanillaDescuentoController::class, 'anular'])->name('planilla-descuentos.anular');
+        Route::middleware('permiso:finanzas.planilla-descuentos,editar')->put('descuentos-planilla/{descuento}', [PlanillaDescuentoController::class, 'update'])->name('planilla-descuentos.update');
+        Route::middleware('permiso:finanzas.planilla-descuentos,editar')->post('descuentos-planilla/{descuento}/desaplicar', [PlanillaDescuentoController::class, 'desaplicar'])->name('planilla-descuentos.desaplicar');
+        Route::middleware('permiso:finanzas.planilla-descuentos,editar')->post('descuentos-planilla/{descuento}/reactivar', [PlanillaDescuentoController::class, 'reactivar'])->name('planilla-descuentos.reactivar');
 
         // Tesorería (movimientos por cuenta + ajuste auditado)
         Route::middleware('permiso:finanzas.tesoreria,ver')->get('tesoreria', [TesoreriaController::class, 'index'])->name('tesoreria.index');
         Route::middleware('permiso:finanzas.tesoreria,editar')->post('tesoreria/ajustar', [TesoreriaController::class, 'ajustar'])->name('tesoreria.ajustar');
+        Route::middleware('permiso:finanzas.tesoreria,crear')->post('tesoreria/movimiento', [TesoreriaController::class, 'movimiento'])->name('tesoreria.movimiento');
 
         // Balance diario
         Route::middleware('permiso:finanzas.balance,ver')->get('balance', [BalanceDiarioController::class, 'index'])->name('balance.index');

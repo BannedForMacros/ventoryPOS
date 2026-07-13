@@ -45,6 +45,11 @@ class AdelantoProveedorController extends Controller
         return Inertia::render('Finanzas/Adelantos', [
             'adelantos'   => $adelantos,
             'totalActivo' => round($totalActivo, 2),
+            // Acciones visibles según la matriz de permisos del rol.
+            'puede'       => [
+                'editar'   => $user->tienePermiso('finanzas.adelantos', 'editar'),
+                'eliminar' => $user->tienePermiso('finanzas.adelantos', 'eliminar'),
+            ],
             'estado'      => $request->input('estado', 'activos'),
             'proveedores' => Proveedor::where('empresa_id', $user->empresa_id)->where('activo', true)
                 ->orderBy('razon_social')->get(['id', 'razon_social', 'nombre_comercial']),
@@ -115,6 +120,14 @@ class AdelantoProveedorController extends Controller
             'motivo' => ['required', 'string', 'min:5', 'max:500'],
         ]);
 
+        // Anular (registro erróneo) exige que NO se haya consumido nada: si ya
+        // se aplicó a compras, revertir el egreso completo descuadraría todo.
+        if ($data['accion'] === 'anulado' && $adelanto->aplicaciones()->exists()) {
+            return back()->withErrors([
+                'accion' => 'Este adelanto ya se consumió parcialmente contra compras: no se puede anular como registro erróneo. Puedes marcar como devuelto el saldo restante.',
+            ]);
+        }
+
         DB::transaction(function () use ($adelanto, $user, $data) {
             $adelanto->update(['estado' => $data['accion']]);
 
@@ -143,5 +156,117 @@ class AdelantoProveedorController extends Controller
         ], $user);
 
         return back()->with('success', $data['accion'] === 'devuelto' ? 'Adelanto marcado como devuelto.' : 'Adelanto anulado.');
+    }
+
+    /**
+     * Edita un adelanto ACTIVO. El monto solo puede cambiar si aún no se
+     * consumió nada (sin aplicaciones): en ese caso se rehace el egreso en
+     * tesorería. Fecha/referencia/observación se editan siempre.
+     */
+    public function update(Request $request, ProveedorAdelanto $adelanto)
+    {
+        $user = $request->user();
+        abort_if($adelanto->empresa_id !== $user->empresa_id, 403);
+        abort_unless($adelanto->estado === 'activo', 422, 'El adelanto no está activo (reactívalo primero).');
+
+        $tieneConsumos = $adelanto->aplicaciones()->exists();
+
+        $data = $request->validate([
+            'monto'          => [$tieneConsumos ? 'prohibited' : 'required', 'numeric', 'min:0.01'],
+            'fecha'          => ['required', 'date'],
+            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'referencia'     => ['nullable', 'string', 'max:200'],
+            'observacion'    => ['nullable', 'string', 'max:500'],
+        ], [
+            'monto.prohibited' => 'Este adelanto ya tiene consumos: su monto no se edita. Solo fecha, referencia y observación.',
+        ]);
+
+        $antes = ['monto' => (float) $adelanto->monto, 'fecha' => $adelanto->fecha->toDateString()];
+
+        DB::transaction(function () use ($adelanto, $user, $data, $tieneConsumos) {
+            $montoNuevo = $tieneConsumos ? (float) $adelanto->monto : (float) $data['monto'];
+
+            $adelanto->update([
+                'monto'          => $montoNuevo,
+                'saldo'          => $tieneConsumos ? $adelanto->saldo : $montoNuevo,
+                'fecha'          => $data['fecha'],
+                'metodo_pago_id' => $data['metodo_pago_id'] ?? $adelanto->metodo_pago_id,
+                'cuenta_id'      => $data['cuenta_id'] ?? $adelanto->cuenta_id,
+                'referencia'     => $data['referencia'] ?? null,
+                'observacion'    => $data['observacion'] ?? null,
+            ]);
+
+            // Rehacer el egreso original con los datos nuevos.
+            $this->tesoreria->revertir('proveedor_adelanto', $adelanto->id);
+            $adelanto->load('proveedor');
+            $prov = $adelanto->proveedor?->razon_social ?? $adelanto->proveedor?->nombre_comercial ?? 'proveedor';
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $adelanto->cuenta_id ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $adelanto->metodo_pago_id),
+                $user,
+                $data['fecha'],
+                'egreso',
+                $montoNuevo,
+                "Adelanto a proveedor — {$prov} [editado]",
+                'proveedor_adelanto',
+                $adelanto->id,
+            );
+        });
+
+        AuditoriaService::log('adelanto_proveedor.editado', $adelanto, [
+            'antes'   => $antes,
+            'despues' => ['monto' => (float) $adelanto->monto, 'fecha' => $data['fecha']],
+        ], $user);
+
+        return back()->with('success', 'Adelanto actualizado: el egreso en tesorería se rehízo con los datos nuevos.');
+    }
+
+    /**
+     * Reactiva un adelanto cerrado por error:
+     *  - anulado  → vuelve a activo re-asentando el egreso original.
+     *  - devuelto → vuelve a activo revirtiendo el ingreso de la devolución.
+     */
+    public function reactivar(Request $request, ProveedorAdelanto $adelanto)
+    {
+        $user = $request->user();
+        abort_if($adelanto->empresa_id !== $user->empresa_id, 403);
+        abort_unless(in_array($adelanto->estado, ['anulado', 'devuelto'], true), 422, 'Solo se reactivan adelantos anulados o devueltos.');
+
+        $data = $request->validate(['motivo' => ['required', 'string', 'min:5', 'max:500']]);
+
+        $estadoPrevio = $adelanto->estado;
+
+        DB::transaction(function () use ($adelanto, $user, $estadoPrevio) {
+            if ($estadoPrevio === 'anulado') {
+                // El egreso original fue revertido al anular: re-asentarlo.
+                $adelanto->load('proveedor');
+                $prov = $adelanto->proveedor?->razon_social ?? $adelanto->proveedor?->nombre_comercial ?? 'proveedor';
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $adelanto->cuenta_id ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $adelanto->metodo_pago_id),
+                    $user,
+                    $adelanto->fecha->toDateString(),
+                    'egreso',
+                    (float) $adelanto->monto,
+                    "Adelanto a proveedor — {$prov} [reactivado]",
+                    'proveedor_adelanto',
+                    $adelanto->id,
+                );
+            } else {
+                // La devolución generó un ingreso: revertirlo.
+                $this->tesoreria->revertir('proveedor_adelanto_devolucion', $adelanto->id);
+            }
+
+            $adelanto->update(['estado' => 'activo']);
+        });
+
+        AuditoriaService::log('adelanto_proveedor.reactivado', $adelanto, [
+            'estado_previo' => $estadoPrevio,
+            'motivo'        => $data['motivo'],
+            'saldo'         => (float) $adelanto->saldo,
+        ], $user);
+
+        return back()->with('success', 'Adelanto reactivado: tesorería quedó consistente.');
     }
 }

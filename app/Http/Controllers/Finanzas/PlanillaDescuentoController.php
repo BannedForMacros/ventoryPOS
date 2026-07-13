@@ -43,6 +43,11 @@ class PlanillaDescuentoController extends Controller
         return Inertia::render('Finanzas/DescuentosPlanilla', [
             'descuentos'    => $descuentos,
             'porTrabajador' => $porTrabajador,
+            // Acciones visibles según la matriz de permisos del rol.
+            'puede'         => [
+                'editar'   => $user->tienePermiso('finanzas.planilla-descuentos', 'editar'),
+                'eliminar' => $user->tienePermiso('finanzas.planilla-descuentos', 'eliminar'),
+            ],
             'estado'        => $request->input('estado', 'pendientes'),
             'trabajadores'  => User::where('empresa_id', $user->empresa_id)->orderBy('name')->get(['id', 'name']),
         ]);
@@ -113,5 +118,77 @@ class PlanillaDescuentoController extends Controller
         ], $user);
 
         return back()->with('success', 'Descuento anulado.');
+    }
+
+    /** Edita un descuento PENDIENTE (monto, motivo, fecha, trabajador). */
+    public function update(Request $request, PlanillaDescuento $descuento)
+    {
+        $user = $request->user();
+        abort_if($descuento->empresa_id !== $user->empresa_id, 403);
+        abort_unless($descuento->estado === 'pendiente', 422, 'Solo se editan descuentos pendientes (desaplica primero si ya se aplicó).');
+
+        $data = $request->validate([
+            'user_id' => ['required', 'integer', Rule::exists('users', 'id')->where('empresa_id', $user->empresa_id)],
+            'fecha'   => ['required', 'date'],
+            'monto'   => ['required', 'numeric', 'min:0.01'],
+            'motivo'  => ['required', 'string', 'min:5', 'max:250'],
+        ]);
+
+        $antes = ['user_id' => $descuento->user_id, 'monto' => (float) $descuento->monto, 'motivo' => $descuento->motivo];
+        $descuento->update($data);
+
+        AuditoriaService::log('planilla_descuento.editado', $descuento, [
+            'antes'   => $antes,
+            'despues' => ['user_id' => $descuento->user_id, 'monto' => (float) $descuento->monto, 'motivo' => $descuento->motivo],
+        ], $user);
+
+        return back()->with('success', 'Descuento actualizado.');
+    }
+
+    /**
+     * Desaplica un descuento (se marcó como aplicado por error): vuelve a
+     * PENDIENTE y sigue sumando en lo por descontar del trabajador.
+     */
+    public function desaplicar(Request $request, PlanillaDescuento $descuento)
+    {
+        $user = $request->user();
+        abort_if($descuento->empresa_id !== $user->empresa_id, 403);
+        abort_unless($descuento->estado === 'aplicado', 422, 'El descuento no está aplicado.');
+
+        $data = $request->validate(['motivo' => ['required', 'string', 'min:5', 'max:500']]);
+
+        $descuento->update([
+            'estado'           => 'pendiente',
+            'aplicado_por'     => null,
+            'fecha_aplicacion' => null,
+        ]);
+
+        AuditoriaService::log('planilla_descuento.desaplicado', $descuento, [
+            'trabajador_id' => $descuento->user_id,
+            'monto'         => (float) $descuento->monto,
+            'motivo'        => $data['motivo'],
+        ], $user);
+
+        return back()->with('success', 'Descuento desaplicado: vuelve a estar pendiente.');
+    }
+
+    /** Reactiva un descuento anulado por error: vuelve a PENDIENTE. */
+    public function reactivar(Request $request, PlanillaDescuento $descuento)
+    {
+        $user = $request->user();
+        abort_if($descuento->empresa_id !== $user->empresa_id, 403);
+        abort_unless($descuento->estado === 'anulado', 422, 'Solo se reactivan descuentos anulados.');
+
+        $data = $request->validate(['motivo' => ['required', 'string', 'min:5', 'max:500']]);
+
+        $descuento->update(['estado' => 'pendiente']);
+
+        AuditoriaService::log('planilla_descuento.reactivado', $descuento, [
+            'trabajador_id' => $descuento->user_id,
+            'monto'         => (float) $descuento->monto,
+            'motivo'        => $data['motivo'],
+        ], $user);
+
+        return back()->with('success', 'Descuento reactivado.');
     }
 }
