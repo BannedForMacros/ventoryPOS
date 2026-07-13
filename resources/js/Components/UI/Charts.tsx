@@ -164,9 +164,11 @@ interface DonutChartProps {
     money?: boolean;
     /** Texto central (p. ej. el total). */
     centro?: { valor: string; label?: string };
+    /** Apilar: dona arriba centrada, leyenda debajo a lo ancho (cards angostas). */
+    vertical?: boolean;
 }
 
-export function DonutChart({ data, size = 168, money = true, centro }: DonutChartProps) {
+export function DonutChart({ data, size = 168, money = true, centro, vertical = false }: DonutChartProps) {
     const [hover, setHover] = useState<number | null>(null);
     const total = data.reduce((s, d) => s + Math.max(0, d.valor), 0);
     const R = 50, STROKE = 16, C = 2 * Math.PI * R;
@@ -186,7 +188,7 @@ export function DonutChart({ data, size = 168, money = true, centro }: DonutChar
     const fmt = money ? fmtMoney : (v: number) => v.toLocaleString('es-PE');
 
     return (
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className={vertical ? 'flex flex-col items-center gap-4' : 'flex items-center gap-4 flex-wrap'}>
             <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
                 <svg viewBox="0 0 120 120" width={size} height={size}>
                     <g transform="rotate(-90 60 60)">
@@ -216,7 +218,7 @@ export function DonutChart({ data, size = 168, money = true, centro }: DonutChar
                 </div>
             </div>
 
-            <div className="flex-1 min-w-[140px] space-y-1">
+            <div className={vertical ? 'w-full space-y-1' : 'flex-1 min-w-[140px] space-y-1'}>
                 {segs.map((s, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs cursor-default rounded px-1 py-0.5"
                         style={{ backgroundColor: hover === i ? 'color-mix(in srgb, var(--color-primary) 8%, transparent)' : undefined }}

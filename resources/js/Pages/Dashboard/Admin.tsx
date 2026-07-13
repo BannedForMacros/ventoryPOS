@@ -291,7 +291,8 @@ export default function DashboardAdmin({
                         <DonutChart
                             data={ventasPorMetodo.map(m => ({ label: m.nombre, valor: Number(m.total) }))}
                             centro={{ valor: sol(totalMetodos), label: 'total mes' }}
-                            size={140}
+                            size={190}
+                            vertical
                         />
                     )}
                 </div>

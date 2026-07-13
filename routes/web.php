@@ -332,6 +332,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.deudas,crear')->post('deudas', [DeudaController::class, 'store'])->name('deudas.store');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/pago', [DeudaController::class, 'registrarPago'])->name('deudas.pago');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/anular', [DeudaController::class, 'anular'])->name('deudas.anular');
+        Route::middleware('permiso:finanzas.deudas,editar')->put('deudas/{deuda}', [DeudaController::class, 'update'])->name('deudas.update');
+        Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/reactivar', [DeudaController::class, 'reactivar'])->name('deudas.reactivar');
+        Route::middleware('permiso:finanzas.deudas,eliminar')->delete('deudas/pagos/{pago}', [DeudaController::class, 'eliminarPago'])->name('deudas.pagos.destroy');
+        Route::middleware('permiso:finanzas.deudas,eliminar')->delete('deudas/{deuda}', [DeudaController::class, 'destroy'])->name('deudas.destroy');
 
         // Consolidación de caja (segundo conteo del supervisor por turno)
         Route::middleware('permiso:finanzas.consolidacion,ver')->get('consolidacion', [ConsolidacionController::class, 'index'])->name('consolidacion.index');
