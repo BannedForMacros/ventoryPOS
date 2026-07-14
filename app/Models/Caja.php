@@ -11,7 +11,7 @@ class Caja extends Model
     protected $fillable = [
         'empresa_id', 'local_id', 'nombre',
         'caja_chica_activa', 'caja_chica_monto_sugerido', 'caja_chica_en_arqueo',
-        'activo',
+        'activo', 'token_impresora',
     ];
 
     protected function casts(): array

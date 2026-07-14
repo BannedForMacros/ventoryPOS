@@ -235,6 +235,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::apiResource('configuracion/cajas', CajaController::class)
              ->names('configuracion.cajas')
              ->except(['show']);
+        // Token del agente de impresión (VentoryPrint.exe) de la caja.
+        Route::post('configuracion/cajas/{caja}/regenerar-token', [CajaController::class, 'regenerarToken'])
+             ->name('configuracion.cajas.regenerar-token');
     });
 
     // ── TIPOS DE GASTO ──────────────────────────────────────────────────

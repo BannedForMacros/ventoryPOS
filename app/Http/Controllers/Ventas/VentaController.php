@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Venta;
 use App\Services\CitaService;
 use App\Services\LocalScopeService;
+use App\Services\TicketPrintService;
 use App\Services\VentaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -404,6 +405,8 @@ class VentaController extends Controller
 
         return Inertia::render('Ventas/Show', [
             'venta' => $venta,
+            // Payload listo para el agente local de impresión (VentoryPrint.exe).
+            'ticketImpresion' => app(TicketPrintService::class)->payloadDeVenta($venta),
         ]);
     }
 
@@ -507,7 +510,10 @@ class VentaController extends Controller
         }
 
         return redirect()->route('ventas.show', $venta)
-            ->with('success', "Venta {$venta->numero} registrada correctamente.");
+            ->with('success', "Venta {$venta->numero} registrada correctamente.")
+            // Flag one-shot: el Show auto-imprime el ticket UNA sola vez tras
+            // registrar la venta (no al volver a abrir la venta después).
+            ->with('imprimir_ticket', true);
     }
 
     // ── Anular ─────────────────────────────────────────────────────────────────

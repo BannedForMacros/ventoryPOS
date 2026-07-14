@@ -37,6 +37,9 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => session('success'),
                 'error'   => session('error'),
+                // One-shot tras registrar una venta: el Show dispara la
+                // impresión automática del ticket (agente VentoryPrint).
+                'imprimir_ticket' => fn () => $request->session()->get('imprimir_ticket'),
             ],
             // Campanita del header: cotizaciones por vencer / vencidas sin
             // respuesta. Solo para quien puede VER cotizaciones. Lazy: se

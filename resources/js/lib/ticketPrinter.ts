@@ -18,8 +18,10 @@ export interface TicketItem {
 }
 
 export interface TicketPayload {
+  /** Token de la caja (columna token_impresora) que valida el agente local. */
+  token?: string;
   negocio?: { nombre?: string; ruc?: string; direccion?: string; telefono?: string };
-  documento?: { tipo?: string; serie?: string; numero?: string; fecha?: string; vendedor?: string };
+  documento?: { tipo?: string; serie?: string; numero?: string; fecha?: string; vendedor?: string; caja?: string };
   cliente?: { nombre?: string; doc?: string; direccion?: string };
   items: TicketItem[];
   totales?: { subtotal?: number; igv?: number; descuento?: number; total: number; moneda?: string };

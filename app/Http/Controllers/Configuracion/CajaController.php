@@ -41,9 +41,34 @@ class CajaController extends Controller
             'activo'                    => ['boolean'],
         ]);
 
-        Caja::create([...$data, 'empresa_id' => $user->empresa_id]);
+        Caja::create([
+            ...$data,
+            'empresa_id' => $user->empresa_id,
+            // Token del agente de impresión (VentoryPrint.exe): identifica a
+            // esta caja ante la ticketera de su PC. Se genera siempre al crear.
+            'token_impresora' => $this->generarTokenImpresora(),
+        ]);
 
         return redirect()->back()->with('success', 'Caja creada correctamente.');
+    }
+
+    /**
+     * Regenera el token del agente de impresión de la caja. Útil si el token
+     * se filtró o se reinstala el agente en la PC de la caja.
+     */
+    public function regenerarToken(Request $request, Caja $caja)
+    {
+        abort_if($caja->empresa_id !== $request->user()->empresa_id, 403);
+
+        $caja->update(['token_impresora' => $this->generarTokenImpresora()]);
+
+        return redirect()->back()->with('success', 'Token de impresora regenerado correctamente.');
+    }
+
+    /** Token aleatorio hex de 40 caracteres (la columna admite hasta 64). */
+    private function generarTokenImpresora(): string
+    {
+        return bin2hex(random_bytes(20));
     }
 
     public function update(Request $request, Caja $caja)

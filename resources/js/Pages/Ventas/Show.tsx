@@ -1,18 +1,20 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { router, usePage, Link } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
     ArrowLeft, XCircle, Receipt, User, ShoppingBag,
-    CreditCard, Percent, Calendar, Store, UserCheck,
+    CreditCard, Percent, Calendar, Store, UserCheck, Printer,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
+import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import type { PageProps, Venta, VentaItem, VentaPago, DescuentoLog } from '@/types';
 
 interface Props extends PageProps {
     venta: Venta;
+    ticketImpresion?: TicketPayload | null;
 }
 
 function SectionCard({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
@@ -45,14 +47,38 @@ function InfoRow({ label, value, muted }: { label: string; value: React.ReactNod
     );
 }
 
-export default function VentasShow({ venta, flash }: Props) {
+export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
     const { auth } = usePage<Props>().props;
     const esAdmin  = auth.user.rol?.es_admin ?? false;
+
+    // Evita doble impresión por re-render / StrictMode
+    const autoImpreso = useRef(false);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    async function imprimir(auto = false) {
+        if (!ticketImpresion) return;
+        if (!(await agenteActivo())) {
+            if (!auto) toast.error('El agente de impresión no está activo en esta PC (VentoryPrint)');
+            return;
+        }
+        const ok = await imprimirTicket(ticketImpresion);
+        if (ok) toast.success('Ticket enviado a la impresora');
+        else    toast.error('No se pudo imprimir el ticket. Revisa VentoryPrint en esta PC.');
+    }
+
+    // Auto-imprimir una sola vez cuando la venta se acaba de registrar
+    useEffect(() => {
+        if (autoImpreso.current) return;
+        if (flash?.imprimir_ticket === true && ticketImpresion) {
+            autoImpreso.current = true;
+            void imprimir(true);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     function anular() {
         if (!confirm('¿Confirmas la anulación de esta venta? Esta acción restaurará el stock.')) return;
@@ -96,6 +122,20 @@ export default function VentasShow({ venta, flash }: Props) {
                                 <span className="hidden sm:inline">Volver</span>
                             </Button>
                         </Link>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            startContent={<Printer size={15} />}
+                            onClick={() => void imprimir()}
+                            disabled={!ticketImpresion || !ticketImpresion.token}
+                            title={
+                                !ticketImpresion || !ticketImpresion.token
+                                    ? 'La caja no tiene token de impresora configurado'
+                                    : 'Imprimir ticket en la ticketera de esta caja'
+                            }
+                        >
+                            <span className="hidden sm:inline">Imprimir ticket</span>
+                        </Button>
                         {esAdmin && venta.estado !== 'anulada' && (
                             <Button variant="danger" size="sm" startContent={<XCircle size={15} />} onClick={anular}>
                                 <span className="hidden sm:inline">Anular</span>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
+import { Plus, Copy, RefreshCw, Printer } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -22,6 +22,7 @@ export default function Cajas({ cajas, locales }: Props) {
     const [modal, setModal]         = useState(false);
     const [editing, setEditing]     = useState<Caja | null>(null);
     const [confirmId, setConfirmId] = useState<number | null>(null);
+    const [regenId, setRegenId]     = useState<number | null>(null);
     const [form, setForm]           = useState<CajaForm>(emptyCaja());
     const [errors, setErrors]       = useState<Partial<Record<keyof CajaForm, string>>>({});
     const [saving, setSaving]       = useState(false);
@@ -67,6 +68,20 @@ export default function Cajas({ cajas, locales }: Props) {
         router.delete(route('configuracion.cajas.destroy', id));
     }
 
+    async function copiarToken(token: string) {
+        try {
+            await navigator.clipboard.writeText(token);
+            toast.success('Token copiado al portapapeles');
+        } catch {
+            toast.error('No se pudo copiar el token');
+        }
+    }
+
+    function regenerarToken(id: number) {
+        setRegenId(null);
+        router.post(route('configuracion.cajas.regenerar-token', id));
+    }
+
     const columns: Column<Caja>[] = [
         {
             key: 'nombre', label: 'Nombre', sortable: true,
@@ -90,6 +105,44 @@ export default function Cajas({ cajas, locales }: Props) {
                 <Badge variant={(c as any).tiene_turno_abierto ? 'success' : 'secondary'}>
                     {(c as any).tiene_turno_abierto ? 'Abierto' : 'Cerrado'}
                 </Badge>
+            ),
+        },
+        {
+            key: 'token_impresora', label: 'Token impresora',
+            render: (c) => (
+                <div className="flex items-center gap-1">
+                    {c.token_impresora ? (
+                        <>
+                            <span
+                                className="font-mono text-xs px-1.5 py-0.5 rounded"
+                                style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                                title="Pega este token en VentoryPrint.exe de la PC de esta caja"
+                            >
+                                {c.token_impresora.slice(0, 8)}…
+                            </span>
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                iconOnly
+                                title="Copiar token al portapapeles"
+                                onClick={() => void copiarToken(c.token_impresora as string)}
+                            >
+                                <Copy size={13} />
+                            </Button>
+                        </>
+                    ) : (
+                        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Sin token</span>
+                    )}
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        iconOnly
+                        title={c.token_impresora ? 'Regenerar token' : 'Generar token'}
+                        onClick={() => setRegenId(c.id)}
+                    >
+                        <RefreshCw size={13} />
+                    </Button>
+                </div>
             ),
         },
         {
@@ -122,6 +175,21 @@ export default function Cajas({ cajas, locales }: Props) {
                     </Button>
                 }
             />
+
+            <div
+                className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-xs"
+                style={{
+                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--color-primary) 25%, transparent)',
+                    color: 'var(--color-text-muted)',
+                }}
+            >
+                <Printer size={14} className="flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
+                <span>
+                    <strong style={{ color: 'var(--color-text)' }}>Token impresora:</strong>{' '}
+                    pega este token en VentoryPrint.exe de la PC de esta caja para habilitar la impresión de tickets.
+                </span>
+            </div>
 
             <Table
                 data={cajas}
@@ -172,6 +240,27 @@ export default function Cajas({ cajas, locales }: Props) {
             >
                 <p className="text-sm" style={{ color: 'var(--color-text)' }}>
                     La caja será marcada como inactiva. No podrá abrirse un turno en ella.
+                </p>
+            </Modal>
+
+            {/* Confirmar regenerar token de impresora */}
+            <Modal
+                isOpen={regenId !== null}
+                onClose={() => setRegenId(null)}
+                title="Regenerar token de impresora"
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setRegenId(null)}>Cancelar</Button>
+                        <Button variant="warning" onClick={() => regenId && regenerarToken(regenId)}>
+                            Regenerar
+                        </Button>
+                    </>
+                }
+            >
+                <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                    Se generará un nuevo token y el anterior dejará de funcionar.
+                    Deberás pegar el nuevo token en VentoryPrint.exe de la PC de esta caja.
                 </p>
             </Modal>
         </AppLayout>

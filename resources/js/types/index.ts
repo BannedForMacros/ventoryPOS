@@ -195,6 +195,7 @@ export interface Caja extends Record<string, unknown> {
     caja_chica_monto_sugerido:   number;
     caja_chica_en_arqueo:        boolean;
     activo:                      boolean;
+    token_impresora?:            string | null;
     local?:                      Local;
     tiene_turno_abierto?:        boolean;
     created_at:                  string;
@@ -418,6 +419,8 @@ export interface Cliente extends Record<string, unknown> {
 export interface Flash {
     success?: string | null;
     error?: string | null;
+    /** La venta se acaba de registrar: auto-imprimir el ticket una sola vez. */
+    imprimir_ticket?: boolean;
 }
 
 export interface ModuloMenu {
