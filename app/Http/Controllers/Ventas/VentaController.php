@@ -365,14 +365,33 @@ class VentaController extends Controller
         $fechaDesde  = $request->fecha_desde ?: (!$esAdmin ? $hoy : null);
         $fechaHasta  = $request->fecha_hasta ?: (!$esAdmin ? $hoy : null);
 
+        $q = trim((string) $request->input('q', ''));
+
         $ventas = Venta::deEmpresa($user->empresa_id)
             ->with(['user', 'cliente', 'local', 'caja', 'turno'])
-            ->when(!$esAdmin, fn($q) => $q->where('user_id', $user->id))
-            ->when($request->estado, fn($q, $v) => $q->where('estado', $v))
-            ->when($fechaDesde, fn($q, $v) => $q->where('fecha_venta', '>=', $v))
-            ->when($fechaHasta, fn($q, $v) => $q->where('fecha_venta', '<=', $v . ' 23:59:59'))
-            ->when($request->local_id, fn($q, $v) => $q->where('local_id', $v))
-            ->when($user->local_id, fn($q) => $q->where('local_id', $user->local_id))
+            ->when(!$esAdmin, fn($qq) => $qq->where('user_id', $user->id))
+            ->when($request->estado, fn($qq, $v) => $qq->where('estado', $v))
+            ->when($fechaDesde, fn($qq, $v) => $qq->where('fecha_venta', '>=', $v))
+            ->when($fechaHasta, fn($qq, $v) => $qq->where('fecha_venta', '<=', $v . ' 23:59:59'))
+            ->when($request->local_id, fn($qq, $v) => $qq->where('local_id', $v))
+            ->when($request->turno_id, fn($qq, $v) => $qq->where('turno_id', $v))
+            ->when($user->local_id, fn($qq) => $qq->where('local_id', $user->local_id))
+            // Búsqueda server-side: N° de venta, cliente (nombre/razón/doc) y monto.
+            // Se agrupa en un where anidado para no romper los filtros de arriba.
+            ->when($q !== '', function ($qq) use ($q) {
+                $qq->where(function ($w) use ($q) {
+                    $w->where('numero', 'ilike', "%{$q}%")
+                      ->orWhereHas('cliente', function ($c) use ($q) {
+                          $c->where('nombres', 'ilike', "%{$q}%")
+                            ->orWhere('apellidos', 'ilike', "%{$q}%")
+                            ->orWhere('razon_social', 'ilike', "%{$q}%")
+                            ->orWhere('numero_documento', 'ilike', "%{$q}%");
+                      });
+                    if (is_numeric($q)) {
+                        $w->orWhere('total', $q);
+                    }
+                });
+            })
             ->orderByDesc('fecha_venta')
             ->orderByDesc('id')
             ->paginate(25)
@@ -380,16 +399,133 @@ class VentaController extends Controller
 
         $locales = $this->scope->localesVisibles($user);
 
+        // Turno a resumir en las cards: el filtrado explícitamente, o el turno
+        // abierto del usuario (cajera) / el más reciente abierto en su ámbito (admin).
+        $turnoResumen = $this->resolverTurnoResumen($user, $esAdmin, $request);
+
         return Inertia::render('Ventas/Index', [
             'ventas'  => $ventas,
             'locales' => $locales,
             'esAdmin' => $esAdmin,
+            'turnos'  => $this->turnosParaFiltro($user, $esAdmin, $request, $fechaDesde, $fechaHasta),
+            'resumen' => $turnoResumen ? $this->resumenDeTurno($turnoResumen) : null,
             // Reflejar en la UI las fechas efectivas (incluye el default de hoy).
             'filters' => array_merge(
-                $request->only(['estado', 'fecha_desde', 'fecha_hasta', 'local_id']),
+                $request->only(['estado', 'fecha_desde', 'fecha_hasta', 'local_id', 'turno_id', 'q']),
                 ['fecha_desde' => $fechaDesde, 'fecha_hasta' => $fechaHasta],
             ),
         ]);
+    }
+
+    /** Turnos que alimentan el selector de filtro (y contexto de las cards). */
+    private function turnosParaFiltro(User $user, bool $esAdmin, Request $request, ?string $fechaDesde, ?string $fechaHasta)
+    {
+        return Turno::deEmpresa($user->empresa_id)
+            ->with(['user:id,name', 'caja:id,nombre'])
+            ->when(!$esAdmin, fn($q) => $q->where('user_id', $user->id))
+            ->when($user->local_id, fn($q) => $q->where('local_id', $user->local_id))
+            ->when($request->local_id, fn($q, $v) => $q->where('local_id', $v))
+            ->when($fechaDesde, fn($q, $v) => $q->whereDate('fecha_apertura', '>=', $v))
+            ->when($fechaHasta, fn($q, $v) => $q->whereDate('fecha_apertura', '<=', $v))
+            ->orderByDesc('fecha_apertura')
+            ->limit(60)
+            ->get(['id', 'user_id', 'caja_id', 'local_id', 'fecha_apertura', 'estado']);
+    }
+
+    /** Resuelve qué turno resumir en las cards. */
+    private function resolverTurnoResumen(User $user, bool $esAdmin, Request $request): ?Turno
+    {
+        $base = Turno::deEmpresa($user->empresa_id)->with(['user:id,name', 'caja:id,nombre']);
+
+        if ($request->turno_id) {
+            return $base->find($request->turno_id);
+        }
+
+        return $base->where('estado', 'abierto')
+            ->when(!$esAdmin, fn($q) => $q->where('user_id', $user->id))
+            ->when($user->local_id, fn($q) => $q->where('local_id', $user->local_id))
+            ->orderByDesc('fecha_apertura')
+            ->first();
+    }
+
+    /**
+     * Resumen de caja del turno para las cards. Una sola consulta agregada
+     * (groupBy método + cuenta) sobre venta_pagos; nada de iterar todas las
+     * ventas en PHP. Espejo del desglose del cierre de turno.
+     */
+    private function resumenDeTurno(Turno $turno): array
+    {
+        $filas = \App\Models\VentaPago::query()
+            ->selectRaw('metodo_pago_id, cuenta_metodo_pago_id, SUM(monto) as total')
+            ->whereHas('venta', fn($q) => $q->where('turno_id', $turno->id)->where('estado', 'completada'))
+            ->groupBy('metodo_pago_id', 'cuenta_metodo_pago_id')
+            ->with([
+                'metodoPago:id,nombre,tipo_id',
+                'metodoPago.tipo:id,slug',
+                'cuentaMetodoPago:id,nombre,banco,es_efectivo',
+            ])
+            ->get();
+
+        // Consolidamos por método+cuenta (dos filas del mismo método sin cuenta
+        // resuelta no deben salir como dos cards separadas).
+        $agrupado = [];
+        $totalEfectivo = 0.0;
+        $totalVentas   = 0.0;
+        foreach ($filas as $f) {
+            $monto      = (float) $f->total;
+            $esEfectivo = ($f->metodoPago?->tipo?->slug === 'efectivo');
+            $totalVentas += $monto;
+            if ($esEfectivo) {
+                $totalEfectivo += $monto;
+            }
+            $nombre = $f->metodoPago?->nombre ?? 'Otro';
+            $cuenta = $f->cuentaMetodoPago?->nombre;
+            $key    = $nombre . '|' . ($cuenta ?? '');
+            if (!isset($agrupado[$key])) {
+                $agrupado[$key] = [
+                    'metodo'      => $nombre,
+                    'slug'        => $f->metodoPago?->tipo?->slug,
+                    'es_efectivo' => $esEfectivo,
+                    'cuenta'      => $cuenta,
+                    'banco'       => $f->cuentaMetodoPago?->banco,
+                    'total'       => 0.0,
+                ];
+            }
+            $agrupado[$key]['total'] += $monto;
+        }
+
+        $metodos = array_map(function ($m) {
+            $m['total'] = round($m['total'], 2);
+            return $m;
+        }, array_values($agrupado));
+        usort($metodos, fn($a, $b) => $b['total'] <=> $a['total']);
+
+        $gastos = (float) \App\Models\Gasto::where('turno_id', $turno->id)->sum('monto');
+
+        return [
+            'turno' => [
+                'id'     => $turno->id,
+                'fecha'  => $turno->fecha_apertura,
+                'cajera' => $turno->user?->name,
+                'caja'   => $turno->caja?->nombre,
+                'estado' => $turno->estado,
+            ],
+            'metodos'          => $metodos,
+            'total_ventas'     => round($totalVentas, 2),
+            'total_efectivo'   => round($totalEfectivo, 2),
+            'gastos'           => round($gastos, 2),
+            'apertura'         => round((float) $turno->monto_apertura, 2),
+            // Efectivo real esperado en caja (apertura + ventas efectivo − gastos − reembolsos).
+            'efectivo_en_caja' => round((float) $turno->calcularMontoEsperado(), 2),
+        ];
+    }
+
+    /** Payload de impresión de una venta (para imprimir desde la lista sin abrir el detalle). */
+    public function ticket(Request $request, Venta $venta)
+    {
+        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+
+        return response()->json(app(TicketPrintService::class)->payloadDeVenta($venta));
     }
 
     public function show(Request $request, Venta $venta)
