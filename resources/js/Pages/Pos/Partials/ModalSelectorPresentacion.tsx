@@ -29,6 +29,21 @@ export default function ModalSelectorPresentacion({ isOpen, onClose, producto, o
         .filter(u => u.activo !== false)
         .sort((a, b) => Number(b.es_base) - Number(a.es_base));
 
+    // Presentación base (unidad principal). Sirve para mostrar la equivalencia
+    // de cada presentación derivada: "1 balde = 0.02 m³".
+    const base         = presentaciones.find(u => u.es_base);
+    const nombreBase   = base?.unidad_medida?.nombre ?? '';
+
+    // Texto de equivalencia para una presentación (o null si es la base o factor = 1).
+    const equivalencia = (u: ProductoUnidad): string | null => {
+        if (u.es_base) return null;
+        const factor = Number(u.factor_conversion);
+        if (!factor || factor === 1 || !nombreBase) return null;
+        // Formatea sin ceros de más: 0.02, 12, 1.5
+        const f = Number(factor.toFixed(4)).toString();
+        return `1 ${u.unidad_medida?.nombre ?? 'unidad'} = ${f} ${nombreBase}`;
+    };
+
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Elige la presentación" size="md">
             <div className="mb-3">
@@ -92,6 +107,18 @@ export default function ModalSelectorPresentacion({ isOpen, onClose, producto, o
                         >
                             {sol(u.precio_venta)}
                         </p>
+
+                        {equivalencia(u) && (
+                            <p
+                                className="mt-1 text-[11px] font-medium inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
+                                style={{
+                                    backgroundColor: 'color-mix(in srgb, var(--color-text-muted) 12%, transparent)',
+                                    color: 'var(--color-text-muted)',
+                                }}
+                            >
+                                ⇄ {equivalencia(u)}
+                            </p>
+                        )}
                     </button>
                 ))}
             </div>
