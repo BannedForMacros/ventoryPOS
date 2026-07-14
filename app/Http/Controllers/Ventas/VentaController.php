@@ -17,6 +17,7 @@ use App\Services\LocalScopeService;
 use App\Services\TicketPrintService;
 use App\Services\VentaService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 
@@ -455,6 +456,16 @@ class VentaController extends Controller
      */
     private function resumenDeTurno(Turno $turno): array
     {
+        // Cuenta por defecto por método: cuando el método tiene UNA sola cuenta,
+        // la usamos para los pagos que no registraron cuenta (cuenta_metodo_pago_id
+        // null). Así "Yape" deja de salir como "sin cuenta" cuando es inequívoco.
+        $cuentaDefault = DB::table('cuenta_metodo_pago as cmp')
+            ->join('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
+            ->selectRaw('cmp.metodo_pago_id, MIN(c.nombre) as nombre, MIN(c.banco) as banco')
+            ->groupBy('cmp.metodo_pago_id')
+            ->havingRaw('COUNT(*) = 1')
+            ->get()->keyBy('metodo_pago_id');
+
         // Desglose por método + cuenta. La cuenta real se resuelve VÍA EL PIVOTE:
         // venta_pagos.cuenta_metodo_pago_id → cuenta_metodo_pago.id → cuenta_id →
         // cuentas.id. (La relación cuentaMetodoPago del modelo apunta directo a
@@ -467,21 +478,17 @@ class VentaController extends Controller
             ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
             ->where('ventas.turno_id', $turno->id)
             ->where('ventas.estado', 'completada')
-            ->groupBy('mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
-            ->selectRaw('mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(venta_pagos.monto) as total')
+            ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
+            ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(venta_pagos.monto) as total')
             ->get();
 
-        // Consolidamos por método+cuenta.
+        // Consolidamos por método+cuenta (ventas + abonos), resolviendo la cuenta
+        // por defecto cuando el pago no la registró.
         $agrupado = [];
-        $totalEfectivo = 0.0;
-        foreach ($filas as $f) {
-            $this->acumularMetodo($agrupado, $totalEfectivo, $f->metodo, $f->slug, $f->cuenta, $f->banco, (float) $f->total);
-        }
-
-        // Abonos a cuentas por cobrar cobrados EN ESTE TURNO: también son dinero
-        // que entra a la caja, con su propio método y cuenta. Se suman al desglose.
-        foreach ($this->abonosPorMetodo($turno) as $f) {
-            $this->acumularMetodo($agrupado, $totalEfectivo, $f->metodo, $f->slug, $f->cuenta, $f->banco, (float) $f->total);
+        $ignora   = 0.0;
+        foreach ($filas->concat($this->abonosPorMetodo($turno)) as $f) {
+            [$cuenta, $banco] = $this->resolverCuentaMetodo($f, $cuentaDefault);
+            $this->acumularMetodo($agrupado, $ignora, $f->metodo, $f->slug, $cuenta, $banco, (float) $f->total);
         }
 
         $metodos = array_map(function ($m) {
@@ -489,6 +496,13 @@ class VentaController extends Controller
             return $m;
         }, array_values($agrupado));
         usort($metodos, fn($a, $b) => $b['total'] <=> $a['total']);
+
+        // Efectivo separado en ventas vs abonos (para el detalle de la card de caja).
+        $efectivoVentas = (float) \App\Models\VentaPago::whereHas('venta', fn($q) =>
+            $q->where('turno_id', $turno->id)->where('estado', 'completada')
+        )->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))->sum('monto');
+        $efectivoAbonos = (float) \App\Models\VentaAbono::where('turno_id', $turno->id)
+            ->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))->sum('monto');
 
         $gastos = (float) \App\Models\Gasto::where('turno_id', $turno->id)->sum('monto');
 
@@ -516,7 +530,9 @@ class VentaController extends Controller
             ],
             'metodos'          => $metodos,
             'cobrado'          => round($cobrado, 2),         // aplicado a ventas (monto_pagado)
-            'total_efectivo'   => round($totalEfectivo, 2),
+            'total_efectivo'   => round($efectivoVentas + $efectivoAbonos, 2),
+            'efectivo_ventas'  => round($efectivoVentas, 2),
+            'efectivo_abonos'  => round($efectivoAbonos, 2),
             'total_vendido'    => round($totalVendido, 2),    // cobrado + por cobrar
             'por_cobrar'       => round($porCobrar, 2),       // crédito pendiente del turno
             'abonos'           => round($abonos, 2),          // cobros de crédito recibidos en el turno
@@ -525,6 +541,16 @@ class VentaController extends Controller
             // Efectivo real esperado en caja (apertura + ventas efectivo − gastos − reembolsos).
             'efectivo_en_caja' => round((float) $turno->calcularMontoEsperado(), 2),
         ];
+    }
+
+    /** Resuelve [cuenta, banco] de una fila de cobro, con fallback a la cuenta por defecto del método. */
+    private function resolverCuentaMetodo(object $f, $cuentaDefault): array
+    {
+        if ($f->cuenta !== null) {
+            return [$f->cuenta, $f->banco];
+        }
+        $def = $cuentaDefault[$f->metodo_id] ?? null;
+        return [$def->nombre ?? null, $def->banco ?? null];
     }
 
     /** Acumula un cobro (venta o abono) en el desglose por método+cuenta. */
@@ -562,8 +588,8 @@ class VentaController extends Controller
             ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
             ->leftJoin('cuentas as c', 'c.id', '=', 'va.cuenta_id')
             ->where('va.turno_id', $turno->id)
-            ->groupBy('mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
-            ->selectRaw('mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(va.monto) as total')
+            ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
+            ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(va.monto) as total')
             ->get();
     }
 

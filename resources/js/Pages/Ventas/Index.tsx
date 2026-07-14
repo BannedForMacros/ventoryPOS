@@ -53,6 +53,8 @@ interface Resumen {
     metodos:          ResumenMetodo[];
     cobrado:          number;   // suma de métodos de pago
     total_efectivo:   number;
+    efectivo_ventas:  number;   // efectivo de ventas del turno
+    efectivo_abonos:  number;   // efectivo de abonos de crédito del turno
     total_vendido:    number;   // cobrado + por cobrar
     por_cobrar:       number;   // crédito pendiente del turno
     abonos:           number;   // cobros de crédito recibidos en el turno
@@ -617,6 +619,14 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
     // Solo métodos no-efectivo como cards individuales; el efectivo va en su card grande.
     const metodosNoEfectivo = resumen.metodos.filter(m => !m.es_efectivo);
 
+    // Detalle del efectivo en caja: apertura + ventas (+ abonos) − gastos.
+    const efectivoSub = [
+        `Apertura ${money(resumen.apertura)}`,
+        `ventas ${money(resumen.efectivo_ventas)}`,
+        resumen.efectivo_abonos > 0 ? `abonos ${money(resumen.efectivo_abonos)}` : null,
+        resumen.gastos > 0 ? `− gastos ${money(resumen.gastos)}` : null,
+    ].filter(Boolean).join(' · ');
+
     return (
         <div className="mb-5">
             <div className="flex items-center gap-2 mb-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
@@ -639,7 +649,7 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                     icon={<Wallet size={18} />}
                     label="Efectivo en caja"
                     valor={money(resumen.efectivo_en_caja)}
-                    sub={`Apertura ${money(resumen.apertura)} · ventas ${money(resumen.total_efectivo)}`}
+                    sub={efectivoSub}
                     color="primary"
                 />
 
@@ -650,7 +660,7 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                         icon={<CreditCard size={18} />}
                         label={m.metodo}
                         valor={money(m.total)}
-                        sub={m.cuenta ? `${m.cuenta}${m.banco ? ` · ${m.banco}` : ''}` : 'Sin cuenta asignada'}
+                        sub={m.cuenta ? `${m.cuenta}${m.banco ? ` · ${m.banco}` : ''}` : 'Cuenta no especificada al cobrar'}
                     />
                 ))}
 
