@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { RefreshCw, AlertTriangle, Eye } from 'lucide-react';
+import {
+    RefreshCw, AlertTriangle, Eye, Search, Boxes, PackageX, TriangleAlert,
+    CircleDollarSign, ChevronLeft, ChevronRight,
+} from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -13,8 +16,13 @@ import type { PageProps } from '@/types';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { es_base: boolean; unidad_medida?: UnidadMedida; }
-interface Producto { id: number; codigo: string | null; nombre: string; unidad_base?: ProductoUnidad | null; }
+interface Producto {
+    id: number; codigo: string | null; nombre: string;
+    unidad_base?: ProductoUnidad | null;
+    categoria?: { id: number; nombre: string } | null;
+}
 interface Almacen  { id: number; nombre: string; tipo: string; local?: { nombre: string } | null; }
+interface Categoria { id: number; nombre: string; }
 
 interface StockRow extends Record<string, unknown> {
     id: number;
@@ -25,7 +33,7 @@ interface StockRow extends Record<string, unknown> {
     cantidad: number;
     costo_promedio: number;
     valor_total: number;
-    es_negativo: boolean;       // A9: marcado por el backend cuando cantidad < 0
+    es_negativo: boolean;
 }
 
 interface StockNegativo {
@@ -36,45 +44,101 @@ interface StockNegativo {
     cantidad: number;
 }
 
-interface Props extends PageProps {
-    stocks: StockRow[];
-    almacenes: Almacen[];
-    mostrarSelector: boolean;
-    filters: { almacen_id?: string; busqueda?: string };
-    stocksNegativosCount: number; // A9: total de stocks con saldo negativo en almacenes visibles
-    stocksNegativos: StockNegativo[]; // lista exacta de negativos (producto + almacén + cantidad)
+interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
+
+interface Filters {
+    almacen_id?: string; busqueda?: string; categoria_id?: string;
+    estado?: string; sort?: string; dir?: string;
 }
 
-export default function Stock({ stocks, almacenes, mostrarSelector, filters, stocksNegativosCount, stocksNegativos }: Props) {
+interface Kpis { valor: number; total: number; agotados: number; bajos: number; negativos: number; }
+
+interface Props extends PageProps {
+    stocks: Paginado<StockRow>;
+    almacenes: Almacen[];
+    categorias: Categoria[];
+    kpis: Kpis;
+    umbralBajo: number;
+    mostrarSelector: boolean;
+    filters: Filters;
+    stocksNegativosCount: number;
+    stocksNegativos: StockNegativo[];
+}
+
+const money = (v: number) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+
+const ORDENES: Record<string, string> = {
+    'nombre:asc':   'Nombre (A-Z)',
+    'cantidad:asc': 'Menor stock primero',
+    'cantidad:desc':'Mayor stock',
+    'valor:desc':   'Mayor valor',
+    'costo:desc':   'Mayor costo',
+};
+
+export default function Stock({
+    stocks, almacenes, categorias, kpis, umbralBajo,
+    mostrarSelector, filters, stocksNegativosCount, stocksNegativos,
+}: Props) {
     const { flash } = usePage<Props>().props;
-    const [almacenId, setAlmacenId] = useState(filters.almacen_id ?? '');
-    const [busqueda, setBusqueda]   = useState(filters.busqueda ?? '');
+    const [busqueda, setBusqueda] = useState(filters.busqueda ?? '');
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
-    function filtrar() {
-        router.get(route('inventario.stock.index'), {
-            almacen_id: almacenId || undefined,
-            busqueda:   busqueda  || undefined,
-        }, { preserveState: true, replace: true });
+    // Navega mergeando los filtros actuales + la búsqueda local + un patch.
+    // Los selects aplican al instante (son una acción deliberada); la búsqueda
+    // de texto solo aplica con Enter o el botón (no filtra mientras escribes).
+    function navegar(patch: Partial<Filters & { page?: number }>) {
+        const params: Record<string, string | number | undefined> = {
+            almacen_id:   filters.almacen_id || undefined,
+            categoria_id: filters.categoria_id || undefined,
+            estado:       filters.estado || undefined,
+            sort:         filters.sort || undefined,
+            dir:          filters.dir || undefined,
+            busqueda:     busqueda || undefined,
+            ...patch,
+        };
+        router.get(route('inventario.stock.index'), params, {
+            preserveState: true, replace: true, preserveScroll: true,
+        });
+    }
+
+    // Click en una KPI de estado: filtra por ese estado (o lo quita si ya estaba).
+    function toggleEstado(estado: string) {
+        navegar({ estado: filters.estado === estado ? undefined : estado });
+    }
+
+    function limpiar() {
+        setBusqueda('');
+        router.get(route('inventario.stock.index'), {}, { replace: true });
     }
 
     function recalcular() {
         router.post(route('inventario.stock.recalcular'));
     }
 
+    const hayFiltros = !!(filters.almacen_id || filters.busqueda || filters.categoria_id || filters.estado);
+    const ordenActual = `${filters.sort ?? 'nombre'}:${filters.dir ?? 'asc'}`;
+
     const columns: Column<StockRow>[] = [
         {
-            key: 'producto', label: 'Producto', sortable: true,
+            key: 'producto', label: 'Producto', sortable: false,
             render: (s) => (
                 <div>
                     <p className="font-medium text-sm" style={{ color: 'var(--color-text)' }}>{s.producto.nombre}</p>
-                    {s.producto.codigo && (
-                        <p className="font-mono text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{s.producto.codigo}</p>
-                    )}
+                    <div className="flex items-center gap-2 mt-0.5">
+                        {s.producto.codigo && (
+                            <span className="font-mono text-xs" style={{ color: 'var(--color-text-muted)' }}>{s.producto.codigo}</span>
+                        )}
+                        {s.producto.categoria && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded"
+                                style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
+                                {s.producto.categoria.nombre}
+                            </span>
+                        )}
+                    </div>
                 </div>
             ),
         },
@@ -85,7 +149,7 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters, sto
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
         ...(mostrarSelector ? [{
-            key: 'almacen', label: 'Almacén', sortable: true,
+            key: 'almacen', label: 'Almacén', sortable: false,
             render: (s: StockRow) => (
                 <span className="text-sm">
                     {s.almacen.nombre}
@@ -98,11 +162,10 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters, sto
             ),
         } as Column<StockRow>] : []),
         {
-            key: 'cantidad', label: 'Cantidad', sortable: true,
+            key: 'cantidad', label: 'Cantidad', sortable: false,
             render: (s) => {
                 const qty = Number(s.cantidad);
-                // A9: negativos en rojo intenso (es una inconsistencia real)
-                const variant = qty < 0 ? 'danger' : qty === 0 ? 'danger' : qty < 5 ? 'warning' : 'success';
+                const variant = qty < 0 ? 'danger' : qty === 0 ? 'danger' : qty <= umbralBajo ? 'warning' : 'success';
                 return (
                     <Badge variant={variant}>
                         {qty.toFixed(2)}
@@ -112,19 +175,15 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters, sto
             },
         },
         {
-            key: 'costo_promedio', label: 'Costo prom.', sortable: true,
+            key: 'costo_promedio', label: 'Costo prom.', sortable: false, align: 'right',
             render: (s) => (
-                <span className="font-mono text-sm">
-                    S/ {Number(s.costo_promedio).toFixed(4)}
-                </span>
+                <span className="font-mono text-sm">S/ {Number(s.costo_promedio).toFixed(4)}</span>
             ),
         },
         {
-            key: 'valor_total', label: 'Valor total', sortable: true,
+            key: 'valor_total', label: 'Valor total', sortable: false, align: 'right',
             render: (s) => (
-                <span className="font-mono text-sm font-semibold">
-                    S/ {Number(s.valor_total).toFixed(2)}
-                </span>
+                <span className="font-mono text-sm font-semibold">S/ {Number(s.valor_total).toFixed(2)}</span>
             ),
         },
         {
@@ -132,8 +191,7 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters, sto
             render: (s) => (
                 <button
                     onClick={() => router.get(route('reportes.kardex'), {
-                        producto_id: s.producto_id,
-                        almacen_id:  s.almacen_id,
+                        producto_id: s.producto_id, almacen_id: s.almacen_id,
                     })}
                     title="Ver movimientos (kardex)"
                     className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]"
@@ -157,7 +215,20 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters, sto
                 }
             />
 
-            {/* A9: banner + LISTA EXACTA de los productos con saldo negativo */}
+            {/* ── KPIs (clickables para filtrar por estado) ────────────── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+                <Kpi icon={<CircleDollarSign size={18} />} label="Valor inventario" valor={money(kpis.valor)} color="primary" destacado />
+                <Kpi icon={<Boxes size={18} />} label="Productos" valor={String(kpis.total)} />
+                <Kpi icon={<TriangleAlert size={18} />} label="Stock bajo" valor={String(kpis.bajos)}
+                    color="warning" activo={filters.estado === 'bajo'} onClick={() => toggleEstado('bajo')}
+                    sub={`≤ ${umbralBajo} und`} />
+                <Kpi icon={<PackageX size={18} />} label="Agotados" valor={String(kpis.agotados)}
+                    color="danger" activo={filters.estado === 'agotado'} onClick={() => toggleEstado('agotado')} />
+                <Kpi icon={<AlertTriangle size={18} />} label="Negativos" valor={String(kpis.negativos)}
+                    color="danger" activo={filters.estado === 'negativo'} onClick={() => toggleEstado('negativo')} />
+            </div>
+
+            {/* Banner + lista exacta de negativos */}
             {stocksNegativosCount > 0 && (
                 <div className="mb-4 rounded-lg overflow-hidden border" style={{ borderColor: '#fecaca' }}>
                     <div className="flex items-start gap-3 px-4 py-3" style={{ background: '#fef2f2', color: '#991b1b' }}>
@@ -208,47 +279,146 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters, sto
                 </div>
             )}
 
-            {/* Filtros */}
-            <div className="mb-4 flex flex-wrap gap-3 items-end">
-                {mostrarSelector && (
-                    <div className="w-52">
+            {/* ── Filtros ──────────────────────────────────────────────── */}
+            <div className="mb-4 rounded-xl p-3 sm:p-4"
+                style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                <div className="relative mb-3">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
+                    <Input
+                        className="pl-9"
+                        placeholder="Buscar por nombre o código..."
+                        value={busqueda}
+                        onChange={e => setBusqueda(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && navegar({ busqueda: busqueda || undefined })}
+                    />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+                    {mostrarSelector && (
                         <Select
                             placeholder="Todos los almacenes"
-                            value={almacenId}
-                            onChange={v => setAlmacenId(String(v))}
+                            value={filters.almacen_id ?? ''}
+                            onChange={v => navegar({ almacen_id: String(v) || undefined })}
                             options={[
                                 { value: '', label: 'Todos los almacenes' },
                                 ...almacenes.map(a => ({ value: a.id, label: a.nombre })),
                             ]}
                         />
-                    </div>
-                )}
-                <div className="w-72">
-                    <Input
-                        placeholder="Buscar por nombre o código..."
-                        value={busqueda}
-                        onChange={e => setBusqueda(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && filtrar()}
+                    )}
+                    <Select
+                        placeholder="Todas las categorías"
+                        value={filters.categoria_id ?? ''}
+                        onChange={v => navegar({ categoria_id: String(v) || undefined })}
+                        options={[
+                            { value: '', label: 'Todas las categorías' },
+                            ...categorias.map(c => ({ value: c.id, label: c.nombre })),
+                        ]}
+                    />
+                    <Select
+                        placeholder="Estado"
+                        value={filters.estado ?? ''}
+                        onChange={v => navegar({ estado: String(v) || undefined })}
+                        options={[
+                            { value: '', label: 'Todo el stock' },
+                            { value: 'con_stock', label: 'Con stock' },
+                            { value: 'bajo', label: 'Stock bajo' },
+                            { value: 'agotado', label: 'Agotados' },
+                            { value: 'negativo', label: 'Negativos' },
+                        ]}
+                    />
+                    <Select
+                        placeholder="Ordenar por"
+                        value={ordenActual}
+                        onChange={v => {
+                            const [sort, dir] = String(v).split(':');
+                            navegar({ sort, dir });
+                        }}
+                        options={Object.entries(ORDENES).map(([value, label]) => ({ value, label }))}
                     />
                 </div>
-                <Button onClick={filtrar}>Buscar</Button>
-                {(almacenId || busqueda) && (
-                    <Button variant="ghost" onClick={() => {
-                        setAlmacenId('');
-                        setBusqueda('');
-                        router.get(route('inventario.stock.index'), {}, { replace: true });
-                    }}>
-                        Limpiar
-                    </Button>
+
+                {hayFiltros && (
+                    <div className="mt-3">
+                        <Button variant="ghost" onClick={limpiar}>Limpiar filtros</Button>
+                    </div>
                 )}
             </div>
 
             <Table
-                data={stocks}
+                data={stocks.data}
                 columns={columns}
-                searchPlaceholder="Filtrar resultados..."
-                emptyMessage="No hay stock registrado"
+                searchable={false}
+                sortable={false}
+                pagination={false}
+                emptyMessage="No hay stock para este filtro"
             />
+
+            {/* ── Paginación server-side ───────────────────────────────── */}
+            {stocks.last_page > 1 && (
+                <div className="flex items-center justify-center gap-3 mt-4 text-sm">
+                    <button
+                        onClick={() => navegar({ page: stocks.current_page - 1 })}
+                        disabled={stocks.current_page <= 1}
+                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 disabled:opacity-40"
+                        style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)' }}
+                    >
+                        <ChevronLeft size={15} /> Anterior
+                    </button>
+                    <span style={{ color: 'var(--color-text-muted)' }}>
+                        Página {stocks.current_page} de {stocks.last_page} · {stocks.total} productos
+                    </span>
+                    <button
+                        onClick={() => navegar({ page: stocks.current_page + 1 })}
+                        disabled={stocks.current_page >= stocks.last_page}
+                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 disabled:opacity-40"
+                        style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)' }}
+                    >
+                        Siguiente <ChevronRight size={15} />
+                    </button>
+                </div>
+            )}
         </AppLayout>
+    );
+}
+
+// ── KPI card ────────────────────────────────────────────────────────────────
+function Kpi({ icon, label, valor, sub, color, destacado, activo, onClick }: {
+    icon: React.ReactNode;
+    label: string;
+    valor: string;
+    sub?: string;
+    color?: 'primary' | 'danger' | 'warning';
+    destacado?: boolean;
+    activo?: boolean;
+    onClick?: () => void;
+}) {
+    const accent = color === 'danger' ? 'var(--color-danger)'
+        : color === 'warning' ? 'var(--color-warning)'
+        : color === 'primary' ? 'var(--color-primary)'
+        : 'var(--color-text-muted)';
+    const clickable = !!onClick;
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={!clickable}
+            className={`text-left rounded-xl p-3.5 flex flex-col gap-1.5 transition-all ${clickable ? 'hover:shadow-sm cursor-pointer' : 'cursor-default'}`}
+            style={{
+                backgroundColor: destacado ? 'color-mix(in srgb, var(--color-primary) 6%, var(--color-surface))' : 'var(--color-surface)',
+                border: activo
+                    ? `1px solid ${accent}`
+                    : destacado
+                        ? '1px solid color-mix(in srgb, var(--color-primary) 35%, transparent)'
+                        : '1px solid var(--color-border)',
+                boxShadow: activo ? `0 0 0 3px color-mix(in srgb, ${accent} 15%, transparent)` : undefined,
+            }}
+        >
+            <div className="flex items-center gap-1.5" style={{ color: accent }}>
+                {icon}
+                <span className="text-[11px] font-semibold uppercase tracking-wide truncate">{label}</span>
+            </div>
+            <span className="text-lg font-bold leading-none" style={{ color: 'var(--color-text)' }}>{valor}</span>
+            {sub && <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{sub}</span>}
+        </button>
     );
 }

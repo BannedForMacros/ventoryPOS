@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Inventario;
 
 use App\Http\Controllers\Controller;
 use App\Models\Almacen;
+use App\Models\Categoria;
 use App\Models\Entrada;
 use App\Models\Stock;
 use App\Services\LocalScopeService;
@@ -15,23 +16,64 @@ class StockController extends Controller
 {
     public function __construct(private LocalScopeService $scope) {}
 
+    /** Umbral de "stock bajo" (no hay mínimo por producto en el catálogo). */
+    private const UMBRAL_BAJO = 5;
+
     public function index(Request $request)
     {
-        $user      = $request->user();
-        $almacenes = $this->scope->almacenesVisibles($user);
+        $user       = $request->user();
+        $empresaId  = $user->empresa_id;
+        $almacenes  = $this->scope->almacenesVisibles($user);
         $almacenIds = $almacenes->pluck('id')->toArray();
 
-        $query = Stock::whereIn('almacen_id', $almacenIds)
-            ->with(['producto.unidadBase.unidadMedida', 'almacen.local'])
+        // Base: alcance de almacenes + filtros que también afectan los KPIs
+        // (almacén, categoría, búsqueda). El filtro de "estado" NO va aquí para
+        // que los KPIs muestren siempre el desglose completo del ámbito.
+        $base = Stock::whereIn('almacen_id', $almacenIds)
             ->when($request->almacen_id, fn ($q, $id) => $q->where('almacen_id', $id))
+            ->when($request->categoria_id, fn ($q, $id) =>
+                $q->whereHas('producto', fn ($p) => $p->where('categoria_id', $id)))
             ->when($request->busqueda, fn ($q, $s) =>
                 $q->whereHas('producto', fn ($p) =>
-                    $p->where('nombre', 'ilike', "%{$s}%")
-                      ->orWhere('codigo', 'ilike', "%{$s}%")
-                )
-            );
+                    $p->where('nombre', 'ilike', "%{$s}%")->orWhere('codigo', 'ilike', "%{$s}%")));
 
-        $stocks = $query->get()->map(fn ($s) => [
+        // KPIs de una sola consulta agregada (nada de traer todas las filas).
+        $umbral = self::UMBRAL_BAJO;
+        $kpis = (clone $base)->selectRaw("
+            COALESCE(SUM(cantidad * costo_promedio), 0) as valor,
+            COUNT(*) as total,
+            COUNT(*) FILTER (WHERE cantidad = 0)                          as agotados,
+            COUNT(*) FILTER (WHERE cantidad > 0 AND cantidad <= {$umbral}) as bajos,
+            COUNT(*) FILTER (WHERE cantidad < 0)                          as negativos
+        ")->first();
+
+        // Orden server-side (default: nombre del producto).
+        $dir  = $request->input('dir') === 'desc' ? 'desc' : 'asc';
+        $sort = $request->input('sort', 'nombre');
+
+        $lista = (clone $base)
+            ->with(['producto.unidadBase.unidadMedida', 'producto.categoria:id,nombre', 'almacen.local'])
+            ->when($request->estado, function ($q, $e) use ($umbral) {
+                match ($e) {
+                    'con_stock' => $q->where('cantidad', '>', 0),
+                    'agotado'   => $q->where('cantidad', 0),
+                    'bajo'      => $q->where('cantidad', '>', 0)->where('cantidad', '<=', $umbral),
+                    'negativo'  => $q->where('cantidad', '<', 0),
+                    default     => $q,
+                };
+            });
+
+        match ($sort) {
+            'cantidad' => $lista->orderBy('cantidad', $dir),
+            'costo'    => $lista->orderBy('costo_promedio', $dir),
+            'valor'    => $lista->orderByRaw("(cantidad * costo_promedio) {$dir}"),
+            default    => $lista->orderBy(
+                DB::table('productos')->select('nombre')->whereColumn('productos.id', 'stock.producto_id'),
+                $dir,
+            ),
+        };
+
+        $stocks = $lista->paginate(50)->withQueryString()->through(fn ($s) => [
             'id'             => $s->id,
             'almacen_id'     => $s->almacen_id,
             'almacen'        => $s->almacen,
@@ -63,8 +105,18 @@ class StockController extends Controller
         return Inertia::render('Inventario/Stock', [
             'stocks'               => $stocks,
             'almacenes'            => $almacenes,
+            'categorias'           => Categoria::deEmpresa($empresaId)->activo()
+                                        ->orderBy('nombre')->get(['id', 'nombre']),
+            'kpis'                 => [
+                'valor'     => round((float) $kpis->valor, 2),
+                'total'     => (int) $kpis->total,
+                'agotados'  => (int) $kpis->agotados,
+                'bajos'     => (int) $kpis->bajos,
+                'negativos' => (int) $kpis->negativos,
+            ],
+            'umbralBajo'           => self::UMBRAL_BAJO,
             'mostrarSelector'      => $this->scope->mostrarSelectorLocal($user),
-            'filters'              => $request->only(['almacen_id', 'busqueda']),
+            'filters'              => $request->only(['almacen_id', 'busqueda', 'categoria_id', 'estado', 'sort', 'dir']),
             'stocksNegativosCount' => $stocksNegativos->count(),
             'stocksNegativos'      => $stocksNegativos,
         ]);
