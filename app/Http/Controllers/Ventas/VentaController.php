@@ -482,19 +482,40 @@ class VentaController extends Controller
             ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(venta_pagos.monto) as total')
             ->get();
 
-        // Consolidamos por método+cuenta (ventas + abonos), resolviendo la cuenta
-        // por defecto cuando el pago no la registró.
-        $agrupado = [];
-        $ignora   = 0.0;
+        // Consolidamos por MÉTODO (una card por método: Yape, Transferencia...);
+        // las cuentas quedan como detalle anidado. Antes se hacía una card por
+        // método+cuenta y salían p.ej. dos "Yape" (una por cada cuenta), confuso.
+        $porMetodo = [];
         foreach ($filas->concat($this->abonosPorMetodo($turno)) as $f) {
             [$cuenta, $banco] = $this->resolverCuentaMetodo($f, $cuentaDefault);
-            $this->acumularMetodo($agrupado, $ignora, $f->metodo, $f->slug, $cuenta, $banco, (float) $f->total);
+            $metodo = $f->metodo ?? 'Otro';
+            $monto  = (float) $f->total;
+            if (!isset($porMetodo[$metodo])) {
+                $porMetodo[$metodo] = [
+                    'metodo'      => $metodo,
+                    'slug'        => $f->slug,
+                    'es_efectivo' => ($f->slug === 'efectivo'),
+                    'total'       => 0.0,
+                    'cuentas'     => [],
+                ];
+            }
+            $porMetodo[$metodo]['total'] += $monto;
+            $ckey = $cuenta ?? '—';
+            if (!isset($porMetodo[$metodo]['cuentas'][$ckey])) {
+                $porMetodo[$metodo]['cuentas'][$ckey] = ['cuenta' => $cuenta, 'banco' => $banco, 'total' => 0.0];
+            }
+            $porMetodo[$metodo]['cuentas'][$ckey]['total'] += $monto;
         }
 
         $metodos = array_map(function ($m) {
-            $m['total'] = round($m['total'], 2);
+            $m['total']   = round($m['total'], 2);
+            $m['cuentas'] = array_map(function ($c) {
+                $c['total'] = round($c['total'], 2);
+                return $c;
+            }, array_values($m['cuentas']));
+            usort($m['cuentas'], fn($a, $b) => $b['total'] <=> $a['total']);
             return $m;
-        }, array_values($agrupado));
+        }, array_values($porMetodo));
         usort($metodos, fn($a, $b) => $b['total'] <=> $a['total']);
 
         // Efectivo separado en ventas vs abonos (para el detalle de la card de caja).
@@ -520,6 +541,32 @@ class VentaController extends Controller
         // entró a caja, aparte de las ventas del turno).
         $abonos = (float) \App\Models\VentaAbono::where('turno_id', $turno->id)->sum('monto');
 
+        // Reembolsos de devoluciones en efectivo (descuentan la caja del turno).
+        $reembolsos = (float) \App\Models\DevolucionPago::whereHas('devolucion', fn($q) =>
+            $q->where('turno_id', $turno->id)->whereIn('estado', ['aprobada', 'completada'])
+        )->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))->sum('monto');
+
+        // Detalle para el modal "ver detalle de caja" (corroboración).
+        $abonosDetalle = \App\Models\VentaAbono::where('turno_id', $turno->id)
+            ->with(['venta.cliente', 'metodoPago'])
+            ->orderByDesc('id')->get()
+            ->map(fn ($a) => [
+                'cliente' => $a->venta?->cliente
+                    ? ($a->venta->cliente->razon_social
+                        ?? trim(($a->venta->cliente->nombres ?? '') . ' ' . ($a->venta->cliente->apellidos ?? '')))
+                    : 'General',
+                'venta'  => $a->venta?->numero,
+                'metodo' => $a->metodoPago?->nombre ?? '—',
+                'monto'  => round((float) $a->monto, 2),
+            ]);
+
+        $gastosDetalle = \App\Models\Gasto::where('turno_id', $turno->id)
+            ->with('concepto')->orderByDesc('id')->get()
+            ->map(fn ($g) => [
+                'concepto' => $g->concepto?->nombre ?? $g->comentario ?? 'Gasto',
+                'monto'    => round((float) $g->monto, 2),
+            ]);
+
         return [
             'turno' => [
                 'id'     => $turno->id,
@@ -537,9 +584,12 @@ class VentaController extends Controller
             'por_cobrar'       => round($porCobrar, 2),       // crédito pendiente del turno
             'abonos'           => round($abonos, 2),          // cobros de crédito recibidos en el turno
             'gastos'           => round($gastos, 2),
+            'reembolsos'       => round($reembolsos, 2),      // devoluciones en efectivo
             'apertura'         => round((float) $turno->monto_apertura, 2),
             // Efectivo real esperado en caja (apertura + ventas efectivo − gastos − reembolsos).
             'efectivo_en_caja' => round((float) $turno->calcularMontoEsperado(), 2),
+            'abonos_detalle'   => $abonosDetalle,
+            'gastos_detalle'   => $gastosDetalle,
         ];
     }
 
@@ -551,28 +601,6 @@ class VentaController extends Controller
         }
         $def = $cuentaDefault[$f->metodo_id] ?? null;
         return [$def->nombre ?? null, $def->banco ?? null];
-    }
-
-    /** Acumula un cobro (venta o abono) en el desglose por método+cuenta. */
-    private function acumularMetodo(array &$agrupado, float &$totalEfectivo, ?string $metodo, ?string $slug, ?string $cuenta, ?string $banco, float $monto): void
-    {
-        $esEfectivo = ($slug === 'efectivo');
-        if ($esEfectivo) {
-            $totalEfectivo += $monto;
-        }
-        $nombre = $metodo ?? 'Otro';
-        $key    = $nombre . '|' . ($cuenta ?? '');
-        if (!isset($agrupado[$key])) {
-            $agrupado[$key] = [
-                'metodo'      => $nombre,
-                'slug'        => $slug,
-                'es_efectivo' => $esEfectivo,
-                'cuenta'      => $cuenta,
-                'banco'       => $banco,
-                'total'       => 0.0,
-            ];
-        }
-        $agrupado[$key]['total'] += $monto;
     }
 
     /**

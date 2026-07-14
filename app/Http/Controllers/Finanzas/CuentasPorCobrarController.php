@@ -92,10 +92,16 @@ class CuentasPorCobrarController extends Controller
             'observacion'    => ['nullable', 'string', 'max:500'],
         ]);
 
-        // Turno activo del cajero: si cobra con caja abierta, el abono entra a
-        // ESE turno (y si es efectivo, suma al efectivo esperado de la caja).
-        // Sin turno abierto (p.ej. transferencia al banco) queda sin turno.
+        // Turno al que se imputa el abono (y si es efectivo, suma a esa caja):
+        // 1) el turno propio abierto del usuario; 2) si el usuario no tiene turno
+        // (p.ej. admin), el ÚNICO turno abierto en su ámbito; 3) ninguno.
         $turnoId = Turno::turnoActivoDelUsuario($user->id)?->id;
+        if (!$turnoId) {
+            $abiertos = Turno::deEmpresa($user->empresa_id)->where('estado', 'abierto')
+                ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id))
+                ->pluck('id');
+            $turnoId = $abiertos->count() === 1 ? $abiertos->first() : null;
+        }
 
         DB::transaction(function () use ($venta, $user, $data, $turnoId) {
             $abono = VentaAbono::create($data + [

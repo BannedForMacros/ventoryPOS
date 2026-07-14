@@ -4,7 +4,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     Eye, ShoppingCart, Filter, Calendar, Receipt, Pencil, Trash2, KeyRound,
-    AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins,
+    AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins, ListChecks,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -39,13 +39,18 @@ interface TurnoLite {
     caja?:          { id: number; nombre: string } | null;
 }
 
+interface ResumenMetodoCuenta {
+    cuenta: string | null;
+    banco:  string | null;
+    total:  number;
+}
+
 interface ResumenMetodo {
     metodo:      string;
     slug:        string | null;
     es_efectivo: boolean;
-    cuenta:      string | null;
-    banco:       string | null;
     total:       number;
+    cuentas:     ResumenMetodoCuenta[];
 }
 
 interface Resumen {
@@ -59,8 +64,11 @@ interface Resumen {
     por_cobrar:       number;   // crédito pendiente del turno
     abonos:           number;   // cobros de crédito recibidos en el turno
     gastos:           number;
+    reembolsos:       number;   // devoluciones en efectivo
     apertura:         number;
     efectivo_en_caja: number;
+    abonos_detalle:   { cliente: string; venta: string | null; metodo: string; monto: number }[];
+    gastos_detalle:   { concepto: string; monto: number }[];
 }
 
 interface Props extends PageProps {
@@ -614,7 +622,13 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
 
 // ── Cards de resumen del turno ──────────────────────────────────────────────
 
+const subCuenta = (m: ResumenMetodo) =>
+    m.cuentas.length === 1
+        ? (m.cuentas[0].cuenta ?? 'Cuenta no especificada al cobrar')
+        : `${m.cuentas.length} cuentas`;
+
 function ResumenCards({ resumen }: { resumen: Resumen }) {
+    const [detalle, setDetalle] = useState(false);
     const fecha = new Date(resumen.turno.fecha).toLocaleDateString('es-PE');
     // Solo métodos no-efectivo como cards individuales; el efectivo va en su card grande.
     const metodosNoEfectivo = resumen.metodos.filter(m => !m.es_efectivo);
@@ -634,16 +648,21 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                 <span className="font-semibold uppercase tracking-wide">
                     Caja del turno #{resumen.turno.id}
                 </span>
-                <span>
+                <span className="hidden sm:inline">
                     · {fecha}{resumen.turno.cajera ? ` · ${resumen.turno.cajera}` : ''}{resumen.turno.caja ? ` · ${resumen.turno.caja}` : ''}
                 </span>
                 <Badge variant={resumen.turno.estado === 'abierto' ? 'success' : 'secondary'}>
                     {resumen.turno.estado === 'abierto' ? 'Abierto' : 'Cerrado'}
                 </Badge>
+                <button onClick={() => setDetalle(true)}
+                    className="ml-auto inline-flex items-center gap-1 font-semibold hover:underline"
+                    style={{ color: 'var(--color-primary)' }}>
+                    <ListChecks size={13} /> Ver detalle
+                </button>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {/* Efectivo en caja — destacado */}
+                {/* Efectivo en caja — destacado y clickable para ver el desglose */}
                 <Card
                     destacado
                     icon={<Wallet size={18} />}
@@ -651,20 +670,21 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                     valor={money(resumen.efectivo_en_caja)}
                     sub={efectivoSub}
                     color="primary"
+                    onClick={() => setDetalle(true)}
                 />
 
-                {/* Un card por método no-efectivo (con su cuenta) */}
+                {/* Un card por MÉTODO (Yape, Transferencia...); cuentas en el detalle */}
                 {metodosNoEfectivo.map((m, i) => (
                     <Card
-                        key={`${m.metodo}-${m.cuenta ?? ''}-${i}`}
+                        key={`${m.metodo}-${i}`}
                         icon={<CreditCard size={18} />}
                         label={m.metodo}
                         valor={money(m.total)}
-                        sub={m.cuenta ? `${m.cuenta}${m.banco ? ` · ${m.banco}` : ''}` : 'Cuenta no especificada al cobrar'}
+                        sub={subCuenta(m)}
+                        onClick={() => setDetalle(true)}
                     />
                 ))}
 
-                {/* Cuentas por cobrar (crédito) — lo que faltaba reflejar */}
                 <Card
                     icon={<Clock size={18} />}
                     label="Cuentas por cobrar"
@@ -673,24 +693,23 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                     color="warning"
                 />
 
-                {/* Abonos de crédito cobrados en el turno (ya incluidos en los métodos) */}
                 <Card
                     icon={<HandCoins size={18} />}
                     label="Abonos recibidos"
                     valor={money(resumen.abonos)}
                     sub="Cobros de crédito en este turno"
                     color="success"
+                    onClick={() => setDetalle(true)}
                 />
 
-                {/* Gastos */}
                 <Card
                     icon={<TrendingDown size={18} />}
                     label="Gastos del turno"
                     valor={money(resumen.gastos)}
                     color="danger"
+                    onClick={() => setDetalle(true)}
                 />
 
-                {/* Total vendido = cobrado + por cobrar (cuadra el faltante) */}
                 <Card
                     icon={<Coins size={18} />}
                     label="Total vendido"
@@ -698,17 +717,20 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                     sub={`Cobrado ${money(resumen.cobrado)} + por cobrar ${money(resumen.por_cobrar)}`}
                 />
             </div>
+
+            <DetalleCajaModal open={detalle} onClose={() => setDetalle(false)} resumen={resumen} />
         </div>
     );
 }
 
-function Card({ icon, label, valor, sub, color, destacado }: {
+function Card({ icon, label, valor, sub, color, destacado, onClick }: {
     icon: React.ReactNode;
     label: string;
     valor: string;
     sub?: string;
     color?: 'primary' | 'danger' | 'warning' | 'success';
     destacado?: boolean;
+    onClick?: () => void;
 }) {
     const accent = color === 'danger' ? 'var(--color-danger)'
         : color === 'warning' ? 'var(--color-warning)'
@@ -716,8 +738,11 @@ function Card({ icon, label, valor, sub, color, destacado }: {
         : color === 'primary' ? 'var(--color-primary)'
         : 'var(--color-text-muted)';
     return (
-        <div
-            className="rounded-xl p-3.5 flex flex-col gap-1.5"
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={!onClick}
+            className={`text-left rounded-xl p-3.5 flex flex-col gap-1.5 transition-shadow ${onClick ? 'hover:shadow-md cursor-pointer' : 'cursor-default'}`}
             style={{
                 backgroundColor: destacado ? 'color-mix(in srgb, var(--color-primary) 6%, var(--color-surface))' : 'var(--color-surface)',
                 border: destacado ? '1px solid color-mix(in srgb, var(--color-primary) 35%, transparent)' : '1px solid var(--color-border)',
@@ -728,7 +753,98 @@ function Card({ icon, label, valor, sub, color, destacado }: {
                 <span className="text-[11px] font-semibold uppercase tracking-wide truncate">{label}</span>
             </div>
             <span className="text-lg font-bold leading-none" style={{ color: 'var(--color-text)' }}>{valor}</span>
-            {sub && <span className="text-[10px] truncate" style={{ color: 'var(--color-text-muted)' }}>{sub}</span>}
+            {/* Sin truncate: en un reporte no puede aparecer "..." cortando montos. */}
+            {sub && <span className="text-[10px] leading-tight" style={{ color: 'var(--color-text-muted)' }}>{sub}</span>}
+        </button>
+    );
+}
+
+// ── Modal: detalle de caja del turno (para corroborar) ──────────────────────
+function DetalleCajaModal({ open, onClose, resumen }: { open: boolean; onClose: () => void; resumen: Resumen }) {
+    const fila = (etiqueta: string, valor: number, signo: '+' | '−' | '=' = '+') => (
+        <div className="flex items-center justify-between py-1.5 text-sm">
+            <span style={{ color: 'var(--color-text-muted)' }}>{signo !== '=' && <span className="mr-1">{signo}</span>}{etiqueta}</span>
+            <span className={`font-mono ${signo === '=' ? 'font-bold' : ''}`} style={{ color: 'var(--color-text)' }}>{money(valor)}</span>
         </div>
+    );
+
+    return (
+        <Modal isOpen={open} onClose={onClose} size="2xl"
+            title={`Detalle de caja — turno #${resumen.turno.id}`}
+            footer={<Button variant="ghost" onClick={onClose}>Cerrar</Button>}>
+            <div className="space-y-5">
+                {/* Reconciliación del efectivo */}
+                <section>
+                    <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-text-muted)' }}>Efectivo en caja</p>
+                    <div className="rounded-xl px-3 py-1" style={{ border: '1px solid var(--color-border)' }}>
+                        {fila('Apertura', resumen.apertura)}
+                        {fila('Ventas en efectivo', resumen.efectivo_ventas)}
+                        {resumen.efectivo_abonos > 0 && fila('Abonos en efectivo', resumen.efectivo_abonos)}
+                        {resumen.gastos > 0 && fila('Gastos', resumen.gastos, '−')}
+                        {resumen.reembolsos > 0 && fila('Reembolsos (devoluciones)', resumen.reembolsos, '−')}
+                        <div className="border-t mt-1 pt-1" style={{ borderColor: 'var(--color-border)' }}>
+                            {fila('Efectivo esperado en caja', resumen.efectivo_en_caja, '=')}
+                        </div>
+                    </div>
+                </section>
+
+                {/* Desglose por método y cuenta */}
+                <section>
+                    <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-text-muted)' }}>Cobros por método y cuenta</p>
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                        {resumen.metodos.map((m, i) => (
+                            <div key={i} className="px-3 py-2" style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
+                                <div className="flex items-center justify-between text-sm font-semibold">
+                                    <span style={{ color: 'var(--color-text)' }}>{m.metodo}</span>
+                                    <span className="font-mono">{money(m.total)}</span>
+                                </div>
+                                {m.cuentas.map((c, j) => (
+                                    <div key={j} className="flex items-center justify-between text-xs mt-0.5 pl-3" style={{ color: 'var(--color-text-muted)' }}>
+                                        <span>{c.cuenta ?? 'Cuenta no especificada al cobrar'}{c.banco ? ` · ${c.banco}` : ''}</span>
+                                        <span className="font-mono">{money(c.total)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                {/* Abonos recibidos */}
+                {resumen.abonos_detalle.length > 0 && (
+                    <section>
+                        <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Abonos de crédito recibidos ({money(resumen.abonos)})
+                        </p>
+                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                            {resumen.abonos_detalle.map((a, i) => (
+                                <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
+                                    <span style={{ color: 'var(--color-text)' }}>
+                                        {a.cliente}{a.venta ? ` · ${a.venta}` : ''} <span style={{ color: 'var(--color-text-muted)' }}>({a.metodo})</span>
+                                    </span>
+                                    <span className="font-mono font-semibold">{money(a.monto)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* Gastos */}
+                {resumen.gastos_detalle.length > 0 && (
+                    <section>
+                        <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Gastos del turno ({money(resumen.gastos)})
+                        </p>
+                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                            {resumen.gastos_detalle.map((g, i) => (
+                                <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
+                                    <span style={{ color: 'var(--color-text)' }}>{g.concepto}</span>
+                                    <span className="font-mono" style={{ color: 'var(--color-danger)' }}>− {money(g.monto)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+            </div>
+        </Modal>
     );
 }
