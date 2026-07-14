@@ -502,6 +502,16 @@ class VentaController extends Controller
 
         $gastos = (float) \App\Models\Gasto::where('turno_id', $turno->id)->sum('monto');
 
+        // Reconciliación con el crédito: lo cobrado por métodos (arriba) NO cubre
+        // las ventas a cuenta por cobrar. total_vendido = cobrado + por_cobrar.
+        // Sin esto, a la cajera le "faltaba" el monto de las ventas al crédito.
+        $ventasTurno  = Venta::where('turno_id', $turno->id)->where('estado', 'completada');
+        $totalVendido = (float) (clone $ventasTurno)->sum('total');
+        $porCobrar    = (float) (clone $ventasTurno)->sum('saldo_pendiente');
+        // cobrado = lo aplicado a las ventas (monto_pagado), no la suma bruta de
+        // pagos (que incluye vuelto). Así cuadra exacto: total = cobrado + por_cobrar.
+        $cobrado      = (float) (clone $ventasTurno)->sum('monto_pagado');
+
         return [
             'turno' => [
                 'id'     => $turno->id,
@@ -511,8 +521,10 @@ class VentaController extends Controller
                 'estado' => $turno->estado,
             ],
             'metodos'          => $metodos,
-            'total_ventas'     => round($totalVentas, 2),
+            'cobrado'          => round($cobrado, 2),         // aplicado a ventas (monto_pagado)
             'total_efectivo'   => round($totalEfectivo, 2),
+            'total_vendido'    => round($totalVendido, 2),    // cobrado + por cobrar
+            'por_cobrar'       => round($porCobrar, 2),       // crédito pendiente del turno
             'gastos'           => round($gastos, 2),
             'apertura'         => round((float) $turno->monto_apertura, 2),
             // Efectivo real esperado en caja (apertura + ventas efectivo − gastos − reembolsos).

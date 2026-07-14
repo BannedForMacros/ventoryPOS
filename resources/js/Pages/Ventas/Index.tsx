@@ -51,8 +51,10 @@ interface ResumenMetodo {
 interface Resumen {
     turno:            { id: number; fecha: string; cajera: string | null; caja: string | null; estado: string };
     metodos:          ResumenMetodo[];
-    total_ventas:     number;
+    cobrado:          number;   // suma de métodos de pago
     total_efectivo:   number;
+    total_vendido:    number;   // cobrado + por cobrar
+    por_cobrar:       number;   // crédito pendiente del turno
     gastos:           number;
     apertura:         number;
     efectivo_en_caja: number;
@@ -180,6 +182,10 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         const c = v.cliente as any;
         return c.razon_social ?? `${c.nombres} ${c.apellidos ?? ''}`.trim();
     }
+
+    // Venta al crédito con saldo pendiente (cuenta por cobrar).
+    const saldo = (v: Venta) => Number((v as any).saldo_pendiente ?? 0);
+    const esCredito = (v: Venta) => Boolean((v as any).es_credito) && saldo(v) > 0;
 
     function turnoLabel(t: TurnoLite): string {
         const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
@@ -352,6 +358,13 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     <span className="font-bold text-sm" style={{ color: 'var(--color-text)' }}>
                                         S/ {parseFloat(v.total).toFixed(2)}
                                     </span>
+                                    {esCredito(v) && (
+                                        <div className="mt-1">
+                                            <Badge variant="warning">
+                                                Por cobrar S/ {saldo(v).toFixed(2)}
+                                            </Badge>
+                                        </div>
+                                    )}
                                 </td>
                                 <td className="px-4 py-3">
                                     <div className="flex items-center gap-1.5">
@@ -448,6 +461,11 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                 <p className="text-base font-bold" style={{ color: 'var(--color-text)' }}>
                                     S/ {parseFloat(v.total).toFixed(2)}
                                 </p>
+                                {esCredito(v) && (
+                                    <div className="mt-1 flex justify-end">
+                                        <Badge variant="warning">Por cobrar S/ {saldo(v).toFixed(2)}</Badge>
+                                    </div>
+                                )}
                                 <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                     {new Date(v.fecha_venta).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
                                 </p>
@@ -635,6 +653,15 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                     />
                 ))}
 
+                {/* Cuentas por cobrar (crédito) — lo que faltaba reflejar */}
+                <Card
+                    icon={<Clock size={18} />}
+                    label="Cuentas por cobrar"
+                    valor={money(resumen.por_cobrar)}
+                    sub="Ventas al crédito (pendiente)"
+                    color="warning"
+                />
+
                 {/* Gastos */}
                 <Card
                     icon={<TrendingDown size={18} />}
@@ -643,12 +670,12 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                     color="danger"
                 />
 
-                {/* Total ventas */}
+                {/* Total vendido = cobrado + por cobrar (cuadra el faltante) */}
                 <Card
                     icon={<Coins size={18} />}
-                    label="Total ventas"
-                    valor={money(resumen.total_ventas)}
-                    sub="Suma de todos los métodos"
+                    label="Total vendido"
+                    valor={money(resumen.total_vendido)}
+                    sub={`Cobrado ${money(resumen.cobrado)} + por cobrar ${money(resumen.por_cobrar)}`}
                 />
             </div>
         </div>
@@ -660,10 +687,11 @@ function Card({ icon, label, valor, sub, color, destacado }: {
     label: string;
     valor: string;
     sub?: string;
-    color?: 'primary' | 'danger';
+    color?: 'primary' | 'danger' | 'warning';
     destacado?: boolean;
 }) {
     const accent = color === 'danger' ? 'var(--color-danger)'
+        : color === 'warning' ? 'var(--color-warning)'
         : color === 'primary' ? 'var(--color-primary)'
         : 'var(--color-text-muted)';
     return (
