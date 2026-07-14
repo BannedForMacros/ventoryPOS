@@ -176,7 +176,10 @@ class ProductoController extends Controller
                 foreach ($unidadesARemover as $unidad) {
                     $tieneVentas = \App\Models\VentaItem::where('producto_unidad_id', $unidad->id)->exists();
                     if ($tieneVentas) {
-                        $unidad->update(['activo' => false]);
+                        // Al desactivar también limpiamos es_base: si no, una base
+                        // vieja desactivada seguía contando como base y desordenaba
+                        // el default de unidad (p.ej. las entradas salían en "UND").
+                        $unidad->update(['activo' => false, 'es_base' => false]);
                     } else {
                         $unidad->delete();
                     }

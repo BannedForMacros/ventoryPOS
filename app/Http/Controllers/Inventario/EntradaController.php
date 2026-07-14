@@ -108,7 +108,13 @@ class EntradaController extends Controller
             'productos' => Producto::deEmpresa($empresaId)
                 ->activo()
                 ->productos()
-                ->with(['unidades.unidadMedida'])
+                // Solo unidades ACTIVAS y con la base primero: una presentación
+                // desactivada no debe aparecer ni preseleccionarse como default.
+                ->with([
+                    'unidades' => fn ($q) => $q->where('activo', true)
+                        ->orderByDesc('es_base')
+                        ->with('unidadMedida'),
+                ])
                 ->orderBy('nombre')
                 ->get(),
             'proveedores' => Proveedor::deEmpresa($empresaId)
