@@ -193,6 +193,14 @@ class Devolucion extends Model
                             $d->producto_id,
                             -1 * (float) $d->cantidad_base,
                             permitirNegativo: true,
+                            contexto: [
+                                'tipo'            => 'devolucion_reverso',
+                                'referencia_tipo' => 'devolucion',
+                                'referencia_id'   => $this->id,
+                                'fecha'           => now(),
+                                'user_id'         => optional(auth()->user())->id,
+                                'empresa_id'      => $this->empresa_id ?? optional($this->venta)->empresa_id,
+                            ],
                         );
 
                         if ((float) $stock->cantidad < 0) {

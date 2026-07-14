@@ -67,15 +67,21 @@ class MovimientoInventario extends Model
     public static function etiquetaTipo(string $tipo): string
     {
         return match ($tipo) {
-            'entrada'                  => 'Entrada',
-            'salida'                   => 'Salida',
-            'venta'                    => 'Venta',
-            'devolucion'               => 'Devolución',
-            'transferencia_envio'      => 'Transferencia (envío)',
-            'transferencia_recepcion'  => 'Transferencia (recepción)',
-            'cierre'                   => 'Cierre de inventario',
-            'entrega_pendiente'        => 'Entrega de pendiente',
-            default                    => 'Ajuste',
+            'entrada'                    => 'Entrada',
+            'entrada_reverso'            => 'Entrada (reverso)',
+            'entrada_edicion'            => 'Entrada (edición)',
+            'salida'                     => 'Salida',
+            'venta'                      => 'Venta',
+            'venta_anulacion'            => 'Venta (anulación)',
+            'devolucion'                 => 'Devolución',
+            'devolucion_reverso'         => 'Devolución (reverso)',
+            'transferencia_envio'        => 'Transferencia (envío)',
+            'transferencia_recepcion'    => 'Transferencia (recepción)',
+            'transferencia_reverso'      => 'Transferencia (reverso)',
+            'transferencia_reaplicacion' => 'Transferencia (reaplicación)',
+            'cierre'                     => 'Cierre de inventario',
+            'entrega_pendiente'          => 'Entrega de pendiente',
+            default                      => 'Ajuste',
         };
     }
 }

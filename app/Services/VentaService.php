@@ -453,7 +453,14 @@ class VentaService
                 if ($producto && $this->config->deboDescontarStock($producto, $venta->local)) {
                     $restaurar = round((float) $item->cantidad_base - ($pendienteBasePorItem[$item->id] ?? 0), 4);
                     if ($restaurar > 0.00009) {
-                        Stock::ajustar($almacen->id, $producto->id, $restaurar); // restaurar
+                        Stock::ajustar($almacen->id, $producto->id, $restaurar, contexto: [
+                            'tipo'            => 'venta_anulacion',
+                            'referencia_tipo' => 'venta',
+                            'referencia_id'   => $venta->id,
+                            'fecha'           => now(),
+                            'user_id'         => optional(auth()->user())->id,
+                            'empresa_id'      => $venta->empresa_id,
+                        ]); // restaurar
                     }
                 }
             }
@@ -547,7 +554,14 @@ class VentaService
                     // Restaurar stock: entrada positiva (solo lo efectivamente entregado)
                     $restaurar = round((float) $item->cantidad_base - ($pendienteBasePorItem[$item->id] ?? 0), 4);
                     if ($restaurar > 0.00009) {
-                        Stock::ajustar($almacen->id, $producto->id, $restaurar);
+                        Stock::ajustar($almacen->id, $producto->id, $restaurar, contexto: [
+                            'tipo'            => 'venta_anulacion',
+                            'referencia_tipo' => 'venta',
+                            'referencia_id'   => $venta->id,
+                            'fecha'           => now(),
+                            'user_id'         => optional(auth()->user())->id,
+                            'empresa_id'      => $venta->empresa_id,
+                        ]);
                     }
                 }
             }

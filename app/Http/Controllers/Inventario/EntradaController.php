@@ -414,6 +414,15 @@ class EntradaController extends Controller
                             productoId:       $d->producto_id,
                             cantidadBase:     -1 * (float) $d->cantidad_base,
                             permitirNegativo: true,
+                            contexto: [
+                                'tipo'            => 'entrada_reverso',
+                                'referencia_tipo' => 'entrada',
+                                'referencia_id'   => $entrada->id,
+                                'documento'       => $entrada->numero_documento,
+                                'fecha'           => now(),
+                                'user_id'         => $user->id,
+                                'empresa_id'      => $entrada->empresa_id,
+                            ],
                         );
                     }
                 }
@@ -485,6 +494,15 @@ class EntradaController extends Controller
                             productoId:   $d->producto_id,
                             cantidadBase: (float) $d->cantidad_base,
                             costoNuevo:   (float) $d->precio_costo,
+                            contexto: [
+                                'tipo'            => 'entrada_edicion',
+                                'referencia_tipo' => 'entrada',
+                                'referencia_id'   => $entrada->id,
+                                'documento'       => $entrada->numero_documento,
+                                'fecha'           => $entrada->fecha,
+                                'user_id'         => $user->id,
+                                'empresa_id'      => $entrada->empresa_id,
+                            ],
                         );
                     }
 

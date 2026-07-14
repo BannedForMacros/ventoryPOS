@@ -114,17 +114,28 @@ class Stock extends Model
             $cantidadActual = (float) $stock->cantidad;
 
             if ($cantidadBase > 0) {
-                // Entrada: recalcular costo promedio ponderado
-                // CPP = (stock_actual * costo_actual + cantidad_nueva * costo_nuevo)
-                //       / (stock_actual + cantidad_nueva)
-                $costoActual    = (float) $stock->costo_promedio;
-                $nuevaCantidad  = $cantidadActual + $cantidadBase;
-                $nuevoCosto     = $nuevaCantidad > 0
-                    ? (($cantidadActual * $costoActual) + ($cantidadBase * $costoNuevo)) / $nuevaCantidad
-                    : 0;
+                $nuevaCantidad = $cantidadActual + $cantidadBase;
 
-                $stock->cantidad       = $nuevaCantidad;
-                $stock->costo_promedio = round($nuevoCosto, 4);
+                // COSTEO CANÓNICO (promedio ponderado):
+                // SOLO los ingresos con costo real recalculan el CPP — es decir
+                // compras (entradas) y recepciones de transferencia, que llegan
+                // con `costoNuevo > 0`. Los reingresos SIN costo propio
+                // (devolución con restock, sobrante de cierre de inventario)
+                // entran al COSTO VIGENTE y NO diluyen el promedio.
+                // Así el costo unitario es consistente y auditable, y coincide
+                // con Stock::reconstruir() y con `kardex:reconstruir`.
+                if ($costoNuevo > 0) {
+                    $costoActual = (float) $stock->costo_promedio;
+                    $stock->costo_promedio = round(
+                        $nuevaCantidad > 0
+                            ? (($cantidadActual * $costoActual) + ($cantidadBase * $costoNuevo)) / $nuevaCantidad
+                            : 0,
+                        4
+                    );
+                }
+                // costoNuevo == 0 → se conserva costo_promedio (reingreso al costo vigente).
+
+                $stock->cantidad = $nuevaCantidad;
             } else {
                 // Salida: validar disponibilidad antes de descontar
                 $solicitado = abs($cantidadBase);
@@ -312,23 +323,48 @@ class Stock extends Model
             ->where('ci.producto_id', $productoId)
             ->sum('ci.diferencia');
 
-        // ── Costo promedio: reconstruir desde entradas confirmadas en orden ─
-        $detalles = EntradaDetalle::query()
-            ->join('entradas', 'entradas_detalle.entrada_id', '=', 'entradas.id')
-            ->where('entradas.almacen_id', $almacenId)
-            ->where('entradas.estado', 'confirmado')
-            ->where('entradas_detalle.producto_id', $productoId)
-            ->orderBy('entradas.fecha')
-            ->orderBy('entradas.id')
-            ->select('entradas_detalle.*')
-            ->get();
+        // ── Costo promedio CANÓNICO ─────────────────────────────────────────
+        // Se reconstruye desde los INGRESOS CON COSTO REAL en orden cronológico:
+        //   (+) entradas confirmadas          → costo = precio_costo
+        //   (+) recepciones de transferencia  → costo = costo_unitario
+        // Las salidas, ventas, devoluciones y cierres NO alteran el CPP (mismo
+        // criterio que Stock::ajustar() y `kardex:reconstruir`).
+        $ingresos = collect();
+
+        foreach (\DB::table('entradas_detalle as ed')
+            ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
+            ->where('e.almacen_id', $almacenId)
+            ->where('e.estado', 'confirmado')
+            ->where('ed.producto_id', $productoId)
+            ->get(['ed.cantidad_base', 'ed.precio_costo', 'e.fecha', 'e.id']) as $r) {
+            $ingresos->push([
+                'orden'    => (string) $r->fecha . '|' . str_pad((string) $r->id, 12, '0', STR_PAD_LEFT),
+                'cantidad' => (float) $r->cantidad_base,
+                'costo'    => (float) $r->precio_costo,
+            ]);
+        }
+
+        foreach (\DB::table('transferencias_detalle as td')
+            ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
+            ->where('t.almacen_destino_id', $almacenId)
+            ->where('t.estado', 'recibida')
+            ->where('td.producto_id', $productoId)
+            ->get(['td.cantidad_base_recibida', 'td.costo_unitario', 't.fecha_recepcion', 't.id']) as $r) {
+            $ingresos->push([
+                'orden'    => (string) $r->fecha_recepcion . '|' . str_pad((string) $r->id, 12, '0', STR_PAD_LEFT),
+                'cantidad' => (float) $r->cantidad_base_recibida,
+                'costo'    => (float) $r->costo_unitario,
+            ]);
+        }
 
         $cantCpp = 0.0;
         $costo   = 0.0;
-        foreach ($detalles as $d) {
-            $nuevaCantidad = $cantCpp + (float) $d->cantidad_base;
+        foreach ($ingresos->sortBy('orden')->values() as $ing) {
+            // Ingreso sin costo propio: no altera el promedio (entra al costo vigente).
+            if ($ing['costo'] <= 0) { $cantCpp += $ing['cantidad']; continue; }
+            $nuevaCantidad = $cantCpp + $ing['cantidad'];
             $costo = $nuevaCantidad > 0
-                ? (($cantCpp * $costo) + ((float) $d->cantidad_base * (float) $d->precio_costo)) / $nuevaCantidad
+                ? (($cantCpp * $costo) + ($ing['cantidad'] * $ing['costo'])) / $nuevaCantidad
                 : 0;
             $cantCpp = $nuevaCantidad;
         }

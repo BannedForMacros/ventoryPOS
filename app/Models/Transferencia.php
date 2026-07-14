@@ -192,7 +192,14 @@ class Transferencia extends Model
             Stock::ajustar(
                 $this->almacen_origen_id,
                 $d->producto_id,
-                (float) $d->cantidad_base_enviada
+                (float) $d->cantidad_base_enviada,
+                contexto: [
+                    'tipo'            => 'transferencia_reverso',
+                    'referencia_tipo' => 'transferencia',
+                    'referencia_id'   => $this->id,
+                    'fecha'           => now(),
+                    'empresa_id'      => $this->empresa_id,
+                ],
             );
         }
 
@@ -206,6 +213,13 @@ class Transferencia extends Model
                     $d->producto_id,
                     -1 * $cantBaseRecibida,
                     permitirNegativo: true,
+                    contexto: [
+                        'tipo'            => 'transferencia_reverso',
+                        'referencia_tipo' => 'transferencia',
+                        'referencia_id'   => $this->id,
+                        'fecha'           => now(),
+                        'empresa_id'      => $this->empresa_id,
+                    ],
                 );
             }
         }
@@ -225,7 +239,14 @@ class Transferencia extends Model
             Stock::ajustar(
                 $this->almacen_origen_id,
                 $d->producto_id,
-                -1 * (float) $d->cantidad_base_enviada
+                -1 * (float) $d->cantidad_base_enviada,
+                contexto: [
+                    'tipo'            => 'transferencia_reaplicacion',
+                    'referencia_tipo' => 'transferencia',
+                    'referencia_id'   => $this->id,
+                    'fecha'           => now(),
+                    'empresa_id'      => $this->empresa_id,
+                ],
             );
         }
 
@@ -236,7 +257,14 @@ class Transferencia extends Model
                     $this->almacen_destino_id,
                     $d->producto_id,
                     $cantBaseRecibida,
-                    (float) $d->costo_unitario
+                    (float) $d->costo_unitario,
+                    contexto: [
+                        'tipo'            => 'transferencia_reaplicacion',
+                        'referencia_tipo' => 'transferencia',
+                        'referencia_id'   => $this->id,
+                        'fecha'           => now(),
+                        'empresa_id'      => $this->empresa_id,
+                    ],
                 );
             }
         }

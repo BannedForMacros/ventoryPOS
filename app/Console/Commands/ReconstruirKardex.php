@@ -201,16 +201,18 @@ class ReconstruirKardex extends Command
         $ahora = now();
 
         foreach ($movs as $m) {
-            $q = (float) $m['cantidad'];
+            $q     = (float) $m['cantidad'];
+            $costo = (float) $m['costo'];
 
-            if ($m['recalc'] && $q > 0) {
-                // Entrada / recepción: recalcula CPP ponderado
+            if ($m['recalc'] && $q > 0 && $costo > 0) {
+                // Ingreso CON costo real (compra / recepción): recalcula CPP ponderado.
                 $nueva = $cant + $q;
-                $cpp   = $nueva > 0 ? (($cant * $cpp) + ($q * (float) $m['costo'])) / $nueva : 0.0;
+                $cpp   = $nueva > 0 ? (($cant * $cpp) + ($q * $costo)) / $nueva : 0.0;
                 $cant  = $nueva;
-                $costoUnitario = (float) $m['costo'];
+                $costoUnitario = $costo;
             } else {
-                // Salida / venta / transferencia salida / devolución / cierre: mantiene CPP
+                // Salida / venta / transf. salida / devolución / cierre / ingreso sin costo:
+                // NO altera el CPP; entra o sale al costo vigente (regla canónica).
                 $cant += $q;
                 $costoUnitario = $cpp;
             }

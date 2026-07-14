@@ -53,10 +53,6 @@ interface Props extends PageProps {
 const num = (n: number) => n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const sol = (n: number) => 'S/ ' + num(n);
 
-// Movimientos que SUMAN stock (verde) vs los que RESTAN (rojo).
-const esEntrada = (t: string) =>
-    ['entrada', 'devolucion', 'transferencia_recepcion'].includes(t) || t === 'cierre';
-
 export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSelector, productoSel, tipos, filters, flash }: Props) {
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -170,7 +166,7 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
                     </thead>
                     <tbody>
                         {movimientos.data.map(m => {
-                            const up = esEntrada(m.tipo);
+                            const up = m.entra != null; // suma stock = verde, resta = rojo
                             return (
                                 <tr key={m.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                                     <td className="px-3 py-2 text-xs whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{m.fecha ?? '—'}</td>
