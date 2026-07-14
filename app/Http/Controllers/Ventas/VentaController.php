@@ -455,43 +455,33 @@ class VentaController extends Controller
      */
     private function resumenDeTurno(Turno $turno): array
     {
+        // Desglose por método + cuenta. La cuenta real se resuelve VÍA EL PIVOTE:
+        // venta_pagos.cuenta_metodo_pago_id → cuenta_metodo_pago.id → cuenta_id →
+        // cuentas.id. (La relación cuentaMetodoPago del modelo apunta directo a
+        // cuentas y por eso salía "sin cuenta" en Yape/transferencias.)
         $filas = \App\Models\VentaPago::query()
-            ->selectRaw('metodo_pago_id, cuenta_metodo_pago_id, SUM(monto) as total')
-            ->whereHas('venta', fn($q) => $q->where('turno_id', $turno->id)->where('estado', 'completada'))
-            ->groupBy('metodo_pago_id', 'cuenta_metodo_pago_id')
-            ->with([
-                'metodoPago:id,nombre,tipo_id',
-                'metodoPago.tipo:id,slug',
-                'cuentaMetodoPago:id,nombre,banco,es_efectivo',
-            ])
+            ->join('ventas', 'ventas.id', '=', 'venta_pagos.venta_id')
+            ->leftJoin('cuenta_metodo_pago as cmp', 'cmp.id', '=', 'venta_pagos.cuenta_metodo_pago_id')
+            ->leftJoin('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
+            ->leftJoin('metodos_pago as mp', 'mp.id', '=', 'venta_pagos.metodo_pago_id')
+            ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
+            ->where('ventas.turno_id', $turno->id)
+            ->where('ventas.estado', 'completada')
+            ->groupBy('mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
+            ->selectRaw('mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(venta_pagos.monto) as total')
             ->get();
 
-        // Consolidamos por método+cuenta (dos filas del mismo método sin cuenta
-        // resuelta no deben salir como dos cards separadas).
+        // Consolidamos por método+cuenta.
         $agrupado = [];
         $totalEfectivo = 0.0;
-        $totalVentas   = 0.0;
         foreach ($filas as $f) {
-            $monto      = (float) $f->total;
-            $esEfectivo = ($f->metodoPago?->tipo?->slug === 'efectivo');
-            $totalVentas += $monto;
-            if ($esEfectivo) {
-                $totalEfectivo += $monto;
-            }
-            $nombre = $f->metodoPago?->nombre ?? 'Otro';
-            $cuenta = $f->cuentaMetodoPago?->nombre;
-            $key    = $nombre . '|' . ($cuenta ?? '');
-            if (!isset($agrupado[$key])) {
-                $agrupado[$key] = [
-                    'metodo'      => $nombre,
-                    'slug'        => $f->metodoPago?->tipo?->slug,
-                    'es_efectivo' => $esEfectivo,
-                    'cuenta'      => $cuenta,
-                    'banco'       => $f->cuentaMetodoPago?->banco,
-                    'total'       => 0.0,
-                ];
-            }
-            $agrupado[$key]['total'] += $monto;
+            $this->acumularMetodo($agrupado, $totalEfectivo, $f->metodo, $f->slug, $f->cuenta, $f->banco, (float) $f->total);
+        }
+
+        // Abonos a cuentas por cobrar cobrados EN ESTE TURNO: también son dinero
+        // que entra a la caja, con su propio método y cuenta. Se suman al desglose.
+        foreach ($this->abonosPorMetodo($turno) as $f) {
+            $this->acumularMetodo($agrupado, $totalEfectivo, $f->metodo, $f->slug, $f->cuenta, $f->banco, (float) $f->total);
         }
 
         $metodos = array_map(function ($m) {
@@ -512,6 +502,10 @@ class VentaController extends Controller
         // pagos (que incluye vuelto). Así cuadra exacto: total = cobrado + por_cobrar.
         $cobrado      = (float) (clone $ventasTurno)->sum('monto_pagado');
 
+        // Abonos a cuentas por cobrar recibidos en este turno (dinero extra que
+        // entró a caja, aparte de las ventas del turno).
+        $abonos = (float) \App\Models\VentaAbono::where('turno_id', $turno->id)->sum('monto');
+
         return [
             'turno' => [
                 'id'     => $turno->id,
@@ -525,11 +519,52 @@ class VentaController extends Controller
             'total_efectivo'   => round($totalEfectivo, 2),
             'total_vendido'    => round($totalVendido, 2),    // cobrado + por cobrar
             'por_cobrar'       => round($porCobrar, 2),       // crédito pendiente del turno
+            'abonos'           => round($abonos, 2),          // cobros de crédito recibidos en el turno
             'gastos'           => round($gastos, 2),
             'apertura'         => round((float) $turno->monto_apertura, 2),
             // Efectivo real esperado en caja (apertura + ventas efectivo − gastos − reembolsos).
             'efectivo_en_caja' => round((float) $turno->calcularMontoEsperado(), 2),
         ];
+    }
+
+    /** Acumula un cobro (venta o abono) en el desglose por método+cuenta. */
+    private function acumularMetodo(array &$agrupado, float &$totalEfectivo, ?string $metodo, ?string $slug, ?string $cuenta, ?string $banco, float $monto): void
+    {
+        $esEfectivo = ($slug === 'efectivo');
+        if ($esEfectivo) {
+            $totalEfectivo += $monto;
+        }
+        $nombre = $metodo ?? 'Otro';
+        $key    = $nombre . '|' . ($cuenta ?? '');
+        if (!isset($agrupado[$key])) {
+            $agrupado[$key] = [
+                'metodo'      => $nombre,
+                'slug'        => $slug,
+                'es_efectivo' => $esEfectivo,
+                'cuenta'      => $cuenta,
+                'banco'       => $banco,
+                'total'       => 0.0,
+            ];
+        }
+        $agrupado[$key]['total'] += $monto;
+    }
+
+    /**
+     * Abonos a cuentas por cobrar cobrados EN ESTE TURNO, agrupados por
+     * método + cuenta (misma forma que las ventas). Los abonos guardan la cuenta
+     * DIRECTA en venta_abonos.cuenta_id (no usan el pivote de las ventas).
+     */
+    private function abonosPorMetodo(Turno $turno)
+    {
+        return \App\Models\VentaAbono::query()
+            ->from('venta_abonos as va')
+            ->leftJoin('metodos_pago as mp', 'mp.id', '=', 'va.metodo_pago_id')
+            ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
+            ->leftJoin('cuentas as c', 'c.id', '=', 'va.cuenta_id')
+            ->where('va.turno_id', $turno->id)
+            ->groupBy('mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
+            ->selectRaw('mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(va.monto) as total')
+            ->get();
     }
 
     /** Payload de impresión de una venta (para imprimir desde la lista sin abrir el detalle). */

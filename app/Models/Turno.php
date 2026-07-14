@@ -69,6 +69,12 @@ class Turno extends Model
             $q->where('slug', 'efectivo')
         )->sum('monto');
 
+        // Abonos a cuentas por cobrar cobrados EN EFECTIVO durante el turno:
+        // ese billete entra al cajón, así que el sistema debe esperarlo.
+        $abonosEfectivo = (float) \App\Models\VentaAbono::where('turno_id', $this->id)
+            ->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))
+            ->sum('monto');
+
         // Reembolsos de devoluciones en efectivo del turno (descuentan caja)
         $reembolsosEfectivo = (float) \App\Models\DevolucionPago::whereHas('devolucion', fn($q) =>
             $q->where('turno_id', $this->id)
@@ -83,6 +89,7 @@ class Turno extends Model
 
         return $apertura
              + $ventasEfectivo
+             + $abonosEfectivo
              - $gastosEfectivo
              - $reembolsosEfectivo
              + ($sumaFondos ? $fondos : 0.0);

@@ -4,7 +4,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     Eye, ShoppingCart, Filter, Calendar, Receipt, Pencil, Trash2, KeyRound,
-    AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock,
+    AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -55,6 +55,7 @@ interface Resumen {
     total_efectivo:   number;
     total_vendido:    number;   // cobrado + por cobrar
     por_cobrar:       number;   // crédito pendiente del turno
+    abonos:           number;   // cobros de crédito recibidos en el turno
     gastos:           number;
     apertura:         number;
     efectivo_en_caja: number;
@@ -662,6 +663,15 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                     color="warning"
                 />
 
+                {/* Abonos de crédito cobrados en el turno (ya incluidos en los métodos) */}
+                <Card
+                    icon={<HandCoins size={18} />}
+                    label="Abonos recibidos"
+                    valor={money(resumen.abonos)}
+                    sub="Cobros de crédito en este turno"
+                    color="success"
+                />
+
                 {/* Gastos */}
                 <Card
                     icon={<TrendingDown size={18} />}
@@ -687,11 +697,12 @@ function Card({ icon, label, valor, sub, color, destacado }: {
     label: string;
     valor: string;
     sub?: string;
-    color?: 'primary' | 'danger' | 'warning';
+    color?: 'primary' | 'danger' | 'warning' | 'success';
     destacado?: boolean;
 }) {
     const accent = color === 'danger' ? 'var(--color-danger)'
         : color === 'warning' ? 'var(--color-warning)'
+        : color === 'success' ? 'var(--color-success)'
         : color === 'primary' ? 'var(--color-primary)'
         : 'var(--color-text-muted)';
     return (

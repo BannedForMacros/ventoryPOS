@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Finanzas;
 use App\Http\Controllers\Controller;
 use App\Models\Cuenta;
 use App\Models\MetodoPago;
+use App\Models\Turno;
 use App\Models\Venta;
 use App\Models\VentaAbono;
 use App\Services\AuditoriaService;
@@ -91,8 +92,17 @@ class CuentasPorCobrarController extends Controller
             'observacion'    => ['nullable', 'string', 'max:500'],
         ]);
 
-        DB::transaction(function () use ($venta, $user, $data) {
-            $abono = VentaAbono::create($data + ['venta_id' => $venta->id, 'user_id' => $user->id]);
+        // Turno activo del cajero: si cobra con caja abierta, el abono entra a
+        // ESE turno (y si es efectivo, suma al efectivo esperado de la caja).
+        // Sin turno abierto (p.ej. transferencia al banco) queda sin turno.
+        $turnoId = Turno::turnoActivoDelUsuario($user->id)?->id;
+
+        DB::transaction(function () use ($venta, $user, $data, $turnoId) {
+            $abono = VentaAbono::create($data + [
+                'venta_id' => $venta->id,
+                'user_id'  => $user->id,
+                'turno_id' => $turnoId,
+            ]);
 
             // F7 — El cobro ingresa a tesorería con su origen.
             $clienteNombre = $venta->cliente?->razon_social
