@@ -367,7 +367,14 @@ class AnticipoClienteController extends Controller
                     && $this->config->deboDescontarStock($item->producto, $anticipo->venta->local)) {
                     $base = round($e['cantidad'] * (float) $item->factor_conversion, 4);
                     if ($base > 0.00009) {
-                        Stock::ajustar($almacen->id, $item->producto_id, -$base, 0, $permitirNegativo);
+                        Stock::ajustar($almacen->id, $item->producto_id, -$base, 0, $permitirNegativo, contexto: [
+                            'tipo'            => 'entrega_pendiente',
+                            'referencia_tipo' => 'venta',
+                            'referencia_id'   => $anticipo->venta_id ?? optional($anticipo->venta)->id,
+                            'fecha'           => now(),
+                            'user_id'         => optional(auth()->user())->id,
+                            'empresa_id'      => $almacen->empresa_id,
+                        ]);
                     }
                 }
             }

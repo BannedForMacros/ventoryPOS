@@ -123,7 +123,14 @@ class Devolucion extends Model
 
             foreach ($this->detalles as $d) {
                 if ($d->restock && $almacenId) {
-                    Stock::ajustar($almacenId, $d->producto_id, (float) $d->cantidad_base);
+                    Stock::ajustar($almacenId, $d->producto_id, (float) $d->cantidad_base, contexto: [
+                        'tipo'            => 'devolucion',
+                        'referencia_tipo' => 'devolucion',
+                        'referencia_id'   => $this->id,
+                        'fecha'           => now(),
+                        'user_id'         => optional(auth()->user())->id,
+                        'empresa_id'      => $this->empresa_id ?? optional($this->venta)->empresa_id,
+                    ]);
                 }
                 // Si no restockea, no hacemos nada con stock (el producto físicamente no
                 // vuelve al inventario; queda en una zona aparte o se descarta).

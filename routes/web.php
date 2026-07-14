@@ -393,6 +393,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:reportes.gastos,ver')->get('gastos',           [ReporteGastoController::class,        'index'])->name('gastos');
         Route::middleware('permiso:reportes.devoluciones,ver')->get('devoluciones', [ReporteDevolucionController::class, 'index'])->name('devoluciones');
         Route::middleware('permiso:reportes.auditoria,ver')->get('auditoria',     [ReporteAuditoriaController::class,    'index'])->name('auditoria');
+        Route::middleware('permiso:reportes.kardex,ver')->get('kardex',           [\App\Http\Controllers\Reportes\ReporteKardexController::class, 'index'])->name('kardex');
     });
 
     // ── WHATSAPP ─────────────────────────────────────────────────────────

@@ -95,7 +95,20 @@ class Salida extends Model
                     'subtotal'       => $subtotal,
                 ]);
 
-                Stock::ajustar($this->almacen_id, $d->producto_id, -1 * (float) $d->cantidad_base);
+                Stock::ajustar(
+                    $this->almacen_id,
+                    $d->producto_id,
+                    -1 * (float) $d->cantidad_base,
+                    contexto: [
+                        'tipo'            => 'salida',
+                        'referencia_tipo' => 'salida',
+                        'referencia_id'   => $this->id,
+                        'documento'       => $this->numero_documento,
+                        'fecha'           => $this->fecha,
+                        'user_id'         => $this->user_id,
+                        'empresa_id'      => $this->empresa_id,
+                    ],
+                );
 
                 $totalDocumento += $subtotal;
             }

@@ -22,6 +22,15 @@ class EntradaObserver
                 productoId:   $detalle->producto_id,
                 cantidadBase: (float) $detalle->cantidad_base,
                 costoNuevo:   (float) $detalle->precio_costo,
+                contexto: [
+                    'tipo'            => 'entrada',
+                    'referencia_tipo' => 'entrada',
+                    'referencia_id'   => $entrada->id,
+                    'documento'       => $entrada->numero_documento,
+                    'fecha'           => $entrada->fecha,
+                    'user_id'         => $entrada->user_id,
+                    'empresa_id'      => $entrada->empresa_id,
+                ],
             );
         }
 

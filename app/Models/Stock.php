@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class Stock extends Model
 {
@@ -82,8 +83,17 @@ class Stock extends Model
         float $cantidadBase,
         float $costoNuevo = 0,
         bool  $permitirNegativo = false,
+        ?array $contexto = null,
     ): self {
-        return DB::transaction(function () use ($almacenId, $productoId, $cantidadBase, $costoNuevo, $permitirNegativo) {
+        // Blindaje de almacén: NINGÚN movimiento de stock puede ocurrir sin un
+        // almacén válido. Todo el inventario está siempre ligado a un almacén.
+        if ($almacenId <= 0) {
+            throw new \InvalidArgumentException(
+                'Stock::ajustar() requiere un almacen_id válido (> 0). El stock siempre pertenece a un almacén.'
+            );
+        }
+
+        $stock = DB::transaction(function () use ($almacenId, $productoId, $cantidadBase, $costoNuevo, $permitirNegativo) {
             // 1) Asegurar que la fila exista. Idempotente y atomico gracias al
             //    UNIQUE (almacen_id, producto_id). Si dos transacciones la crean
             //    simultaneamente, una gana y la otra recibe DO NOTHING (sin error).
@@ -136,6 +146,73 @@ class Stock extends Model
             $stock->save();
 
             return $stock;
+        });
+
+        // Traza el movimiento en el kardex. Se hace DESPUÉS del commit y a
+        // prueba de fallos: si algo fallara al registrar el kardex, el
+        // movimiento de stock YA está guardado y NO se revierte. El kardex
+        // siempre puede regenerarse con `php artisan kardex:reconstruir`.
+        self::trazarEnKardex($stock, $almacenId, $productoId, $cantidadBase, $costoNuevo, $contexto);
+
+        return $stock;
+    }
+
+    /**
+     * Registra una fila en el ledger de kardex (movimientos_inventario).
+     * Post-commit y no bloqueante: jamás rompe la venta/entrada/etc.
+     */
+    private static array $empresaAlmacenCache = [];
+
+    private static function trazarEnKardex(
+        self $stock,
+        int $almacenId,
+        int $productoId,
+        float $cantidadBase,
+        float $costoNuevo,
+        ?array $contexto,
+    ): void {
+        // Valores YA calculados por el ajuste; se capturan como escalares.
+        $saldoCantidad = (float) $stock->cantidad;
+        $cpp           = (float) $stock->costo_promedio;
+        $costoUnitario = $cantidadBase > 0
+            ? ($costoNuevo > 0 ? $costoNuevo : $cpp)  // entrada: costo del ingreso
+            : $cpp;                                    // salida: sale al CPP vigente
+
+        $ctx = $contexto ?? [];
+
+        if (!array_key_exists($almacenId, self::$empresaAlmacenCache)) {
+            self::$empresaAlmacenCache[$almacenId] =
+                DB::table('almacenes')->where('id', $almacenId)->value('empresa_id');
+        }
+
+        $fila = [
+            'empresa_id'       => $ctx['empresa_id'] ?? self::$empresaAlmacenCache[$almacenId],
+            'almacen_id'       => $almacenId,
+            'producto_id'      => $productoId,
+            'fecha'            => $ctx['fecha'] ?? now(),
+            'tipo'             => $ctx['tipo'] ?? 'ajuste',
+            'referencia_tipo'  => $ctx['referencia_tipo'] ?? null,
+            'referencia_id'    => $ctx['referencia_id'] ?? null,
+            'documento'        => $ctx['documento'] ?? null,
+            'cantidad'         => round($cantidadBase, 4),
+            'costo_unitario'   => round($costoUnitario, 4),
+            'costo_promedio'   => round($cpp, 4),
+            'saldo_cantidad'   => round($saldoCantidad, 4),
+            'saldo_valorizado' => round($saldoCantidad * $cpp, 4),
+            'user_id'          => $ctx['user_id'] ?? optional(auth()->user())->id,
+        ];
+
+        DB::afterCommit(function () use ($fila) {
+            try {
+                MovimientoInventario::create($fila);
+            } catch (\Throwable $e) {
+                Log::error('No se pudo registrar el movimiento en el kardex.', [
+                    'error'       => $e->getMessage(),
+                    'almacen_id'  => $fila['almacen_id'],
+                    'producto_id' => $fila['producto_id'],
+                    'tipo'        => $fila['tipo'],
+                ]);
+            }
         });
     }
 

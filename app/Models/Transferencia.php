@@ -93,7 +93,15 @@ class Transferencia extends Model
                 Stock::ajustar(
                     $this->almacen_origen_id,
                     $d->producto_id,
-                    -1 * (float) $d->cantidad_base_enviada
+                    -1 * (float) $d->cantidad_base_enviada,
+                    contexto: [
+                        'tipo'            => 'transferencia_envio',
+                        'referencia_tipo' => 'transferencia',
+                        'referencia_id'   => $this->id,
+                        'fecha'           => now(),
+                        'user_id'         => $userId,
+                        'empresa_id'      => $this->empresa_id,
+                    ],
                 );
             }
 
@@ -133,7 +141,15 @@ class Transferencia extends Model
                     $this->almacen_destino_id,
                     $d->producto_id,
                     $cantBaseRecibida,
-                    (float) $d->costo_unitario
+                    (float) $d->costo_unitario,
+                    contexto: [
+                        'tipo'            => 'transferencia_recepcion',
+                        'referencia_tipo' => 'transferencia',
+                        'referencia_id'   => $this->id,
+                        'fecha'           => now(),
+                        'user_id'         => $userId,
+                        'empresa_id'      => $this->empresa_id,
+                    ],
                 );
             }
 

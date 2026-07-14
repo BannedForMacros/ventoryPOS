@@ -237,7 +237,14 @@ class VentaService
                 // pendiente se descuenta al registrar la entrega del anticipo.
                 $baseEntregada = round(($cantidad - $cantPendiente) * (float) $unidad->factor_conversion, 4);
                 if ($baseEntregada > 0.00009) {
-                    Stock::ajustar($almacen->id, $producto->id, -$baseEntregada, 0, $permitirStockNegativo);
+                    Stock::ajustar($almacen->id, $producto->id, -$baseEntregada, 0, $permitirStockNegativo, contexto: [
+                        'tipo'            => 'venta',
+                        'referencia_tipo' => 'venta',
+                        'referencia_id'   => $venta->id,
+                        'fecha'           => $venta->fecha_venta ?? now(),
+                        'user_id'         => $venta->user_id ?? optional(auth()->user())->id,
+                        'empresa_id'      => $venta->empresa_id,
+                    ]);
                 }
             }
 

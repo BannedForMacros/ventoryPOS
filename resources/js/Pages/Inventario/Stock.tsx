@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { RefreshCw, AlertTriangle } from 'lucide-react';
+import { RefreshCw, AlertTriangle, Eye } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -125,6 +125,22 @@ export default function Stock({ stocks, almacenes, mostrarSelector, filters, sto
                 <span className="font-mono text-sm font-semibold">
                     S/ {Number(s.valor_total).toFixed(2)}
                 </span>
+            ),
+        },
+        {
+            key: 'acciones', label: '', sortable: false,
+            render: (s) => (
+                <button
+                    onClick={() => router.get(route('reportes.kardex'), {
+                        producto_id: s.producto_id,
+                        almacen_id:  s.almacen_id,
+                    })}
+                    title="Ver movimientos (kardex)"
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]"
+                    style={{ color: 'var(--color-text-muted)' }}
+                >
+                    <Eye size={16} />
+                </button>
             ),
         },
     ];

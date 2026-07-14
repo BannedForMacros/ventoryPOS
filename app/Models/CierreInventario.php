@@ -64,7 +64,15 @@ class CierreInventario extends Model
                     Stock::ajustar(
                         $this->almacen_id,
                         $item->producto_id,
-                        (float) $item->diferencia
+                        (float) $item->diferencia,
+                        contexto: [
+                            'tipo'            => 'cierre',
+                            'referencia_tipo' => 'cierre',
+                            'referencia_id'   => $this->id,
+                            'fecha'           => $this->fecha,
+                            'user_id'         => $this->user_id,
+                            'empresa_id'      => $this->empresa_id,
+                        ],
                     );
                     $totalDiferencias++;
                 }
