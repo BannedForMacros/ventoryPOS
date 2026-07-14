@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
+import { useAnchoredPosition } from '@/lib/useAnchoredPosition';
 
 interface SelectOption {
     value: string | number;
@@ -34,13 +36,23 @@ export default function Select({
     const [open, setOpen] = useState(false);
     const [focused, setFocused] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const menuRef = useRef<HTMLUListElement>(null);
+
+    // Dropdown en portal, anclado al trigger, para escapar de contenedores con
+    // overflow recortado (modal con scroll, overflow-hidden). Antes se recortaba.
+    const pos = useAnchoredPosition(triggerRef, open);
 
     const selected = options.find(o => o.value === value);
 
-    // Cerrar al hacer click fuera
+    // Cerrar al hacer click fuera (el menú vive en un portal → también cuenta como "dentro")
     useEffect(() => {
         function handleClickOutside(e: MouseEvent) {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+            const target = e.target as Node;
+            const dentro =
+                (containerRef.current && containerRef.current.contains(target)) ||
+                (menuRef.current && menuRef.current.contains(target));
+            if (!dentro) {
                 setOpen(false);
                 setFocused(false);
             }
@@ -94,6 +106,7 @@ export default function Select({
             {/* Trigger */}
             <div className="relative">
                 <button
+                    ref={triggerRef}
                     type="button"
                     role="combobox"
                     aria-expanded={open}
@@ -128,16 +141,18 @@ export default function Select({
                     dentro del dropdown. Mirror de SearchableSelect (240px).
                     Mobile: touchAction/overscrollBehavior para que el touch scrollee la
                     lista en lugar de la pagina (sin estos props, el scroll se "escapa"). */}
-                {open && (
+                {open && pos && createPortal(
                     <ul
+                        ref={menuRef}
                         role="listbox"
-                        className="absolute z-50 mt-1.5 w-full overflow-y-auto rounded-xl border py-1"
+                        className="overflow-y-auto rounded-xl border py-1"
                         style={{
+                            ...pos.style,
                             borderColor: 'var(--color-border)',
                             backgroundColor: 'var(--color-surface)',
                             boxShadow: '0 8px 24px rgb(0 0 0 / 0.10)',
                             animation: 'selectFadeIn 0.12s ease',
-                            maxHeight: '240px',
+                            maxHeight: pos.maxHeight,
                             touchAction: 'pan-y',
                             overscrollBehavior: 'contain',
                             WebkitOverflowScrolling: 'touch',
@@ -181,7 +196,8 @@ export default function Select({
                                 );
                             })
                         )}
-                    </ul>
+                    </ul>,
+                    document.body,
                 )}
             </div>
 

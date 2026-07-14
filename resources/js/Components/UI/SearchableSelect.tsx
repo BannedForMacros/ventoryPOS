@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Check, Search, X } from 'lucide-react';
+import { useAnchoredPosition } from '@/lib/useAnchoredPosition';
 
 interface SearchableSelectOption {
     value: string | number;
@@ -59,8 +61,15 @@ export default function SearchableSelect({
     const [highlightIdx, setHighlightIdx] = useState<number>(-1);
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const triggerRef   = useRef<HTMLButtonElement>(null);
+    const menuRef      = useRef<HTMLDivElement>(null);
     const inputRef     = useRef<HTMLInputElement>(null);
     const listRef      = useRef<HTMLUListElement>(null);
+
+    // Posición fija anclada al trigger → el dropdown se renderiza en un portal
+    // y escapa de cualquier ancestro con overflow recortado (modal con scroll,
+    // contenedor overflow-hidden). Antes de esto el menú "se escondía".
+    const pos = useAnchoredPosition(triggerRef, open);
 
     const selected = options.find(o => o.value === value);
 
@@ -77,9 +86,13 @@ export default function SearchableSelect({
     useEffect(() => {
         function onPointerOutside(e: MouseEvent | TouchEvent) {
             const target = e.target as Node;
-            if (containerRef.current && !containerRef.current.contains(target)) {
-                close();
-            }
+            // El dropdown vive en un portal (fuera de containerRef): hay que
+            // considerarlo "dentro" o el click en una opción cerraría el menú
+            // antes de que dispare la selección.
+            const dentro =
+                (containerRef.current && containerRef.current.contains(target)) ||
+                (menuRef.current && menuRef.current.contains(target));
+            if (!dentro) close();
         }
         document.addEventListener('mousedown', onPointerOutside);
         document.addEventListener('touchstart', onPointerOutside, { passive: true });
@@ -191,6 +204,7 @@ export default function SearchableSelect({
             {/* Trigger */}
             <div className="relative">
                 <button
+                    ref={triggerRef}
                     type="button"
                     role="combobox"
                     aria-expanded={open}
@@ -237,11 +251,13 @@ export default function SearchableSelect({
                     </span>
                 </button>
 
-                {/* Dropdown */}
-                {open && (
+                {/* Dropdown (portal: escapa de cualquier overflow recortado) */}
+                {open && pos && createPortal(
                     <div
-                        className="absolute z-50 mt-1.5 w-full overflow-hidden rounded-xl border"
+                        ref={menuRef}
+                        className="overflow-hidden rounded-xl border"
                         style={{
+                            ...pos.style,
                             borderColor: 'var(--color-border)',
                             backgroundColor: 'var(--color-surface)',
                             boxShadow: '0 8px 24px rgb(0 0 0 / 0.10)',
@@ -291,7 +307,7 @@ export default function SearchableSelect({
                             role="listbox"
                             className="overflow-y-auto py-1"
                             style={{
-                                maxHeight: '240px',
+                                maxHeight: Math.max(120, pos.maxHeight - 92),
                                 touchAction: 'pan-y',
                                 overscrollBehavior: 'contain',
                                 WebkitOverflowScrolling: 'touch',
@@ -347,7 +363,8 @@ export default function SearchableSelect({
                                 {filtered.length} de {options.length} {filtered.length === 1 ? 'resultado' : 'resultados'}
                             </div>
                         )}
-                    </div>
+                    </div>,
+                    document.body,
                 )}
             </div>
 

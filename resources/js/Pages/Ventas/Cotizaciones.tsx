@@ -208,10 +208,17 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
     function elegirProducto(key: string, productoId: string) {
         const prod = productosById.get(productoId);
         const base = prod?.unidades.find(u => u.es_base) ?? prod?.unidades[0];
-        setLinea(key, {
-            producto_id:        productoId,
-            producto_unidad_id: base ? String(base.id) : '',
-            precio_unitario:    base ? String(base.precio_venta) : '',
+        setLineas(prev => {
+            const next = prev.map(l => l.key === key ? {
+                ...l,
+                producto_id:        productoId,
+                producto_unidad_id: base ? String(base.id) : '',
+                precio_unitario:    base ? String(base.precio_venta) : '',
+            } : l);
+            // Carga en cadena: si se llenó la última línea, dejamos una vacía
+            // lista para el siguiente producto sin tener que pulsar "Agregar línea".
+            if (productoId && next[next.length - 1].producto_id) next.push(lineaVacia());
+            return next;
         });
     }
 
