@@ -158,7 +158,29 @@
       "Bash(awk -F: '{print $3}')",
       "Bash(mv /Users/jesus/MacSoft/ventoryPOS/agente-impresion /Users/jesus/MacSoft/agente-impresion)",
       "Read(//Users/jesus/MacSoft/**)",
-      "Bash(xargs -n1 basename)"
+      "Bash(xargs -n1 basename)",
+      "Bash(export PGPASSWORD=postgres)",
+      "Bash(echo \"=== Turnos del 13-07 empresa 1097 ===\")",
+      "Bash(echo \"\")",
+      "Bash(echo \"=== Buscar 39709.09 / 39422.59 / 286.50 en el balance Excel del cliente ===\")",
+      "Bash(echo \"=== cuentas de efectivo empresa 1097 ===\")",
+      "Bash(echo \"=== schema cuenta_movimientos ===\")",
+      "Bash(echo \"=== Saldo EFECTIVO \\(cuenta 286\\) acumulado hasta fin de cada fecha ===\")",
+      "Bash(echo \"=== TODOS los movimientos de EFECTIVO el 13-07 \\(cuenta 286\\) ===\")",
+      "Bash(echo \"=== Movimientos EFECTIVO sistema 12-07 \\(cuenta 286\\) ===\")",
+      "Bash(echo \"--- egresos de efectivo 12-07 con detalle ---\")",
+      "Bash(echo \"=== Ventas 12-07: totales por metodo \\(venta_pagos\\) ===\")",
+      "Bash(echo \"--- num ventas 12-07 ---\")",
+      "Bash(echo \"=== deuda_pago 19 \\(la cuota de 294 que descuadra\\) ===\")",
+      "Bash(echo \"=== La deuda asociada ===\")",
+      "Bash(echo \"=== deuda_pago 19 ===\")",
+      "Bash(echo \"=== deuda asociada ===\")",
+      "Bash(echo \"=== Buscar MILAGROS en el balance del cliente 12-07 \\(bloque\\) ===\")",
+      "Bash(echo \"=== Todos los pagos de la deuda MILAGROS \\(id 69\\) ===\")",
+      "Bash(echo \"=== Confirmacion: unico egreso 'inesperado' en la serie 10-13 es este 294? \\(egresos no-venta de efectivo por dia\\) ===\")",
+      "Bash(echo \"=== muestra productos DB 1097 \\(codigo, precio_costo, costo_promedio\\) ===\")",
+      "Bash(echo \"=== cuantos productos 1097 tienen precio_costo=0 ===\")",
+      "Bash(echo \"=== CEMENTO ROJO MOCHICA en empresa 1097 ===\")"
     ]
   }
 }
