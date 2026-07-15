@@ -23,11 +23,20 @@ interface Proveedor { id: number; razon_social: string | null; nombre_comercial:
 interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
 interface MetodoPagoForm { id: number; nombre: string; cuentas: CuentaMP[]; }
 
+interface TurnoLite {
+    id: number; user_id: number; caja_id: number; fecha_apertura: string;
+    estado: 'abierto' | 'cerrado';
+    user?: { id: number; name: string } | null;
+    caja?: { id: number; nombre: string } | null;
+}
+
 interface Props extends PageProps {
     almacenes: Almacen[];
     productos: Producto[];
     proveedores: Proveedor[];
     metodosPago: MetodoPagoForm[];
+    turnos: TurnoLite[];
+    turnoActivoId: number | null;
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
 }
@@ -47,7 +56,15 @@ const emptyDetalle = (): DetalleRow => ({
     producto_id: '', unidad_medida_id: '', cantidad: '', factor_conversion: '1', precio_costo: '', numero_documento: '',
 });
 
-export default function EntradaCreate({ almacenes, productos, proveedores, metodosPago, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaCreate({ almacenes, productos, proveedores, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen }: Props) {
+    // "Afecta caja a:" — por defecto la caja del propio cajero (su turno activo).
+    const [turnoIdCaja, setTurnoIdCaja] = useState<number | ''>(turnoActivoId ?? '');
+    const turnoLabel = (t: TurnoLite) => {
+        const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
+        const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        return [`#${t.id}`, `${f} ${hora}`, t.user?.name, t.caja?.nombre].filter(Boolean).join(' · ')
+            + (t.estado === 'abierto' ? ' · abierto' : '');
+    };
     const [almacenId, setAlmacenId]     = useState<number | ''>(almacenes.length === 1 ? almacenes[0].id : '');
     // Lista local de proveedores (para poder agregar uno nuevo sin recargar la página).
     const [listaProveedores, setListaProveedores] = useState<Proveedor[]>(proveedores);
@@ -246,6 +263,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                 cuenta_id:      p.cuenta_id || null,
                 monto:          p.monto,
             })),
+            turno_id: estadoPago === 'pendiente' ? null : (turnoIdCaja || null),
             detalles: detalles.map(d => ({
                 producto_id:       d.producto_id,
                 unidad_medida_id:  d.unidad_medida_id,
@@ -556,6 +574,23 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                         </p>
                     ) : (
                         <div className="space-y-3">
+                            {/* "Afecta caja a:" — de qué caja sale el efectivo. Por
+                                defecto la caja del propio cajero (su turno activo). */}
+                            {turnos.length > 0 && (
+                                <div className="sm:max-w-md">
+                                    <Select
+                                        label="Afecta caja a (turno)"
+                                        placeholder="Sin turno / no sale de caja"
+                                        value={turnoIdCaja}
+                                        onChange={v => setTurnoIdCaja(v === '' ? '' : Number(v))}
+                                        options={[
+                                            { value: '', label: 'Sin turno / no sale de caja' },
+                                            ...turnos.map(t => ({ value: t.id, label: turnoLabel(t) })),
+                                        ]}
+                                        hint="Si pagas en efectivo desde tu caja, déjalo en tu turno para que la consolidación lo reste."
+                                    />
+                                </div>
+                            )}
                             {pagos.map((p, idx) => {
                                 const cuentas = cuentasDeLinea(p);
                                 return (

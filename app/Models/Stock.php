@@ -251,43 +251,54 @@ class Stock extends Model
             ['cantidad' => 0, 'costo_promedio' => 0]
         );
 
-        // ── Cantidad: sumar/restar todas las fuentes ────────────────────────
-        $cantidad = 0.0;
+        // Inventario inicial (apertura): si existe, la reconstrucción ARRANCA de
+        // ese saldo/costo y solo suma los movimientos POSTERIORES a la fecha de
+        // corte. Sin apertura, arranca en 0 y cuenta TODO (comportamiento previo).
+        $apertura = \DB::table('stock_iniciales')
+            ->where('almacen_id', $almacenId)
+            ->where('producto_id', $productoId)
+            ->first();
+        $corte = $apertura ? substr((string) $apertura->fecha, 0, 10) . ' 23:59:59' : null;
+        // Aplica el filtro "solo movimientos posteriores al corte" a una consulta.
+        $post = fn ($q, string $col) => $corte ? $q->where($col, '>', $corte) : $q;
+
+        // ── Cantidad: arranca del inicial y suma/resta las fuentes ──────────
+        $cantidad = $apertura ? (float) $apertura->cantidad : 0.0;
 
         // Entradas confirmadas (+)
-        $cantidad += (float) \DB::table('entradas_detalle as ed')
+        $cantidad += (float) $post(\DB::table('entradas_detalle as ed')
             ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
             ->where('e.almacen_id', $almacenId)
             ->where('e.estado', 'confirmado')
-            ->where('ed.producto_id', $productoId)
+            ->where('ed.producto_id', $productoId), 'e.fecha')
             ->sum('ed.cantidad_base');
 
         // Salidas confirmadas (-)
-        $cantidad -= (float) \DB::table('salidas_detalle as sd')
+        $cantidad -= (float) $post(\DB::table('salidas_detalle as sd')
             ->join('salidas as s', 's.id', '=', 'sd.salida_id')
             ->where('s.almacen_id', $almacenId)
             ->where('s.estado', 'confirmado')
-            ->where('sd.producto_id', $productoId)
+            ->where('sd.producto_id', $productoId), 's.fecha')
             ->sum('sd.cantidad_base');
 
         // Transferencias salientes (-): cuando ya se envió, el stock origen bajó
-        $cantidad -= (float) \DB::table('transferencias_detalle as td')
+        $cantidad -= (float) $post(\DB::table('transferencias_detalle as td')
             ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
             ->where('t.almacen_origen_id', $almacenId)
             ->whereIn('t.estado', ['enviada', 'recibida'])
-            ->where('td.producto_id', $productoId)
+            ->where('td.producto_id', $productoId), 't.fecha_envio')
             ->sum('td.cantidad_base_enviada');
 
         // Transferencias entrantes (+): solo cuando ya fue recibida
-        $cantidad += (float) \DB::table('transferencias_detalle as td')
+        $cantidad += (float) $post(\DB::table('transferencias_detalle as td')
             ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
             ->where('t.almacen_destino_id', $almacenId)
             ->where('t.estado', 'recibida')
-            ->where('td.producto_id', $productoId)
+            ->where('td.producto_id', $productoId), 't.fecha_recepcion')
             ->sum('td.cantidad_base_recibida');
 
         // Ventas completadas (-): se descuentan del almacén tipo='local' del local de la venta
-        $cantidad -= (float) \DB::table('venta_items as vi')
+        $cantidad -= (float) $post(\DB::table('venta_items as vi')
             ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
             ->join('almacenes as a', function ($j) {
                 $j->on('a.local_id', '=', 'v.local_id')
@@ -297,11 +308,11 @@ class Stock extends Model
             })
             ->where('a.id', $almacenId)
             ->where('v.estado', 'completada')
-            ->where('vi.producto_id', $productoId)
+            ->where('vi.producto_id', $productoId), 'v.fecha_venta')
             ->sum('vi.cantidad_base');
 
         // Devoluciones completadas con restock=true (+) en almacén tipo='local' del local
-        $cantidad += (float) \DB::table('devoluciones_detalle as dd')
+        $cantidad += (float) $post(\DB::table('devoluciones_detalle as dd')
             ->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
             ->join('almacenes as a', function ($j) {
                 $j->on('a.local_id', '=', 'd.local_id')
@@ -312,30 +323,31 @@ class Stock extends Model
             ->where('a.id', $almacenId)
             ->where('d.estado', 'completada')
             ->where('dd.restock', true)
-            ->where('dd.producto_id', $productoId)
+            ->where('dd.producto_id', $productoId), 'd.fecha')
             ->sum('dd.cantidad_base');
 
         // Cierres de inventario confirmados (+/-): aplican la diferencia declarada
-        $cantidad += (float) \DB::table('cierres_inventario_items as ci')
+        $cantidad += (float) $post(\DB::table('cierres_inventario_items as ci')
             ->join('cierres_inventario as c', 'c.id', '=', 'ci.cierre_id')
             ->where('c.almacen_id', $almacenId)
             ->where('c.estado', 'confirmado')
-            ->where('ci.producto_id', $productoId)
+            ->where('ci.producto_id', $productoId), 'c.fecha')
             ->sum('ci.diferencia');
 
         // ── Costo promedio CANÓNICO ─────────────────────────────────────────
         // Se reconstruye desde los INGRESOS CON COSTO REAL en orden cronológico:
+        //   (semilla) inventario inicial      → costo = stock_iniciales.costo
         //   (+) entradas confirmadas          → costo = precio_costo
         //   (+) recepciones de transferencia  → costo = costo_unitario
         // Las salidas, ventas, devoluciones y cierres NO alteran el CPP (mismo
         // criterio que Stock::ajustar() y `kardex:reconstruir`).
         $ingresos = collect();
 
-        foreach (\DB::table('entradas_detalle as ed')
+        foreach ($post(\DB::table('entradas_detalle as ed')
             ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
             ->where('e.almacen_id', $almacenId)
             ->where('e.estado', 'confirmado')
-            ->where('ed.producto_id', $productoId)
+            ->where('ed.producto_id', $productoId), 'e.fecha')
             ->get(['ed.cantidad_base', 'ed.precio_costo', 'e.fecha', 'e.id']) as $r) {
             $ingresos->push([
                 'orden'    => (string) $r->fecha . '|' . str_pad((string) $r->id, 12, '0', STR_PAD_LEFT),
@@ -344,11 +356,11 @@ class Stock extends Model
             ]);
         }
 
-        foreach (\DB::table('transferencias_detalle as td')
+        foreach ($post(\DB::table('transferencias_detalle as td')
             ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
             ->where('t.almacen_destino_id', $almacenId)
             ->where('t.estado', 'recibida')
-            ->where('td.producto_id', $productoId)
+            ->where('td.producto_id', $productoId), 't.fecha_recepcion')
             ->get(['td.cantidad_base_recibida', 'td.costo_unitario', 't.fecha_recepcion', 't.id']) as $r) {
             $ingresos->push([
                 'orden'    => (string) $r->fecha_recepcion . '|' . str_pad((string) $r->id, 12, '0', STR_PAD_LEFT),
@@ -357,8 +369,9 @@ class Stock extends Model
             ]);
         }
 
-        $cantCpp = 0.0;
-        $costo   = 0.0;
+        // Semilla del CPP: el inventario inicial es el primer "ingreso con costo".
+        $cantCpp = $apertura ? (float) $apertura->cantidad : 0.0;
+        $costo   = $apertura ? (float) $apertura->costo : 0.0;
         foreach ($ingresos->sortBy('orden')->values() as $ing) {
             // Ingreso sin costo propio: no altera el promedio (entra al costo vigente).
             if ($ing['costo'] <= 0) { $cantCpp += $ing['cantidad']; continue; }

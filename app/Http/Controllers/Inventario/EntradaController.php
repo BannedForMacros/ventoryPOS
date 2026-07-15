@@ -34,17 +34,20 @@ class EntradaController extends Controller
      *
      * @param array<array{metodo_pago_id:int|null,cuenta_id:int|null,monto:float|string,referencia?:string|null}> $lineas
      */
-    private function registrarPagosIniciales(Entrada $entrada, array $lineas, int $userId): void
+    private function registrarPagosIniciales(Entrada $entrada, array $lineas, int $userId, int|string|null $turnoId = 'auto'): void
     {
         $prov = $entrada->proveedor ?? 'proveedor';
 
-        // Turno al que se imputa el pago (si es efectivo, SALE de esa caja):
-        // el turno propio abierto del usuario; si no tiene, el único abierto de la
-        // empresa; si hay 0 o >1, ninguno (p.ej. pago por transferencia sin caja).
-        $turnoId = \App\Models\Turno::turnoActivoDelUsuario($userId)?->id;
-        if (!$turnoId) {
-            $abiertos = \App\Models\Turno::deEmpresa($entrada->empresa_id)->where('estado', 'abierto')->pluck('id');
-            $turnoId = $abiertos->count() === 1 ? $abiertos->first() : null;
+        // Turno al que se imputa el pago (si es efectivo, SALE de esa caja).
+        // 'auto' = resolver automáticamente (turno propio del usuario, o el único
+        // abierto). Un int explícito o null lo fija el llamador (selector "Afecta
+        // caja a:") — null = el pago NO afecta ninguna caja.
+        if ($turnoId === 'auto') {
+            $turnoId = \App\Models\Turno::turnoActivoDelUsuario($userId)?->id;
+            if (!$turnoId) {
+                $abiertos = \App\Models\Turno::deEmpresa($entrada->empresa_id)->where('estado', 'abierto')->pluck('id');
+                $turnoId = $abiertos->count() === 1 ? $abiertos->first() : null;
+            }
         }
 
         foreach ($lineas as $linea) {
@@ -136,6 +139,14 @@ class EntradaController extends Controller
                 ->with('cuentas:id,nombre,banco,numero_cuenta')
                 ->orderBy('nombre')->get(['id', 'nombre', 'tipo_id']),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
+            // "Afecta caja a:" — turnos para elegir de qué caja sale el pago, y el
+            // turno activo del usuario como default (su propia caja).
+            'turnos' => \App\Models\Turno::deEmpresa($empresaId)
+                ->with(['user:id,name', 'caja:id,nombre'])
+                ->where('estado', 'abierto')
+                ->orderByDesc('fecha_apertura')->limit(40)
+                ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
+            'turnoActivoId' => \App\Models\Turno::turnoActivoDelUsuario($user->id)?->id,
         ]);
     }
 
@@ -171,6 +182,8 @@ class EntradaController extends Controller
             'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'            => 'required|numeric|min:0.01',
             'pagos.*.referencia'       => 'nullable|string|max:200',
+            // "Afecta caja a:" — turno de cuya caja sale el efectivo del pago.
+            'turno_id'                 => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
@@ -262,7 +275,10 @@ class EntradaController extends Controller
                     ]);
                 }
 
-                $this->registrarPagosIniciales($entrada, $lineas, $user->id);
+                // "Afecta caja a:" — si el form envió turno_id se respeta (incluye
+                // null = no afecta caja); si no lo envió, 'auto' resuelve el turno.
+                $turnoArg = array_key_exists('turno_id', $data) ? ($data['turno_id'] ?: null) : 'auto';
+                $this->registrarPagosIniciales($entrada, $lineas, $user->id, $turnoArg);
             }
 
             // Si se pidió confirmar directamente
