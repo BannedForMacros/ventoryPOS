@@ -444,6 +444,10 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                     <div className="flex items-center gap-0.5">
                         <button onClick={() => setDetalle(c)} className={btn} title="Ver detalle"
                             style={{ color: 'var(--color-text-muted)' }}><Eye size={15} /></button>
+                        <button onClick={() => imprimirTicketCot(c)} className={btn} title="Imprimir ticket"
+                            style={{ color: 'var(--color-text-muted)' }}><Printer size={15} /></button>
+                        <button onClick={() => verProforma(c)} className={btn} title="Proforma PDF (A4)"
+                            style={{ color: 'var(--color-primary)' }}><FileDown size={15} /></button>
                         {editable && (
                             <button onClick={() => abrirEdicion(c)} className={btn} title="Editar"
                                 style={{ color: 'var(--color-warning)' }}><Pencil size={15} /></button>
@@ -722,7 +726,17 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
             {/* ── Modal detalle (solo lectura) ──────────────────────────── */}
             <Modal isOpen={detalle !== null} onClose={() => setDetalle(null)}
                 title={detalle ? `Cotización ${detalle.numero} — ${nombreCliente(detalle.cliente)}` : ''} size="2xl"
-                footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
+                footer={detalle ? (
+                    <>
+                        <Button variant="ghost" onClick={() => imprimirTicketCot(detalle)}>
+                            <Printer size={15} className="mr-1.5" />Imprimir ticket
+                        </Button>
+                        <Button variant="ghost" onClick={() => verProforma(detalle)}>
+                            <FileDown size={15} className="mr-1.5" />Proforma PDF
+                        </Button>
+                        <Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>
+                    </>
+                ) : <Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (
                     <div className="space-y-4">

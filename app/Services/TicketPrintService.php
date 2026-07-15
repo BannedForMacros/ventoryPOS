@@ -141,8 +141,10 @@ class TicketPrintService
             : null;
 
         // La cotización no tiene caja propia: enrutamos a la impresora del local.
-        $token = (string) (Caja::where('local_id', $cot->local_id)
-            ->whereNotNull('token_impresora')->value('token_impresora') ?? '');
+        // Leemos el atributo del modelo (select *) para no romper si la columna
+        // token_impresora aún no existe en algún entorno.
+        $token = (string) (Caja::where('local_id', $cot->local_id)->get()
+            ->pluck('token_impresora')->filter()->first() ?? '');
 
         $validez = $cot->fecha_vencimiento
             ? Carbon::parse($cot->fecha_vencimiento)->format('d/m/Y')
