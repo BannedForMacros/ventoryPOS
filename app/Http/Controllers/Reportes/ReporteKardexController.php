@@ -99,6 +99,7 @@ class ReporteKardexController extends Controller
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
             'productoSel'     => $productoSel,
             'tipos'           => [
+                ['value' => 'inventario_inicial',         'label' => 'Inventario inicial'],
                 ['value' => 'entrada',                    'label' => 'Entrada'],
                 ['value' => 'entrada_reverso',            'label' => 'Entrada (reverso)'],
                 ['value' => 'entrada_edicion',            'label' => 'Entrada (edición)'],
