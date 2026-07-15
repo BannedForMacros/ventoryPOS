@@ -1,0 +1,5 @@
+# El instalador/exe del agente NO se versiona en git (binario grande, ~60 MB).
+# Se sube al servidor con publish-agent.ps1 (repo ventory-printer).
+# El version.json SÍ se versiona: es el manifiesto que consultan las cajas.
+VentoryPrint.exe
+*.exe

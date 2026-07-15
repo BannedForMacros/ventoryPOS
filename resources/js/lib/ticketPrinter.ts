@@ -33,6 +33,8 @@ export interface TicketPayload {
   abrirCajon?: boolean;
   copias?: number;
   anchoPapelMm?: number;
+  /** URL base del POS; el agente la usa para auto-actualizarse. Se inyecta al imprimir. */
+  origen?: string;
 }
 
 /** ¿Está el agente corriendo en esta PC? (timeout corto para no colgar la UI) */
@@ -54,7 +56,8 @@ export async function imprimirTicket(ticket: TicketPayload): Promise<boolean> {
     const r = await fetch(`${AGENTE_URL}/print`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ticket),
+      // origen: le decimos al agente desde qué servidor buscar sus actualizaciones.
+      body: JSON.stringify({ ...ticket, origen: ticket.origen ?? window.location.origin }),
     });
     const j = await r.json().catch(() => ({}));
     return r.ok && j?.ok !== false;
