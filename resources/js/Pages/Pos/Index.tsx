@@ -7,9 +7,10 @@ import {
     Image as ImageIcon, CreditCard, RefreshCw, Truck,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
+import axios from 'axios';
 import PosLayout from '@/Layouts/PosLayout';
 import Button from '@/Components/UI/Button';
-import CarritoItem, { LineaCarrito } from './Partials/CarritoItem';
+import CarritoItem, { LineaCarrito, HistorialPrecioCliente } from './Partials/CarritoItem';
 import PanelPago, { LineaPago } from './Partials/PanelPago';
 import PanelDescuento from './Partials/PanelDescuento';
 import ModalClienteRapido from './Partials/ModalClienteRapido';
@@ -324,6 +325,10 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [carrito, setCarrito]             = useState<LineaCarrito[]>(ventaEnEdicion ? carritoEdicion : carritoInicial);
     const [pagos, setPagos]                 = useState<LineaPago[]>(pagosEdicion);
     const [cliente, setCliente]             = useState<Cliente | null>(clienteInicial);
+    // Historial de precios de venta de ESTE cliente por producto. Se carga al
+    // elegir cliente y sirve para mostrar en cada línea a cuánto se le vendió
+    // antes. Funciona en cualquier orden (cliente→productos o productos→cliente).
+    const [historialCliente, setHistorialCliente] = useState<Record<number, HistorialPrecioCliente>>({});
     const [descuentoTotal, setDescuentoTotal]       = useState(ventaEnEdicion?.descuento_total ?? 0);
     const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(ventaEnEdicion?.descuento_concepto_id ?? null);
     const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>(ventaEnEdicion?.tipo_comprobante ?? 'ticket');
@@ -425,6 +430,21 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const { subtotal, igv, total } = calcularTotales(carrito, descuentoTotal, tasaIgv);
 
     // Auto-agregar pago en efectivo por defecto cuando hay items y no hay pagos.
+    // Historial de precios del cliente: se recarga al cambiar de cliente. Para el
+    // cliente general (sin identificar) no tiene sentido, así que se limpia.
+    useEffect(() => {
+        const id = cliente?.id;
+        const esGeneral = !cliente
+            || (cliente as Cliente & { es_cliente_general?: boolean }).es_cliente_general
+            || cliente.numero_documento === '99999999';
+        if (!id || esGeneral) { setHistorialCliente({}); return; }
+        let vivo = true;
+        axios.get(route('pos.historial-precios'), { params: { cliente_id: id } })
+            .then(r => { if (vivo) setHistorialCliente(r.data ?? {}); })
+            .catch(() => { if (vivo) setHistorialCliente({}); });
+        return () => { vivo = false; };
+    }, [cliente?.id]);
+
     // Buscamos el método con tipo.slug === 'efectivo' como conveniencia inicial.
     // El flag `admite_vuelto` se lee del método (BD).
     const efectivo = metodosPago.find(m => m.tipo?.slug === 'efectivo');
@@ -1251,6 +1271,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         carrito={carrito}
                         pagos={pagos}
                         conceptosDescuento={conceptosDescuento}
+                        historial={historialCliente}
                         metodosPago={metodosPago}
                         cliente={cliente}
                         onAbrirCliente={() => setModalCliente(true)}
@@ -1321,6 +1342,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 carrito={carrito}
                                 pagos={pagos}
                                 conceptosDescuento={conceptosDescuento}
+                                historial={historialCliente}
                                 metodosPago={metodosPago}
                                 cliente={cliente}
                                 onAbrirCliente={() => setModalCliente(true)}
@@ -1526,6 +1548,7 @@ interface CarritoPanelProps {
     carrito: LineaCarrito[];
     pagos: LineaPago[];
     conceptosDescuento: DescuentoConcepto[];
+    historial: Record<number, HistorialPrecioCliente>;
     metodosPago: (MetodoPago & { cuentas?: any[] })[];
     cliente: Cliente | null;
     onAbrirCliente: () => void;
@@ -1565,7 +1588,7 @@ interface CarritoPanelProps {
 }
 
 function CarritoPanel({
-    carrito, pagos, conceptosDescuento, metodosPago,
+    carrito, pagos, conceptosDescuento, historial, metodosPago,
     cliente, onAbrirCliente,
     descuentoTotal, descuentoConceptoId,
     subtotal, igv, total, tasaIgv, inactivosCount,
@@ -1704,6 +1727,7 @@ function CarritoPanel({
                                 key={item.key}
                                 item={item}
                                 conceptos={conceptosDescuento}
+                                historial={historial[item.producto_id]}
                                 onCantidad={onCambiarCantidad}
                                 onCantidadExacta={onEstablecerCantidad}
                                 onPrecio={onCambiarPrecio}

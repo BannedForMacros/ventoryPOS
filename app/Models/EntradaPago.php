@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class EntradaPago extends Model
 {
     protected $fillable = [
-        'entrada_id', 'user_id', 'metodo_pago_id', 'cuenta_id',
+        'entrada_id', 'user_id', 'turno_id', 'metodo_pago_id', 'cuenta_id',
         'proveedor_adelanto_id', 'fecha', 'monto', 'referencia', 'observacion',
         'moneda', 'tipo_cambio', 'monto_moneda',
     ];
@@ -25,6 +25,7 @@ class EntradaPago extends Model
 
     public function entrada(): BelongsTo    { return $this->belongsTo(Entrada::class); }
     public function user(): BelongsTo       { return $this->belongsTo(User::class); }
+    public function turno(): BelongsTo      { return $this->belongsTo(Turno::class); }
     public function metodoPago(): BelongsTo { return $this->belongsTo(MetodoPago::class, 'metodo_pago_id'); }
     public function cuenta(): BelongsTo     { return $this->belongsTo(Cuenta::class); }
     public function adelanto(): BelongsTo   { return $this->belongsTo(ProveedorAdelanto::class, 'proveedor_adelanto_id'); }

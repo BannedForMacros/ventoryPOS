@@ -1,7 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Trash2, Minus, Plus, Percent, X, AlertTriangle, Info } from 'lucide-react';
+import { Trash2, Minus, Plus, Percent, X, AlertTriangle, Info, History } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
+
+/** Historial de precios de venta de un producto a un cliente concreto. */
+export interface HistorialPrecioCliente {
+    ultimo_precio: number;
+    ultima_fecha:  string;
+    veces:         number;
+    historial:     { fecha: string; precio: number; cantidad: number; unidad: string }[];
+}
 
 export interface LineaCarrito {
     key:                  string;
@@ -34,6 +42,7 @@ export interface LineaCarrito {
 interface Props {
     item:               LineaCarrito;
     conceptos:          DescuentoConcepto[];
+    historial?:         HistorialPrecioCliente;
     onCantidad:         (key: string, delta: number) => void;
     onCantidadExacta:   (key: string, cantidad: number) => void;
     onPrecio:           (key: string, precio: number) => void;
@@ -41,7 +50,8 @@ interface Props {
     onEliminar:         (key: string) => void;
 }
 
-export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar }: Props) {
+export default function CarritoItem({ item, conceptos, historial, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar }: Props) {
+    const [showHistorial, setShowHistorial] = useState(false);
     const [showDescuento, setShowDescuento] = useState(item.descuento_item > 0);
     const [descuentoVal, setDescuentoVal]   = useState(String(item.descuento_item || ''));
     const [conceptoId, setConceptoId]       = useState<number | null>(item.descuento_concepto_id);
@@ -358,6 +368,59 @@ export default function CarritoItem({ item, conceptos, onCantidad, onCantidadExa
                 )}
 
                 <div className="flex items-center gap-1">
+                    {/* Historial de precios de venta a ESTE cliente (solo si existe).
+                        Icono resaltado + popover al hacer clic; permite aplicar el
+                        último precio con un toque. */}
+                    {historial && historial.historial.length > 0 && (
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowHistorial(v => !v)}
+                                aria-label="Ver precios anteriores a este cliente"
+                                title="Precios anteriores a este cliente"
+                                className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-black/5 active:bg-black/10"
+                                style={{ color: showHistorial ? 'var(--color-primary)' : 'var(--color-warning)' }}
+                            >
+                                <History size={15} />
+                            </button>
+                            {showHistorial && (
+                                <>
+                                    {/* Capa para cerrar al tocar fuera */}
+                                    <div className="fixed inset-0 z-20" onClick={() => setShowHistorial(false)} />
+                                    <div className="absolute bottom-full right-0 mb-1.5 z-30 w-60 rounded-xl p-3"
+                                        style={{
+                                            backgroundColor: 'var(--color-surface)',
+                                            border: '1px solid var(--color-border)',
+                                            boxShadow: '0 12px 32px -8px rgba(15,23,42,0.35)',
+                                        }}
+                                    >
+                                        <p className="text-[11px] font-bold mb-1.5" style={{ color: 'var(--color-text)' }}>
+                                            Le vendiste antes ({historial.veces} {historial.veces === 1 ? 'vez' : 'veces'})
+                                        </p>
+                                        <div className="space-y-1">
+                                            {historial.historial.map((h, i) => (
+                                                <div key={i} className="flex items-center justify-between text-[11px]">
+                                                    <span style={{ color: 'var(--color-text-muted)' }}>
+                                                        {new Date(h.fecha).toLocaleDateString('es-PE')}
+                                                        <span className="opacity-70"> · {Number(h.cantidad)} {h.unidad}</span>
+                                                    </span>
+                                                    <span className="font-mono font-semibold" style={{ color: 'var(--color-text)' }}>
+                                                        S/ {h.precio.toFixed(2)}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button
+                                            onClick={() => { onPrecio(item.key, historial.ultimo_precio); setShowHistorial(false); }}
+                                            className="mt-2 w-full text-[11px] font-semibold py-1.5 rounded-lg transition-colors"
+                                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)' }}
+                                        >
+                                            Usar último precio (S/ {historial.ultimo_precio.toFixed(2)})
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
                     {/* Botón informativo: consulta el precio de costo de la línea.
                         Muestra un tooltip al pasar el mouse o al tocar (móvil). */}
                     <div className="relative group">

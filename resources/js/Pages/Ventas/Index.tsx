@@ -4,7 +4,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     Eye, ShoppingCart, Filter, Calendar, Receipt, Pencil, Trash2, KeyRound,
-    AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins, ListChecks,
+    AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins, ListChecks, PackageMinus,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -65,10 +65,12 @@ interface Resumen {
     abonos:           number;   // cobros de crédito recibidos en el turno
     gastos:           number;
     reembolsos:       number;   // devoluciones en efectivo
+    compras:          number;   // pagos de entradas en efectivo (salen de caja)
     apertura:         number;
     efectivo_en_caja: number;
     abonos_detalle:   { cliente: string; venta: string | null; metodo: string; monto: number }[];
     gastos_detalle:   { concepto: string; monto: number }[];
+    compras_detalle:  { proveedor: string; documento: string | null; monto: number }[];
 }
 
 interface Props extends PageProps {
@@ -639,6 +641,7 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
         `ventas ${money(resumen.efectivo_ventas)}`,
         resumen.efectivo_abonos > 0 ? `abonos ${money(resumen.efectivo_abonos)}` : null,
         resumen.gastos > 0 ? `− gastos ${money(resumen.gastos)}` : null,
+        resumen.compras > 0 ? `− compras ${money(resumen.compras)}` : null,
     ].filter(Boolean).join(' · ');
 
     return (
@@ -709,6 +712,17 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                     color="danger"
                     onClick={() => setDetalle(true)}
                 />
+
+                {resumen.compras > 0 && (
+                    <Card
+                        icon={<PackageMinus size={18} />}
+                        label="Compras (efectivo)"
+                        valor={money(resumen.compras)}
+                        sub="Pagadas desde la caja"
+                        color="danger"
+                        onClick={() => setDetalle(true)}
+                    />
+                )}
 
                 <Card
                     icon={<Coins size={18} />}
@@ -781,6 +795,7 @@ function DetalleCajaModal({ open, onClose, resumen }: { open: boolean; onClose: 
                         {fila('Ventas en efectivo', resumen.efectivo_ventas)}
                         {resumen.efectivo_abonos > 0 && fila('Abonos en efectivo', resumen.efectivo_abonos)}
                         {resumen.gastos > 0 && fila('Gastos', resumen.gastos, '−')}
+                        {resumen.compras > 0 && fila('Compras pagadas en efectivo', resumen.compras, '−')}
                         {resumen.reembolsos > 0 && fila('Reembolsos (devoluciones)', resumen.reembolsos, '−')}
                         <div className="border-t mt-1 pt-1" style={{ borderColor: 'var(--color-border)' }}>
                             {fila('Efectivo esperado en caja', resumen.efectivo_en_caja, '=')}
@@ -839,6 +854,23 @@ function DetalleCajaModal({ open, onClose, resumen }: { open: boolean; onClose: 
                                 <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
                                     <span style={{ color: 'var(--color-text)' }}>{g.concepto}</span>
                                     <span className="font-mono" style={{ color: 'var(--color-danger)' }}>− {money(g.monto)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* Compras (entradas) pagadas en efectivo desde la caja */}
+                {resumen.compras_detalle.length > 0 && (
+                    <section>
+                        <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Compras pagadas en efectivo ({money(resumen.compras)})
+                        </p>
+                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                            {resumen.compras_detalle.map((c, i) => (
+                                <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
+                                    <span style={{ color: 'var(--color-text)' }}>{c.proveedor}{c.documento ? ` · ${c.documento}` : ''}</span>
+                                    <span className="font-mono" style={{ color: 'var(--color-danger)' }}>− {money(c.monto)}</span>
                                 </div>
                             ))}
                         </div>

@@ -53,12 +53,21 @@ interface EntradaData {
     detalles: EntradaDetalleData[];
 }
 
+interface TurnoLite {
+    id: number; user_id: number; caja_id: number; fecha_apertura: string;
+    estado: 'abierto' | 'cerrado';
+    user?: { id: number; name: string } | null;
+    caja?: { id: number; nombre: string } | null;
+}
+
 interface Props extends PageProps {
     entrada: EntradaData;
     almacenes: Almacen[];
     productos: Producto[];
     proveedores: Proveedor[];
     metodosPago: MetodoPagoForm[];
+    turnos: TurnoLite[];
+    pagoTurnoId: number | null;
     stocks: StockRow[];
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
@@ -73,7 +82,15 @@ interface DetalleRow {
     numero_documento: string;
 }
 
-export default function EntradaEdit({ entrada, almacenes, productos, proveedores, metodosPago, stocks, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaEdit({ entrada, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, mostrarSelector, modoAlmacen }: Props) {
+    // "Afecta caja a:" — turno cuya caja entregó el efectivo de los pagos.
+    const [turnoIdCaja, setTurnoIdCaja] = useState<number | ''>(pagoTurnoId ?? '');
+    const turnoLabel = (t: TurnoLite) => {
+        const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
+        const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        return [`#${t.id}`, `${f} ${hora}`, t.user?.name, t.caja?.nombre].filter(Boolean).join(' · ')
+            + (t.estado === 'abierto' ? ' · abierto' : '');
+    };
     const [almacenId, setAlmacenId]     = useState<number | ''>(entrada.almacen_id);
     const [listaProveedores, setListaProveedores] = useState<Proveedor[]>(proveedores);
     const [modalProveedor, setModalProveedor]     = useState(false);
@@ -310,6 +327,7 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                 cuenta_id:      p.cuenta_id || null,
                 monto:          p.monto,
             })),
+            turno_id: turnoIdCaja || null,
         }, {
             onSuccess: () => setProcessing(false),
             onError:   (e) => {
@@ -591,6 +609,24 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                             {saldoDespues <= 0.009 ? 'Quedará pagada' : montoPagado + totalPagoNuevo > 0 ? 'Parcial' : 'Pendiente'}
                         </Badge>
                     </div>
+
+                    {/* "Afecta caja a:" — de qué caja/turno salió el efectivo del pago.
+                        Aplica a los pagos nuevos y reasigna los existentes al guardar. */}
+                    {turnos.length > 0 && (montoPagado > 0 || pagosNuevos.length > 0) && (
+                        <div className="mb-3 sm:max-w-md">
+                            <Select
+                                label="Afecta caja a (turno)"
+                                placeholder="Sin turno / no salió de caja"
+                                value={turnoIdCaja}
+                                onChange={v => setTurnoIdCaja(v === '' ? '' : Number(v))}
+                                options={[
+                                    { value: '', label: 'Sin turno / no salió de caja' },
+                                    ...turnos.map(t => ({ value: t.id, label: turnoLabel(t) })),
+                                ]}
+                                hint="Elige de qué caja salió el efectivo, para que la consolidación de ese turno lo reste."
+                            />
+                        </div>
+                    )}
 
                     {saldoActual <= 0.009 && pagosNuevos.length === 0 ? (
                         <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>

@@ -567,6 +567,20 @@ class VentaController extends Controller
                 'monto'    => round((float) $g->monto, 2),
             ]);
 
+        // Pagos de entradas (compras) en EFECTIVO desde esta caja (salen del cajón).
+        $comprasQuery = \App\Models\EntradaPago::where('turno_id', $turno->id)
+            ->where(fn($q) =>
+                $q->whereHas('metodoPago.tipo', fn($t) => $t->where('slug', 'efectivo'))
+                  ->orWhere(fn($q2) => $q2->whereNull('metodo_pago_id')
+                        ->whereHas('cuenta', fn($c) => $c->where('es_efectivo', true))));
+        $compras = (float) (clone $comprasQuery)->sum('monto');
+        $comprasDetalle = (clone $comprasQuery)->with('entrada')->orderByDesc('id')->get()
+            ->map(fn ($p) => [
+                'proveedor' => $p->entrada?->proveedor ?? 'Compra',
+                'documento' => $p->entrada?->numero_documento,
+                'monto'     => round((float) $p->monto, 2),
+            ]);
+
         return [
             'turno' => [
                 'id'     => $turno->id,
@@ -585,11 +599,13 @@ class VentaController extends Controller
             'abonos'           => round($abonos, 2),          // cobros de crédito recibidos en el turno
             'gastos'           => round($gastos, 2),
             'reembolsos'       => round($reembolsos, 2),      // devoluciones en efectivo
+            'compras'          => round($compras, 2),         // pagos de entradas en efectivo (salen de caja)
             'apertura'         => round((float) $turno->monto_apertura, 2),
-            // Efectivo real esperado en caja (apertura + ventas efectivo − gastos − reembolsos).
+            // Efectivo real esperado (apertura + ventas + abonos − gastos − reembolsos − compras).
             'efectivo_en_caja' => round((float) $turno->calcularMontoEsperado(), 2),
             'abonos_detalle'   => $abonosDetalle,
             'gastos_detalle'   => $gastosDetalle,
+            'compras_detalle'  => $comprasDetalle,
         ];
     }
 
@@ -619,6 +635,54 @@ class VentaController extends Controller
             ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
             ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(va.monto) as total')
             ->get();
+    }
+
+    /**
+     * Historial de precios de venta por cliente (JSON para el POS). Devuelve, por
+     * producto, los últimos precios a los que se le vendió a ESE cliente. Una sola
+     * consulta con window function (últimas 3 líneas por producto + total de veces).
+     */
+    public function historialPreciosCliente(Request $request)
+    {
+        $user      = $request->user();
+        $clienteId = (int) $request->query('cliente_id');
+        if (!$clienteId) {
+            return response()->json([]);
+        }
+
+        $sub = DB::table('venta_items as vi')
+            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
+            ->where('v.empresa_id', $user->empresa_id)
+            ->where('v.cliente_id', $clienteId)
+            ->where('v.estado', 'completada')
+            ->selectRaw('vi.producto_id, vi.precio_unitario, vi.unidad_nombre, vi.cantidad, v.fecha_venta,
+                row_number() over (partition by vi.producto_id order by v.fecha_venta desc, v.id desc) as rn,
+                count(*) over (partition by vi.producto_id) as veces');
+
+        $rows = DB::query()->fromSub($sub, 't')
+            ->where('rn', '<=', 3)
+            ->orderBy('producto_id')->orderBy('rn')
+            ->get();
+
+        $map = [];
+        foreach ($rows as $r) {
+            if (!isset($map[$r->producto_id])) {
+                $map[$r->producto_id] = [
+                    'ultimo_precio' => (float) $r->precio_unitario,
+                    'ultima_fecha'  => $r->fecha_venta,
+                    'veces'         => (int) $r->veces,
+                    'historial'     => [],
+                ];
+            }
+            $map[$r->producto_id]['historial'][] = [
+                'fecha'    => $r->fecha_venta,
+                'precio'   => (float) $r->precio_unitario,
+                'cantidad' => (float) $r->cantidad,
+                'unidad'   => $r->unidad_nombre,
+            ];
+        }
+
+        return response()->json($map);
     }
 
     /** Payload de impresión de una venta (para imprimir desde la lista sin abrir el detalle). */

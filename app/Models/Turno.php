@@ -83,6 +83,15 @@ class Turno extends Model
             $q->where('slug', 'efectivo')
         )->sum('monto');
 
+        // Pagos de entradas (compras) hechos en EFECTIVO desde esta caja: salen del
+        // cajón. Sin esto, el sistema esperaba más efectivo del que había.
+        $comprasEfectivo = (float) \App\Models\EntradaPago::where('turno_id', $this->id)
+            ->where(fn($q) =>
+                $q->whereHas('metodoPago.tipo', fn($t) => $t->where('slug', 'efectivo'))
+                  ->orWhere(fn($q2) => $q2->whereNull('metodo_pago_id')
+                        ->whereHas('cuenta', fn($c) => $c->where('es_efectivo', true)))
+            )->sum('monto');
+
         $apertura     = (float) $this->monto_apertura;
         $fondos       = (float) $this->monto_caja_chica;
         $sumaFondos   = $this->fondosEntranEnDeclaracion();
@@ -92,6 +101,7 @@ class Turno extends Model
              + $abonosEfectivo
              - $gastosEfectivo
              - $reembolsosEfectivo
+             - $comprasEfectivo
              + ($sumaFondos ? $fondos : 0.0);
     }
 

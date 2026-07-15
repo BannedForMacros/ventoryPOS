@@ -37,10 +37,21 @@ class EntradaController extends Controller
     private function registrarPagosIniciales(Entrada $entrada, array $lineas, int $userId): void
     {
         $prov = $entrada->proveedor ?? 'proveedor';
+
+        // Turno al que se imputa el pago (si es efectivo, SALE de esa caja):
+        // el turno propio abierto del usuario; si no tiene, el único abierto de la
+        // empresa; si hay 0 o >1, ninguno (p.ej. pago por transferencia sin caja).
+        $turnoId = \App\Models\Turno::turnoActivoDelUsuario($userId)?->id;
+        if (!$turnoId) {
+            $abiertos = \App\Models\Turno::deEmpresa($entrada->empresa_id)->where('estado', 'abierto')->pluck('id');
+            $turnoId = $abiertos->count() === 1 ? $abiertos->first() : null;
+        }
+
         foreach ($lineas as $linea) {
             $pago = EntradaPago::create([
                 'entrada_id'     => $entrada->id,
                 'user_id'        => $userId,
+                'turno_id'       => $turnoId,
                 'metodo_pago_id' => $linea['metodo_pago_id'] ?? null,
                 'cuenta_id'      => $linea['cuenta_id'] ?? null,
                 'fecha'          => $entrada->fecha instanceof \Carbon\CarbonInterface
@@ -282,8 +293,25 @@ class EntradaController extends Controller
                 ->get(['almacen_id', 'producto_id', 'cantidad'])
             : collect();
 
+        // Turnos para el selector "Afecta caja a:" — los del día de la entrada, los
+        // abiertos ahora, y SIEMPRE el que ya tiene asignado el pago (aunque sea de
+        // otro día/cerrado), para que el selector muestre el valor actual.
+        $fechaEntrada = $entrada->fecha instanceof \Carbon\CarbonInterface
+            ? $entrada->fecha->toDateString() : substr((string) $entrada->fecha, 0, 10);
+        $pagoTurnoId = $entrada->pagosParciales()->value('turno_id');
+        $turnos = \App\Models\Turno::deEmpresa($empresaId)
+            ->with(['user:id,name', 'caja:id,nombre'])
+            ->where(function ($q) use ($fechaEntrada, $pagoTurnoId) {
+                $q->whereDate('fecha_apertura', $fechaEntrada)->orWhere('estado', 'abierto');
+                if ($pagoTurnoId) $q->orWhere('id', $pagoTurnoId);
+            })
+            ->orderByDesc('fecha_apertura')->limit(40)
+            ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']);
+
         return Inertia::render('Inventario/Entradas/Edit', [
             'entrada'   => $entrada->load(['detalles.producto', 'detalles.unidadMedida', 'proveedorRel', 'metodoPago', 'cuenta']),
+            'turnos'      => $turnos,
+            'pagoTurnoId' => $pagoTurnoId,
             'almacenes' => $this->scope->almacenesParaCompras($user),
             'modoAlmacen' => $user->empresa->modo_almacen,
             'productos' => Producto::deEmpresa($empresaId)
@@ -336,6 +364,8 @@ class EntradaController extends Controller
             'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'            => 'required|numeric|min:0.01',
             'pagos.*.referencia'       => 'nullable|string|max:200',
+            // "Afecta caja a:" — turno cuya caja entregó el efectivo del pago.
+            'turno_id'                 => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
@@ -486,6 +516,13 @@ class EntradaController extends Controller
                         ]);
                     }
                     $this->registrarPagosIniciales($entrada, $lineas, $user->id);
+                }
+
+                // "Afecta caja a:" — si el usuario eligió turno, se lo asignamos a
+                // TODOS los pagos de la entrada (nuevos y existentes). Así corrige de
+                // qué caja salió el efectivo sin depender de la heurística.
+                if (array_key_exists('turno_id', $data) && $data['turno_id']) {
+                    $entrada->pagosParciales()->update(['turno_id' => $data['turno_id']]);
                 }
 
                 // 3) Si era confirmada, aplicar el stock nuevo y reconstruir CPP para

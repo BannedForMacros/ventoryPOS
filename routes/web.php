@@ -265,6 +265,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // ── POS ──────────────────────────────────────────────────────────────
     Route::middleware('permiso:pos,ver')->get('/pos', [VentaController::class, 'pos'])->name('pos.index');
+    // Historial de precios de venta por cliente (JSON): al elegir cliente en el
+    // POS, muestra a cuánto se le vendió antes cada producto.
+    Route::middleware('permiso:pos,ver')->get('/pos/historial-precios', [VentaController::class, 'historialPreciosCliente'])->name('pos.historial-precios');
 
     // ── VENTAS ───────────────────────────────────────────────────────────
     // M17: throttle:60,1 en `store` evita que un usuario autenticado (sesion
