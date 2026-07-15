@@ -586,7 +586,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
 
             {/* Modal detalle aplicaciones */}
             <Modal isOpen={detalle !== null} onClose={() => setDetalle(null)}
-                title={detalle ? `Aplicaciones — ${nombreCliente(detalle.cliente)}` : ''} size="md"
+                title={detalle ? `Aplicaciones — ${nombreCliente(detalle.cliente)}` : ''} size="3xl"
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (
@@ -639,19 +639,19 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                                     badge: { texto: ap.numero ?? 'Entrega', variant: 'success' as const },
                                     tipo: 'neutro' as const,
                                     detalle: (
-                                        <span className="inline-flex items-center gap-2 flex-wrap">
-                                            {info && <span>{info}</span>}
-                                            <button onClick={() => imprimirEntrega(ap)} title="Imprimir ticket de la entrega"
-                                                className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-black/5"
-                                                style={{ color: 'var(--color-text-muted)' }}>
-                                                <Printer size={13} />
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {info && <span className="mr-1">{info}</span>}
+                                            <button onClick={() => imprimirEntrega(ap)} title="Imprimir ticket térmico de la entrega"
+                                                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors hover:bg-black/5"
+                                                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
+                                                <Printer size={13} /> Ticket
                                             </button>
-                                            <button onClick={() => verDocumentoEntrega(ap)} title="Documento A4 / Guardar PDF"
-                                                className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-black/5"
-                                                style={{ color: 'var(--color-primary)' }}>
-                                                <FileDown size={13} />
+                                            <button onClick={() => verDocumentoEntrega(ap)} title="Abrir documento A4 / Guardar PDF"
+                                                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors hover:bg-black/5"
+                                                style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>
+                                                <FileDown size={13} /> PDF A4
                                             </button>
-                                        </span>
+                                        </div>
                                     ),
                                     user: ap.user?.name,
                                     monto: Number(ap.monto),
