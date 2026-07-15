@@ -271,12 +271,27 @@ class CotizacionController extends Controller
         $cotizacion->loadMissing(['cliente', 'items.producto', 'user', 'empresa', 'local']);
         $empresa = $cotizacion->empresa;
 
+        // Logo incrustado como data-URI base64: así la imagen SIEMPRE carga en el
+        // documento (no depende de storage:link, APP_URL ni del host). Antes se
+        // pasaba una URL de Storage y salía la imagen rota.
+        $logoData = null;
+        if ($empresa?->logo && Storage::disk('public')->exists($empresa->logo)) {
+            $ext  = strtolower(pathinfo($empresa->logo, PATHINFO_EXTENSION));
+            $mime = match ($ext) {
+                'png'  => 'image/png',
+                'webp' => 'image/webp',
+                'gif'  => 'image/gif',
+                default => 'image/jpeg',
+            };
+            $logoData = 'data:' . $mime . ';base64,' . base64_encode(Storage::disk('public')->get($empresa->logo));
+        }
+
         return view('proforma-cotizacion', [
             'cot'     => $cotizacion,
             'empresa' => $empresa,
             'local'   => $cotizacion->local,
             'cliente' => $cotizacion->cliente,
-            'logoUrl' => $empresa?->logo ? Storage::disk('public')->url($empresa->logo) : null,
+            'logoUrl' => $logoData,
         ]);
     }
 
