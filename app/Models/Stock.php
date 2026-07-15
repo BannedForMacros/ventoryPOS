@@ -451,6 +451,13 @@ class Stock extends Model
             ->select('c.almacen_id', 'ci.producto_id')
             ->distinct()->get());
 
+        // Inventario inicial (apertura): DEBE incluirse aunque el producto no tenga
+        // movimientos posteriores, o "Recalcular stock" lo dejaría en 0.
+        $pares = $pares->merge(\DB::table('stock_iniciales')
+            ->whereIn('almacen_id', $almacenIds)
+            ->select('almacen_id', 'producto_id')
+            ->distinct()->get());
+
         return $pares
             ->map(fn ($r) => ['almacen_id' => $r->almacen_id, 'producto_id' => $r->producto_id])
             ->unique(fn ($r) => "{$r['almacen_id']}-{$r['producto_id']}")
