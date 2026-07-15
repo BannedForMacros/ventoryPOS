@@ -23,6 +23,9 @@ class Cliente extends Model
         'es_cliente_general',
     ];
 
+    /** Accessor calculado que el frontend necesita para mostrar el nombre en la tabla. */
+    protected $appends = ['nombre_completo'];
+
     protected function casts(): array
     {
         return [
