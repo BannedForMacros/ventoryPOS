@@ -28,6 +28,8 @@ export interface TicketPayload {
   pago?: { metodo?: string; recibido?: number; vuelto?: number };
   pie?: string;
   qr?: string;
+  /** Logo del negocio en data URI base64 (sale si el agente lo soporta). */
+  logo?: string;
   abrirCajon?: boolean;
   copias?: number;
   anchoPapelMm?: number;

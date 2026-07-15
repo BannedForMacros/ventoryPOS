@@ -23,6 +23,9 @@ class EmpresaRequest extends FormRequest
             'direccion'        => 'nullable|string|max:255',
             'telefono'         => 'nullable|string|max:20',
             'email'            => 'nullable|email|max:255',
+            // Logo de la empresa: archivo PNG/JPG (opcional). Se sube en el form
+            // multipart; si no viene, el logo actual se conserva.
+            'logo'             => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
             'activo'           => 'boolean',
             // Tasa de IGV aplicable a la empresa (en %). 18.00 default Perú.
             // Topes generosos para tolerar reformas tributarias o paises con

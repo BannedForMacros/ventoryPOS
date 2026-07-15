@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     Plus, Eye, Pencil, FileText, PhoneCall, CheckCircle2, XCircle, Ban,
     ShoppingCart, Search, Trash2, Phone, MessageCircle, Clock, AlertTriangle,
-    CircleDollarSign,
+    CircleDollarSign, Printer, FileDown,
 } from 'lucide-react';
+import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -323,6 +325,28 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
 
     function convertirEnVenta(c: Cotizacion) {
         router.visit(route('pos.index', { cotizacion_id: c.id }));
+    }
+
+    // Imprimir la cotización en la ticketera (mismo flujo que en Ventas).
+    async function imprimirTicketCot(c: Cotizacion) {
+        const tid = toast.loading(`Enviando cotización ${c.numero}...`);
+        try {
+            const { data } = await axios.get<TicketPayload>(route('cotizaciones.ticket', c.id));
+            if (!data?.token) {
+                toast.error('No hay ticketera configurada para esta caja.', { id: tid });
+                return;
+            }
+            const ok = await imprimirTicket(data);
+            if (ok) toast.success(`Cotización ${c.numero} enviada`, { id: tid });
+            else    toast.error('No se pudo imprimir. Revisa VentoryPrint en esta PC.', { id: tid });
+        } catch {
+            toast.error('No se pudo obtener la cotización.', { id: tid });
+        }
+    }
+
+    // Abre la proforma A4 (HTML) en otra pestaña: imprimir o "Guardar como PDF".
+    function verProforma(c: Cotizacion) {
+        window.open(route('cotizaciones.proforma', c.id), '_blank');
     }
 
     // ── Columnas ────────────────────────────────────────────────────────

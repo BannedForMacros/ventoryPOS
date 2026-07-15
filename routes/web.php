@@ -291,6 +291,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // se hace desde el POS (?cotizacion_id=), no aquí.
     Route::prefix('cotizaciones')->name('cotizaciones.')->group(function () {
         Route::middleware('permiso:cotizaciones,ver')->get('/', [CotizacionController::class, 'index'])->name('index');
+        // Impresión: ticket térmico (JSON al agente) y proforma A4 (HTML → PDF).
+        Route::middleware('permiso:cotizaciones,ver')->get('/{cotizacion}/ticket', [CotizacionController::class, 'ticket'])->name('ticket');
+        Route::middleware('permiso:cotizaciones,ver')->get('/{cotizacion}/proforma', [CotizacionController::class, 'proforma'])->name('proforma');
         Route::middleware('permiso:cotizaciones,crear')->post('/', [CotizacionController::class, 'store'])->name('store');
         Route::middleware('permiso:cotizaciones,editar')->put('/{cotizacion}', [CotizacionController::class, 'update'])->name('update');
         Route::middleware('permiso:cotizaciones,editar')->post('/{cotizacion}/estado', [CotizacionController::class, 'cambiarEstado'])->name('estado');

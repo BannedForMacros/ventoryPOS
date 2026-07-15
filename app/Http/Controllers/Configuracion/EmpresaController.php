@@ -8,6 +8,7 @@ use App\Models\Empresa;
 use App\Services\AlmacenSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use RuntimeException;
 
@@ -46,6 +47,16 @@ class EmpresaController extends Controller
                 'modo_almacen' => 'No se puede cambiar el modo de almacén porque la empresa ya tiene movimientos '
                     . '(entradas, transferencias o ventas).',
             ])->withInput();
+        }
+
+        // Logo: es un archivo, se maneja aparte del update de columnas. Solo se
+        // reemplaza si llega un archivo nuevo; si no viene, se conserva el actual.
+        unset($datos['logo']);
+        if ($request->hasFile('logo')) {
+            if ($empresa->logo) {
+                Storage::disk('public')->delete($empresa->logo);
+            }
+            $datos['logo'] = $request->file('logo')->store('logos', 'public');
         }
 
         try {

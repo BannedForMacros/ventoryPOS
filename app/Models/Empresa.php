@@ -2,11 +2,16 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class Empresa extends Model
 {
+    /** URL pública del logo (o null) — se serializa al frontend. */
+    protected $appends = ['logo_url'];
+
     protected $fillable = [
         'razon_social',
         'nombre_comercial',
@@ -51,6 +56,14 @@ class Empresa extends Model
             'usa_agenda'                      => 'boolean',
             'agenda_sujeto_requerido'         => 'boolean',
         ];
+    }
+
+    /** URL pública del logo subido (o null si no hay). */
+    protected function logoUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->logo ? Storage::disk('public')->url($this->logo) : null,
+        );
     }
 
     public function locales(): HasMany

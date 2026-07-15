@@ -8,8 +8,10 @@ use App\Models\Cotizacion;
 use App\Models\Producto;
 use App\Models\ProductoUnidad;
 use App\Services\AuditoriaService;
+use App\Services\TicketPrintService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -251,6 +253,31 @@ class CotizacionController extends Controller
         ], $user);
 
         return back()->with('success', 'Contacto registrado.');
+    }
+
+    /** Payload JSON para imprimir la cotización en la ticketera (agente local). */
+    public function ticket(Request $request, Cotizacion $cotizacion)
+    {
+        abort_if($cotizacion->empresa_id !== $request->user()->empresa_id, 403);
+
+        return response()->json(app(TicketPrintService::class)->payloadDeCotizacion($cotizacion));
+    }
+
+    /** Proforma A4 imprimible / guardable como PDF (vista HTML, no Inertia). */
+    public function proforma(Request $request, Cotizacion $cotizacion)
+    {
+        abort_if($cotizacion->empresa_id !== $request->user()->empresa_id, 403);
+
+        $cotizacion->loadMissing(['cliente', 'items.producto', 'user', 'empresa', 'local']);
+        $empresa = $cotizacion->empresa;
+
+        return view('proforma-cotizacion', [
+            'cot'     => $cotizacion,
+            'empresa' => $empresa,
+            'local'   => $cotizacion->local,
+            'cliente' => $cotizacion->cliente,
+            'logoUrl' => $empresa?->logo ? Storage::disk('public')->url($empresa->logo) : null,
+        ]);
     }
 
     // ── Helpers privados ─────────────────────────────────────────────────

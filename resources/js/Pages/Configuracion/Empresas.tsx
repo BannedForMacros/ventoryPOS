@@ -40,6 +40,7 @@ type FormData = {
     requiere_aprobacion_devolucion: boolean;
     restock_default: boolean;
     activo: boolean;
+    logo: File | null;
 };
 
 const emptyForm: FormData = {
@@ -63,6 +64,7 @@ const emptyForm: FormData = {
     requiere_aprobacion_devolucion: false,
     restock_default: true,
     activo: true,
+    logo: null,
 };
 
 export default function Empresas({ empresas }: Props) {
@@ -70,7 +72,9 @@ export default function Empresas({ empresas }: Props) {
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState<Empresa | null>(null);
 
-    const { data, setData, put, processing, errors, reset } = useForm<FormData>(emptyForm);
+    const { data, setData, post, transform, processing, errors, reset } = useForm<FormData>(emptyForm);
+    // Preview local del logo elegido (antes de subirlo).
+    const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
@@ -100,6 +104,7 @@ export default function Empresas({ empresas }: Props) {
             requiere_aprobacion_devolucion: emp.requiere_aprobacion_devolucion ?? false,
             restock_default: emp.restock_default ?? true,
             activo: emp.activo,
+            logo: null,
         });
         setModalOpen(true);
     }
@@ -107,8 +112,11 @@ export default function Empresas({ empresas }: Props) {
     function submit(e: React.FormEvent) {
         e.preventDefault();
         if (!editing) return;
-        put(route('configuracion.empresas.update', editing.id), {
-            onSuccess: () => { setModalOpen(false); reset(); },
+        // Subir archivo con PUT requiere POST + method spoofing (limitación PHP).
+        transform((d) => ({ ...d, _method: 'put' }));
+        post(route('configuracion.empresas.update', editing.id), {
+            forceFormData: true,
+            onSuccess: () => { setModalOpen(false); reset(); setLogoPreview(null); transform((d) => d); },
         });
     }
 
@@ -197,6 +205,43 @@ export default function Empresas({ empresas }: Props) {
                     <div className="grid grid-cols-2 gap-4">
                         <Input label="Dirección" value={data.direccion} onChange={e => setData('direccion', e.target.value)} error={errors.direccion} />
                         <Input label="Teléfono" value={data.telefono} onChange={e => setData('telefono', e.target.value)} error={errors.telefono} />
+                    </div>
+
+                    {/* Logo de la empresa (PNG/JPG). Se sube un archivo; no se usa URL. */}
+                    <div>
+                        <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>Logo</p>
+                        <div className="flex items-center gap-4">
+                            {(logoPreview || (editing as { logo_url?: string | null } | null)?.logo_url) ? (
+                                <img
+                                    src={logoPreview ?? (editing as { logo_url?: string | null }).logo_url!}
+                                    alt="Logo"
+                                    className="h-16 w-16 rounded-lg object-contain border"
+                                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
+                                />
+                            ) : (
+                                <div className="h-16 w-16 rounded-lg border flex items-center justify-center text-[10px] text-center"
+                                    style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg)' }}>
+                                    Sin logo
+                                </div>
+                            )}
+                            <div className="flex-1">
+                                <input
+                                    type="file"
+                                    accept="image/png,image/jpeg"
+                                    onChange={e => {
+                                        const file = e.target.files?.[0] ?? null;
+                                        setData('logo', file);
+                                        setLogoPreview(file ? URL.createObjectURL(file) : null);
+                                    }}
+                                    className="block w-full text-sm"
+                                    style={{ color: 'var(--color-text)' }}
+                                />
+                                <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                    PNG o JPG, máximo 2 MB. Si no eliges uno, se conserva el actual.
+                                </p>
+                                {errors.logo && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.logo}</p>}
+                            </div>
+                        </div>
                     </div>
                     <div>
                         <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>

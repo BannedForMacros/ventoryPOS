@@ -2,7 +2,12 @@
 
 namespace App\Services;
 
+use App\Models\Caja;
+use App\Models\Cotizacion;
+use App\Models\Empresa;
 use App\Models\Venta;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Arma el payload de impresión de tickets para el agente local
@@ -111,6 +116,127 @@ class TicketPrintService
             // Abrir el cajón portamonedas solo cuando entró efectivo.
             'abrirCajon' => $hayEfectivo,
             'copias'     => 1,
+            // Logo de la empresa en base64 (sale si el agente lo soporta).
+            'logo'       => $this->logoBase64($empresa),
         ];
+    }
+
+    /**
+     * Construye el ticket imprimible de una COTIZACIÓN (proforma). Espejo de
+     * payloadDeVenta: mismo contrato de claves, pero sin datos de pago (aún no
+     * se cobra) y con el pie como proforma.
+     */
+    public function payloadDeCotizacion(Cotizacion $cot): array
+    {
+        $cot->loadMissing(['empresa', 'local', 'user', 'cliente', 'items']);
+
+        $empresa = $cot->empresa;
+        $local   = $cot->local;
+
+        // Cliente (nombre_completo = razon_social o "nombres apellidos").
+        $cliente   = $cot->cliente;
+        $nombreCli = trim((string) ($cliente?->nombre_completo ?? ''));
+        $docCli    = ($cliente && $cliente->numero_documento)
+            ? trim(($cliente->tipo_documento ? $cliente->tipo_documento . ' ' : '') . $cliente->numero_documento)
+            : null;
+
+        // La cotización no tiene caja propia: enrutamos a la impresora del local.
+        $token = (string) (Caja::where('local_id', $cot->local_id)
+            ->whereNotNull('token_impresora')->value('token_impresora') ?? '');
+
+        $validez = $cot->fecha_vencimiento
+            ? Carbon::parse($cot->fecha_vencimiento)->format('d/m/Y')
+            : null;
+
+        $pie = trim(
+            ($cot->observacion ? $cot->observacion . "\n" : '')
+            . 'Proforma — no es comprobante de pago'
+            . ($validez ? "\nVálida hasta {$validez}" : '')
+        );
+
+        return [
+            'token' => $token,
+
+            'negocio' => [
+                'nombre'    => $empresa?->nombre_comercial ?: $empresa?->razon_social,
+                'ruc'       => $empresa?->ruc,
+                'direccion' => $local?->direccion ?: $empresa?->direccion,
+                'telefono'  => $local?->telefono ?: $empresa?->telefono,
+            ],
+
+            'documento' => [
+                'tipo'     => 'COTIZACIÓN / PROFORMA',
+                'serie'    => null,
+                'numero'   => $cot->numero,
+                'fecha'    => $cot->fecha ? Carbon::parse($cot->fecha)->format('d/m/Y') : null,
+                'vendedor' => $cot->user?->name,
+                'caja'     => null,
+            ],
+
+            'cliente' => [
+                'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
+                'doc'       => $docCli,
+                'direccion' => null,
+            ],
+
+            'items' => $cot->items->map(fn ($item) => [
+                'cant'    => (float) $item->cantidad,
+                'desc'    => $item->producto_nombre,
+                'precio'  => (float) $item->precio_unitario,
+                'importe' => (float) $item->subtotal,
+                'unidad'  => $item->unidad_nombre,
+            ])->values()->all(),
+
+            'totales' => [
+                'subtotal'  => (float) $cot->subtotal,
+                'igv'       => (float) $cot->igv,
+                'descuento' => (float) $cot->descuento_total,
+                'total'     => (float) $cot->total,
+                'moneda'    => 'PEN',
+            ],
+
+            // Una cotización no lleva pago: se cobra al convertirla en venta.
+            'pago' => [
+                'metodo'   => null,
+                'recibido' => null,
+                'vuelto'   => null,
+            ],
+
+            'pie'        => $pie,
+            'qr'         => null,
+            'abrirCajon' => false,
+            'copias'     => 1,
+            'logo'       => $this->logoBase64($empresa),
+        ];
+    }
+
+    /**
+     * Logo de la empresa como data URI base64 (disco 'public'), o null si no hay
+     * logo o el archivo no existe. png/jpg/webp detectado por la extensión.
+     */
+    private function logoBase64(?Empresa $empresa): ?string
+    {
+        $path = $empresa?->logo;
+        if (!$path) {
+            return null;
+        }
+
+        try {
+            if (!Storage::disk('public')->exists($path)) {
+                return null;
+            }
+            $bytes = Storage::disk('public')->get($path);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $ext  = strtolower(pathinfo((string) $path, PATHINFO_EXTENSION));
+        $mime = match ($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'webp'        => 'image/webp',
+            default       => 'image/png',
+        };
+
+        return 'data:' . $mime . ';base64,' . base64_encode($bytes);
     }
 }
