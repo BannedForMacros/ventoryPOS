@@ -45,7 +45,7 @@ class HandleInertiaRequests extends Middleware
             // respuesta. Solo para quien puede VER cotizaciones. Lazy: se
             // evalúa una única vez por request (queries baratas apoyadas en
             // los índices empresa+estado y empresa+fecha_vencimiento).
-            'alertasCotizaciones' => fn () => $user && $user->tienePermiso('ventas.cotizaciones', 'ver')
+            'alertasCotizaciones' => fn () => $user && $user->tienePermiso('cotizaciones', 'ver')
                 ? $this->alertasCotizaciones($user->empresa_id)
                 : null,
         ];

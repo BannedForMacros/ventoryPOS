@@ -290,11 +290,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Proformas con precios congelados y seguimiento. La conversión a venta
     // se hace desde el POS (?cotizacion_id=), no aquí.
     Route::prefix('cotizaciones')->name('cotizaciones.')->group(function () {
-        Route::middleware('permiso:ventas.cotizaciones,ver')->get('/', [CotizacionController::class, 'index'])->name('index');
-        Route::middleware('permiso:ventas.cotizaciones,crear')->post('/', [CotizacionController::class, 'store'])->name('store');
-        Route::middleware('permiso:ventas.cotizaciones,editar')->put('/{cotizacion}', [CotizacionController::class, 'update'])->name('update');
-        Route::middleware('permiso:ventas.cotizaciones,editar')->post('/{cotizacion}/estado', [CotizacionController::class, 'cambiarEstado'])->name('estado');
-        Route::middleware('permiso:ventas.cotizaciones,editar')->post('/{cotizacion}/contacto', [CotizacionController::class, 'registrarContacto'])->name('contacto');
+        Route::middleware('permiso:cotizaciones,ver')->get('/', [CotizacionController::class, 'index'])->name('index');
+        Route::middleware('permiso:cotizaciones,crear')->post('/', [CotizacionController::class, 'store'])->name('store');
+        Route::middleware('permiso:cotizaciones,editar')->put('/{cotizacion}', [CotizacionController::class, 'update'])->name('update');
+        Route::middleware('permiso:cotizaciones,editar')->post('/{cotizacion}/estado', [CotizacionController::class, 'cambiarEstado'])->name('estado');
+        Route::middleware('permiso:cotizaciones,editar')->post('/{cotizacion}/contacto', [CotizacionController::class, 'registrarContacto'])->name('contacto');
     });
 
     // ── CONCEPTOS DE DESCUENTO ───────────────────────────────────────────
