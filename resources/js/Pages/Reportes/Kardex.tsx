@@ -26,7 +26,7 @@ interface MovimientoRow {
     usuario:          string | null;
 }
 
-interface Kpis { movimientos: number; total_entra: number; total_sale: number; }
+interface Kpis { movimientos: number; total_entra: number; total_sale: number; stock_actual: number; }
 interface Almacen { id: number; nombre: string; }
 interface TipoOpt { value: string; label: string; }
 interface ProductoSel { id: number; nombre: string; codigo: string | null; }
@@ -86,10 +86,11 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
             />
 
             {/* KPIs */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                 <KpiCard icon={<ScrollText size={18} />} label="Movimientos" value={kpis.movimientos.toLocaleString('es-PE')} color="primary" />
                 <KpiCard icon={<ArrowDownCircle size={18} />} label="Total ingresado (base)" value={num(kpis.total_entra)} color="success" />
                 <KpiCard icon={<ArrowUpCircle size={18} />} label="Total salido (base)" value={num(kpis.total_sale)} color="danger" />
+                <KpiCard icon={<Package size={18} />} label="Stock actual (base)" value={num(kpis.stock_actual)} color="primary" />
             </div>
 
             {/* Producto fijado (cuando se entra desde el ojo de Stock actual) */}

@@ -79,10 +79,18 @@ class ReporteKardexController extends Controller
                 COALESCE(SUM(CASE WHEN cantidad < 0 THEN -cantidad ELSE 0 END), 0) as total_sale
             ")->first();
 
+        // Stock actual (de la tabla `stock`, no del rango): mismos filtros de
+        // producto/almacén. Con un producto seleccionado = su saldo real hoy.
+        $stockActual = (float) \App\Models\Stock::whereIn('almacen_id', $almacenIds)
+            ->when($request->almacen_id, fn ($q, $v) => $q->where('almacen_id', $v))
+            ->when($request->producto_id, fn ($q, $v) => $q->where('producto_id', $v))
+            ->sum('cantidad');
+
         $kpis = [
-            'movimientos' => (int)   ($tot->movimientos ?? 0),
-            'total_entra' => (float) ($tot->total_entra ?? 0),
-            'total_sale'  => (float) ($tot->total_sale ?? 0),
+            'movimientos'  => (int)   ($tot->movimientos ?? 0),
+            'total_entra'  => (float) ($tot->total_entra ?? 0),
+            'total_sale'   => (float) ($tot->total_sale ?? 0),
+            'stock_actual' => $stockActual,
         ];
 
         // Producto seleccionado (para mostrar su nombre cuando se entra desde el ojo)
