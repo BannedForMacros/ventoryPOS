@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Caja;
+use App\Models\ClienteAnticipoAplicacion;
 use App\Models\Cotizacion;
 use App\Models\Empresa;
 use App\Models\Venta;
@@ -198,6 +199,98 @@ class TicketPrintService
             ],
 
             // Una cotización no lleva pago: se cobra al convertirla en venta.
+            'pago' => [
+                'metodo'   => null,
+                'recibido' => null,
+                'vuelto'   => null,
+            ],
+
+            'pie'        => $pie,
+            'qr'         => null,
+            'abrirCajon' => false,
+            'copias'     => 1,
+            'logo'       => $this->logoBase64($empresa),
+        ];
+    }
+
+    /**
+     * Payload para el ticket de una ENTREGA de anticipo (constancia de entrega
+     * de mercadería pagada por adelantado). Mismo contrato de claves.
+     */
+    public function payloadDeEntregaAnticipo(ClienteAnticipoAplicacion $entrega): array
+    {
+        $entrega->loadMissing([
+            'anticipo.empresa', 'anticipo.cliente', 'anticipo.venta.local',
+            'user', 'items.item',
+        ]);
+
+        $anticipo = $entrega->anticipo;
+        $empresa  = $anticipo?->empresa;
+        $local    = $anticipo?->venta?->local;
+        $cliente  = $anticipo?->cliente;
+
+        $nombreCli = trim((string) ($cliente?->nombre_completo ?? ''));
+        $docCli    = ($cliente && $cliente->numero_documento)
+            ? trim(($cliente->tipo_documento ? $cliente->tipo_documento . ' ' : '') . $cliente->numero_documento)
+            : null;
+
+        $localId = $anticipo?->venta?->local_id;
+        $token   = $localId
+            ? (string) (Caja::where('local_id', $localId)->get()->pluck('token_impresora')->filter()->first() ?? '')
+            : '';
+
+        $items = $entrega->items->map(fn ($ai) => [
+            'cant'    => (float) $ai->cantidad,
+            'desc'    => $ai->item?->producto_nombre ?? 'Producto',
+            'precio'  => (float) ($ai->item?->precio_unitario ?? 0),
+            'importe' => round((float) $ai->cantidad * (float) ($ai->item?->precio_unitario ?? 0), 2),
+            'unidad'  => $ai->item?->unidad_nombre ?? 'und',
+        ])->values()->all();
+
+        // Total: valor de lo entregado (si hay ítems) o el monto de la aplicación.
+        $total = count($items) > 0 ? array_sum(array_column($items, 'importe')) : (float) $entrega->monto;
+
+        $pie = trim(
+            ($entrega->observacion ? $entrega->observacion . "\n" : '')
+            . 'Constancia de ENTREGA de mercadería (anticipo)'
+            . ($anticipo?->venta?->numero ? "\nVenta origen: {$anticipo->venta->numero}" : '')
+        );
+
+        return [
+            'token' => $token,
+
+            'negocio' => [
+                'nombre'    => $empresa?->nombre_comercial ?: $empresa?->razon_social,
+                'ruc'       => $empresa?->ruc,
+                'direccion' => $local?->direccion ?: $empresa?->direccion,
+                'telefono'  => $local?->telefono ?: $empresa?->telefono,
+            ],
+
+            'documento' => [
+                'tipo'     => 'ENTREGA DE ANTICIPO',
+                'serie'    => null,
+                'numero'   => $entrega->numero,
+                'fecha'    => $entrega->fecha ? Carbon::parse($entrega->fecha)->format('d/m/Y') : null,
+                'vendedor' => $entrega->user?->name,
+                'caja'     => null,
+            ],
+
+            'cliente' => [
+                'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
+                'doc'       => $docCli,
+                'direccion' => null,
+            ],
+
+            'items' => $items,
+
+            'totales' => [
+                'subtotal'  => round($total, 2),
+                'igv'       => 0.0,
+                'descuento' => 0.0,
+                'total'     => round($total, 2),
+                'moneda'    => 'PEN',
+            ],
+
             'pago' => [
                 'metodo'   => null,
                 'recibido' => null,

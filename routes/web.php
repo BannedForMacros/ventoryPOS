@@ -347,6 +347,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/aplicar', [AnticipoClienteController::class, 'aplicar'])->name('anticipos.aplicar');
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/anular', [AnticipoClienteController::class, 'anular'])->name('anticipos.anular');
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/reactivar', [AnticipoClienteController::class, 'reactivar'])->name('anticipos.reactivar');
+        // Impresión de la ENTREGA (aplicación): ticket térmico (JSON) y documento A4.
+        Route::middleware('permiso:finanzas.anticipos,ver')->get('anticipos/entregas/{entrega}/ticket', [AnticipoClienteController::class, 'ticket'])->name('anticipos.entrega.ticket');
+        Route::middleware('permiso:finanzas.anticipos,ver')->get('anticipos/entregas/{entrega}/documento', [AnticipoClienteController::class, 'documento'])->name('anticipos.entrega.documento');
 
         // Adelantos a proveedores
         Route::middleware('permiso:finanzas.adelantos,ver')->get('adelantos', [AdelantoProveedorController::class, 'index'])->name('adelantos.index');

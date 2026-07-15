@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Finanzas;
 use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\ClienteAnticipo;
+use App\Models\ClienteAnticipoAplicacion;
 use App\Models\Cuenta;
+use App\Services\TicketPrintService;
+use Illuminate\Support\Facades\Storage;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\Stock;
@@ -211,6 +214,8 @@ class AnticipoClienteController extends Controller
             }
 
             $anticipo->aplicaciones()->create([
+                'empresa_id'  => $anticipo->empresa_id,
+                'numero'      => \App\Models\ClienteAnticipoAplicacion::generarNumero($anticipo->empresa_id),
                 'user_id'     => $user->id,
                 'fecha'       => $data['fecha'],
                 'monto'       => $montoAplicado,
@@ -333,6 +338,8 @@ class AnticipoClienteController extends Controller
 
         DB::transaction(function () use ($anticipo, $user, $data, $entregas, $montoAplicado, $totalUnidades) {
             $aplicacion = $anticipo->aplicaciones()->create([
+                'empresa_id'  => $anticipo->empresa_id,
+                'numero'      => \App\Models\ClienteAnticipoAplicacion::generarNumero($anticipo->empresa_id),
                 'user_id'     => $user->id,
                 'fecha'       => $data['fecha'],
                 'monto'       => $montoAplicado,
@@ -517,5 +524,37 @@ class AnticipoClienteController extends Controller
         ], $user);
 
         return back()->with('success', 'Anticipo reactivado: tesorería quedó consistente.');
+    }
+
+    /** Payload JSON del ticket de una ENTREGA de anticipo (para el agente). */
+    public function ticket(Request $request, ClienteAnticipoAplicacion $entrega)
+    {
+        abort_if($entrega->empresa_id !== $request->user()->empresa_id, 403);
+
+        return response()->json(app(TicketPrintService::class)->payloadDeEntregaAnticipo($entrega));
+    }
+
+    /** Documento A4 imprimible (HTML → PDF) de una ENTREGA de anticipo. */
+    public function documento(Request $request, ClienteAnticipoAplicacion $entrega)
+    {
+        abort_if($entrega->empresa_id !== $request->user()->empresa_id, 403);
+
+        $entrega->loadMissing(['anticipo.empresa', 'anticipo.cliente', 'anticipo.venta', 'user', 'items.item']);
+        $empresa = $entrega->anticipo?->empresa;
+
+        // Logo incrustado base64 (no depende de storage:link).
+        $logoData = null;
+        if ($empresa?->logo && Storage::disk('public')->exists($empresa->logo)) {
+            $ext  = strtolower(pathinfo($empresa->logo, PATHINFO_EXTENSION));
+            $mime = match ($ext) { 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif', default => 'image/jpeg' };
+            $logoData = 'data:' . $mime . ';base64,' . base64_encode(Storage::disk('public')->get($empresa->logo));
+        }
+
+        return view('entrega-anticipo', [
+            'entrega' => $entrega,
+            'empresa' => $empresa,
+            'cliente' => $entrega->anticipo?->cliente,
+            'logoUrl' => $logoData,
+        ]);
     }
 }

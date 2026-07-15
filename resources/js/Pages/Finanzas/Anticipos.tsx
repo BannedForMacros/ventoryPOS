@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Eye, PackageCheck, Ban, PiggyBank } from 'lucide-react';
+import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown } from 'lucide-react';
+import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -26,6 +28,7 @@ interface AplicacionItem {
 
 interface Aplicacion {
     id: number;
+    numero: string | null;
     fecha: string;
     monto: string;
     cantidad: string | null;
@@ -136,6 +139,23 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
         if (m.cuentas?.length) return m.cuentas;
         if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
         return []; // electronico sin cuenta vinculada: se crea sola con el nombre del metodo
+    }
+
+    // ── Impresión de una ENTREGA (aplicación) ──────────────────────────
+    async function imprimirEntrega(ap: Aplicacion) {
+        const tid = toast.loading(`Enviando entrega ${ap.numero ?? ''}...`);
+        try {
+            const { data } = await axios.get<TicketPayload>(route('finanzas.anticipos.entrega.ticket', ap.id));
+            if (!data?.token) { toast.error('Esta caja no tiene ticketera configurada.', { id: tid }); return; }
+            const ok = await imprimirTicket(data);
+            if (ok) toast.success(`Entrega ${ap.numero ?? ''} enviada`, { id: tid });
+            else    toast.error('No se pudo imprimir. Revisa VentoryPrint en esta PC.', { id: tid });
+        } catch {
+            toast.error('No se pudo obtener la entrega.', { id: tid });
+        }
+    }
+    function verDocumentoEntrega(ap: Aplicacion) {
+        window.open(route('finanzas.anticipos.entrega.documento', ap.id), '_blank');
     }
 
     function submitNuevo() {
@@ -606,20 +626,37 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
 
                         <Timeline
                             emptyMessage="Sin aplicaciones registradas"
-                            items={detalle.aplicaciones.map(ap => ({
-                                fecha: new Date(ap.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
-                                badge: { texto: 'Entrega', variant: 'success' as const },
-                                tipo: 'neutro' as const,
-                                detalle: [
+                            items={detalle.aplicaciones.map(ap => {
+                                const info = [
                                     ap.items?.length
                                         ? ap.items.map(ai => `${Number(ai.cantidad)} × ${ai.item?.producto_nombre ?? 'ítem'}`).join(', ')
                                         : (ap.cantidad ? `${Number(ap.cantidad)} und` : null),
                                     ap.venta?.numero ? `Venta ${ap.venta.numero}` : null,
                                     ap.observacion,
-                                ].filter(Boolean).join(' · ') || undefined,
-                                user: ap.user?.name,
-                                monto: Number(ap.monto),
-                            }))}
+                                ].filter(Boolean).join(' · ');
+                                return {
+                                    fecha: new Date(ap.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
+                                    badge: { texto: ap.numero ?? 'Entrega', variant: 'success' as const },
+                                    tipo: 'neutro' as const,
+                                    detalle: (
+                                        <span className="inline-flex items-center gap-2 flex-wrap">
+                                            {info && <span>{info}</span>}
+                                            <button onClick={() => imprimirEntrega(ap)} title="Imprimir ticket de la entrega"
+                                                className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-black/5"
+                                                style={{ color: 'var(--color-text-muted)' }}>
+                                                <Printer size={13} />
+                                            </button>
+                                            <button onClick={() => verDocumentoEntrega(ap)} title="Documento A4 / Guardar PDF"
+                                                className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-black/5"
+                                                style={{ color: 'var(--color-primary)' }}>
+                                                <FileDown size={13} />
+                                            </button>
+                                        </span>
+                                    ),
+                                    user: ap.user?.name,
+                                    monto: Number(ap.monto),
+                                };
+                            })}
                         />
                     </div>
                 )}
