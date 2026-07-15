@@ -87,45 +87,59 @@ class ReconstruirKardex extends Command
         $almacenId = (int) $almacen->id;
         $movs = [];
 
+        // Inventario inicial (apertura): si existe, es la PRIMERA línea del kardex
+        // (traza el saldo de arranque) y solo se cuentan movimientos POSTERIORES a
+        // la fecha de corte. Sin apertura, se listan todos (comportamiento previo).
+        $apertura = DB::table('stock_iniciales')
+            ->where('almacen_id', $almacenId)->where('producto_id', $productoId)->first();
+        $corte = $apertura ? substr((string) $apertura->fecha, 0, 10) . ' 23:59:59' : null;
+        $post  = fn ($q, string $col) => $corte ? $q->where($col, '>', $corte) : $q;
+
+        if ($apertura) {
+            $movs[] = $this->mov(substr((string) $apertura->fecha, 0, 10), 0,
+                'inventario_inicial', 'stock_inicial', (int) $apertura->id,
+                (float) $apertura->cantidad, (float) $apertura->costo, true, null, null);
+        }
+
         // (+) Entradas confirmadas — recalculan CPP con su precio_costo
-        foreach (DB::table('entradas_detalle as ed')
+        foreach ($post(DB::table('entradas_detalle as ed')
             ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
             ->where('e.almacen_id', $almacenId)
             ->where('e.estado', 'confirmado')
-            ->where('ed.producto_id', $productoId)
+            ->where('ed.producto_id', $productoId), 'e.fecha')
             ->get(['ed.cantidad_base', 'ed.precio_costo', 'e.id', 'e.fecha', 'e.numero_documento', 'e.user_id']) as $r) {
             $movs[] = $this->mov($r->fecha, (int) $r->id, 'entrada', 'entrada', (int) $r->id,
                 (float) $r->cantidad_base, (float) $r->precio_costo, true, $r->numero_documento, $r->user_id);
         }
 
         // (-) Salidas confirmadas
-        foreach (DB::table('salidas_detalle as sd')
+        foreach ($post(DB::table('salidas_detalle as sd')
             ->join('salidas as s', 's.id', '=', 'sd.salida_id')
             ->where('s.almacen_id', $almacenId)
             ->where('s.estado', 'confirmado')
-            ->where('sd.producto_id', $productoId)
+            ->where('sd.producto_id', $productoId), 's.fecha')
             ->get(['sd.cantidad_base', 's.id', 's.fecha', 's.numero_documento', 's.user_id']) as $r) {
             $movs[] = $this->mov($r->fecha, (int) $r->id, 'salida', 'salida', (int) $r->id,
                 -1 * (float) $r->cantidad_base, 0, false, $r->numero_documento, $r->user_id);
         }
 
         // (-) Transferencias salientes (enviada/recibida)
-        foreach (DB::table('transferencias_detalle as td')
+        foreach ($post(DB::table('transferencias_detalle as td')
             ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
             ->where('t.almacen_origen_id', $almacenId)
             ->whereIn('t.estado', ['enviada', 'recibida'])
-            ->where('td.producto_id', $productoId)
+            ->where('td.producto_id', $productoId), 't.fecha_envio')
             ->get(['td.cantidad_base_enviada', 't.id', 't.fecha_envio', 't.user_envio_id']) as $r) {
             $movs[] = $this->mov($r->fecha_envio, (int) $r->id, 'transferencia_envio', 'transferencia', (int) $r->id,
                 -1 * (float) $r->cantidad_base_enviada, 0, false, null, $r->user_envio_id);
         }
 
         // (+) Transferencias entrantes (recibida) — recalculan CPP con costo_unitario
-        foreach (DB::table('transferencias_detalle as td')
+        foreach ($post(DB::table('transferencias_detalle as td')
             ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
             ->where('t.almacen_destino_id', $almacenId)
             ->where('t.estado', 'recibida')
-            ->where('td.producto_id', $productoId)
+            ->where('td.producto_id', $productoId), 't.fecha_recepcion')
             ->get(['td.cantidad_base_recibida', 'td.costo_unitario', 't.id', 't.fecha_recepcion', 't.user_recepcion_id']) as $r) {
             $movs[] = $this->mov($r->fecha_recepcion, (int) $r->id, 'transferencia_recepcion', 'transferencia', (int) $r->id,
                 (float) $r->cantidad_base_recibida, (float) $r->costo_unitario, true, null, $r->user_recepcion_id);
@@ -133,25 +147,25 @@ class ReconstruirKardex extends Command
 
         // (-) Ventas completadas — solo si el almacén es tipo 'local' del local de la venta
         if ($almacen->tipo === 'local' && $almacen->local_id) {
-            foreach (DB::table('venta_items as vi')
+            foreach ($post(DB::table('venta_items as vi')
                 ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
                 ->where('v.local_id', $almacen->local_id)
                 ->where('v.empresa_id', $almacen->empresa_id)
                 ->where('v.estado', 'completada')
-                ->where('vi.producto_id', $productoId)
+                ->where('vi.producto_id', $productoId), 'v.fecha_venta')
                 ->get(['vi.cantidad_base', 'v.id', 'v.fecha_venta', 'v.user_id']) as $r) {
                 $movs[] = $this->mov($r->fecha_venta, (int) $r->id, 'venta', 'venta', (int) $r->id,
                     -1 * (float) $r->cantidad_base, 0, false, null, $r->user_id);
             }
 
             // (+) Devoluciones completadas con restock
-            foreach (DB::table('devoluciones_detalle as dd')
+            foreach ($post(DB::table('devoluciones_detalle as dd')
                 ->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
                 ->where('d.local_id', $almacen->local_id)
                 ->where('d.empresa_id', $almacen->empresa_id)
                 ->where('d.estado', 'completada')
                 ->where('dd.restock', true)
-                ->where('dd.producto_id', $productoId)
+                ->where('dd.producto_id', $productoId), 'd.created_at')
                 ->get(['dd.cantidad_base', 'd.id', 'd.created_at']) as $r) {
                 $movs[] = $this->mov($r->created_at, (int) $r->id, 'devolucion', 'devolucion', (int) $r->id,
                     (float) $r->cantidad_base, 0, false, null, null);
@@ -159,11 +173,11 @@ class ReconstruirKardex extends Command
         }
 
         // (±) Cierres confirmados — aplican la diferencia declarada
-        foreach (DB::table('cierres_inventario_items as ci')
+        foreach ($post(DB::table('cierres_inventario_items as ci')
             ->join('cierres_inventario as c', 'c.id', '=', 'ci.cierre_id')
             ->where('c.almacen_id', $almacenId)
             ->where('c.estado', 'confirmado')
-            ->where('ci.producto_id', $productoId)
+            ->where('ci.producto_id', $productoId), 'c.fecha')
             ->get(['ci.diferencia', 'c.id', 'c.fecha', 'c.user_id']) as $r) {
             $movs[] = $this->mov($r->fecha, (int) $r->id, 'cierre', 'cierre', (int) $r->id,
                 (float) $r->diferencia, 0, false, null, $r->user_id);

@@ -67,6 +67,7 @@ class MovimientoInventario extends Model
     public static function etiquetaTipo(string $tipo): string
     {
         return match ($tipo) {
+            'inventario_inicial'         => 'Inventario inicial',
             'entrada'                    => 'Entrada',
             'entrada_reverso'            => 'Entrada (reverso)',
             'entrada_edicion'            => 'Entrada (edición)',
