@@ -82,11 +82,10 @@ it('una compra registrada HOY tampoco infla el stock del balance de AYER', funct
 });
 
 it('una venta con pendiente entregado HOY no altera el STOCK del balance de AYER', function () {
-    // Reproduce el incidente real: HOY se registra una venta con mercadería
-    // pendiente y se ENTREGA el mismo día. Esa mercadería estaba en almacén
-    // AYER (aún no vendida), así que el stock de ayer NO debe cambiar.
-    // Antes daba de MÁS: la venta (ventasPost) y la entrega (entregasPost)
-    // contaban lo mismo doble porque el descuento del pendiente no enganchaba.
+    // HOY se registra una venta con mercadería pendiente y se ENTREGA el mismo
+    // día. Esa mercadería estaba en almacén AYER (aún no vendida), así que el
+    // stock de ayer NO debe cambiar: la reconstrucción devuelve la venta del día
+    // (cantidad_base) y así compensa la salida por la entrega.
     $cliente = \App\Models\Cliente::create([
         'empresa_id' => $this->env->empresa->id,
         'nombres' => 'Pendiente', 'apellidos' => 'Test',

@@ -357,15 +357,7 @@ class BalanceDiarioService
         $costo = "COALESCE(NULLIF(p.precio_costo, 0),
             (SELECT s2.costo_promedio FROM stock s2 WHERE s2.producto_id = p.id AND s2.costo_promedio > 0 ORDER BY s2.id LIMIT 1), 0)";
 
-        // ¿Existe el módulo de "pendientes por entregar" (anticipo material)?
-        // Sus entregas descuentan stock DESPUÉS de la venta (con la entrega del
-        // anticipo, no al vender). Hay que (a) NO contar en la venta lo que quedó
-        // pendiente, y (b) devolver la mercadería entregada después del corte.
-        $tienePendientes = \Illuminate\Support\Facades\Schema::hasTable('cliente_anticipo_items')
-            && \Illuminate\Support\Facades\Schema::hasTable('cliente_anticipo_aplicacion_items');
-
-        // Ventas posteriores al corte (BRUTO): la mercadería vendida salió del
-        // almacén DESPUÉS del corte → se devuelve al valor del día.
+        // Ventas posteriores al corte (salieron DESPUÉS → se devuelven).
         $ventasPost = (float) DB::table('venta_items as vi')
             ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
             ->join('productos as p', 'p.id', '=', 'vi.producto_id')
@@ -373,35 +365,6 @@ class BalanceDiarioService
             ->where('p.activo', true)
             ->whereDate('v.fecha_venta', '>', $fechaCorte)
             ->selectRaw("COALESCE(SUM(vi.cantidad_base * {$costo}), 0) as t")->value('t');
-
-        // De esas ventas, lo que quedó PENDIENTE por entregar NO salió del
-        // almacén al vender (sale recién con la entrega). Se descuenta para no
-        // contarlo doble con las entregas. Se enlaza por `cliente_anticipos.venta_id`
-        // (el `venta_item_id` del ítem puede venir NULL en registros antiguos).
-        $pendientePost = 0.0;
-        $entregasPost  = 0.0;
-        if ($tienePendientes) {
-            $pendientePost = (float) DB::table('cliente_anticipo_items as ai')
-                ->join('cliente_anticipos as ca', 'ca.id', '=', 'ai.cliente_anticipo_id')
-                ->join('ventas as v', 'v.id', '=', 'ca.venta_id')
-                ->join('productos as p', 'p.id', '=', 'ai.producto_id')
-                ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
-                ->where('p.activo', true)
-                ->whereDate('v.fecha_venta', '>', $fechaCorte)
-                ->selectRaw("COALESCE(SUM(ai.cantidad * ai.factor_conversion * {$costo}), 0) as t")->value('t');
-
-            // Entregas de pendiente posteriores al corte: la mercadería pagada
-            // salió del almacén DESPUÉS → se devuelve al corte. (Ésta era la fuga
-            //  original: al reconstruir el pasado no se devolvía lo entregado.)
-            $entregasPost = (float) DB::table('cliente_anticipo_aplicacion_items as aai')
-                ->join('cliente_anticipo_aplicaciones as ap', 'ap.id', '=', 'aai.cliente_anticipo_aplicacion_id')
-                ->join('cliente_anticipo_items as ai', 'ai.id', '=', 'aai.cliente_anticipo_item_id')
-                ->join('productos as p', 'p.id', '=', 'ai.producto_id')
-                ->where('p.empresa_id', $empresaId)
-                ->where('p.activo', true)
-                ->whereDate('ap.fecha', '>', $fechaCorte)
-                ->selectRaw("COALESCE(SUM(aai.cantidad * ai.factor_conversion * {$costo}), 0) as t")->value('t');
-        }
 
         // Salidas de inventario posteriores (se devuelven).
         $salidasPost = (float) DB::table('salidas_detalle as sd')
@@ -440,7 +403,7 @@ class BalanceDiarioService
             ->whereDate('c.fecha', '>', $fechaCorte)
             ->selectRaw("COALESCE(SUM(ci.diferencia * {$costo}), 0) as t")->value('t');
 
-        return round($actual + $ventasPost - $pendientePost + $salidasPost + $entregasPost - $entradasPost - $devolucionesPost - $ajustesPost, 2);
+        return round($actual + $ventasPost + $salidasPost - $entradasPost - $devolucionesPost - $ajustesPost, 2);
     }
 
     /**
