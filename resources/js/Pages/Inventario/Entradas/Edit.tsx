@@ -34,6 +34,14 @@ interface Proveedor { id: number; razon_social: string | null; nombre_comercial:
 interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
 interface MetodoPagoForm { id: number; nombre: string; cuentas: CuentaMP[]; }
 interface StockRow { almacen_id: number; producto_id: number; cantidad: string; }
+// Pago ya registrado (histórico) de la entrada — se muestra read-only.
+interface PagoPrevio {
+    id: number;
+    monto: string;
+    fecha: string;
+    metodo_pago: { id: number; nombre: string } | null;
+    cuenta: { id: number; nombre: string; banco: string | null } | null;
+}
 
 interface EntradaData {
     id: number;
@@ -62,6 +70,7 @@ interface TurnoLite {
 
 interface Props extends PageProps {
     entrada: EntradaData;
+    pagosPrevios: PagoPrevio[];
     almacenes: Almacen[];
     productos: Producto[];
     proveedores: Proveedor[];
@@ -94,9 +103,12 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
     return String(Math.round((t / q) * 10000) / 10000);
 }
 
-export default function EntradaEdit({ entrada, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, mostrarSelector, modoAlmacen }: Props) {
-    // "Afecta caja a:" — turno cuya caja entregó el efectivo de los pagos.
-    const [turnoIdCaja, setTurnoIdCaja] = useState<number | ''>(pagoTurnoId ?? '');
+export default function EntradaEdit({ entrada, pagosPrevios, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, mostrarSelector, modoAlmacen }: Props) {
+    // "Afecta caja a:" — por defecto NO afecta ninguna caja ('' = Sin turno). Solo
+    // si el usuario elige un turno los pagos nuevos descuentan de esa caja. No
+    // preseleccionamos el turno del pago anterior para no re-imputar sin querer.
+    const [turnoIdCaja, setTurnoIdCaja] = useState<number | ''>('');
+    void pagoTurnoId;
     const turnoLabel = (t: TurnoLite) => {
         const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
         const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
@@ -668,6 +680,34 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
                         </Badge>
                     </div>
 
+                    {/* Pagos YA registrados: con qué método(s) se pagó antes. Read-only —
+                        para corregirlos se usa Finanzas → Cuentas por pagar. */}
+                    {pagosPrevios.length > 0 && (
+                        <div className="rounded-xl border p-3" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                            <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                                Pagos ya registrados
+                            </p>
+                            <ul className="space-y-1.5">
+                                {pagosPrevios.map(p => (
+                                    <li key={p.id} className="flex items-center justify-between gap-3 text-sm">
+                                        <span style={{ color: 'var(--color-text)' }}>
+                                            <span className="font-medium">{p.metodo_pago?.nombre ?? 'Sin método'}</span>
+                                            {p.cuenta && (
+                                                <span style={{ color: 'var(--color-text-muted)' }}> · {p.cuenta.nombre}</span>
+                                            )}
+                                            <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                                {p.fecha?.slice(0, 10).split('-').reverse().join('/')}
+                                            </span>
+                                        </span>
+                                        <span className="font-mono font-semibold" style={{ color: 'var(--color-success)' }}>
+                                            S/ {Number(p.monto).toFixed(2)}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
                     {/* "Afecta caja a:" — de qué caja/turno salió el efectivo del pago.
                         Aplica a los pagos nuevos y reasigna los existentes al guardar. */}
                     {turnos.length > 0 && (montoPagado > 0 || pagosNuevos.length > 0) && (
@@ -736,17 +776,16 @@ export default function EntradaEdit({ entrada, almacenes, productos, proveedores
 
                             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                                 <div className="flex gap-2">
+                                    {/* Una sola acción: la primera línea se precarga con el saldo
+                                        (un clic = pagar todo), pero el monto es editable para dejarlo
+                                        como pago parcial. Sin dos botones que confundían. */}
                                     <Button type="button" variant="ghost" size="sm"
-                                        onClick={() => setPagosNuevos(prev => [...prev, nuevaLinea()])}>
+                                        onClick={() => setPagosNuevos(prev => prev.length === 0
+                                            ? [nuevaLinea(saldoActual > 0.009 ? saldoActual.toFixed(2) : '')]
+                                            : [...prev, nuevaLinea()])}>
                                         <Plus size={14} className="mr-1" />
-                                        {pagosNuevos.length === 0 ? 'Registrar pago del saldo' : 'Agregar otro método'}
+                                        {pagosNuevos.length === 0 ? 'Registrar pago' : 'Agregar otro método'}
                                     </Button>
-                                    {pagosNuevos.length === 0 && saldoActual > 0.009 && (
-                                        <Button type="button" variant="secondary" size="sm"
-                                            onClick={() => setPagosNuevos([nuevaLinea(saldoActual.toFixed(2))])}>
-                                            Pagar todo el saldo (S/ {saldoActual.toFixed(2)})
-                                        </Button>
-                                    )}
                                 </div>
                                 {pagosNuevos.length > 0 && (
                                     <div className="flex items-center gap-5 text-sm">

@@ -267,22 +267,20 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                             <CheckCircle size={13} />Confirmar
                         </button>
                     )}
-                    {/* Pagar: disponible en cualquier estado (borrador o confirmado) porque
-                        el pago es independiente. Si ya está pagado, abre el mismo modal para
-                        editar (cambiar método o revertir a pendiente). */}
-                    <button
-                        type="button"
-                        onClick={() => abrirPagoModal(e)}
-                        className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors"
-                        style={
-                            e.estado_pago === 'pagado'
-                                ? { color: 'var(--color-text-muted)', backgroundColor: 'transparent' }
-                                : { color: '#ca8a04', backgroundColor: 'rgba(250,204,21,0.12)' }
-                        }
-                        title={e.estado_pago === 'pagado' ? 'Editar pago' : 'Marcar como pagado'}
-                    >
-                        <Wallet size={13} />{e.estado_pago === 'pagado' ? 'Pago' : 'Pagar'}
-                    </button>
+                    {/* Pagar: solo si AÚN debe algo. Una entrada ya pagada no muestra el
+                        botón (no hay nada que cobrar). Para corregir un pago ya hecho se usa
+                        Editar o Finanzas → Cuentas por pagar. */}
+                    {e.estado_pago !== 'pagado' && (
+                        <button
+                            type="button"
+                            onClick={() => abrirPagoModal(e)}
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors"
+                            style={{ color: '#ca8a04', backgroundColor: 'rgba(250,204,21,0.12)' }}
+                            title="Marcar como pagado"
+                        >
+                            <Wallet size={13} />Pagar
+                        </button>
+                    )}
                     <TableActions
                         onView={() => abrirVerDetalle(e.id)}
                         onEdit={() => router.visit(route('inventario.entradas.edit', e.id))}
@@ -467,18 +465,16 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                         <CheckCircle size={13} />Confirmar
                                     </button>
                                 )}
-                                <button
-                                    type="button"
-                                    onClick={() => abrirPagoModal(e)}
-                                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
-                                    style={
-                                        e.estado_pago === 'pagado'
-                                            ? { color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg)' }
-                                            : { color: '#ca8a04', backgroundColor: 'rgba(250,204,21,0.15)' }
-                                    }
-                                >
-                                    <Wallet size={13} />{e.estado_pago === 'pagado' ? 'Pago' : 'Pagar'}
-                                </button>
+                                {e.estado_pago !== 'pagado' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => abrirPagoModal(e)}
+                                        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+                                        style={{ color: '#ca8a04', backgroundColor: 'rgba(250,204,21,0.15)' }}
+                                    >
+                                        <Wallet size={13} />Pagar
+                                    </button>
+                                )}
                             </div>
                             <div className="flex items-center gap-1">
                                 <button

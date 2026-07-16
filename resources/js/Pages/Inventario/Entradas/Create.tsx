@@ -79,8 +79,12 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
 }
 
 export default function EntradaCreate({ almacenes, productos, proveedores, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen }: Props) {
-    // "Afecta caja a:" — por defecto la caja del propio cajero (su turno activo).
-    const [turnoIdCaja, setTurnoIdCaja] = useState<number | ''>(turnoActivoId ?? '');
+    // "Afecta caja a:" — por defecto NO afecta ninguna caja ('' = Sin turno). El
+    // pago solo descuenta de una caja si el usuario elige explícitamente su turno.
+    // Así una entrada registrada por la cajera no descuadra su caja sin querer.
+    // (turnoActivoId queda disponible como atajo "usar mi caja", pero no es default.)
+    const [turnoIdCaja, setTurnoIdCaja] = useState<number | ''>('');
+    void turnoActivoId;
     const turnoLabel = (t: TurnoLite) => {
         const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
         const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
@@ -663,7 +667,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                                             { value: '', label: 'Sin turno / no sale de caja' },
                                             ...turnos.map(t => ({ value: t.id, label: turnoLabel(t) })),
                                         ]}
-                                        hint="Si pagas en efectivo desde tu caja, déjalo en tu turno para que la consolidación lo reste."
+                                        hint="Por defecto NO sale de ninguna caja. Solo si pagaste en efectivo desde tu caja, elige tu turno para que la consolidación lo descuente."
                                     />
                                 </div>
                             )}

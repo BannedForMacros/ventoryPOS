@@ -324,8 +324,17 @@ class EntradaController extends Controller
             ->orderByDesc('fecha_apertura')->limit(40)
             ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']);
 
+        // Pagos YA registrados de esta entrada — para mostrarle al usuario con qué
+        // método(s) pagó antes (no solo el total). Read-only en el form; se corrigen
+        // en Finanzas → Cuentas por pagar.
+        $pagosPrevios = $entrada->pagosParciales()
+            ->with(['metodoPago:id,nombre', 'cuenta:id,nombre,banco'])
+            ->orderBy('fecha')->orderBy('id')
+            ->get(['id', 'metodo_pago_id', 'cuenta_id', 'monto', 'fecha', 'referencia']);
+
         return Inertia::render('Inventario/Entradas/Edit', [
             'entrada'   => $entrada->load(['detalles.producto', 'detalles.unidadMedida', 'proveedorRel', 'metodoPago', 'cuenta']),
+            'pagosPrevios' => $pagosPrevios,
             'turnos'      => $turnos,
             'pagoTurnoId' => $pagoTurnoId,
             'almacenes' => $this->scope->almacenesParaCompras($user),
@@ -520,6 +529,12 @@ class EntradaController extends Controller
                 // 'parcial', si bajó puede quedar 'pagado').
                 $entrada->aplicarPago(0);
 
+                // "Afecta caja a:" — respetamos EXACTAMENTE lo que eligió el usuario:
+                // un turno concreto = sale de esa caja; '' / null = NO afecta ninguna
+                // caja. Nunca auto-resolvemos al turno activo (eso descuadraba la caja
+                // de la cajera sin que lo pidiera).
+                $turnoArg = array_key_exists('turno_id', $data) ? ($data['turno_id'] ?: null) : null;
+
                 // Pagos NUEVOS desde la edición (mismo track que los iniciales:
                 // entrada_pagos + egreso en tesorería + sincroniza estado_pago).
                 $lineas = $data['pagos'] ?? [];
@@ -531,12 +546,12 @@ class EntradaController extends Controller
                             'pagos' => "Los pagos nuevos (S/ {$suma}) superan el saldo pendiente de la compra (S/ " . number_format($saldo, 2) . ').',
                         ]);
                     }
-                    $this->registrarPagosIniciales($entrada, $lineas, $user->id);
+                    $this->registrarPagosIniciales($entrada, $lineas, $user->id, $turnoArg);
                 }
 
-                // "Afecta caja a:" — si el usuario eligió turno, se lo asignamos a
-                // TODOS los pagos de la entrada (nuevos y existentes). Así corrige de
-                // qué caja salió el efectivo sin depender de la heurística.
+                // Si el usuario eligió un turno explícito, reasignamos TODOS los pagos
+                // de la entrada a esa caja (corrige de qué caja salió el efectivo).
+                // Si dejó "Sin turno" NO tocamos los pagos existentes aquí.
                 if (array_key_exists('turno_id', $data) && $data['turno_id']) {
                     $entrada->pagosParciales()->update(['turno_id' => $data['turno_id']]);
                 }
