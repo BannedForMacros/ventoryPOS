@@ -293,6 +293,11 @@ class VentaController extends Controller
                     'es_admin'              => (bool) $user->rol->es_admin,
                     'expira_en'             => $v->created_at?->addSeconds(self::EDIT_WINDOW_SECONDS)->toIso8601String(),
                     'cliente'               => $v->cliente,
+                    // Crédito: hay que devolverlo para que el toggle cargue marcado al
+                    // editar (antes salía siempre desmarcado). fecha_vencimiento solo
+                    // aplica si es crédito.
+                    'es_credito'            => (bool) $v->es_credito,
+                    'fecha_vencimiento'     => $v->fecha_vencimiento?->toDateString(),
                     'entrega_pendiente'     => $anticiposPend->isNotEmpty(),
                     'fecha_entrega_estimada'=> $anticiposPend->first()?->fecha_entrega_estimada?->toDateString(),
                     'pendiente_bloqueado'   => $pendienteBloqueado,

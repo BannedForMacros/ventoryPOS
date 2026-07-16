@@ -91,6 +91,9 @@ interface VentaEnEdicion {
     es_admin:              boolean;
     expira_en:             string | null;
     cliente:               Cliente | null;
+    // Crédito guardado en la venta — para recargar el toggle al editar.
+    es_credito?:           boolean;
+    fecha_vencimiento?:    string | null;
     // Pendiente por entregar existente (prellenado del panel). Si ya hubo
     // entregas registradas, la edición está bloqueada en el backend.
     entrega_pendiente?:      boolean;
@@ -383,8 +386,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [moneda, setMoneda]                       = useState<'PEN' | 'USD'>(ventaEnEdicion?.moneda ?? 'PEN');
     // F1 — Venta a crédito: se entrega mercadería sin cobrar el total.
     // Requiere cliente identificado; el saldo queda como cuenta por cobrar.
-    const [esCredito, setEsCredito]                 = useState(false);
-    const [fechaVencimiento, setFechaVencimiento]   = useState('');
+    // En EDICIÓN se prellena con lo guardado (antes salía siempre desmarcado).
+    const [esCredito, setEsCredito]                 = useState(!!ventaEnEdicion?.es_credito);
+    const [fechaVencimiento, setFechaVencimiento]   = useState(ventaEnEdicion?.fecha_vencimiento ?? '');
     // Pendiente por entregar: el cliente paga todo pero se lleva solo PARTE.
     // `pendientes` guarda por línea (key del carrito) cuánto QUEDA pendiente;
     // el POS crea automáticamente el anticipo material en finanzas y el stock
