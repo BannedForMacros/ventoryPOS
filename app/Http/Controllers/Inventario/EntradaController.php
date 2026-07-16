@@ -325,16 +325,19 @@ class EntradaController extends Controller
             ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']);
 
         // Pagos YA registrados de esta entrada — para mostrarle al usuario con qué
-        // método(s) pagó antes (no solo el total). Read-only en el form; se corrigen
-        // en Finanzas → Cuentas por pagar.
+        // método(s) pagó antes (no solo el total). Un admin puede editarlos/anularlos
+        // inline (reusa los endpoints cxp.pagos.*); si no, se muestran read-only.
         $pagosPrevios = $entrada->pagosParciales()
             ->with(['metodoPago:id,nombre', 'cuenta:id,nombre,banco'])
             ->orderBy('fecha')->orderBy('id')
-            ->get(['id', 'metodo_pago_id', 'cuenta_id', 'monto', 'fecha', 'referencia']);
+            ->get(['id', 'metodo_pago_id', 'cuenta_id', 'turno_id', 'monto', 'fecha', 'referencia', 'proveedor_adelanto_id']);
 
         return Inertia::render('Inventario/Entradas/Edit', [
             'entrada'   => $entrada->load(['detalles.producto', 'detalles.unidadMedida', 'proveedorRel', 'metodoPago', 'cuenta']),
             'pagosPrevios' => $pagosPrevios,
+            // Editar/anular pagos ya registrados mueve tesorería → solo admin (igual
+            // que CuentasPorPagarController::editarPago/eliminarPago).
+            'puedeEditarPagos' => (bool) $user->rol->es_admin,
             'turnos'      => $turnos,
             'pagoTurnoId' => $pagoTurnoId,
             'almacenes' => $this->scope->almacenesParaCompras($user),
@@ -548,13 +551,9 @@ class EntradaController extends Controller
                     }
                     $this->registrarPagosIniciales($entrada, $lineas, $user->id, $turnoArg);
                 }
-
-                // Si el usuario eligió un turno explícito, reasignamos TODOS los pagos
-                // de la entrada a esa caja (corrige de qué caja salió el efectivo).
-                // Si dejó "Sin turno" NO tocamos los pagos existentes aquí.
-                if (array_key_exists('turno_id', $data) && $data['turno_id']) {
-                    $entrada->pagosParciales()->update(['turno_id' => $data['turno_id']]);
-                }
+                // Nota: el selector "Afecta caja a" de este form solo aplica a los pagos
+                // NUEVOS (arriba). Los pagos ya registrados se reasignan de caja por fila
+                // desde la lista "Pagos ya registrados" (endpoint cxp.pagos.update).
 
                 // 3) Si era confirmada, aplicar el stock nuevo y reconstruir CPP para
                 //    cada (almacen, producto) afectado. Reconstruir es necesario porque

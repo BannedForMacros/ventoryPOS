@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, AlertCircle, AlertTriangle, Wallet, UserPlus } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, AlertTriangle, Wallet, UserPlus, Save } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -10,6 +10,7 @@ import Select from '@/Components/UI/Select';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import Badge from '@/Components/UI/Badge';
+import Modal from '@/Components/UI/Modal';
 import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
 import type { PageProps } from '@/types';
 
@@ -34,11 +35,16 @@ interface Proveedor { id: number; razon_social: string | null; nombre_comercial:
 interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
 interface MetodoPagoForm { id: number; nombre: string; cuentas: CuentaMP[]; }
 interface StockRow { almacen_id: number; producto_id: number; cantidad: string; }
-// Pago ya registrado (histórico) de la entrada — se muestra read-only.
+// Pago ya registrado (histórico) de la entrada. Un admin puede editarlo/anularlo.
 interface PagoPrevio {
     id: number;
     monto: string;
     fecha: string;
+    referencia: string | null;
+    metodo_pago_id: number | null;
+    cuenta_id: number | null;
+    turno_id: number | null;
+    proveedor_adelanto_id: number | null;
     metodo_pago: { id: number; nombre: string } | null;
     cuenta: { id: number; nombre: string; banco: string | null } | null;
 }
@@ -71,6 +77,7 @@ interface TurnoLite {
 interface Props extends PageProps {
     entrada: EntradaData;
     pagosPrevios: PagoPrevio[];
+    puedeEditarPagos: boolean;
     almacenes: Almacen[];
     productos: Producto[];
     proveedores: Proveedor[];
@@ -103,7 +110,7 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
     return String(Math.round((t / q) * 10000) / 10000);
 }
 
-export default function EntradaEdit({ entrada, pagosPrevios, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, mostrarSelector, modoAlmacen }: Props) {
     // "Afecta caja a:" — por defecto NO afecta ninguna caja ('' = Sin turno). Solo
     // si el usuario elige un turno los pagos nuevos descuentan de esa caja. No
     // preseleccionamos el turno del pago anterior para no re-imputar sin querer.
@@ -214,6 +221,105 @@ export default function EntradaEdit({ entrada, pagosPrevios, almacenes, producto
         metodosPago.find(m => m.id === l.metodo_pago_id)?.cuentas ?? [];
     function setPago(key: string, patch: Partial<LineaPago>) {
         setPagosNuevos(prev => prev.map(p => p.key === key ? { ...p, ...patch } : p));
+    }
+
+    // ── Edición de pagos YA registrados (solo admin) ──────────────────
+    // Copia editable de pagosPrevios. Se re-sincroniza tras cada operación
+    // (Inertia recarga los props con preserveState → este effect la refresca).
+    interface EditPagoRow {
+        id: number;
+        metodo_pago_id: number | '';
+        cuenta_id: number | '';
+        monto: string;
+        turno_id: number | '';
+        fecha: string;
+        referencia: string | null;
+        esAdelanto: boolean;
+    }
+    const mapEdit = (p: PagoPrevio): EditPagoRow => ({
+        id: p.id,
+        metodo_pago_id: p.metodo_pago_id ?? '',
+        cuenta_id: p.cuenta_id ?? '',
+        monto: String(p.monto),
+        turno_id: p.turno_id ?? '',
+        fecha: p.fecha?.slice(0, 10) ?? '',
+        referencia: p.referencia,
+        esAdelanto: !!p.proveedor_adelanto_id,
+    });
+    const [editPagos, setEditPagos] = useState<EditPagoRow[]>(pagosPrevios.map(mapEdit));
+    const [savingPagoId, setSavingPagoId] = useState<number | null>(null);
+    // id del pago que se va a anular + motivo (modal de confirmación).
+    const [anularPagoId, setAnularPagoId] = useState<number | null>(null);
+    const [motivoAnular, setMotivoAnular] = useState('');
+
+    // Resincroniza la copia editable cuando el backend devuelve props frescos.
+    useEffect(() => { setEditPagos(pagosPrevios.map(mapEdit)); }, [pagosPrevios]);
+
+    function setEditPago(id: number, patch: Partial<EditPagoRow>) {
+        setEditPagos(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+    }
+    const cuentasDeMetodo = (metodoId: number | '') =>
+        metodosPago.find(m => m.id === metodoId)?.cuentas ?? [];
+
+    // ¿La fila cambió respecto al valor original del backend?
+    function pagoDirty(r: EditPagoRow): boolean {
+        const orig = pagosPrevios.find(p => p.id === r.id);
+        if (!orig) return false;
+        return (r.metodo_pago_id || null) !== (orig.metodo_pago_id ?? null)
+            || (r.cuenta_id || null) !== (orig.cuenta_id ?? null)
+            || (r.turno_id || null) !== (orig.turno_id ?? null)
+            || Math.abs((parseFloat(r.monto) || 0) - Number(orig.monto)) > 0.001;
+    }
+
+    function guardarPagoPrevio(id: number) {
+        const r = editPagos.find(p => p.id === id);
+        if (!r) return;
+        const monto = parseFloat(r.monto);
+        if (!r.esAdelanto && (!r.monto || isNaN(monto) || monto <= 0)) {
+            toast.error('El monto del pago debe ser mayor a 0.');
+            return;
+        }
+        setSavingPagoId(id);
+        // Pago con adelanto: el backend PROHÍBE mandar monto (y no toca método/cuenta).
+        // Solo enviamos fecha, turno y referencia.
+        const payload = r.esAdelanto
+            ? { fecha: r.fecha, turno_id: r.turno_id || null, referencia: r.referencia }
+            : {
+                monto:          r.monto,
+                fecha:          r.fecha,
+                metodo_pago_id: r.metodo_pago_id || null,
+                cuenta_id:      r.cuenta_id || null,
+                turno_id:       r.turno_id || null,
+                referencia:     r.referencia,
+            };
+        router.put(route('cxp.pagos.update', id), payload, {
+            preserveScroll: true,
+            preserveState:  true,
+            onError: (e) => {
+                const first = Object.values(e)[0];
+                toast.error(typeof first === 'string' ? first : 'No se pudo guardar el pago.');
+            },
+            onFinish: () => setSavingPagoId(null),
+        });
+    }
+
+    function anularPagoPrevio() {
+        if (anularPagoId === null) return;
+        if (motivoAnular.trim().length < 5) {
+            toast.error('Indica un motivo de al menos 5 caracteres.');
+            return;
+        }
+        setSavingPagoId(anularPagoId);
+        router.delete(route('cxp.pagos.destroy', anularPagoId), {
+            data: { motivo: motivoAnular.trim() },
+            preserveScroll: true,
+            preserveState:  true,
+            onError: (e) => {
+                const first = Object.values(e)[0];
+                toast.error(typeof first === 'string' ? first : 'No se pudo anular el pago.');
+            },
+            onFinish: () => { setSavingPagoId(null); setAnularPagoId(null); setMotivoAnular(''); },
+        });
     }
 
     const montoPagado    = Number(entrada.monto_pagado ?? 0);
@@ -680,31 +786,104 @@ export default function EntradaEdit({ entrada, pagosPrevios, almacenes, producto
                         </Badge>
                     </div>
 
-                    {/* Pagos YA registrados: con qué método(s) se pagó antes. Read-only —
-                        para corregirlos se usa Finanzas → Cuentas por pagar. */}
+                    {/* Pagos YA registrados. Admin: editables inline (método/cuenta/monto/
+                        caja) y anulables — reusa cxp.pagos.update / cxp.pagos.destroy, que
+                        recomputan tesorería y el saldo. No admin: solo lectura. */}
                     {pagosPrevios.length > 0 && (
-                        <div className="rounded-xl border p-3" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
-                            <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                        <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                            <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
                                 Pagos ya registrados
                             </p>
-                            <ul className="space-y-1.5">
-                                {pagosPrevios.map(p => (
-                                    <li key={p.id} className="flex items-center justify-between gap-3 text-sm">
-                                        <span style={{ color: 'var(--color-text)' }}>
-                                            <span className="font-medium">{p.metodo_pago?.nombre ?? 'Sin método'}</span>
-                                            {p.cuenta && (
-                                                <span style={{ color: 'var(--color-text-muted)' }}> · {p.cuenta.nombre}</span>
-                                            )}
-                                            <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                {p.fecha?.slice(0, 10).split('-').reverse().join('/')}
+
+                            {!puedeEditarPagos ? (
+                                <ul className="space-y-1.5">
+                                    {pagosPrevios.map(p => (
+                                        <li key={p.id} className="flex items-center justify-between gap-3 text-sm">
+                                            <span style={{ color: 'var(--color-text)' }}>
+                                                <span className="font-medium">{p.metodo_pago?.nombre ?? 'Sin método'}</span>
+                                                {p.cuenta && <span style={{ color: 'var(--color-text-muted)' }}> · {p.cuenta.nombre}</span>}
+                                                <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {p.fecha?.slice(0, 10).split('-').reverse().join('/')}
+                                                </span>
                                             </span>
-                                        </span>
-                                        <span className="font-mono font-semibold" style={{ color: 'var(--color-success)' }}>
-                                            S/ {Number(p.monto).toFixed(2)}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
+                                            <span className="font-mono font-semibold" style={{ color: 'var(--color-success)' }}>
+                                                S/ {Number(p.monto).toFixed(2)}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <div className="space-y-2.5">
+                                    {editPagos.map(r => {
+                                        const cuentas = cuentasDeMetodo(r.metodo_pago_id);
+                                        const dirty   = pagoDirty(r);
+                                        const saving  = savingPagoId === r.id;
+                                        return (
+                                            <div key={r.id} className="rounded-lg border p-2.5 space-y-2"
+                                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                                                {r.esAdelanto && (
+                                                    <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                        Pago con adelanto al proveedor — no se edita aquí; para cambiarlo anúlalo y regístralo de nuevo.
+                                                    </p>
+                                                )}
+                                                <div className="grid grid-cols-1 sm:grid-cols-[1.1fr_1.1fr_100px] gap-2">
+                                                    <Select
+                                                        label="Método"
+                                                        placeholder="Sin método"
+                                                        value={r.metodo_pago_id}
+                                                        disabled={r.esAdelanto}
+                                                        onChange={v => setEditPago(r.id, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: '' })}
+                                                        options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                                                    />
+                                                    <Select
+                                                        label="Cuenta"
+                                                        placeholder={cuentas.length ? '(Opcional)' : 'Se asigna sola'}
+                                                        value={r.cuenta_id}
+                                                        disabled={r.esAdelanto || cuentas.length === 0}
+                                                        onChange={v => setEditPago(r.id, { cuenta_id: v === '' ? '' : Number(v) })}
+                                                        options={cuentas.map(c => ({ value: c.id, label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre }))}
+                                                    />
+                                                    <Input
+                                                        label="Monto"
+                                                        type="number" min="0.01" step="0.01"
+                                                        value={r.monto}
+                                                        disabled={r.esAdelanto}
+                                                        onChange={e => setEditPago(r.id, { monto: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+                                                    {turnos.length > 0 ? (
+                                                        <Select
+                                                            label="Afecta caja a (turno)"
+                                                            placeholder="Sin turno / no sale de caja"
+                                                            value={r.turno_id}
+                                                            onChange={v => setEditPago(r.id, { turno_id: v === '' ? '' : Number(v) })}
+                                                            options={[
+                                                                { value: '', label: 'Sin turno / no sale de caja' },
+                                                                ...turnos.map(t => ({ value: t.id, label: turnoLabel(t) })),
+                                                            ]}
+                                                        />
+                                                    ) : <div />}
+                                                    <div className="flex items-center gap-1.5 justify-end">
+                                                        <Button type="button" size="sm" variant="secondary"
+                                                            loading={saving} disabled={!dirty || saving}
+                                                            onClick={() => guardarPagoPrevio(r.id)}>
+                                                            <Save size={14} className="mr-1" />Guardar
+                                                        </Button>
+                                                        <button type="button" title="Anular este pago"
+                                                            onClick={() => { setAnularPagoId(r.id); setMotivoAnular(''); }}
+                                                            disabled={saving}
+                                                            className="p-2 rounded-lg hover:bg-black/5 disabled:opacity-40"
+                                                            style={{ color: 'var(--color-danger)' }}>
+                                                            <Trash2 size={15} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -824,6 +1003,41 @@ export default function EntradaEdit({ entrada, pagosPrevios, almacenes, producto
                     <Button type="button" loading={processing} onClick={submit}>Guardar cambios</Button>
                 </div>
             </div>
+
+            {/* Confirmar anulación de un pago ya registrado (pide motivo). */}
+            <Modal
+                isOpen={anularPagoId !== null}
+                onClose={() => { if (savingPagoId === null) { setAnularPagoId(null); setMotivoAnular(''); } }}
+                title="Anular pago"
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => { setAnularPagoId(null); setMotivoAnular(''); }} disabled={savingPagoId !== null}>
+                            Cancelar
+                        </Button>
+                        <Button variant="danger" loading={savingPagoId !== null} onClick={anularPagoPrevio}>
+                            <Trash2 size={14} className="mr-1.5" />Anular pago
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-3">
+                    <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                        Se revertirá el egreso en tesorería y el saldo de la compra volverá a recalcularse.
+                        Esta acción queda registrada en auditoría.
+                    </p>
+                    <div>
+                        <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text)' }}>
+                            Motivo <span style={{ color: 'var(--color-danger)' }}>*</span>
+                        </label>
+                        <textarea rows={2} value={motivoAnular} onChange={e => setMotivoAnular(e.target.value)}
+                            placeholder="Ej: se registró con el método equivocado"
+                            className="w-full rounded-xl border px-3 py-2 text-sm outline-none resize-none"
+                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                        <p className="text-[11px] mt-1" style={{ color: 'var(--color-text-muted)' }}>Mínimo 5 caracteres.</p>
+                    </div>
+                </div>
+            </Modal>
 
             <ModalCrearProveedor
                 isOpen={modalProveedor}

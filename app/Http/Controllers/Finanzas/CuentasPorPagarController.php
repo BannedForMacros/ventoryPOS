@@ -170,6 +170,9 @@ class CuentasPorPagarController extends Controller
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
+            // "Afecta caja a:" — turno de cuya caja salió el efectivo. null = no
+            // afecta ninguna caja. Solo se aplica si el request trae la clave.
+            'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ], [
             'monto.prohibited' => 'Este pago consumió un adelanto: su monto no se edita. Anúlalo y regístralo de nuevo.',
         ]);
@@ -181,7 +184,7 @@ class CuentasPorPagarController extends Controller
             'cuenta_id'      => $pago->cuenta_id,
         ];
 
-        DB::transaction(function () use ($pago, $entrada, $user, $data, $esAdelanto, $antes) {
+        DB::transaction(function () use ($pago, $entrada, $user, $data, $esAdelanto, $antes, $request) {
             $montoNuevo = $esAdelanto ? (float) $pago->monto : (float) $data['monto'];
 
             $pago->update([
@@ -191,6 +194,9 @@ class CuentasPorPagarController extends Controller
                 'cuenta_id'      => $esAdelanto ? $pago->cuenta_id : ($data['cuenta_id'] ?? null),
                 'referencia'     => $data['referencia'] ?? null,
                 'observacion'    => $data['observacion'] ?? null,
+                // Solo tocar turno_id si el request lo envió (así otros llamadores
+                // que no lo mandan no lo borran sin querer).
+                'turno_id'       => $request->has('turno_id') ? ($data['turno_id'] ?? null) : $pago->turno_id,
             ]);
 
             // F7 — Rehacer el egreso de tesorería (solo pagos con dinero).
