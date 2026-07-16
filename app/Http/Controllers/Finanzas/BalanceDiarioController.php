@@ -488,10 +488,20 @@ class BalanceDiarioController extends Controller
                         }
                     };
 
+                    // Pendientes por entregar (anticipo material): lo pendiente NO
+                    // salió al vender (se descuenta de la venta) y lo entregado
+                    // después del corte se devuelve (mismo criterio que stockValorizadoA).
+                    $tienePendientes = \Illuminate\Support\Facades\Schema::hasTable('cliente_anticipo_items')
+                        && \Illuminate\Support\Facades\Schema::hasTable('cliente_anticipo_aplicacion_items');
+                    $menosPendiente = $tienePendientes
+                        ? '- COALESCE((SELECT SUM(cai.cantidad * cai.factor_conversion)
+                                        FROM cliente_anticipo_items cai WHERE cai.venta_item_id = vi.id), 0)'
+                        : '';
+
                     $acum(DB::table('venta_items as vi')->join('ventas as v', 'v.id', '=', 'vi.venta_id')
                         ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
                         ->whereDate('v.fecha_venta', '>', $fecha)
-                        ->selectRaw('vi.producto_id as pid, SUM(vi.cantidad_base) as c')->groupBy('vi.producto_id')->get(), +1);
+                        ->selectRaw("vi.producto_id as pid, SUM(vi.cantidad_base {$menosPendiente}) as c")->groupBy('vi.producto_id')->get(), +1);
                     $acum(DB::table('salidas_detalle as sd')->join('salidas as s', 's.id', '=', 'sd.salida_id')
                         ->where('s.empresa_id', $empresaId)->where('s.estado', 'confirmado')
                         ->whereDate('s.fecha', '>', $fecha)
@@ -508,6 +518,19 @@ class BalanceDiarioController extends Controller
                         ->where('c.empresa_id', $empresaId)->where('c.estado', 'confirmado')
                         ->whereDate('c.fecha', '>', $fecha)
                         ->selectRaw('ci.producto_id as pid, SUM(ci.diferencia) as c')->groupBy('ci.producto_id')->get(), -1);
+
+                    // Entregas de pendiente (anticipo material) posteriores al corte:
+                    // salieron DESPUÉS → se devuelven (+1).
+                    if ($tienePendientes) {
+                        $acum(DB::table('cliente_anticipo_aplicacion_items as aai')
+                            ->join('cliente_anticipo_aplicaciones as ap', 'ap.id', '=', 'aai.cliente_anticipo_aplicacion_id')
+                            ->join('cliente_anticipo_items as ai', 'ai.id', '=', 'aai.cliente_anticipo_item_id')
+                            ->join('cliente_anticipos as ca', 'ca.id', '=', 'ai.cliente_anticipo_id')
+                            ->where('ca.empresa_id', $empresaId)
+                            ->whereDate('ap.fecha', '>', $fecha)
+                            ->selectRaw('ai.producto_id as pid, SUM(aai.cantidad * ai.factor_conversion) as c')
+                            ->groupBy('ai.producto_id')->get(), +1);
+                    }
 
                     $filas = $filas->map(function ($f) use ($delta) {
                         $f->cantidad = round((float) $f->cantidad + ($delta[$f->producto_id] ?? 0), 4);
