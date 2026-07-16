@@ -87,6 +87,9 @@ class TicketPrintService
                 'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
                 'doc'       => $docCli,
                 'direccion' => null,
+                // Teléfono/celular del cliente: solo si lo tiene. null = no se
+                // imprime (nunca sale un separador vacío tipo " - (celular)").
+                'telefono'  => $cliente?->telefono ?: null,
             ],
 
             'items' => $venta->items->map(fn ($item) => [
@@ -180,6 +183,9 @@ class TicketPrintService
                 'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
                 'doc'       => $docCli,
                 'direccion' => null,
+                // Teléfono/celular del cliente: solo si lo tiene. null = no se
+                // imprime (nunca sale un separador vacío tipo " - (celular)").
+                'telefono'  => $cliente?->telefono ?: null,
             ],
 
             'items' => $cot->items->map(fn ($item) => [
@@ -279,6 +285,9 @@ class TicketPrintService
                 'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
                 'doc'       => $docCli,
                 'direccion' => null,
+                // Teléfono/celular del cliente: solo si lo tiene. null = no se
+                // imprime (nunca sale un separador vacío tipo " - (celular)").
+                'telefono'  => $cliente?->telefono ?: null,
             ],
 
             'items' => $items,

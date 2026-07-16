@@ -100,19 +100,24 @@ class Venta extends Model
             }
         }
 
-        // Repartir descuento_total proporcional a cada base. Si solo hay una,
-        // se aplica completo ahi. Evita "regalar" IGV al cobrar descuentos.
-        $descuento = (float) $this->descuento_total;
-        $totalBases = $baseGravadaRaw + $baseExonerada;
+        // El descuento_total está en SOLES BRUTOS (lo que debe bajar el total, IGV
+        // incluido). Se prorratea por el BRUTO de cada base; en la parte gravada se
+        // convierte a neto dividiéndolo entre (1+tasa) ANTES de restarlo a la base
+        // sin IGV, para que al re-sumar el IGV el total baje EXACTAMENTE el descuento
+        // (antes bajaba descuento×(1+tasa) y el cajero tenía que compensar a mano).
+        $descuento   = (float) $this->descuento_total;
+        $brutoGravado = $baseGravadaRaw * (1 + $tasa);
+        $totalBruto   = $brutoGravado + $baseExonerada;
 
-        if ($totalBases > 0 && $descuento > 0) {
-            $descGravado   = $descuento * ($baseGravadaRaw / $totalBases);
-            $descExonerado = $descuento * ($baseExonerada  / $totalBases);
+        if ($totalBruto > 0 && $descuento > 0) {
+            $descGravadoBruto = $descuento * ($brutoGravado / $totalBruto);
+            $descExonerado    = $descuento * ($baseExonerada / $totalBruto);
+            $descGravadoNeto  = $tasa > 0 ? $descGravadoBruto / (1 + $tasa) : $descGravadoBruto;
         } else {
-            $descGravado = $descExonerado = 0.0;
+            $descGravadoNeto = $descExonerado = 0.0;
         }
 
-        $baseGravadaFinal = max(0, $baseGravadaRaw - $descGravado);
+        $baseGravadaFinal = max(0, $baseGravadaRaw - $descGravadoNeto);
         $baseExonFinal    = max(0, $baseExonerada  - $descExonerado);
 
         $igv   = round($baseGravadaFinal * $tasa, 2);

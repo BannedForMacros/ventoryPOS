@@ -419,17 +419,22 @@ class StoreVentaRequest extends FormRequest
             }
         }
 
+        // Mismo criterio que Venta::calcularTotales(): el descuento_total es BRUTO;
+        // se prorratea por el bruto de cada base y su parte gravada se divide entre
+        // (1+tasa) antes de restarla a la base neta, para que el total baje exacto.
         $descuentoTotal = (float) ($this->input('descuento_total') ?? 0);
-        $totalBases = $baseGravadaRaw + $baseExonerada;
+        $brutoGravado   = $baseGravadaRaw * (1 + $tasa);
+        $totalBruto     = $brutoGravado + $baseExonerada;
 
-        if ($totalBases > 0 && $descuentoTotal > 0) {
-            $descGravado   = $descuentoTotal * ($baseGravadaRaw / $totalBases);
-            $descExonerado = $descuentoTotal * ($baseExonerada  / $totalBases);
+        if ($totalBruto > 0 && $descuentoTotal > 0) {
+            $descGravadoBruto = $descuentoTotal * ($brutoGravado / $totalBruto);
+            $descExonerado    = $descuentoTotal * ($baseExonerada / $totalBruto);
+            $descGravadoNeto  = $tasa > 0 ? $descGravadoBruto / (1 + $tasa) : $descGravadoBruto;
         } else {
-            $descGravado = $descExonerado = 0.0;
+            $descGravadoNeto = $descExonerado = 0.0;
         }
 
-        $baseGravadaFinal = max(0, $baseGravadaRaw - $descGravado);
+        $baseGravadaFinal = max(0, $baseGravadaRaw - $descGravadoNeto);
         $baseExonFinal    = max(0, $baseExonerada  - $descExonerado);
 
         // Misma secuencia de redondeo que Venta::calcularTotales(): primero

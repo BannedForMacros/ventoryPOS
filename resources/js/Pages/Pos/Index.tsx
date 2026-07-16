@@ -254,15 +254,22 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
         }
     }
 
-    const totalBases = baseGravadaRaw + baseExonerada;
-    let descGravado = 0;
-    let descExon    = 0;
-    if (totalBases > 0 && descuentoTotal > 0) {
-        descGravado = descuentoTotal * (baseGravadaRaw / totalBases);
-        descExon    = descuentoTotal * (baseExonerada  / totalBases);
+    // El descuento global está en SOLES BRUTOS (lo que el cajero quiere que baje
+    // el total, IGV incluido). Se prorratea por el BRUTO de cada base; en la parte
+    // gravada se convierte a neto dividiéndolo entre (1+tasa) ANTES de restarlo a
+    // la base sin IGV, para que al re-sumar el IGV el total baje EXACTAMENTE el
+    // descuento ingresado (antes bajaba descuento×1.18 y se descuadraba).
+    const brutoGravado = baseGravadaRaw * (1 + tasa);
+    const totalBruto   = brutoGravado + baseExonerada;
+    let descGravadoNeto = 0;
+    let descExon        = 0;
+    if (totalBruto > 0 && descuentoTotal > 0) {
+        const descGravadoBruto = descuentoTotal * (brutoGravado / totalBruto);
+        descExon        = descuentoTotal * (baseExonerada / totalBruto);
+        descGravadoNeto = tasa > 0 ? descGravadoBruto / (1 + tasa) : descGravadoBruto;
     }
 
-    const baseGravadaFinal = Math.max(0, baseGravadaRaw - descGravado);
+    const baseGravadaFinal = Math.max(0, baseGravadaRaw - descGravadoNeto);
     const baseExonFinal    = Math.max(0, baseExonerada  - descExon);
 
     const igv   = Math.round(baseGravadaFinal * tasa * 100) / 100;
