@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     Plus, Eye, Pencil, FileText, PhoneCall, CheckCircle2, XCircle, Ban,
     ShoppingCart, Search, Trash2, Phone, MessageCircle, Clock, AlertTriangle,
-    CircleDollarSign, Printer, FileDown,
+    CircleDollarSign, Printer, FileDown, UserPlus,
 } from 'lucide-react';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import AppLayout from '@/Layouts/AppLayout';
@@ -20,8 +20,9 @@ import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
+import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import { hoyLocal } from '@/lib/fechas';
-import type { PageProps } from '@/types';
+import type { PageProps, Cliente } from '@/types';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ interface ClienteLite {
     apellidos?: string | null;
     razon_social?: string | null;
     telefono?: string | null;
+    es_cliente_general?: boolean;
 }
 
 interface UnidadCatalogo {
@@ -104,7 +106,9 @@ const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const fmtFecha = (f?: string | null) =>
     f ? new Date(f + 'T00:00:00').toLocaleDateString('es-PE') : '—';
 const nombreCliente = (c?: ClienteLite | null) =>
-    c?.razon_social ?? (`${c?.nombres ?? ''} ${c?.apellidos ?? ''}`.trim() || '—');
+    c?.es_cliente_general
+        ? 'Clientes varios'
+        : (c?.razon_social ?? (`${c?.nombres ?? ''} ${c?.apellidos ?? ''}`.trim() || '—'));
 
 /** Días que faltan para una fecha (negativo = ya pasó). */
 function diasPara(fecha: string): number {
@@ -155,6 +159,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
     const tasaIgv = Number(auth?.user?.empresa?.tasa_igv ?? 18);
 
     const [modalForm, setModalForm]     = useState(false);
+    const [modalCrearCliente, setModalCrearCliente] = useState(false);
     const [editando, setEditando]       = useState<Cotizacion | null>(null);
     const [detalle, setDetalle]         = useState<Cotizacion | null>(null);
     const [contactando, setContactando] = useState<Cotizacion | null>(null);
@@ -176,6 +181,12 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
     const productosById = useMemo(
         () => new Map(productos.map(p => [String(p.id), p])),
         [productos],
+    );
+
+    // Cliente general ("Clientes varios"): para cotizar sin identificar.
+    const clienteGeneral = useMemo(
+        () => clientes.find(c => c.es_cliente_general) ?? null,
+        [clientes],
     );
 
     // ── Totales en vivo del formulario (espejo de Cotizacion::recalcularTotales) ──
@@ -559,13 +570,35 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
             >
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <SearchableSelect label="Cliente" required
-                            options={clientes.map(c => ({ value: String(c.id), label: nombreCliente(c) }))}
-                            value={form.cliente_id}
-                            onChange={v => setForm(f => ({ ...f, cliente_id: String(v) }))}
-                            placeholder="— Seleccionar cliente —"
-                            error={errors.cliente_id}
-                        />
+                        <div>
+                            <div className="flex items-end gap-2">
+                                <div className="flex-1 min-w-0">
+                                    <SearchableSelect label="Cliente" required
+                                        options={clientes.map(c => ({ value: String(c.id), label: nombreCliente(c) }))}
+                                        value={form.cliente_id}
+                                        onChange={v => setForm(f => ({ ...f, cliente_id: String(v) }))}
+                                        placeholder="— Seleccionar cliente —"
+                                        searchPlaceholder="Buscar por nombre..."
+                                        error={errors.cliente_id}
+                                    />
+                                </div>
+                                {/* Alta rápida de cliente sin salir de la cotización */}
+                                <Button type="button" variant="secondary" startContent={<UserPlus size={15} />}
+                                    onClick={() => setModalCrearCliente(true)}
+                                    title="Crear nuevo cliente">
+                                    Nuevo
+                                </Button>
+                            </div>
+                            {/* Acceso rápido a "Clientes varios" (cliente general) */}
+                            {clienteGeneral && form.cliente_id !== String(clienteGeneral.id) && (
+                                <button type="button"
+                                    onClick={() => setForm(f => ({ ...f, cliente_id: String(clienteGeneral.id) }))}
+                                    className="mt-1 text-[11px] font-medium hover:underline"
+                                    style={{ color: 'var(--color-primary)' }}>
+                                    Usar «Clientes varios»
+                                </button>
+                            )}
+                        </div>
                         <Input label="Referencia / Obra" value={form.referencia}
                             onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))}
                             error={errors.referencia}
@@ -804,6 +837,19 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                     </div>
                 )}
             </Modal>
+
+            {/* Alta de cliente sin salir de la cotización (reutiliza el modal del POS).
+                Al guardar, Inertia refresca la lista `clientes` y auto-seleccionamos
+                el nuevo en el formulario en curso. */}
+            <ModalCrearCliente
+                isOpen={modalCrearCliente}
+                onClose={() => setModalCrearCliente(false)}
+                onCreated={(c: Cliente) => {
+                    setForm(f => ({ ...f, cliente_id: String(c.id) }));
+                    setModalCrearCliente(false);
+                    toast.success(`Cliente "${nombreCliente(c as unknown as ClienteLite)}" creado y seleccionado.`);
+                }}
+            />
         </AppLayout>
     );
 }

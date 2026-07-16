@@ -81,10 +81,12 @@ class CotizacionController extends Controller
             'kpis'         => $kpis,
             'estado'       => $estado,
             'q'            => $q,
+            // Incluye el cliente general ("Clientes varios") para cotizar sin
+            // identificar; queda de primero para elegirlo rápido.
             'clientes'     => Cliente::deEmpresa($user->empresa_id)->activo()
-                ->where('es_cliente_general', false)
+                ->orderByDesc('es_cliente_general')
                 ->orderBy('nombres')
-                ->get(['id', 'nombres', 'apellidos', 'razon_social', 'telefono']),
+                ->get(['id', 'nombres', 'apellidos', 'razon_social', 'telefono', 'es_cliente_general']),
             // Catálogo para el editor de ítems: unidades activas con su precio.
             'productos'    => Producto::deEmpresa($user->empresa_id)->activo()
                 ->with(['unidades' => fn ($qq) => $qq->where('activo', true), 'unidades.unidadMedida:id,nombre'])
@@ -303,8 +305,8 @@ class CotizacionController extends Controller
         $empresaId = $request->user()->empresa_id;
 
         return $request->validate([
-            // es_cliente_general = 0 (no false: PDO+PG bindea false como '' y revienta el exists)
-            'cliente_id'             => ['required', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $empresaId)->where('activo', true)->where('es_cliente_general', 0)],
+            // Se permite el cliente general ("Clientes varios") en cotizaciones.
+            'cliente_id'             => ['required', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $empresaId)->where('activo', true)],
             'referencia'             => ['nullable', 'string', 'max:200'],
             'fecha'                  => ['required', 'date'],
             'fecha_vencimiento'      => ['nullable', 'date', 'after_or_equal:fecha'],

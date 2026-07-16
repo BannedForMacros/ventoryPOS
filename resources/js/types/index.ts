@@ -411,6 +411,7 @@ export interface Cliente extends Record<string, unknown> {
     telefono:          string | null;
     direccion:         string | null;
     activo:            boolean;
+    es_cliente_general?: boolean;
     nombre_completo?:  string;
     created_at:        string;
     updated_at:        string;

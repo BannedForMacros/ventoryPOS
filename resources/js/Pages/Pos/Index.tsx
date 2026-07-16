@@ -310,6 +310,11 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             factor_conversion:     uniCatalogo ? (parseFloat(uniCatalogo.factor_conversion) || 1) : 1,
             cantidad:              it.cantidad,
             descuento_item:        descuentoItem,
+            // La cotización congela el descuento como soles por unidad → lo
+            // reabrimos en modo "P. Unit. / S/" con ese mismo valor.
+            descuento_modo:        'pu',
+            descuento_tipo:        'monto',
+            descuento_valor:       descuentoItem,
             descuento_concepto_id: null,
             subtotal,
             incluye_igv:           it.incluye_igv,
@@ -336,6 +341,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             factor_conversion:     uni ? (parseFloat(uni.factor_conversion) || 1) : 1,
             cantidad:              it.cantidad,
             descuento_item:        it.descuento_item,
+            descuento_modo:        'pu',
+            descuento_tipo:        'monto',
+            descuento_valor:       it.descuento_item,
             descuento_concepto_id: it.descuento_concepto_id,
             subtotal:              Math.round((it.precio_unitario - it.descuento_item) * it.cantidad * 100) / 100,
             incluye_igv:           it.incluye_igv,
@@ -603,6 +611,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 factor_conversion:    parseFloat(unidad.factor_conversion) || 1,
                 cantidad:             1,
                 descuento_item:       0,
+                descuento_modo:       'pu',
+                descuento_tipo:       'monto',
+                descuento_valor:      0,
                 descuento_concepto_id: null,
                 subtotal:             precio,
                 incluye_igv:          producto.incluye_igv,
@@ -617,47 +628,41 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     }
 
     function cambiarCantidad(key: string, delta: number) {
-        setCarrito(prev => prev.map(i => {
-            if (i.key !== key) return i;
-            const cantidad = Math.max(1, i.cantidad + delta);
-            return { ...i, cantidad, subtotal: Math.round((i.precio_unitario - i.descuento_item) * cantidad * 100) / 100 };
-        }));
+        setCarrito(prev => prev.map(i =>
+            i.key === key ? recalcularLinea(i, { cantidad: Math.max(1, i.cantidad + delta) }) : i,
+        ));
     }
 
     /** Cantidad tecleada directamente en el input de la linea (permite decimales). */
     function establecerCantidad(key: string, cantidad: number) {
-        setCarrito(prev => prev.map(i => {
-            if (i.key !== key) return i;
-            const c = Math.max(0.0001, Math.round(cantidad * 10000) / 10000);
-            return { ...i, cantidad: c, subtotal: Math.round((i.precio_unitario - i.descuento_item) * c * 100) / 100 };
-        }));
+        setCarrito(prev => prev.map(i =>
+            i.key === key ? recalcularLinea(i, { cantidad: Math.max(0.0001, Math.round(cantidad * 10000) / 10000) }) : i,
+        ));
     }
 
     /**
      * Precio de venta editado en la linea. CarritoItem ya valido el piso de
-     * costo antes de llamar; aqui solo recalculamos (y recortamos el descuento
-     * por linea si el nuevo precio lo dejo mas grande que el precio).
+     * costo antes de llamar; aqui solo recalculamos. Como el descuento se guarda
+     * por modo/tipo/valor, `recalcularLinea` re-deriva el descuento efectivo con
+     * el precio nuevo (ej. un descuento en % sigue el nuevo precio).
      */
     function cambiarPrecio(key: string, precio: number) {
-        setCarrito(prev => prev.map(i => {
-            if (i.key !== key) return i;
-            const p = Math.max(0, precio);
-            const d = Math.min(i.descuento_item, p);
-            return { ...i, precio_unitario: p, descuento_item: d, subtotal: Math.round((p - d) * i.cantidad * 100) / 100 };
-        }));
+        setCarrito(prev => prev.map(i =>
+            i.key === key ? recalcularLinea(i, { precio_unitario: Math.max(0, precio) }) : i,
+        ));
     }
 
-    function aplicarDescuentoItem(key: string, descuento: number, conceptoId: number | null) {
-        setCarrito(prev => prev.map(i => {
-            if (i.key !== key) return i;
-            const d = Math.min(descuento, i.precio_unitario);
-            return {
-                ...i,
-                descuento_item:        d,
-                descuento_concepto_id: conceptoId,
-                subtotal:              Math.round((i.precio_unitario - d) * i.cantidad * 100) / 100,
-            };
-        }));
+    function aplicarDescuentoItem(key: string, valor: number, modo: DescModo, tipo: DescTipo, conceptoId: number | null) {
+        setCarrito(prev => prev.map(i =>
+            i.key === key
+                ? recalcularLinea(i, {
+                    descuento_modo:        modo,
+                    descuento_tipo:        tipo,
+                    descuento_valor:       Math.max(0, valor),
+                    descuento_concepto_id: valor > 0 ? conceptoId : null,
+                })
+                : i,
+        ));
     }
 
     function eliminarItem(key: string) {
@@ -1600,7 +1605,7 @@ interface CarritoPanelProps {
     onCambiarCantidad: (key: string, delta: number) => void;
     onEstablecerCantidad: (key: string, cantidad: number) => void;
     onCambiarPrecio: (key: string, precio: number) => void;
-    onAplicarDescuentoItem: (key: string, desc: number, cid: number | null) => void;
+    onAplicarDescuentoItem: (key: string, valor: number, modo: DescModo, tipo: DescTipo, cid: number | null) => void;
     onEliminarItem: (key: string) => void;
     onLimpiarCarrito: () => void;
     onSetDescuento: (d: number, cid: number | null) => void;
@@ -1782,6 +1787,7 @@ function CarritoPanel({
                         <PanelDescuento
                             descuentoTotal={descuentoTotal}
                             descuentoConceptoId={descuentoConceptoId}
+                            base={subtotal}
                             conceptos={conceptosDescuento}
                             onChange={onSetDescuento}
                         />
