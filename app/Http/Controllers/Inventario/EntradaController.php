@@ -384,15 +384,24 @@ class EntradaController extends Controller
             // para que cambiar la cabecera actualice los items que no tienen factura propia.
             'detalles.*.numero_documento'  => 'nullable|string|max:50',
             // Pagos NUEVOS registrados desde la edición (p. ej. se agregó un
-            // producto y se paga la diferencia ahí mismo). Los pagos existentes
-            // no se tocan aquí (su track vive en entrada_pagos + tesorería; se
-            // corrigen en Finanzas → Cuentas por pagar).
+            // producto y se paga la diferencia ahí mismo).
             'pagos'                    => 'nullable|array|max:10',
             'pagos.*.metodo_pago_id'   => ['required', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'            => 'required|numeric|min:0.01',
             'pagos.*.referencia'       => 'nullable|string|max:200',
-            // "Afecta caja a:" — turno cuya caja entregó el efectivo del pago.
+            // Pagos YA registrados EDITADOS en la misma pantalla (solo admin). Se
+            // guardan junto con todo lo demás en un solo submit — sin botón por fila.
+            'pagos_editados'                  => 'nullable|array',
+            'pagos_editados.*.id'             => ['required', 'integer'],
+            'pagos_editados.*.monto'          => ['nullable', 'numeric', 'min:0.01'],
+            'pagos_editados.*.metodo_pago_id' => ['nullable', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos_editados.*.cuenta_id'      => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos_editados.*.turno_id'       => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
+            // Pagos YA registrados ANULADOS en la misma pantalla (solo admin): ids.
+            'pagos_anulados'                  => 'nullable|array',
+            'pagos_anulados.*'                => ['integer'],
+            // "Afecta caja a:" — turno cuya caja entregó el efectivo del pago NUEVO.
             'turno_id'                 => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
@@ -527,19 +536,89 @@ class EntradaController extends Controller
 
                 $entrada->update(['total' => $total]);
 
-                // Resincronizar estado_pago con el nuevo total (los pagos ya
-                // registrados no cambian; si el total subió puede volver a
-                // 'parcial', si bajó puede quedar 'pagado').
-                $entrada->aplicarPago(0);
+                // ── Pagos ya registrados: EDITADOS / ANULADOS ──────────────────
+                // Se guardan con el MISMO botón "Guardar cambios" (un solo submit,
+                // sin botón por método). Tocar pagos ya asentados mueve tesorería →
+                // solo admin, igual que Finanzas → Cuentas por pagar.
+                $editados = $data['pagos_editados'] ?? [];
+                $anulados = $data['pagos_anulados'] ?? [];
+                if (!empty($editados) || !empty($anulados)) {
+                    abort_unless($user->rol->es_admin, 403, 'Solo un administrador puede editar o anular pagos ya registrados.');
+                }
 
-                // "Afecta caja a:" — respetamos EXACTAMENTE lo que eligió el usuario:
-                // un turno concreto = sale de esa caja; '' / null = NO afecta ninguna
-                // caja. Nunca auto-resolvemos al turno activo (eso descuadraba la caja
-                // de la cajera sin que lo pidiera).
+                // Anular: revierte el egreso en tesorería (o restaura el adelanto) y borra el pago.
+                foreach ($anulados as $pagoId) {
+                    $pago = $entrada->pagosParciales()->whereKey($pagoId)->first();
+                    if (!$pago) continue;
+                    if ($pago->proveedor_adelanto_id) {
+                        $adelanto = \App\Models\ProveedorAdelanto::whereKey($pago->proveedor_adelanto_id)->lockForUpdate()->first();
+                        if ($adelanto) {
+                            $adelanto->update([
+                                'saldo'  => round((float) $adelanto->saldo + (float) $pago->monto, 2),
+                                'estado' => 'activo',
+                            ]);
+                            $adelanto->aplicaciones()
+                                ->where('entrada_id', $entrada->id)
+                                ->where('monto', $pago->monto)
+                                ->orderByDesc('id')->first()?->delete();
+                        }
+                    } else {
+                        $this->tesoreria->revertir('entrada_pago', $pago->id);
+                    }
+                    \App\Services\AuditoriaService::log('entrada.pago_anulado', $entrada, [
+                        'pago_id' => $pago->id, 'monto' => (float) $pago->monto,
+                    ], $user);
+                    $pago->delete();
+                }
+
+                // Editar: actualiza método/cuenta/monto/turno y rehace el egreso.
+                foreach ($editados as $ed) {
+                    $pago = $entrada->pagosParciales()->whereKey($ed['id'])->first();
+                    if (!$pago) continue;
+                    $esAdelanto = !empty($pago->proveedor_adelanto_id);
+                    // Los pagos con adelanto NO cambian de monto/método aquí (descuadraría
+                    // el adelanto): solo el turno. Para cambiarlos: anular y re-registrar.
+                    $montoNuevo = $esAdelanto ? (float) $pago->monto : round((float) ($ed['monto'] ?? $pago->monto), 2);
+
+                    $pago->update([
+                        'monto'          => $montoNuevo,
+                        'metodo_pago_id' => $esAdelanto ? $pago->metodo_pago_id : ($ed['metodo_pago_id'] ?? null),
+                        'cuenta_id'      => $esAdelanto ? $pago->cuenta_id : ($ed['cuenta_id'] ?? null),
+                        'turno_id'       => array_key_exists('turno_id', $ed) ? ($ed['turno_id'] ?: null) : $pago->turno_id,
+                    ]);
+
+                    if (!$esAdelanto) {
+                        $this->tesoreria->revertir('entrada_pago', $pago->id);
+                        $prov = $entrada->proveedorRel?->razon_social ?? $entrada->proveedor ?? 'proveedor';
+                        $this->tesoreria->registrar(
+                            $entrada->empresa_id,
+                            ($ed['cuenta_id'] ?? null) ?: $this->tesoreria->resolverCuenta($entrada->empresa_id, null, $ed['metodo_pago_id'] ?? null),
+                            $user,
+                            (string) $pago->fecha->toDateString(),
+                            'egreso',
+                            $montoNuevo,
+                            "Pago a proveedor {$prov}" . ($entrada->numero_documento ? " ({$entrada->numero_documento})" : '') . ' [editado]',
+                            'entrada_pago',
+                            $pago->id,
+                        );
+                    }
+                    \App\Services\AuditoriaService::log('entrada.pago_editado', $entrada, [
+                        'pago_id' => $pago->id, 'monto' => $montoNuevo,
+                    ], $user);
+                }
+
+                // Recomputar monto_pagado desde la suma REAL de pagos (autoritativo:
+                // cubre cambios de detalle, ediciones y anulaciones de golpe).
+                $sumaExistentes = round((float) $entrada->pagosParciales()->sum('monto'), 2);
+                $entrada->update([
+                    'monto_pagado' => $sumaExistentes,
+                    'estado_pago'  => $sumaExistentes >= (float) $entrada->total - 0.01 ? 'pagado' : ($sumaExistentes > 0 ? 'parcial' : 'pendiente'),
+                ]);
+
+                // "Afecta caja a:" para los pagos NUEVOS (null = no afecta caja).
                 $turnoArg = array_key_exists('turno_id', $data) ? ($data['turno_id'] ?: null) : null;
 
-                // Pagos NUEVOS desde la edición (mismo track que los iniciales:
-                // entrada_pagos + egreso en tesorería + sincroniza estado_pago).
+                // Pagos NUEVOS desde la edición (entrada_pagos + egreso en tesorería).
                 $lineas = $data['pagos'] ?? [];
                 if (!empty($lineas)) {
                     $suma  = round(collect($lineas)->sum(fn ($l) => (float) $l['monto']), 2);
@@ -551,9 +630,13 @@ class EntradaController extends Controller
                     }
                     $this->registrarPagosIniciales($entrada, $lineas, $user->id, $turnoArg);
                 }
-                // Nota: el selector "Afecta caja a" de este form solo aplica a los pagos
-                // NUEVOS (arriba). Los pagos ya registrados se reasignan de caja por fila
-                // desde la lista "Pagos ya registrados" (endpoint cxp.pagos.update).
+
+                // Tope de seguridad: los pagos totales no pueden exceder el total.
+                if (round((float) $entrada->refresh()->monto_pagado, 2) > (float) $entrada->total + 0.01) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'pagos' => 'Los pagos superan el total de la compra. Ajusta los montos.',
+                    ]);
+                }
 
                 // 3) Si era confirmada, aplicar el stock nuevo y reconstruir CPP para
                 //    cada (almacen, producto) afectado. Reconstruir es necesario porque
