@@ -734,7 +734,9 @@ class VentaController extends Controller
         $venta = $this->ventaService->actualizar($venta, $request->validated(), $user);
 
         return redirect()->route('ventas.show', $venta)
-            ->with('success', "Venta {$venta->numero} actualizada correctamente.");
+            ->with('success', "Venta {$venta->numero} actualizada correctamente.")
+            // Auto-imprime solo si usó "Crear e imprimir" (mismo criterio que store).
+            ->with('imprimir_ticket', $request->boolean('imprimir'));
     }
 
     // ── Store (POS: registrar venta) ───────────────────────────────────────────
@@ -818,8 +820,9 @@ class VentaController extends Controller
         return redirect()->route('ventas.show', $venta)
             ->with('success', "Venta {$venta->numero} registrada correctamente.")
             // Flag one-shot: el Show auto-imprime el ticket UNA sola vez tras
-            // registrar la venta (no al volver a abrir la venta después).
-            ->with('imprimir_ticket', true);
+            // registrar la venta (no al volver a abrir la venta después). Solo si
+            // el cajero usó el botón "Crear e imprimir"; con "Confirmar venta" no.
+            ->with('imprimir_ticket', $request->boolean('imprimir'));
     }
 
     // ── Anular ─────────────────────────────────────────────────────────────────

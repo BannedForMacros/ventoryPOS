@@ -55,6 +55,9 @@ class StoreVentaRequest extends FormRequest
             // Si el cliente reenvia la misma venta (timeout, doble click, etc.) el backend
             // detecta el key y devuelve la venta ya creada en lugar de duplicarla.
             'idempotency_key'        => ['nullable', 'string', 'min:10', 'max:100'],
+            // true → botón "Crear e imprimir" (auto-imprime el ticket); false/ausente
+            // → botón "Confirmar venta" (solo crea, sin imprimir).
+            'imprimir'               => ['nullable', 'boolean'],
             // Si la venta nace de una cita prellenada en el POS. Opcional.
             'cita_id'                => ['nullable', 'integer', Rule::exists('citas', 'id')->where('empresa_id', $empresaId)],
             // Si la venta nace de una cotización prellenada en el POS. Opcional.

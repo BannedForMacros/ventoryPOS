@@ -769,7 +769,10 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         setModalConfirm(true);
     }
 
-    function submitVenta() {
+    // imprimir = true → crear la venta Y mandarla a la impresora (botón secundario);
+    // false → solo crearla (botón principal). El backend usa este flag para decidir
+    // si activa el auto-print del ticket al redirigir al detalle.
+    function submitVenta(imprimir = false) {
         // Anti-doble-click: si ya hay una venta en proceso, ignorar nuevos intentos.
         // El boton del modal ya se deshabilita visualmente, pero esta guarda cubre
         // casos como tecla Enter o clicks muy rapidos antes del re-render.
@@ -780,6 +783,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         const payload = {
             cliente_id:            cliente?.id ?? null,
             tipo_comprobante:      tipoComprobante,
+            // Solo el POST de creación lo usa; en edición se ignora (no auto-imprime).
+            imprimir,
             descuento_total:       descuentoTotal,
             descuento_concepto_id: descuentoConceptoId,
             es_credito:            esCredito,

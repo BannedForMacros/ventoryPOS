@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingBag, User, Receipt, CreditCard, CheckCircle2, Truck } from 'lucide-react';
+import { ShoppingBag, User, Receipt, CreditCard, CheckCircle2, Truck, Printer } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import type { Cliente, DescuentoConcepto, MetodoPago } from '@/types';
@@ -9,7 +9,8 @@ import type { LineaPago } from './PanelPago';
 interface Props {
     isOpen:              boolean;
     onClose:             () => void;
-    onConfirmar:         () => void;
+    // imprimir = true → crea la venta Y la imprime; false → solo la crea.
+    onConfirmar:         (imprimir: boolean) => void;
     loading:             boolean;
     items:               LineaCarrito[];
     pagos:               LineaPago[];
@@ -57,13 +58,23 @@ export default function ModalConfirmacionVenta({
             footer={
                 <>
                     <Button variant="ghost" onClick={onClose} disabled={loading}>Cancelar</Button>
+                    {/* Secundario: crea la venta Y la imprime. */}
+                    <Button
+                        variant="secondary"
+                        onClick={() => onConfirmar(true)}
+                        disabled={loading}
+                        startContent={<Printer size={16} />}
+                    >
+                        Crear e imprimir
+                    </Button>
+                    {/* Principal (verde): SOLO crea la venta, sin imprimir. */}
                     <Button
                         variant="success"
-                        onClick={onConfirmar}
+                        onClick={() => onConfirmar(false)}
                         loading={loading}
                         startContent={!loading ? <CheckCircle2 size={16} /> : undefined}
                     >
-                        Confirmar y guardar
+                        Confirmar venta
                     </Button>
                 </>
             }
