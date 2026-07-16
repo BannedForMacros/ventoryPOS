@@ -531,7 +531,9 @@ class AnticipoClienteController extends Controller
     {
         abort_if($entrega->empresa_id !== $request->user()->empresa_id, 403);
 
-        return response()->json(app(TicketPrintService::class)->payloadDeEntregaAnticipo($entrega));
+        // Pasamos el usuario para enrutar el ticket a la ticketera de SU caja/turno
+        // (su PC), no a "la primera caja del local".
+        return response()->json(app(TicketPrintService::class)->payloadDeEntregaAnticipo($entrega, $request->user()));
     }
 
     /** Documento A4 imprimible (HTML → PDF) de una ENTREGA de anticipo. */

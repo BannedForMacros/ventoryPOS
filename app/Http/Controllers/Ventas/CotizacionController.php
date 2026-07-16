@@ -262,7 +262,9 @@ class CotizacionController extends Controller
     {
         abort_if($cotizacion->empresa_id !== $request->user()->empresa_id, 403);
 
-        return response()->json(app(TicketPrintService::class)->payloadDeCotizacion($cotizacion));
+        // Pasamos el usuario para enrutar el ticket a la ticketera de SU caja/turno
+        // (su PC), no a "la primera caja del local".
+        return response()->json(app(TicketPrintService::class)->payloadDeCotizacion($cotizacion, $request->user()));
     }
 
     /** Proforma A4 imprimible / guardable como PDF (vista HTML, no Inertia). */

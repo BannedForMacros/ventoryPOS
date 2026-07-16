@@ -130,7 +130,7 @@ class TicketPrintService
      * payloadDeVenta: mismo contrato de claves, pero sin datos de pago (aún no
      * se cobra) y con el pie como proforma.
      */
-    public function payloadDeCotizacion(Cotizacion $cot): array
+    public function payloadDeCotizacion(Cotizacion $cot, ?\App\Models\User $user = null): array
     {
         $cot->loadMissing(['empresa', 'local', 'user', 'cliente', 'items']);
 
@@ -144,11 +144,9 @@ class TicketPrintService
             ? trim(($cliente->tipo_documento ? $cliente->tipo_documento . ' ' : '') . $cliente->numero_documento)
             : null;
 
-        // La cotización no tiene caja propia: enrutamos a la impresora del local.
-        // Leemos el atributo del modelo (select *) para no romper si la columna
-        // token_impresora aún no existe en algún entorno.
-        $token = (string) (Caja::where('local_id', $cot->local_id)->get()
-            ->pluck('token_impresora')->filter()->first() ?? '');
+        // La cotización no tiene caja propia: enrutamos a la ticketera de la caja
+        // del turno abierto del usuario que imprime (SU PC). Ver resolverTokenImpresora.
+        $token = $this->resolverTokenImpresora($user, $cot->local_id);
 
         $validez = $cot->fecha_vencimiento
             ? Carbon::parse($cot->fecha_vencimiento)->format('d/m/Y')
@@ -223,7 +221,7 @@ class TicketPrintService
      * Payload para el ticket de una ENTREGA de anticipo (constancia de entrega
      * de mercadería pagada por adelantado). Mismo contrato de claves.
      */
-    public function payloadDeEntregaAnticipo(ClienteAnticipoAplicacion $entrega): array
+    public function payloadDeEntregaAnticipo(ClienteAnticipoAplicacion $entrega, ?\App\Models\User $user = null): array
     {
         $entrega->loadMissing([
             'anticipo.empresa', 'anticipo.cliente', 'anticipo.venta.local',
@@ -240,10 +238,10 @@ class TicketPrintService
             ? trim(($cliente->tipo_documento ? $cliente->tipo_documento . ' ' : '') . $cliente->numero_documento)
             : null;
 
+        // Ticketera de la caja del turno abierto del usuario que imprime (SU PC),
+        // con fallback a la primera caja del local. Ver resolverTokenImpresora.
         $localId = $anticipo?->venta?->local_id;
-        $token   = $localId
-            ? (string) (Caja::where('local_id', $localId)->get()->pluck('token_impresora')->filter()->first() ?? '')
-            : '';
+        $token   = $this->resolverTokenImpresora($user, $localId);
 
         $items = $entrega->items->map(fn ($ai) => [
             'cant'    => (float) $ai->cantidad,
@@ -312,6 +310,29 @@ class TicketPrintService
             'copias'     => 1,
             'logo'       => $this->logoBase64($empresa),
         ];
+    }
+
+    /**
+     * Token de impresora para tickets SIN caja propia (cotización, entrega de
+     * anticipo). Prioriza la caja del turno ABIERTO del usuario que imprime —es
+     * decir, la ticketera de SU PC—; si no tiene turno, cae a la primera caja del
+     * local. Antes se usaba siempre "la primera caja del local", lo que enviaba el
+     * token de OTRA PC cuando el local tiene varias cajas y el agente lo rechazaba
+     * con "Token invalido: este ticket no corresponde a la caja configurada...".
+     */
+    private function resolverTokenImpresora(?\App\Models\User $user, ?int $localId): string
+    {
+        if ($user) {
+            $token = (string) (\App\Models\Turno::turnoActivoDelUsuario($user->id)?->caja?->token_impresora ?? '');
+            if ($token !== '') {
+                return $token;
+            }
+        }
+        if (!$localId) {
+            return '';
+        }
+        return (string) (Caja::where('local_id', $localId)->get()
+            ->pluck('token_impresora')->filter()->first() ?? '');
     }
 
     /**
