@@ -10,7 +10,7 @@ import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import PosLayout from '@/Layouts/PosLayout';
 import Button from '@/Components/UI/Button';
-import CarritoItem, { LineaCarrito, HistorialPrecioCliente } from './Partials/CarritoItem';
+import CarritoItem, { LineaCarrito, HistorialPrecioCliente, DescModo, DescTipo } from './Partials/CarritoItem';
 import PanelPago, { LineaPago } from './Partials/PanelPago';
 import PanelDescuento from './Partials/PanelDescuento';
 import ModalClienteRapido from './Partials/ModalClienteRapido';
@@ -190,6 +190,44 @@ function generarIdempotencyKey(): string {
         return crypto.randomUUID();
     }
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Descuento efectivo POR UNIDAD (en soles) a partir de cómo lo tecleó el cajero.
+ * El backend siempre recibe/persiste `descuento_item` como soles por unidad y
+ * calcula el subtotal como (precio_unitario − descuento_item) × cantidad, así
+ * que aquí traducimos cualquier modo/tipo a esa magnitud:
+ *   - P.U + monto:   descuento = valor (soles que baja cada unidad)
+ *   - P.U + %:       descuento = precio × valor/100
+ *   - Total + monto: valor es el descuento del TOTAL de la línea → por unidad = valor / cantidad
+ *   - Total + %:     descuento = precio × valor/100 (el % del total equivale al % del P.U)
+ * Nunca deja el descuento por encima del precio (no se cobra negativo).
+ */
+function derivarDescuentoItem(
+    precio: number, cantidad: number, modo: DescModo, tipo: DescTipo, valor: number,
+): number {
+    if (!valor || valor <= 0 || precio <= 0 || cantidad <= 0) return 0;
+    let d: number;
+    if (modo === 'total') {
+        const totalBase = precio * cantidad;
+        const totalDesc = tipo === 'porcentaje' ? totalBase * (valor / 100) : valor;
+        d = totalDesc / cantidad;
+    } else {
+        d = tipo === 'porcentaje' ? precio * (valor / 100) : valor;
+    }
+    d = Math.min(d, precio);
+    return Math.round(d * 100) / 100;
+}
+
+/** Recalcula descuento_item + subtotal de una línea manteniendo su modo/tipo/valor. */
+function recalcularLinea(i: LineaCarrito, patch: Partial<LineaCarrito> = {}): LineaCarrito {
+    const l = { ...i, ...patch };
+    const descItem = derivarDescuentoItem(l.precio_unitario, l.cantidad, l.descuento_modo, l.descuento_tipo, l.descuento_valor);
+    return {
+        ...l,
+        descuento_item: descItem,
+        subtotal: Math.round((l.precio_unitario - descItem) * l.cantidad * 100) / 100,
+    };
 }
 
 /**

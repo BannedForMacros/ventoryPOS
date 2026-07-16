@@ -11,6 +11,11 @@ export interface HistorialPrecioCliente {
     historial:     { fecha: string; precio: number; cantidad: number; unidad: string }[];
 }
 
+/** Sobre qué base aplica el descuento por línea. */
+export type DescModo = 'pu' | 'total';
+/** Cómo se expresa el valor del descuento. */
+export type DescTipo = 'monto' | 'porcentaje';
+
 export interface LineaCarrito {
     key:                  string;
     producto_id:          number;
@@ -29,7 +34,16 @@ export interface LineaCarrito {
     stock_disponible:     number | null;
     factor_conversion:    number;
     cantidad:             number;
+    // Descuento por línea. `descuento_item` es SIEMPRE el descuento efectivo en
+    // soles POR UNIDAD (lo que el backend persiste y con lo que se calcula el
+    // subtotal: subtotal = (precio_unitario − descuento_item) × cantidad).
+    // Los campos `descuento_modo/tipo/valor` son sólo de UI: guardan CÓMO lo
+    // tecleó el cajero (afecta al P.U o al total; en soles o %) para poder
+    // reeditarlo y recalcular `descuento_item` cuando cambia precio o cantidad.
     descuento_item:       number;
+    descuento_modo:       DescModo;
+    descuento_tipo:       DescTipo;
+    descuento_valor:      number;
     descuento_concepto_id: number | null;
     subtotal:             number;
     incluye_igv:          boolean;
@@ -46,14 +60,16 @@ interface Props {
     onCantidad:         (key: string, delta: number) => void;
     onCantidadExacta:   (key: string, cantidad: number) => void;
     onPrecio:           (key: string, precio: number) => void;
-    onDescuento:        (key: string, descuento: number, conceptoId: number | null) => void;
+    onDescuento:        (key: string, valor: number, modo: DescModo, tipo: DescTipo, conceptoId: number | null) => void;
     onEliminar:         (key: string) => void;
 }
 
 export default function CarritoItem({ item, conceptos, historial, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar }: Props) {
     const [showHistorial, setShowHistorial] = useState(false);
-    const [showDescuento, setShowDescuento] = useState(item.descuento_item > 0);
-    const [descuentoVal, setDescuentoVal]   = useState(String(item.descuento_item || ''));
+    const [showDescuento, setShowDescuento] = useState((item.descuento_valor || item.descuento_item) > 0);
+    const [descuentoVal, setDescuentoVal]   = useState(String(item.descuento_valor || ''));
+    const [descModo, setDescModo]           = useState<DescModo>(item.descuento_modo ?? 'pu');
+    const [descTipo, setDescTipo]           = useState<DescTipo>(item.descuento_tipo ?? 'monto');
     const [conceptoId, setConceptoId]       = useState<number | null>(item.descuento_concepto_id);
     // Borradores locales de cantidad y precio: se escriben libremente y se
     // aplican al carrito al salir del input (blur) o con Enter.
@@ -69,28 +85,64 @@ export default function CarritoItem({ item, conceptos, historial, onCantidad, on
     const [showCosto, setShowCosto]         = useState(false);
 
     useEffect(() => {
-        if (!descFocus) setDescuentoVal(String(item.descuento_item || ''));
+        // Sincronizar los borradores locales con el estado real del carrito SOLO
+        // cuando el input de descuento no está enfocado (mientras teclea, no le
+        // reescribimos lo que escribe). El modo/tipo/concepto sí se reflejan
+        // siempre porque se cambian con botones, no tecleando.
+        if (!descFocus) setDescuentoVal(String(item.descuento_valor || ''));
+        setDescModo(item.descuento_modo ?? 'pu');
+        setDescTipo(item.descuento_tipo ?? 'monto');
         setConceptoId(item.descuento_concepto_id);
-        if (item.descuento_item > 0) setShowDescuento(true);
-    }, [item.descuento_item, item.descuento_concepto_id, descFocus]);
+        if ((item.descuento_valor || item.descuento_item) > 0) setShowDescuento(true);
+    }, [item.descuento_valor, item.descuento_item, item.descuento_modo, item.descuento_tipo, item.descuento_concepto_id, descFocus]);
 
     // Sincronizar el borrador con el valor real SOLO cuando el input no está
     // enfocado: mientras el usuario escribe, no reformateamos lo que teclea.
     useEffect(() => { if (!cantFocus) setCantidadVal(String(item.cantidad)); }, [item.cantidad, cantFocus]);
     useEffect(() => { if (!precioFocus) setPrecioVal(item.precio_unitario.toFixed(2)); }, [item.precio_unitario, precioFocus]);
 
-    // Descuento EN VIVO: aplica al carrito en cada tecla.
+    // Descuento EN VIVO: cualquier cambio (valor tecleado, modo, tipo o
+    // concepto) recalcula el carrito al instante. El padre deriva el descuento
+    // efectivo por unidad a partir de estos parámetros.
+    function emitir(valor: number, modo: DescModo, tipo: DescTipo, cid: number | null) {
+        onDescuento(item.key, valor, modo, tipo, valor > 0 ? cid : null);
+    }
     function onCambioDescuento(valor: string) {
         setDescuentoVal(valor);
-        const val = parseFloat(valor) || 0;
-        onDescuento(item.key, val, val > 0 ? conceptoId : null);
+        emitir(parseFloat(valor) || 0, descModo, descTipo, conceptoId);
+    }
+    function cambiarModo(modo: DescModo) {
+        setDescModo(modo);
+        emitir(parseFloat(descuentoVal) || 0, modo, descTipo, conceptoId);
+    }
+    function cambiarTipo(tipo: DescTipo) {
+        setDescTipo(tipo);
+        emitir(parseFloat(descuentoVal) || 0, descModo, tipo, conceptoId);
+    }
+    function cambiarConcepto(cid: number | null) {
+        setConceptoId(cid);
+        const val = parseFloat(descuentoVal) || 0;
+        if (val > 0) emitir(val, descModo, descTipo, cid);
     }
 
     function aplicarDescuento() {
         const val = parseFloat(descuentoVal) || 0;
-        onDescuento(item.key, val, val > 0 ? conceptoId : null);
+        emitir(val, descModo, descTipo, conceptoId);
         if (val === 0) setShowDescuento(false);
     }
+
+    function quitarDescuento() {
+        setDescuentoVal('');
+        setConceptoId(null);
+        setDescModo('pu');
+        setDescTipo('monto');
+        onDescuento(item.key, 0, 'pu', 'monto', null);
+        setShowDescuento(false);
+    }
+
+    // Precio efectivo por unidad tras el descuento (lo que realmente se cobra c/u).
+    const precioEfectivo = Math.round((item.precio_unitario - item.descuento_item) * 100) / 100;
+    const hayDescuento   = item.descuento_item > 0.0001;
 
     // Cantidad EN VIVO: aplica al carrito en cada tecla (los totales se
     // actualizan al instante). El borrador se conserva para poder borrar/retipear.
@@ -267,16 +319,44 @@ export default function CarritoItem({ item, conceptos, historial, onCantidad, on
                                 } as React.CSSProperties}
                             />
                         </span>
+                        {/* Escalera de precios (historial de tachados): precio de
+                            LISTA → precio de VENTA editado → precio con DESCUENTO.
+                            Cada peldaño anterior queda tachado; el vigente resalta.
+                            Ej.: ~~S/20~~ (lista) → ~~S/17~~ (venta) → S/15 (con dcto). */}
                         {item.precio_unitario !== item.precio_original && !precioBajoCosto && (
-                            <span className="text-[10px] line-through opacity-60" style={{ color: 'var(--color-text-muted)' }}>
+                            <span
+                                className="text-[10px] line-through opacity-60"
+                                title="Precio de lista (catálogo)"
+                                style={{ color: 'var(--color-text-muted)' }}
+                            >
                                 S/ {item.precio_original.toFixed(2)}
                             </span>
                         )}
-                        {item.descuento_item > 0 && (
+                        {hayDescuento && !precioBajoCosto && (
                             <>
-                                <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>·</span>
-                                <span className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
-                                    -{item.descuento_item.toFixed(2)}
+                                {/* El precio de venta también se tacha al aplicar el descuento */}
+                                <span
+                                    className="text-[10px] line-through"
+                                    title="Descontado por descuento"
+                                    style={{ color: 'var(--color-warning)', opacity: 0.75 }}
+                                >
+                                    S/ {item.precio_unitario.toFixed(2)}
+                                </span>
+                                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>›</span>
+                                {/* Precio vigente ya con el descuento aplicado */}
+                                <span className="text-[11px] font-extrabold" style={{ color: 'var(--color-primary)' }}>
+                                    S/ {precioEfectivo.toFixed(2)}
+                                </span>
+                                <span
+                                    className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide inline-flex items-center gap-0.5"
+                                    title="Descontado por descuento"
+                                    style={{
+                                        backgroundColor: 'color-mix(in srgb, var(--color-danger) 12%, transparent)',
+                                        color: 'var(--color-danger)',
+                                    }}
+                                >
+                                    <Percent size={8} />
+                                    -{item.descuento_item.toFixed(2)}{item.descuento_tipo === 'porcentaje' ? ` (${item.descuento_valor}%)` : ''}
                                 </span>
                             </>
                         )}
@@ -501,68 +581,124 @@ export default function CarritoItem({ item, conceptos, historial, onCantidad, on
                 </div>
             </div>
 
-            {/* Fila 3: Descuento (expandible) */}
+            {/* Fila 3: Descuento por línea (expandible) */}
             {showDescuento && (
                 <div
-                    className="flex flex-wrap items-center gap-2 mt-2 pt-2"
+                    className="mt-2 pt-2 space-y-2"
                     style={{ borderTop: '1px dashed var(--color-border)' }}
                 >
-                    <Percent size={12} style={{ color: 'var(--color-warning)', flexShrink: 0 }} />
-                    <div className="relative w-20 flex-shrink-0">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px]" style={{ color: 'var(--color-text-muted)' }}>S/</span>
-                        <input
-                            type="number"
-                            inputMode="decimal"
-                            min="0"
-                            step="0.01"
-                            value={descuentoVal}
-                            onChange={e => onCambioDescuento(e.target.value)}
-                            onFocus={() => setDescFocus(true)}
-                            onBlur={() => { setDescFocus(false); aplicarDescuento(); }}
-                            onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                            placeholder="0.00"
-                            className="w-full pl-6 pr-1 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2"
+                    {/* Encabezado + cerrar */}
+                    <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-warning)' }}>
+                            <Percent size={12} />
+                            Descuento
+                        </span>
+                        <button
+                            onClick={quitarDescuento}
+                            className="p-1 rounded hover:bg-black/5 transition-colors flex-shrink-0"
+                            title="Quitar descuento"
+                            style={{ color: 'var(--color-text-muted)' }}
+                        >
+                            <X size={13} />
+                        </button>
+                    </div>
+
+                    {/* Selectores: afecta a (P.U / Total) + tipo (S/ / %) */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Afecta a */}
+                        <div className="inline-flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                            {(['pu', 'total'] as DescModo[]).map(m => (
+                                <button
+                                    key={m}
+                                    onClick={() => cambiarModo(m)}
+                                    className="text-[11px] font-semibold px-2.5 py-1 transition-colors"
+                                    title={m === 'pu' ? 'El descuento afecta al precio unitario' : 'El descuento afecta al total de la línea'}
+                                    style={{
+                                        backgroundColor: descModo === m ? 'var(--color-warning)' : 'transparent',
+                                        color: descModo === m ? '#fff' : 'var(--color-text-muted)',
+                                    }}
+                                >
+                                    {m === 'pu' ? 'P. Unit.' : 'Total'}
+                                </button>
+                            ))}
+                        </div>
+                        {/* Tipo: soles o porcentaje */}
+                        <div className="inline-flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                            {(['monto', 'porcentaje'] as DescTipo[]).map(t => (
+                                <button
+                                    key={t}
+                                    onClick={() => cambiarTipo(t)}
+                                    className="text-[11px] font-bold px-2.5 py-1 transition-colors"
+                                    title={t === 'monto' ? 'Descuento en soles' : 'Descuento en porcentaje'}
+                                    style={{
+                                        backgroundColor: descTipo === t ? 'var(--color-warning)' : 'transparent',
+                                        color: descTipo === t ? '#fff' : 'var(--color-text-muted)',
+                                    }}
+                                >
+                                    {t === 'monto' ? 'S/' : '%'}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Valor + concepto */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="relative w-24 flex-shrink-0">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>
+                                {descTipo === 'monto' ? 'S/' : ''}
+                            </span>
+                            <input
+                                type="number"
+                                inputMode="decimal"
+                                min="0"
+                                step={descTipo === 'porcentaje' ? '0.1' : '0.01'}
+                                max={descTipo === 'porcentaje' ? '100' : undefined}
+                                value={descuentoVal}
+                                onChange={e => onCambioDescuento(e.target.value)}
+                                onFocus={e => { setDescFocus(true); e.target.select(); }}
+                                onBlur={() => { setDescFocus(false); aplicarDescuento(); }}
+                                onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                                placeholder={descTipo === 'porcentaje' ? '0' : '0.00'}
+                                className={`w-full ${descTipo === 'monto' ? 'pl-6' : 'pl-2'} pr-5 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2 text-right`}
+                                style={{
+                                    borderColor: 'var(--color-border)',
+                                    backgroundColor: 'var(--color-bg)',
+                                    color: 'var(--color-text)',
+                                    '--tw-ring-color': 'color-mix(in srgb, var(--color-warning) 40%, transparent)',
+                                } as React.CSSProperties}
+                            />
+                            {descTipo === 'porcentaje' && (
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>%</span>
+                            )}
+                        </div>
+                        <select
+                            value={conceptoId ?? ''}
+                            onChange={e => cambiarConcepto(e.target.value ? Number(e.target.value) : null)}
+                            className="flex-1 min-w-[100px] text-xs border rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-1"
                             style={{
                                 borderColor: 'var(--color-border)',
                                 backgroundColor: 'var(--color-bg)',
                                 color: 'var(--color-text)',
-                                '--tw-ring-color': 'color-mix(in srgb, var(--color-warning) 40%, transparent)',
+                                '--tw-ring-color': 'var(--color-warning)',
                             } as React.CSSProperties}
-                        />
+                        >
+                            <option value="">Concepto...</option>
+                            {conceptos.map(c => (
+                                <option key={c.id} value={c.id}>{c.nombre}</option>
+                            ))}
+                        </select>
                     </div>
-                    <select
-                        value={conceptoId ?? ''}
-                        onChange={e => {
-                            const newCid = e.target.value ? Number(e.target.value) : null;
-                            setConceptoId(newCid);
-                            const val = parseFloat(descuentoVal) || 0;
-                            if (val > 0) onDescuento(item.key, val, newCid);
-                        }}
-                        className="flex-1 min-w-[100px] text-xs border rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1"
-                        style={{
-                            borderColor: 'var(--color-border)',
-                            backgroundColor: 'var(--color-bg)',
-                            color: 'var(--color-text)',
-                            '--tw-ring-color': 'var(--color-warning)',
-                        } as React.CSSProperties}
-                    >
-                        <option value="">Concepto...</option>
-                        {conceptos.map(c => (
-                            <option key={c.id} value={c.id}>{c.nombre}</option>
-                        ))}
-                    </select>
-                    <button
-                        onClick={() => {
-                            setDescuentoVal('');
-                            setConceptoId(null);
-                            onDescuento(item.key, 0, null);
-                            setShowDescuento(false);
-                        }}
-                        className="p-1 rounded hover:bg-black/5 transition-colors flex-shrink-0"
-                        style={{ color: 'var(--color-text-muted)' }}
-                    >
-                        <X size={12} />
-                    </button>
+
+                    {/* Resultado en vivo del descuento aplicado */}
+                    {hayDescuento && (
+                        <p className="text-[10px] leading-tight" style={{ color: 'var(--color-text-muted)' }}>
+                            {descModo === 'total' ? (
+                                <>Descuento total línea: <span className="font-bold" style={{ color: 'var(--color-danger)' }}>−S/ {(item.descuento_item * item.cantidad).toFixed(2)}</span>{' · '}c/u queda en <span className="font-bold" style={{ color: 'var(--color-primary)' }}>S/ {precioEfectivo.toFixed(2)}</span></>
+                            ) : (
+                                <>Precio con dcto: <span className="font-bold" style={{ color: 'var(--color-primary)' }}>S/ {precioEfectivo.toFixed(2)}</span>{' '}c/u{' · '}<span className="font-bold" style={{ color: 'var(--color-danger)' }}>−S/ {(item.descuento_item * item.cantidad).toFixed(2)}</span> total</>
+                            )}
+                        </p>
+                    )}
                 </div>
             )}
         </div>
