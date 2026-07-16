@@ -81,10 +81,12 @@ it('una compra registrada HOY tampoco infla el stock del balance de AYER', funct
     expect((float) $hoyBal->items->firstWhere('categoria', 'stock')->monto)->toBe(360.0);
 });
 
-it('una entrega de pendiente hecha HOY no baja el STOCK del balance de AYER', function () {
-    // Reproduce el incidente real: mercadería pagada AYER pero pendiente por
-    // entregar sigue en almacén; se entrega HOY. El stock del balance de AYER
-    // debe incluirla igual (la entrega de hoy no reduce el día ya cerrado).
+it('una venta con pendiente entregado HOY no altera el STOCK del balance de AYER', function () {
+    // Reproduce el incidente real: HOY se registra una venta con mercadería
+    // pendiente y se ENTREGA el mismo día. Esa mercadería estaba en almacén
+    // AYER (aún no vendida), así que el stock de ayer NO debe cambiar.
+    // Antes daba de MÁS: la venta (ventasPost) y la entrega (entregasPost)
+    // contaban lo mismo doble porque el descuento del pendiente no enganchaba.
     $cliente = \App\Models\Cliente::create([
         'empresa_id' => $this->env->empresa->id,
         'nombres' => 'Pendiente', 'apellidos' => 'Test',
@@ -93,11 +95,11 @@ it('una entrega de pendiente hecha HOY no baja el STOCK del balance de AYER', fu
     // Stock inicial: 50 und × costo 6 = 300.
     $producto = $this->env->crearProducto(['precio_venta' => 10, 'precio_costo' => 6, 'stock_inicial' => 50]);
 
-    // AYER: venta de 5 und TODAS pendientes por entregar → NO salen del almacén al vender.
+    // HOY: venta de 5 und TODAS pendientes por entregar (NO salen al vender)…
     $venta = $this->ventas->crear([
         'tipo_comprobante'  => 'ticket',
         'cliente_id'        => $cliente->id,
-        'fecha_venta'       => now()->subDay()->toDateString(),
+        'fecha_venta'       => now()->toDateString(),
         'entrega_pendiente' => true,
         'items' => [[
             'producto_id'        => $producto->id,
@@ -111,14 +113,14 @@ it('una entrega de pendiente hecha HOY no baja el STOCK del balance de AYER', fu
 
     $anticipo = \App\Models\ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
 
-    // HOY: se entregan las 5 → recién ahora salen del almacén (stock 45 × 6 = 270).
+    // …y se entregan las 5 el MISMO día → recién ahora salen (stock 45 × 6 = 270).
     $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
         'fecha' => now()->toDateString(),
         'items' => [['id' => $anticipo->items->first()->id, 'cantidad' => 5]],
     ])->assertSessionHasNoErrors();
 
-    // Balance de AYER: las 5 aún estaban en almacén → stock = 300
-    // (SIN el fix, la reconstrucción daba 270 porque no devolvía la entrega).
+    // Balance de AYER: las 5 estaban en almacén ayer y no se tocaron → 300.
+    // (SIN el fix daba 330: venta +30 y entrega +30 contaban doble.)
     $ayer = $this->balances->generar($this->env->admin, now()->subDay()->toDateString());
     expect((float) $ayer->items->firstWhere('categoria', 'stock')->monto)->toBe(300.0);
 

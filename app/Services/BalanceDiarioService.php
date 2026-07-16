@@ -363,30 +363,36 @@ class BalanceDiarioService
         // pendiente, y (b) devolver la mercadería entregada después del corte.
         $tienePendientes = \Illuminate\Support\Facades\Schema::hasTable('cliente_anticipo_items')
             && \Illuminate\Support\Facades\Schema::hasTable('cliente_anticipo_aplicacion_items');
-        // Lo que quedó PENDIENTE al vender NO salió del almacén al vender; sale
-        // recién con la entrega. Se descuenta de la venta para no contar doble.
-        $menosPendiente = $tienePendientes
-            ? "- COALESCE((SELECT SUM(cai.cantidad * cai.factor_conversion)
-                            FROM cliente_anticipo_items cai WHERE cai.venta_item_id = vi.id), 0)"
-            : '';
 
-        // Ventas posteriores al corte (salieron DESPUÉS → se devuelven). Sólo
-        // se devuelve lo REALMENTE entregado en la venta (cantidad_base menos lo
-        // que quedó pendiente por entregar).
+        // Ventas posteriores al corte (BRUTO): la mercadería vendida salió del
+        // almacén DESPUÉS del corte → se devuelve al valor del día.
         $ventasPost = (float) DB::table('venta_items as vi')
             ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
             ->join('productos as p', 'p.id', '=', 'vi.producto_id')
             ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
             ->where('p.activo', true)
             ->whereDate('v.fecha_venta', '>', $fechaCorte)
-            ->selectRaw("COALESCE(SUM((vi.cantidad_base {$menosPendiente}) * {$costo}), 0) as t")->value('t');
+            ->selectRaw("COALESCE(SUM(vi.cantidad_base * {$costo}), 0) as t")->value('t');
 
-        // Entregas de pendiente (anticipo material) posteriores al corte: la
-        // mercadería pagada salió del almacén DESPUÉS → se devuelve al corte.
-        // (Ésta era la fuga: al reconstruir el pasado no se devolvía lo entregado
-        //  de un pendiente, así que el stock del día bajaba de más.)
-        $entregasPost = 0.0;
+        // De esas ventas, lo que quedó PENDIENTE por entregar NO salió del
+        // almacén al vender (sale recién con la entrega). Se descuenta para no
+        // contarlo doble con las entregas. Se enlaza por `cliente_anticipos.venta_id`
+        // (el `venta_item_id` del ítem puede venir NULL en registros antiguos).
+        $pendientePost = 0.0;
+        $entregasPost  = 0.0;
         if ($tienePendientes) {
+            $pendientePost = (float) DB::table('cliente_anticipo_items as ai')
+                ->join('cliente_anticipos as ca', 'ca.id', '=', 'ai.cliente_anticipo_id')
+                ->join('ventas as v', 'v.id', '=', 'ca.venta_id')
+                ->join('productos as p', 'p.id', '=', 'ai.producto_id')
+                ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
+                ->where('p.activo', true)
+                ->whereDate('v.fecha_venta', '>', $fechaCorte)
+                ->selectRaw("COALESCE(SUM(ai.cantidad * ai.factor_conversion * {$costo}), 0) as t")->value('t');
+
+            // Entregas de pendiente posteriores al corte: la mercadería pagada
+            // salió del almacén DESPUÉS → se devuelve al corte. (Ésta era la fuga
+            //  original: al reconstruir el pasado no se devolvía lo entregado.)
             $entregasPost = (float) DB::table('cliente_anticipo_aplicacion_items as aai')
                 ->join('cliente_anticipo_aplicaciones as ap', 'ap.id', '=', 'aai.cliente_anticipo_aplicacion_id')
                 ->join('cliente_anticipo_items as ai', 'ai.id', '=', 'aai.cliente_anticipo_item_id')
@@ -434,7 +440,7 @@ class BalanceDiarioService
             ->whereDate('c.fecha', '>', $fechaCorte)
             ->selectRaw("COALESCE(SUM(ci.diferencia * {$costo}), 0) as t")->value('t');
 
-        return round($actual + $ventasPost + $salidasPost + $entregasPost - $entradasPost - $devolucionesPost - $ajustesPost, 2);
+        return round($actual + $ventasPost - $pendientePost + $salidasPost + $entregasPost - $entradasPost - $devolucionesPost - $ajustesPost, 2);
     }
 
     /**

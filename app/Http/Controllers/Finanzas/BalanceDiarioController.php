@@ -489,19 +489,27 @@ class BalanceDiarioController extends Controller
                     };
 
                     // Pendientes por entregar (anticipo material): lo pendiente NO
-                    // salió al vender (se descuenta de la venta) y lo entregado
-                    // después del corte se devuelve (mismo criterio que stockValorizadoA).
+                    // salió al vender (se descuenta, −1) y lo entregado después del
+                    // corte se devuelve (+1) — mismo criterio que stockValorizadoA.
                     $tienePendientes = \Illuminate\Support\Facades\Schema::hasTable('cliente_anticipo_items')
                         && \Illuminate\Support\Facades\Schema::hasTable('cliente_anticipo_aplicacion_items');
-                    $menosPendiente = $tienePendientes
-                        ? '- COALESCE((SELECT SUM(cai.cantidad * cai.factor_conversion)
-                                        FROM cliente_anticipo_items cai WHERE cai.venta_item_id = vi.id), 0)'
-                        : '';
 
                     $acum(DB::table('venta_items as vi')->join('ventas as v', 'v.id', '=', 'vi.venta_id')
                         ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
                         ->whereDate('v.fecha_venta', '>', $fecha)
-                        ->selectRaw("vi.producto_id as pid, SUM(vi.cantidad_base {$menosPendiente}) as c")->groupBy('vi.producto_id')->get(), +1);
+                        ->selectRaw('vi.producto_id as pid, SUM(vi.cantidad_base) as c')->groupBy('vi.producto_id')->get(), +1);
+
+                    // Lo que quedó pendiente al vender NO salió (se resta). Enlace
+                    // por cliente_anticipos.venta_id (venta_item_id puede ser NULL).
+                    if ($tienePendientes) {
+                        $acum(DB::table('cliente_anticipo_items as ai')
+                            ->join('cliente_anticipos as ca', 'ca.id', '=', 'ai.cliente_anticipo_id')
+                            ->join('ventas as v', 'v.id', '=', 'ca.venta_id')
+                            ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
+                            ->whereDate('v.fecha_venta', '>', $fecha)
+                            ->selectRaw('ai.producto_id as pid, SUM(ai.cantidad * ai.factor_conversion) as c')
+                            ->groupBy('ai.producto_id')->get(), -1);
+                    }
                     $acum(DB::table('salidas_detalle as sd')->join('salidas as s', 's.id', '=', 'sd.salida_id')
                         ->where('s.empresa_id', $empresaId)->where('s.estado', 'confirmado')
                         ->whereDate('s.fecha', '>', $fecha)
