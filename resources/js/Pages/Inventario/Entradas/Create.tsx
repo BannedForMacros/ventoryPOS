@@ -47,14 +47,36 @@ interface DetalleRow {
     cantidad: string;
     factor_conversion: string;
     precio_costo: string;
+    // Cómo ingresa el usuario el precio de esta línea:
+    //  'unitario' → teclea el precio por unidad (precio_costo directo).
+    //  'total'    → teclea lo que pagó por TODA la línea (precio_total) y el
+    //               sistema calcula el unitario hacia atrás. Útil cuando el
+    //               unitario × cantidad no cuadra con el monto real pagado.
+    // Sea cual sea el modo, precio_costo SIEMPRE queda sincronizado: es lo que
+    // se envía al backend y alimenta subtotal, costo promedio y kardex.
+    precio_modo: 'unitario' | 'total';
+    precio_total: string;
     // Vacío = hereda numero_documento de la cabecera. Si el proveedor facturó
     // la mercadería en varias facturas, cada item puede tener la suya propia.
     numero_documento: string;
 }
 
 const emptyDetalle = (): DetalleRow => ({
-    producto_id: '', unidad_medida_id: '', cantidad: '', factor_conversion: '1', precio_costo: '', numero_documento: '',
+    producto_id: '', unidad_medida_id: '', cantidad: '', factor_conversion: '1',
+    precio_costo: '', precio_modo: 'unitario', precio_total: '', numero_documento: '',
 });
+
+/**
+ * Deriva el precio unitario a partir del total de la línea y la cantidad.
+ * Devuelve '' si aún no hay datos suficientes (cantidad 0/ausente). Redondea a
+ * 4 decimales, que es la precisión de precio_costo en la BD (numeric 12,4).
+ */
+function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
+    const t = parseFloat(totalStr);
+    const q = parseFloat(cantidadStr);
+    if (!isFinite(t) || !isFinite(q) || q <= 0) return '';
+    return String(Math.round((t / q) * 10000) / 10000);
+}
 
 export default function EntradaCreate({ almacenes, productos, proveedores, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen }: Props) {
     // "Afecta caja a:" — por defecto la caja del propio cajero (su turno activo).
@@ -128,8 +150,29 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                 const unidad   = unidades.find(u => u.unidad_medida_id === Number(value));
                 updated[i].factor_conversion = unidad ? String(unidad.factor_conversion) : '1';
             }
+            // Si la línea ingresa por TOTAL, mantenemos precio_costo derivado
+            // cada vez que cambia el total tecleado o la cantidad.
+            if (updated[i].precio_modo === 'total' && (field === 'precio_total' || field === 'cantidad')) {
+                updated[i].precio_costo = costoDesdeTotal(updated[i].precio_total, updated[i].cantidad);
+            }
             return updated;
         });
+    }
+
+    /** Cambia entre ingresar por precio unitario o por total de la línea. */
+    function setPrecioModo(i: number, modo: 'unitario' | 'total') {
+        setDetalles(prev => prev.map((d, idx) => {
+            if (idx !== i || d.precio_modo === modo) return d;
+            if (modo === 'total') {
+                // Al pasar a "total" precargamos el total con el subtotal actual
+                // (cantidad × unitario) para no perder lo ya tecleado.
+                const precio_total = subtotal(d) > 0 ? String(subtotal(d)) : '';
+                return { ...d, precio_modo: 'total', precio_total,
+                    precio_costo: costoDesdeTotal(precio_total, d.cantidad) || d.precio_costo };
+            }
+            // Volver a "unitario": precio_costo ya está sincronizado.
+            return { ...d, precio_modo: 'unitario' };
+        }));
     }
 
     function addDetalle()    { setDetalles(d => [...d, emptyDetalle()]); }
@@ -414,7 +457,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                         <div className={facturaPorItem ? 'col-span-3' : 'col-span-5'}>Producto</div>
                         <div className="col-span-2">Unidad</div>
                         <div className="col-span-2">Cantidad</div>
-                        <div className="col-span-2">Precio costo</div>
+                        <div className="col-span-2">Precio</div>
                         {facturaPorItem && <div className="col-span-2">Factura</div>}
                         <div className="col-span-1 text-right">Subtotal</div>
                     </div>
@@ -489,14 +532,47 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                                     {/* Pair: Precio + (Factura si modo por item). En modo único Precio queda solo. */}
                                     <div className={`grid ${facturaPorItem ? 'grid-cols-2' : 'grid-cols-1'} gap-2 md:contents`}>
                                         <div className="md:col-span-2">
-                                            <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Precio costo</label>
-                                            <Input
-                                                placeholder="0.00"
-                                                type="number" min="0" step="0.0001" inputMode="decimal"
-                                                value={d.precio_costo}
-                                                onChange={e => setDetalle(i, 'precio_costo', e.target.value)}
-                                                error={(errors as Record<string, string>)[`detalles.${i}.precio_costo`]}
-                                            />
+                                            {/* Fila de encabezado del precio: label (solo mobile) + toggle P.U/Total */}
+                                            <div className="flex items-center justify-between md:justify-end gap-2 mb-1">
+                                                <label className="md:hidden text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+                                                    {d.precio_modo === 'total' ? 'Precio total' : 'Precio costo'}
+                                                </label>
+                                                <div className="inline-flex rounded-md border overflow-hidden text-[10px] font-semibold leading-none"
+                                                    style={{ borderColor: 'var(--color-border)' }}>
+                                                    {(['unitario', 'total'] as const).map(m => (
+                                                        <button key={m} type="button" onClick={() => setPrecioModo(i, m)}
+                                                            className="px-1.5 py-1 transition-colors"
+                                                            style={{
+                                                                backgroundColor: d.precio_modo === m ? 'var(--color-primary)' : 'transparent',
+                                                                color: d.precio_modo === m ? '#fff' : 'var(--color-text-muted)',
+                                                            }}>
+                                                            {m === 'unitario' ? 'P.U.' : 'Total'}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            {d.precio_modo === 'total' ? (
+                                                <Input
+                                                    placeholder="0.00"
+                                                    type="number" min="0" step="0.01" inputMode="decimal"
+                                                    value={d.precio_total}
+                                                    onChange={e => setDetalle(i, 'precio_total', e.target.value)}
+                                                />
+                                            ) : (
+                                                <Input
+                                                    placeholder="0.00"
+                                                    type="number" min="0" step="0.0001" inputMode="decimal"
+                                                    value={d.precio_costo}
+                                                    onChange={e => setDetalle(i, 'precio_costo', e.target.value)}
+                                                    error={(errors as Record<string, string>)[`detalles.${i}.precio_costo`]}
+                                                />
+                                            )}
+                                            {/* Al ingresar por total, mostramos el unitario derivado como confirmación. */}
+                                            {d.precio_modo === 'total' && d.precio_costo !== '' && (
+                                                <p className="mt-0.5 text-[11px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                                                    = S/ {d.precio_costo} c/u
+                                                </p>
+                                            )}
                                         </div>
                                         {facturaPorItem && (
                                             <div className="md:col-span-2">
