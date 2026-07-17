@@ -25,13 +25,21 @@ class TurnoController extends Controller
     {
         $user  = $request->user();
         $query = Turno::deEmpresa($user->empresa_id)
-            ->with(['caja', 'user', 'userCierre', 'local']);
+            ->with(['caja', 'user', 'userCierre', 'local'])
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->whereHas('caja', fn ($c) => $c->where('nombre', 'ilike', "%{$t}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'ilike', "%{$t}%"))
+                    ->orWhereHas('local', fn ($l) => $l->where('nombre', 'ilike', "%{$t}%")));
+            });
 
         if (!$user->rol->es_admin) {
             $query->where('user_id', $user->id);
         }
 
-        $turnos = $query->orderByDesc('fecha_apertura')->paginate(20);
+        $turnos = $query->orderByDesc('fecha_apertura')->paginate(20)->withQueryString();
 
         $cajasDisponibles = Caja::deEmpresa($user->empresa_id)
             ->activo()
@@ -68,6 +76,7 @@ class TurnoController extends Controller
 
         return Inertia::render('Turnos/Index', [
             'turnos'           => $turnos,
+            'buscar'           => $request->input('buscar', ''),
             'cajasDisponibles' => $cajasDisponibles,
             'metodosPago'      => $metodosPago,
             'turnoActivo'      => $turnoActivo,

@@ -32,7 +32,17 @@ class CuentasPorPagarController extends Controller
             ->with(['proveedorRel', 'almacen', 'pagosParciales.metodoPago', 'pagosParciales.cuenta', 'pagosParciales.adelanto', 'pagosParciales.user'])
             ->when($request->input('proveedor_id'), fn ($q, $v) => $q->where('proveedor_id', $v))
             ->when($request->input('fecha_desde'), fn ($q, $v) => $q->where('fecha', '>=', $v))
-            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->where('fecha', '<=', $v));
+            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->where('fecha', '<=', $v))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('numero_documento', 'ilike', "%{$t}%")
+                    ->orWhere('proveedor', 'ilike', "%{$t}%")
+                    ->orWhereHas('proveedorRel', fn ($p) => $p
+                        ->where('razon_social', 'ilike', "%{$t}%")
+                        ->orWhere('nombre_comercial', 'ilike', "%{$t}%")));
+            });
 
         if ($request->input('estado', 'pendientes') === 'pendientes') {
             $query->where('estado_pago', '!=', 'pagado')->whereRaw('total - monto_pagado > 0.01');
@@ -51,6 +61,7 @@ class CuentasPorPagarController extends Controller
             'totalPendiente' => round($totalPendiente, 2),
             'esAdmin'        => (bool) $user->rol->es_admin,
             'estado'         => $request->input('estado', 'pendientes'),
+            'buscar'         => $request->input('buscar', ''),
             'metodosPago'    => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
             'cuentas'        => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
             // Adelantos con saldo para ofrecer "pagar consumiendo adelanto".

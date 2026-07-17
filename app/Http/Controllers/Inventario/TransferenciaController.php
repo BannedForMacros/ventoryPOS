@@ -34,6 +34,14 @@ class TransferenciaController extends Controller
             ->when($request->estado, fn ($q, $e) => $q->where('estado', $e))
             ->when($request->fecha_desde, fn ($q, $f) => $q->whereDate('fecha', '>=', $f))
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->whereHas('almacenOrigen', fn ($a) => $a->where('nombre', 'ilike', "%{$t}%"))
+                    ->orWhereHas('almacenDestino', fn ($a) => $a->where('nombre', 'ilike', "%{$t}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'ilike', "%{$t}%")));
+            })
             ->orderByDesc('fecha')
             ->orderByDesc('id')
             ->paginate(25)
@@ -43,6 +51,7 @@ class TransferenciaController extends Controller
             'transferencias'  => $transferencias,
             'almacenes'       => $this->scope->todosLosAlmacenes($user),
             'filters'         => $request->only(['estado', 'fecha_desde', 'fecha_hasta']),
+            'buscar'          => $request->input('buscar', ''),
         ]);
     }
 

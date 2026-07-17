@@ -162,6 +162,10 @@ export default function ClientesIndex({ clientes, busqueda }: Props) {
                 columns={columns}
                 searchPlaceholder="Buscar por nombre o documento..."
                 emptyMessage="No hay clientes registrados"
+                initialSearch={busqueda}
+                onServerSearch={(t) => router.get(route('clientes.index'),
+                    { busqueda: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })}
             />
 
             {/* Modal crear / editar */}

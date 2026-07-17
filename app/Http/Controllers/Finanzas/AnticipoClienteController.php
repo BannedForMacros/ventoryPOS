@@ -51,7 +51,19 @@ class AnticipoClienteController extends Controller
                 'items.producto:id,nombre,precio_venta', 'items.unidad:id,precio_venta',
                 'aplicaciones.venta', 'aplicaciones.user', 'aplicaciones.items.item:id,producto_nombre,unidad_nombre',
             ])
-            ->when($request->input('cliente_id'), fn ($q, $v) => $q->where('cliente_id', $v));
+            ->when($request->input('cliente_id'), fn ($q, $v) => $q->where('cliente_id', $v))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('observacion', 'ilike', "%{$t}%")
+                    ->orWhereHas('cliente', fn ($c) => $c
+                        ->where('nombres', 'ilike', "%{$t}%")
+                        ->orWhere('apellidos', 'ilike', "%{$t}%")
+                        ->orWhere('razon_social', 'ilike', "%{$t}%")
+                        ->orWhere('numero_documento', 'ilike', "%{$t}%"))
+                    ->orWhereHas('producto', fn ($p) => $p->where('nombre', 'ilike', "%{$t}%")));
+            });
 
         if ($request->input('estado', 'activos') === 'activos') {
             $query->activo();
@@ -74,6 +86,7 @@ class AnticipoClienteController extends Controller
             'anticipos'   => $anticipos,
             'totalPasivo' => round((float) $totalPasivo, 2),
             'estado'      => $request->input('estado', 'activos'),
+            'buscar'      => $request->input('buscar', ''),
             'clientes'    => Cliente::where('empresa_id', $user->empresa_id)->where('activo', true)
                 ->where('es_cliente_general', false)
                 ->orderBy('nombres')->get(['id', 'nombres', 'apellidos', 'razon_social']),

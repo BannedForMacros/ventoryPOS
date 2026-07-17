@@ -32,6 +32,14 @@ class SalidaController extends Controller
             ->when($request->estado, fn ($q, $e) => $q->where('estado', $e))
             ->when($request->fecha_desde, fn ($q, $f) => $q->whereDate('fecha', '>=', $f))
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('numero_documento', 'ilike', "%{$t}%")
+                    ->orWhere('observacion', 'ilike', "%{$t}%")
+                    ->orWhereHas('tipo', fn ($x) => $x->where('nombre', 'ilike', "%{$t}%")));
+            })
             ->orderByDesc('fecha')
             ->orderByDesc('id')
             ->paginate(25)
@@ -43,6 +51,7 @@ class SalidaController extends Controller
             'tipos'           => SalidaTipo::deEmpresa($user->empresa_id)->activo()->orderBy('orden')->orderBy('nombre')->get(),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
             'filters'         => $request->only(['almacen_id', 'salida_tipo_id', 'estado', 'fecha_desde', 'fecha_hasta']),
+            'buscar'          => $request->input('buscar', ''),
         ]);
     }
 

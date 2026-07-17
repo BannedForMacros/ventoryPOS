@@ -31,7 +31,15 @@ class GastoController extends Controller
             ->when($request->input('tipo_id'), fn($q, $v) => $q->where('gasto_tipo_id', $v))
             ->when($request->input('concepto_id'), fn($q, $v) => $q->where('gasto_concepto_id', $v))
             ->when($request->input('fecha_desde'), fn($q, $v) => $q->where('fecha', '>=', $v))
-            ->when($request->input('fecha_hasta'), fn($q, $v) => $q->where('fecha', '<=', $v));
+            ->when($request->input('fecha_hasta'), fn($q, $v) => $q->where('fecha', '<=', $v))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('comentario', 'ilike', "%{$t}%")
+                    ->orWhereHas('tipo', fn ($x) => $x->where('nombre', 'ilike', "%{$t}%"))
+                    ->orWhereHas('concepto', fn ($x) => $x->where('nombre', 'ilike', "%{$t}%")));
+            });
 
         if ($scope === 'turno') {
             if (!$user->rol->es_admin) {
@@ -48,7 +56,7 @@ class GastoController extends Controller
             }
         }
 
-        $gastos = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25);
+        $gastos = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25)->withQueryString();
 
         $tipos = GastoTipo::deEmpresa($user->empresa_id)->activo()
             ->with(['conceptos' => fn($q) => $q->activo()->orderBy('nombre')])
@@ -71,6 +79,7 @@ class GastoController extends Controller
             'gastos'          => $gastos,
             'tipos'           => $tipos,
             'scope'           => $scope,
+            'buscar'          => $request->input('buscar', ''),
             'locales'         => $locales,
             'turnosAbiertos'  => $turnosAbiertos,
             'esAdmin'         => $esAdmin,

@@ -37,9 +37,10 @@ interface Props extends PageProps {
     tipos: TipoSalida[];
     mostrarSelector: boolean;
     filters: Record<string, string>;
+    buscar?: string;
 }
 
-export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelector, filters }: Props) {
+export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelector, filters, buscar }: Props) {
     const { flash } = usePage<Props>().props;
     const [confirmId, setConfirmId]   = useState<number | null>(null);
     const [deleteId, setDeleteId]     = useState<number | null>(null);
@@ -204,6 +205,10 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
                 columns={columns}
                 searchPlaceholder="Buscar por documento..."
                 emptyMessage="No hay salidas registradas"
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('inventario.salidas.index'),
+                    { ...filters, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })}
             />
 
             {/* Paginación (M19) */}
@@ -212,7 +217,7 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
                     {Array.from({ length: salidas.last_page }, (_, i) => i + 1).map(page => (
                         <button
                             key={page}
-                            onClick={() => router.get(route('inventario.salidas.index'), { page }, { preserveState: true })}
+                            onClick={() => router.get(route('inventario.salidas.index'), { ...filters, buscar: buscar || undefined, page }, { preserveState: true })}
                             className="w-8 h-8 rounded-lg text-xs font-medium transition-colors"
                             style={{
                                 backgroundColor: page === salidas.current_page ? 'var(--color-primary)' : 'transparent',

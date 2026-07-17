@@ -48,6 +48,7 @@ interface Props extends PageProps {
     adelantos: Paginado<Adelanto>;
     totalActivo: number;
     estado: string;
+    buscar?: string;
     proveedores: { id: number; razon_social?: string; nombre_comercial?: string }[];
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
@@ -65,7 +66,7 @@ const emptyForm = () => ({
     proveedor_id: '', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
 });
 
-export default function Adelantos({ adelantos, totalActivo, estado, proveedores, metodosPago, cuentas, puede }: Props) {
+export default function Adelantos({ adelantos, totalActivo, estado, buscar, proveedores, metodosPago, cuentas, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo] = useState(false);
     const [anulando, setAnulando]     = useState<Adelanto | null>(null);
@@ -247,12 +248,16 @@ export default function Adelantos({ adelantos, totalActivo, estado, proveedores,
                         { value: 'todos',   label: 'Todos' },
                     ]}
                     value={estado}
-                    onChange={(v) => router.get(route('finanzas.adelantos.index'), { estado: v }, { preserveState: true, replace: true })}
+                    onChange={(v) => router.get(route('finanzas.adelantos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
                 />
             </div>
 
             <Table data={adelantos.data} columns={columns}
-                searchPlaceholder="Buscar proveedor..." emptyMessage="No hay adelantos registrados" />
+                searchPlaceholder="Buscar proveedor..." emptyMessage="No hay adelantos registrados"
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('finanzas.adelantos.index'),
+                    { estado, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })} />
 
             {/* Modal nuevo adelanto */}
             <Modal isOpen={modalNuevo} onClose={() => setModalNuevo(false)} title="Nuevo adelanto a proveedor" size="md"

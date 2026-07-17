@@ -28,13 +28,14 @@ interface ConfigFondosLocal {
 
 interface Props extends PageProps {
     turnos:           Paginado<Turno>;
+    buscar?:          string;
     cajasDisponibles: CajaDisponible[];
     metodosPago:      MetodoPago[];
     turnoActivo:      Turno | null;
     configFondos:     Record<number, ConfigFondosLocal>;
 }
 
-export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago, turnoActivo, configFondos }: Props) {
+export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosPago, turnoActivo, configFondos }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalAbrir, setModalAbrir] = useState(false);
 
@@ -285,6 +286,10 @@ export default function TurnosIndex({ turnos, cajasDisponibles, metodosPago, tur
                     columns={columnasTurnos}
                     emptyMessage="Sin historial de turnos"
                     searchPlaceholder="Buscar en historial..."
+                    initialSearch={buscar}
+                    onServerSearch={(t) => router.get(route('turnos.index'),
+                        { buscar: t || undefined },
+                        { preserveState: true, preserveScroll: true, replace: true })}
                 />
             </div>
 

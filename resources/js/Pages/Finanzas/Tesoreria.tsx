@@ -41,6 +41,7 @@ interface Props extends PageProps {
     cuentaId: number;
     movimientos: Paginado<Movimiento>;
     puede: { ajustar: boolean; crear: boolean };
+    buscar?: string;
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -64,7 +65,7 @@ const ORIGEN_LABEL: Record<string, string> = {
     ajuste:                        'Ajuste manual',
 };
 
-export default function Tesoreria({ cuentas, cuentaId, movimientos, puede }: Props) {
+export default function Tesoreria({ cuentas, cuentaId, movimientos, puede, buscar }: Props) {
     const { flash } = usePage<Props>().props;
     const [ajustando, setAjustando] = useState(false);
     const [saving, setSaving]       = useState(false);
@@ -96,7 +97,7 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos, puede }: Pro
     const cuentaActiva = cuentas.find(c => c.id === cuentaId);
 
     function cambiarCuenta(id: number) {
-        router.get(route('finanzas.tesoreria.index'), { cuenta_id: id }, { preserveState: true, replace: true });
+        router.get(route('finanzas.tesoreria.index'), { cuenta_id: id, buscar: buscar || undefined }, { preserveState: true, replace: true });
     }
 
     function submitAjuste() {
@@ -193,6 +194,10 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos, puede }: Pro
                 data={movimientos.data}
                 columns={columns}
                 searchPlaceholder="Buscar movimiento..."
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('finanzas.tesoreria.index'),
+                    { cuenta_id: cuentaId, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })}
                 emptyMessage={`Sin movimientos en ${cuentaActiva?.nombre ?? 'esta cuenta'}. Se registran solos al vender, gastar, abonar, etc.`}
             />
 

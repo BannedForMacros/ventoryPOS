@@ -47,6 +47,7 @@ interface Props extends PageProps {
     deudas: Paginado<Deuda>;
     totales: { por_pagar: number; por_cobrar: number };
     estado: string;
+    buscar?: string;
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
     puede: { editar: boolean; eliminar: boolean };
@@ -66,7 +67,7 @@ const emptyForm = () => ({
     monto_original: '', fecha_inicio: hoy(), fecha_vencimiento: '', observacion: '',
 });
 
-export default function Deudas({ deudas, totales, estado, metodosPago, cuentas, puede }: Props) {
+export default function Deudas({ deudas, totales, estado, buscar, metodosPago, cuentas, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo] = useState(false);
     const [pagando, setPagando]       = useState<Deuda | null>(null);
@@ -294,12 +295,16 @@ export default function Deudas({ deudas, totales, estado, metodosPago, cuentas, 
                         { value: 'todas',   label: 'Todas' },
                     ]}
                     value={estado}
-                    onChange={(v) => router.get(route('finanzas.deudas.index'), { estado: v }, { preserveState: true, replace: true })}
+                    onChange={(v) => router.get(route('finanzas.deudas.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
                 />
             </div>
 
             <Table data={deudas.data} columns={columns}
-                searchPlaceholder="Buscar deuda..." emptyMessage="No hay deudas registradas" />
+                searchPlaceholder="Buscar deuda..." emptyMessage="No hay deudas registradas"
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('finanzas.deudas.index'),
+                    { estado, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })} />
 
             {/* Modal nueva deuda */}
             <Modal isOpen={modalNuevo} onClose={() => setModalNuevo(false)} title="Nueva deuda / préstamo" size="md"

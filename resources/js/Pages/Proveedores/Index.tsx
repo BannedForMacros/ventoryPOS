@@ -158,6 +158,10 @@ export default function ProveedoresIndex({ proveedores, busqueda }: Props) {
                 columns={columns}
                 searchPlaceholder="Buscar por razón social, RUC o contacto..."
                 emptyMessage="No hay proveedores registrados"
+                initialSearch={busqueda}
+                onServerSearch={(t) => router.get(route('proveedores.index'),
+                    { busqueda: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })}
             />
 
             <Modal

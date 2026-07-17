@@ -24,6 +24,7 @@ interface Props extends PageProps {
     gastos:          Paginado<Gasto>;
     tipos:           GastoTipo[];
     scope:           Scope;
+    buscar?:         string;
     locales:         Local[];
     turnosAbiertos:  Turno[];
     esAdmin:         boolean;
@@ -35,7 +36,7 @@ const ALL_TABS = [
     { value: 'administrativo' as Scope, label: 'Gastos administrativos' },
 ];
 
-export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbiertos, esAdmin, metodosPago }: Props) {
+export default function GastosIndex({ gastos, tipos, scope, buscar, locales, turnosAbiertos, esAdmin, metodosPago }: Props) {
     const { flash, turno_activo } = usePage<Props>().props;
     const [tab, setTab]                 = useState<Scope>(scope);
     const [modalGasto, setModalGasto]   = useState(false);
@@ -50,7 +51,7 @@ export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbier
 
     function handleTabChange(value: Scope) {
         setTab(value);
-        router.get(route('gastos.index'), { scope: value }, { preserveState: true, replace: true });
+        router.get(route('gastos.index'), { scope: value, buscar: buscar || undefined }, { preserveState: true, replace: true });
     }
 
     function deleteGasto(id: number) {
@@ -138,6 +139,10 @@ export default function GastosIndex({ gastos, tipos, scope, locales, turnosAbier
                 data={gastos.data}
                 columns={columns}
                 searchPlaceholder="Buscar gasto..."
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('gastos.index'),
+                    { scope: tab, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })}
                 emptyMessage={
                     tab === 'turno'
                         ? 'No hay gastos en este turno'

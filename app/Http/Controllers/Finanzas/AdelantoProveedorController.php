@@ -32,7 +32,17 @@ class AdelantoProveedorController extends Controller
 
         $query = ProveedorAdelanto::deEmpresa($user->empresa_id)
             ->with(['proveedor', 'metodoPago', 'cuenta', 'aplicaciones.entrada', 'aplicaciones.user'])
-            ->when($request->input('proveedor_id'), fn ($q, $v) => $q->where('proveedor_id', $v));
+            ->when($request->input('proveedor_id'), fn ($q, $v) => $q->where('proveedor_id', $v))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('referencia', 'ilike', "%{$t}%")
+                    ->orWhere('observacion', 'ilike', "%{$t}%")
+                    ->orWhereHas('proveedor', fn ($p) => $p
+                        ->where('razon_social', 'ilike', "%{$t}%")
+                        ->orWhere('nombre_comercial', 'ilike', "%{$t}%")));
+            });
 
         if ($request->input('estado', 'activos') === 'activos') {
             $query->activo();
@@ -51,6 +61,7 @@ class AdelantoProveedorController extends Controller
                 'eliminar' => $user->tienePermiso('finanzas.adelantos', 'eliminar'),
             ],
             'estado'      => $request->input('estado', 'activos'),
+            'buscar'      => $request->input('buscar', ''),
             'proveedores' => Proveedor::where('empresa_id', $user->empresa_id)->where('activo', true)
                 ->orderBy('razon_social')->get(['id', 'razon_social', 'nombre_comercial']),
             'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),

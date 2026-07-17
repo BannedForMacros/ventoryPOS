@@ -36,7 +36,14 @@ class ConsolidacionController extends Controller
             ->cerrado()
             ->with(['caja', 'user', 'userCierre', 'consolidacion.user', 'consolidacion.items.metodoPago', 'arqueoMetodos.metodoPago'])
             ->when($request->input('fecha_desde'), fn ($q, $v) => $q->whereDate('fecha_cierre', '>=', $v))
-            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->whereDate('fecha_cierre', '<=', $v));
+            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->whereDate('fecha_cierre', '<=', $v))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->whereHas('caja', fn ($c) => $c->where('nombre', 'ilike', "%{$t}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'ilike', "%{$t}%")));
+            });
 
         if ($estado === 'pendientes') {
             $query->whereDoesntHave('consolidacion');
@@ -70,6 +77,7 @@ class ConsolidacionController extends Controller
             'turnos'                => $turnos,
             'esperadosPorMetodo'    => $esperadosPorMetodo,
             'estado'                => $estado,
+            'buscar'                => $request->input('buscar', ''),
             'requiereConsolidacion' => (bool) $empresa->requiere_consolidacion_caja,
         ]);
     }

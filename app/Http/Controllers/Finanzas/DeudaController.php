@@ -29,7 +29,14 @@ class DeudaController extends Controller
         $query = Deuda::deEmpresa($user->empresa_id)
             ->with(['pagos.metodoPago', 'pagos.cuenta', 'pagos.user'])
             ->when($request->input('direccion'), fn ($q, $v) => $q->where('direccion', $v))
-            ->when($request->input('tipo'), fn ($q, $v) => $q->where('tipo', $v));
+            ->when($request->input('tipo'), fn ($q, $v) => $q->where('tipo', $v))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('nombre', 'ilike', "%{$t}%")
+                    ->orWhere('observacion', 'ilike', "%{$t}%"));
+            });
 
         if ($request->input('estado', 'activas') === 'activas') {
             $query->activa();
@@ -46,6 +53,7 @@ class DeudaController extends Controller
             'deudas'      => $deudas,
             'totales'     => $totales,
             'estado'      => $request->input('estado', 'activas'),
+            'buscar'      => $request->input('buscar', ''),
             // Acciones visibles según la matriz de permisos del rol (nada
             // hardcodeado a es_admin: se otorgan desde Configuración → Roles).
             'puede'       => [

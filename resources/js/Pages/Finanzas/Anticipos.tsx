@@ -77,6 +77,7 @@ interface Props extends PageProps {
     anticipos: Paginado<Anticipo>;
     totalPasivo: number;
     estado: string;
+    buscar?: string;
     clientes: { id: number; nombres?: string; apellidos?: string; razon_social?: string }[];
     productos: { id: number; nombre: string; precio_venta: string }[];
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
@@ -112,7 +113,7 @@ const emptyForm = () => ({
     tipo_valorizacion: 'monto', producto_id: '', cantidad: '', observacion: '',
 });
 
-export default function Anticipos({ anticipos, totalPasivo, estado, clientes, productos, metodosPago, cuentas }: Props) {
+export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clientes, productos, metodosPago, cuentas }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo]   = useState(false);
     const [aplicando, setAplicando]     = useState<Anticipo | null>(null);
@@ -342,12 +343,16 @@ export default function Anticipos({ anticipos, totalPasivo, estado, clientes, pr
                         { value: 'todos',   label: 'Todos' },
                     ]}
                     value={estado}
-                    onChange={(v) => router.get(route('finanzas.anticipos.index'), { estado: v }, { preserveState: true, replace: true })}
+                    onChange={(v) => router.get(route('finanzas.anticipos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
                 />
             </div>
 
             <Table data={anticipos.data} columns={columns}
-                searchPlaceholder="Buscar cliente..." emptyMessage="No hay anticipos registrados" />
+                searchPlaceholder="Buscar cliente..." emptyMessage="No hay anticipos registrados"
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('finanzas.anticipos.index'),
+                    { estado, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })} />
 
             {/* Modal nuevo anticipo */}
             <Modal isOpen={modalNuevo} onClose={() => setModalNuevo(false)} title="Nuevo anticipo de cliente" size="md"

@@ -36,6 +36,7 @@ interface Props extends PageProps {
     transferencias: Paginado<Transferencia>;
     almacenes: Almacen[];
     filters: Record<string, string>;
+    buscar?: string;
 }
 
 const ESTADO_LABEL: Record<EstadoTransfer, string> = {
@@ -51,7 +52,7 @@ const ESTADO_VARIANT: Record<EstadoTransfer, 'warning' | 'primary' | 'success' |
     anulada:  'secondary',
 };
 
-export default function TransferenciasIndex({ transferencias, filters }: Props) {
+export default function TransferenciasIndex({ transferencias, filters, buscar }: Props) {
     const { flash } = usePage<Props>().props;
     const [enviarId, setEnviarId]   = useState<number | null>(null);
     const [anularId, setAnularId]   = useState<number | null>(null);
@@ -198,7 +199,11 @@ export default function TransferenciasIndex({ transferencias, filters }: Props) 
                 )}
             </div>
 
-            <Table data={filtered} columns={columns} emptyMessage="No hay transferencias registradas" />
+            <Table data={filtered} columns={columns} emptyMessage="No hay transferencias registradas"
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('inventario.transferencias.index'),
+                    { ...filters, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })} />
 
             {/* Paginación (M19) */}
             {transferencias.last_page > 1 && (
@@ -206,7 +211,7 @@ export default function TransferenciasIndex({ transferencias, filters }: Props) 
                     {Array.from({ length: transferencias.last_page }, (_, i) => i + 1).map(page => (
                         <button
                             key={page}
-                            onClick={() => router.get(route('inventario.transferencias.index'), { page }, { preserveState: true })}
+                            onClick={() => router.get(route('inventario.transferencias.index'), { ...filters, buscar: buscar || undefined, page }, { preserveState: true })}
                             className="w-8 h-8 rounded-lg text-xs font-medium transition-colors"
                             style={{
                                 backgroundColor: page === transferencias.current_page ? 'var(--color-primary)' : 'transparent',

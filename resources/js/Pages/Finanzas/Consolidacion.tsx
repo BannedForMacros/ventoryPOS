@@ -59,6 +59,7 @@ interface Props extends PageProps {
     turnos: Paginado<TurnoRow>;
     esperadosPorMetodo: Record<string, EsperadoMetodo[]>;
     estado: string;
+    buscar?: string;
     requiereConsolidacion: boolean;
 }
 
@@ -73,7 +74,7 @@ interface LineaConteo {
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const fdatetime = (s: string | null) => s ? new Date(s).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 
-export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requiereConsolidacion }: Props) {
+export default function Consolidacion({ turnos, esperadosPorMetodo, estado, buscar, requiereConsolidacion }: Props) {
     const { flash } = usePage<Props>().props;
     const [consolidando, setConsolidando] = useState<TurnoRow | null>(null);
     const [lineas, setLineas]   = useState<LineaConteo[]>([]);
@@ -230,13 +231,17 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, requ
                         { value: 'consolidados', label: 'Consolidados' },
                     ]}
                     value={estado}
-                    onChange={(v) => router.get(route('finanzas.consolidacion.index'), { estado: v }, { preserveState: true, replace: true })}
+                    onChange={(v) => router.get(route('finanzas.consolidacion.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
                 />
             </div>
 
             <Table data={turnos.data} columns={columns}
                 searchPlaceholder="Buscar caja o cajera..."
-                emptyMessage={estado === 'pendientes' ? 'No hay turnos cerrados pendientes de consolidar' : 'Aún no hay turnos consolidados'} />
+                emptyMessage={estado === 'pendientes' ? 'No hay turnos cerrados pendientes de consolidar' : 'Aún no hay turnos consolidados'}
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('finanzas.consolidacion.index'),
+                    { estado, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })} />
 
             {/* Modal consolidar — TODAS las líneas */}
             <Modal isOpen={consolidando !== null} onClose={() => setConsolidando(null)}

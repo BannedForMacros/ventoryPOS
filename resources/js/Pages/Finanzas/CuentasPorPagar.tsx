@@ -52,6 +52,7 @@ interface Props extends PageProps {
     totalPendiente: number;
     esAdmin?: boolean;
     estado: string;
+    buscar?: string;
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
     adelantos: AdelantoMin[];
@@ -67,7 +68,7 @@ const nombreProveedor = (e: EntradaCxp) =>
     e.proveedor_rel?.razon_social ?? e.proveedor_rel?.nombre_comercial ?? e.proveedor ?? '—';
 const saldoDe = (e: EntradaCxp) => Math.max(0, Number(e.total) - Number(e.monto_pagado));
 
-export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, estado, metodosPago, cuentas, adelantos }: Props) {
+export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, estado, buscar, metodosPago, cuentas, adelantos }: Props) {
     const { flash } = usePage<Props>().props;
     const [abonando, setAbonando] = useState<EntradaCxp | null>(null);
     const [detalle, setDetalle]   = useState<EntradaCxp | null>(null);
@@ -243,15 +244,19 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
                         { value: 'todas',      label: 'Todas las entradas' },
                     ]}
                     value={estado}
-                    onChange={(v) => router.get(route('finanzas.cxp.index'), { estado: v }, { preserveState: true, replace: true })}
+                    onChange={(v) => router.get(route('finanzas.cxp.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
                 />
             </div>
 
             <Table
-                data={entradas.data}
+                data={entradas}
                 columns={columns}
-                searchPlaceholder="Buscar proveedor o documento..."
+                searchPlaceholder="Buscar proveedor o documento (toda la base)..."
                 emptyMessage="No hay cuentas por pagar"
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('finanzas.cxp.index'),
+                    { estado, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })}
             />
 
             {/* Modal pagar */}

@@ -45,6 +45,13 @@ class TesoreriaController extends Controller
             ->with('user')
             ->when($request->input('fecha_desde'), fn ($q, $v) => $q->where('fecha', '>=', $v))
             ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->where('fecha', '<=', $v))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('descripcion', 'ilike', "%{$t}%")
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'ilike', "%{$t}%")));
+            })
             ->orderByDesc('fecha')->orderByDesc('id')
             ->paginate(30)->withQueryString();
 
@@ -52,6 +59,7 @@ class TesoreriaController extends Controller
             'cuentas'     => $cuentas,
             'cuentaId'    => $cuentaId,
             'movimientos' => $movimientos,
+            'buscar'      => $request->input('buscar', ''),
             // Acciones visibles según la matriz de permisos del rol (los
             // ajustes se otorgan desde Configuración → Roles, nada hardcodeado).
             'puede'       => [

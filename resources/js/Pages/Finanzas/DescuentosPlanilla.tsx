@@ -35,6 +35,7 @@ interface Props extends PageProps {
     descuentos: Paginado<Descuento>;
     porTrabajador: { user_id: number; nombre: string | null; total: number }[];
     estado: string;
+    buscar?: string;
     trabajadores: { id: number; name: string }[];
     puede: { editar: boolean; eliminar: boolean };
 }
@@ -45,7 +46,7 @@ const hoy = () => hoyLocal();
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const fdate = (s: string) => new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE');
 
-export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, trabajadores, puede }: Props) {
+export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, buscar, trabajadores, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo] = useState(false);
     const [aplicando, setAplicando]   = useState<Descuento | null>(null);
@@ -232,13 +233,17 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
                         { value: 'todos',      label: 'Todos' },
                     ]}
                     value={estado}
-                    onChange={(v) => router.get(route('finanzas.planilla-descuentos.index'), { estado: v }, { preserveState: true, replace: true })}
+                    onChange={(v) => router.get(route('finanzas.planilla-descuentos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
                 />
             </div>
 
             <Table data={descuentos.data} columns={columns}
                 searchPlaceholder="Buscar trabajador o motivo..."
-                emptyMessage="No hay descuentos registrados" />
+                emptyMessage="No hay descuentos registrados"
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('finanzas.planilla-descuentos.index'),
+                    { estado, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })} />
 
             {/* Modal nuevo */}
             <Modal isOpen={modalNuevo} onClose={() => setModalNuevo(false)} title="Nuevo descuento de planilla" size="md"

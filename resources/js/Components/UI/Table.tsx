@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { router } from '@inertiajs/react';
 import {
     ChevronDown, ChevronUp, ChevronRight, Search,
     ChevronsUpDown, ChevronLeft, ChevronsLeft,
@@ -28,6 +29,16 @@ interface TableProps<T extends Record<string, unknown>> {
     rowClassName?: string | ((row: T) => string) | null;
     itemsPerPage?: number;
     pagination?: boolean;
+    /**
+     * Búsqueda SERVER-SIDE: si se pasa, el término se envía (debounced 350ms)
+     * a este callback para consultar TODA la base, y el filtrado local se
+     * desactiva (el servidor es la autoridad). Sin esto, la búsqueda solo ve
+     * las filas ya cargadas — con paginación server-side eso oculta filas de
+     * otras páginas (bug del buscador de Entradas).
+     */
+    onServerSearch?: (texto: string) => void;
+    /** Término inicial (para persistir el buscar de la URL al recargar). */
+    initialSearch?: string;
 }
 
 interface PaginationBtnProps {
@@ -69,8 +80,21 @@ export default function Table<T extends Record<string, unknown>>({
     rowClassName = null,
     itemsPerPage = 20,
     pagination = true,
+    onServerSearch,
+    initialSearch,
 }: TableProps<T>) {
-    const [search, setSearch] = useState('');
+    const [search, setSearch] = useState(initialSearch ?? '');
+
+    // Búsqueda server-side debounced: notifica el término para que la página
+    // consulte al backend. Se salta el primer render (ya viene filtrado).
+    const primeraBusqueda = useRef(true);
+    useEffect(() => {
+        if (!onServerSearch) return;
+        if (primeraBusqueda.current) { primeraBusqueda.current = false; return; }
+        const t = setTimeout(() => onServerSearch(search.trim()), 350);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [search]);
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
     const [expandedRows, setExpandedRows] = useState<unknown[]>([]);
@@ -78,13 +102,34 @@ export default function Table<T extends Record<string, unknown>>({
 
     const items: T[] = Array.isArray(data) ? data : (data?.data ?? []);
 
+    // ── Paginación SERVER-SIDE ─────────────────────────────────────────────
+    // Si `data` es un paginador de Laravel (current_page/last_page), la tabla
+    // NO re-pagina localmente: muestra todas las filas recibidas y sus botones
+    // navegan las páginas REALES del servidor (conservando la query actual).
+    // Antes había doble paginación: el server mandaba 25 y la tabla las cortaba
+    // en 20+5, dejando las páginas reales 2+ inalcanzables (bug CxP: entradas
+    // "desaparecidas" que vivían en la página 2 del servidor).
+    const serverPag = !Array.isArray(data) && data
+        && typeof (data as Record<string, unknown>).current_page === 'number'
+        && typeof (data as Record<string, unknown>).last_page === 'number'
+        ? (data as unknown as { data: T[]; current_page: number; last_page: number; per_page: number; total: number })
+        : null;
+
+    const irAPaginaServidor = (page: number) => {
+        const params = Object.fromEntries(new URLSearchParams(window.location.search));
+        router.get(window.location.pathname, { ...params, page }, { preserveState: true, preserveScroll: true });
+    };
+
     const toggleRow = (rowId: unknown) =>
         setExpandedRows(prev =>
             prev.includes(rowId) ? prev.filter(id => id !== rowId) : [...prev, rowId]
         );
 
-    // 1. Filtrar — busca en TODOS los campos del row (no solo los keys de columnas)
+    // 1. Filtrar — busca en TODOS los campos del row (no solo los keys de columnas).
+    //    Con onServerSearch el filtrado es del backend: aquí no se re-filtra
+    //    (el server pudo matchear por campos que no viajan en el row).
     const filteredData = useMemo(() => {
+        if (onServerSearch) return items;
         if (!search || !items.length) return items;
         const searchLower = search.toLowerCase();
         const stringify = (obj: unknown): string => {
@@ -115,13 +160,18 @@ export default function Table<T extends Record<string, unknown>>({
         });
     }, [filteredData, sortColumn, sortDirection]);
 
-    // 3. Paginar
-    const totalPages = Math.ceil((sortedData?.length ?? 0) / itemsPerPage);
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    const paginatedData = pagination ? (sortedData?.slice(startIndex, endIndex) ?? []) : (sortedData ?? []);
+    // 3. Paginar — con paginador de servidor NO se corta localmente: las filas
+    //    recibidas SON la página; los botones navegan páginas del backend.
+    const pageActual  = serverPag ? serverPag.current_page : currentPage;
+    const totalPages  = serverPag ? serverPag.last_page : Math.ceil((sortedData?.length ?? 0) / itemsPerPage);
+    const porPagina   = serverPag ? serverPag.per_page : itemsPerPage;
+    const startIndex  = (pageActual - 1) * porPagina;
+    const paginatedData = (!serverPag && pagination) ? (sortedData?.slice(startIndex, startIndex + itemsPerPage) ?? []) : (sortedData ?? []);
+    const endIndex    = startIndex + paginatedData.length;
+    const totalRegistros = serverPag ? serverPag.total : (sortedData?.length ?? 0);
+    const irAPagina   = (p: number) => serverPag ? irAPaginaServidor(p) : setCurrentPage(p);
 
-    useMemo(() => { if (pagination) setCurrentPage(1); }, [search, pagination]);
+    useMemo(() => { if (pagination && !serverPag) setCurrentPage(1); }, [search, pagination, serverPag]);
 
     const handleSort = (column: Column<T>) => {
         if (!sortable || !column.sortable) return;
@@ -133,15 +183,15 @@ export default function Table<T extends Record<string, unknown>>({
         const pages: (number | string)[] = [];
         if (totalPages <= 5) {
             for (let i = 1; i <= totalPages; i++) pages.push(i);
-        } else if (currentPage <= 3) {
+        } else if (pageActual <= 3) {
             for (let i = 1; i <= 4; i++) pages.push(i);
             pages.push('...'); pages.push(totalPages);
-        } else if (currentPage >= totalPages - 2) {
+        } else if (pageActual >= totalPages - 2) {
             pages.push(1); pages.push('...');
             for (let i = totalPages - 3; i <= totalPages; i++) pages.push(i);
         } else {
             pages.push(1); pages.push('...');
-            pages.push(currentPage - 1); pages.push(currentPage); pages.push(currentPage + 1);
+            pages.push(pageActual - 1); pages.push(pageActual); pages.push(pageActual + 1);
             pages.push('...'); pages.push(totalPages);
         }
         return pages;
@@ -342,19 +392,19 @@ export default function Table<T extends Record<string, unknown>>({
                     >
                         <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                             Mostrando{' '}
-                            <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{startIndex + 1}</span>
+                            <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{totalRegistros === 0 ? 0 : startIndex + 1}</span>
                             {' '}–{' '}
-                            <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{Math.min(endIndex, sortedData.length)}</span>
+                            <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{Math.min(endIndex, totalRegistros)}</span>
                             {' '}de{' '}
-                            <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{sortedData.length}</span>
+                            <span style={{ color: 'var(--color-text)', fontWeight: 500 }}>{totalRegistros}</span>
                             {' '}registros
                         </p>
 
                         <div className="flex items-center gap-1">
-                            <PaginationBtn onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
+                            <PaginationBtn onClick={() => irAPagina(1)} disabled={pageActual === 1}>
                                 <ChevronsLeft size={15} />
                             </PaginationBtn>
-                            <PaginationBtn onClick={() => setCurrentPage(prev => prev - 1)} disabled={currentPage === 1}>
+                            <PaginationBtn onClick={() => irAPagina(pageActual - 1)} disabled={pageActual === 1}>
                                 <ChevronLeft size={15} />
                             </PaginationBtn>
 
@@ -365,9 +415,9 @@ export default function Table<T extends Record<string, unknown>>({
                                     ) : (
                                         <button
                                             key={page}
-                                            onClick={() => setCurrentPage(page as number)}
+                                            onClick={() => irAPagina(page as number)}
                                             className="min-w-[2rem] rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors"
-                                            style={currentPage === page ? {
+                                            style={pageActual === page ? {
                                                 backgroundColor: 'var(--color-primary)',
                                                 borderColor: 'var(--color-primary)',
                                                 color: '#fff',
@@ -384,13 +434,13 @@ export default function Table<T extends Record<string, unknown>>({
                             </div>
 
                             <span className="sm:hidden px-3 text-xs" style={{ color: 'var(--color-text)' }}>
-                                {currentPage} / {totalPages}
+                                {pageActual} / {totalPages}
                             </span>
 
-                            <PaginationBtn onClick={() => setCurrentPage(prev => prev + 1)} disabled={currentPage === totalPages}>
+                            <PaginationBtn onClick={() => irAPagina(pageActual + 1)} disabled={pageActual === totalPages}>
                                 <ChevronRightIcon size={15} />
                             </PaginationBtn>
-                            <PaginationBtn onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>
+                            <PaginationBtn onClick={() => irAPagina(totalPages)} disabled={pageActual === totalPages}>
                                 <ChevronsRight size={15} />
                             </PaginationBtn>
                         </div>

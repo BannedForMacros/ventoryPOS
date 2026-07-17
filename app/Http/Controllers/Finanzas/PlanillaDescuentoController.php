@@ -24,7 +24,14 @@ class PlanillaDescuentoController extends Controller
 
         $query = PlanillaDescuento::deEmpresa($user->empresa_id)
             ->with(['trabajador', 'registradoPor', 'aplicadoPor'])
-            ->when($request->input('user_id'), fn ($q, $v) => $q->where('user_id', $v));
+            ->when($request->input('user_id'), fn ($q, $v) => $q->where('user_id', $v))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('motivo', 'ilike', "%{$t}%")
+                    ->orWhereHas('trabajador', fn ($u) => $u->where('name', 'ilike', "%{$t}%")));
+            });
 
         if ($request->input('estado', 'pendientes') === 'pendientes') {
             $query->pendiente();
@@ -49,6 +56,7 @@ class PlanillaDescuentoController extends Controller
                 'eliminar' => $user->tienePermiso('finanzas.planilla-descuentos', 'eliminar'),
             ],
             'estado'        => $request->input('estado', 'pendientes'),
+            'buscar'        => $request->input('buscar', ''),
             'trabajadores'  => User::where('empresa_id', $user->empresa_id)->orderBy('name')->get(['id', 'name']),
         ]);
     }

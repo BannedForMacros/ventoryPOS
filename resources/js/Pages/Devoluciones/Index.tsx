@@ -34,6 +34,7 @@ interface Paginado<T> { data: T[]; total: number; current_page: number; last_pag
 interface Props extends PageProps {
     devoluciones: Paginado<Devolucion>;
     filters: Record<string, string>;
+    buscar?: string;
 }
 
 const ESTADO_VARIANT: Record<EstadoDev, 'warning' | 'primary' | 'success' | 'secondary' | 'danger'> = {
@@ -58,7 +59,7 @@ const FORMA_LABEL: Record<string, string> = {
     sin_reembolso:   'Sin reembolso',
 };
 
-export default function DevolucionesIndex({ devoluciones, filters }: Props) {
+export default function DevolucionesIndex({ devoluciones, filters, buscar }: Props) {
     const { flash, auth } = usePage<Props>().props;
     const esAdmin = (auth.user as { rol?: { es_admin?: boolean } } | undefined)?.rol?.es_admin ?? false;
 
@@ -167,7 +168,7 @@ export default function DevolucionesIndex({ devoluciones, filters }: Props) {
                         onChange={v => {
                             const val = String(v);
                             setFiltrEstado(val);
-                            router.get(route('devoluciones.index'), { estado: val || undefined }, { preserveState: true, replace: true });
+                            router.get(route('devoluciones.index'), { estado: val || undefined, buscar: buscar || undefined }, { preserveState: true, replace: true });
                         }}
                         options={[
                             { value: '',           label: 'Todos los estados' },
@@ -181,7 +182,11 @@ export default function DevolucionesIndex({ devoluciones, filters }: Props) {
                 </div>
             </div>
 
-            <Table data={devoluciones.data} columns={columns} emptyMessage="No hay devoluciones registradas" />
+            <Table data={devoluciones.data} columns={columns} emptyMessage="No hay devoluciones registradas"
+                initialSearch={buscar}
+                onServerSearch={(t) => router.get(route('devoluciones.index'),
+                    { ...filters, buscar: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })} />
 
             {/* Paginación (M19) */}
             {devoluciones.last_page > 1 && (
@@ -189,7 +194,7 @@ export default function DevolucionesIndex({ devoluciones, filters }: Props) {
                     {Array.from({ length: devoluciones.last_page }, (_, i) => i + 1).map(page => (
                         <button
                             key={page}
-                            onClick={() => router.get(route('devoluciones.index'), { ...filters, page }, { preserveState: true })}
+                            onClick={() => router.get(route('devoluciones.index'), { ...filters, buscar: buscar || undefined, page }, { preserveState: true })}
                             className="w-8 h-8 rounded-lg text-xs font-medium transition-colors"
                             style={{
                                 backgroundColor: page === devoluciones.current_page ? 'var(--color-primary)' : 'transparent',

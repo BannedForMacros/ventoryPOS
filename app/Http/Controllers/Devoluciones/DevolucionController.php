@@ -33,6 +33,15 @@ class DevolucionController extends Controller
             ->when($request->estado, fn ($q, $e) => $q->where('estado', $e))
             ->when($request->fecha_desde, fn ($q, $f) => $q->whereDate('fecha', '>=', $f))
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
+            // Búsqueda server-side sobre TODA la base (no solo la página visible).
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('numero', 'ilike', "%{$t}%")
+                    ->orWhere('observacion', 'ilike', "%{$t}%")
+                    ->orWhereHas('venta', fn ($v) => $v->where('numero', 'ilike', "%{$t}%"))
+                    ->orWhereHas('motivo', fn ($m) => $m->where('nombre', 'ilike', "%{$t}%")));
+            })
             ->orderByDesc('fecha')
             ->orderByDesc('id')
             ->paginate(25)
@@ -41,6 +50,7 @@ class DevolucionController extends Controller
         return Inertia::render('Devoluciones/Index', [
             'devoluciones' => $devoluciones,
             'filters'      => $request->only(['estado', 'fecha_desde', 'fecha_hasta']),
+            'buscar'       => $request->input('buscar', ''),
         ]);
     }
 
