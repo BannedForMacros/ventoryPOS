@@ -384,9 +384,13 @@ class BalanceDiarioController extends Controller
                 $hasta = min($request->input('hasta', $fecha), $fecha);
                 $desde = $request->input('desde', date('Y-m-d', strtotime($hasta . ' -3 months')));
 
+                // AUDITORÍA: la línea de cuenta muestra TODO lo que entró Y salió
+                // (antes solo ingresos): así se explica por qué el monto cambió
+                // vs ayer sin saltar entre dos paneles. Gastos emitidos sigue
+                // siendo solo egresos (es la contra-línea).
                 $q = CuentaMovimiento::deEmpresa($empresaId)
                     ->whereBetween('fecha', [$desde, $hasta])
-                    ->where('tipo', $esEgreso ? 'egreso' : 'ingreso')
+                    ->when($esEgreso, fn ($qq) => $qq->where('tipo', 'egreso'))
                     ->with(['user:id,name', 'cuenta:id,nombre']);
 
                 if (!$esEgreso) {
@@ -410,36 +414,65 @@ class BalanceDiarioController extends Controller
                     'ajuste' => 'Ajuste de saldo',
                 ];
 
+                // Rastro de auditoría por movimiento: cuándo se REGISTRÓ de
+                // verdad (created_at) y cuándo se EDITÓ (updated_at). Un ⚠
+                // marca los retrofechados (creados DESPUÉS del día que dicen):
+                // son los que cambian montos de días ya cuadrados.
+                $fmtHora = fn ($ts) => $ts ? date('d/m H:i', strtotime((string) $ts)) : '—';
+
                 $grupos = $movs->groupBy(fn ($m) => $fmtDia((string) $m->fecha))
-                    ->map(fn ($rows, $f) => [
-                        'id'       => $f,
-                        'titulo'   => $f,
-                        'esFecha'  => true,
-                        'monto'    => round((float) $rows->sum('monto'), 2),
-                        'tipo'     => $esEgreso ? 'egreso' : 'ingreso',
-                        'items'    => $rows->map(fn ($m) => [
-                            'descripcion' => $m->descripcion,
-                            'origen'      => $origenes[$m->ref_tipo] ?? ($m->ref_tipo ?? '—'),
-                            'cuenta'      => $m->cuenta?->nombre ?? '—',
-                            'monto'       => (float) $m->monto,
-                            'tipo'        => $m->tipo,
-                            'user'        => $m->user?->name,
-                        ])->values(),
-                    ])->values();
+                    ->map(function ($rows, $f) use ($esEgreso, $origenes, $fmtHora) {
+                        $neto = round((float) $rows->sum(fn ($m) => $m->tipo === 'ingreso' ? (float) $m->monto : -(float) $m->monto), 2);
+                        return [
+                            'id'       => $f,
+                            'titulo'   => $f,
+                            'esFecha'  => true,
+                            'monto'    => $esEgreso ? round((float) $rows->sum('monto'), 2) : abs($neto),
+                            'tipo'     => $esEgreso ? 'egreso' : ($neto >= 0 ? 'ingreso' : 'egreso'),
+                            'items'    => $rows->map(function ($m) use ($origenes, $fmtHora) {
+                                $retro  = substr((string) $m->created_at, 0, 10) > substr((string) $m->fecha, 0, 10);
+                                $edito  = $m->updated_at && $m->created_at
+                                    && $m->updated_at->gt($m->created_at->copy()->addSeconds(2));
+                                return [
+                                    'descripcion' => $m->descripcion,
+                                    'origen'      => $origenes[$m->ref_tipo] ?? ($m->ref_tipo ?? '—'),
+                                    'cuenta'      => $m->cuenta?->nombre ?? '—',
+                                    'registrado'  => $fmtHora($m->created_at) . ($retro ? ' ⚠ retrofechado' : ''),
+                                    'editado'     => $edito ? $fmtHora($m->updated_at) : '—',
+                                    'monto'       => (float) $m->monto,
+                                    'tipo'        => $m->tipo,
+                                    'user'        => $m->user?->name,
+                                ];
+                            })->values(),
+                        ];
+                    })->values();
 
-                $total = round((float) $movs->sum('monto'), 2);
+                $ingresos = round((float) $movs->where('tipo', 'ingreso')->sum('monto'), 2);
+                $egresos  = round((float) $movs->where('tipo', 'egreso')->sum('monto'), 2);
 
-                $itemCols = [['campo' => 'descripcion', 'label' => 'Descripción'], ['campo' => 'origen', 'label' => 'Origen']];
+                $itemCols = [
+                    ['campo' => 'descripcion', 'label' => 'Descripción'],
+                    ['campo' => 'origen',      'label' => 'Origen'],
+                ];
                 if ($esEgreso) {
                     $itemCols[] = ['campo' => 'cuenta', 'label' => 'Desde cuenta'];
                 }
+                $itemCols[] = ['campo' => 'registrado', 'label' => 'Registrado'];
+                $itemCols[] = ['campo' => 'editado',    'label' => 'Editado'];
 
-                $cards = [
-                    ['label' => $esEgreso ? 'Total salidas (período)' : 'Total ingresado (período)',
-                     'valor' => $total, 'color' => $esEgreso ? 'danger' : 'success'],
-                    ['label' => 'Días con movimiento', 'valor' => $grupos->count(), 'esNumero' => true],
-                    ['label' => 'Operaciones', 'valor' => $movs->count(), 'esNumero' => true],
-                ];
+                $cards = $esEgreso
+                    ? [
+                        ['label' => 'Total salidas (período)', 'valor' => $egresos, 'color' => 'danger'],
+                        ['label' => 'Días con movimiento', 'valor' => $grupos->count(), 'esNumero' => true],
+                        ['label' => 'Operaciones', 'valor' => $movs->count(), 'esNumero' => true],
+                    ]
+                    : [
+                        ['label' => 'Entró (período)', 'valor' => $ingresos, 'color' => 'success'],
+                        ['label' => 'Salió (período)', 'valor' => $egresos, 'color' => 'danger'],
+                        ['label' => 'Neto (entró − salió)', 'valor' => round($ingresos - $egresos, 2),
+                         'color' => $ingresos - $egresos >= 0 ? 'success' : 'danger'],
+                        ['label' => 'Operaciones', 'valor' => $movs->count(), 'esNumero' => true],
+                    ];
                 // Línea desglosada por cuenta: decir de cuál es este detalle.
                 if ($esEgreso && $refId) {
                     $nombreCuenta = Cuenta::where('id', $refId)->value('nombre');
