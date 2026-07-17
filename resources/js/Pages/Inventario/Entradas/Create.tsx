@@ -113,9 +113,9 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
     // (método + cuenta + monto), igual que el POS. Independiente del estado
     // borrador/confirmado de la entrada.
     type EstadoPago = 'pendiente' | 'parcial' | 'pagado';
-    interface LineaPago { key: string; metodo_pago_id: number | ''; cuenta_id: number | ''; monto: string; }
+    interface LineaPago { key: string; metodo_pago_id: number | ''; cuenta_id: number | ''; monto: string; fecha: string; }
     const nuevaLinea = (monto = ''): LineaPago =>
-        ({ key: Math.random().toString(36).slice(2), metodo_pago_id: '', cuenta_id: '', monto });
+        ({ key: Math.random().toString(36).slice(2), metodo_pago_id: '', cuenta_id: '', monto, fecha: hoyLocal() });
 
     const [estadoPago, setEstadoPago] = useState<EstadoPago>('pendiente');
     const [pagos, setPagos]           = useState<LineaPago[]>([]);
@@ -309,6 +309,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                 metodo_pago_id: p.metodo_pago_id,
                 cuenta_id:      p.cuenta_id || null,
                 monto:          p.monto,
+                fecha:          p.fecha,
             })),
             turno_id: estadoPago === 'pendiente' ? null : (turnoIdCaja || null),
             detalles: detalles.map(d => ({
@@ -674,7 +675,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                             {pagos.map((p, idx) => {
                                 const cuentas = cuentasDeLinea(p);
                                 return (
-                                    <div key={p.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_140px_auto] gap-3 items-end">
+                                    <div key={p.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_150px_140px_auto] gap-3 items-end">
                                         <Select
                                             label={idx === 0 ? 'Método de pago' : undefined}
                                             required
@@ -693,6 +694,12 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                                                 label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
                                             }))}
                                             disabled={cuentas.length === 0}
+                                        />
+                                        <Input
+                                            label={idx === 0 ? 'Fecha' : undefined}
+                                            required type="date"
+                                            value={p.fecha}
+                                            onChange={e => setPago(p.key, { fecha: e.target.value })}
                                         />
                                         <Input
                                             label={idx === 0 ? 'Monto (S/)' : undefined}

@@ -30,9 +30,15 @@ class EntradaController extends Controller
     /**
      * Registra los pagos iniciales de una entrada (líneas método+cuenta+monto):
      * crea los entrada_pagos, asienta cada egreso en tesorería y sincroniza
-     * monto_pagado/estado_pago. La fecha del pago es la fecha de la entrada.
+     * monto_pagado/estado_pago.
      *
-     * @param array<array{metodo_pago_id:int|null,cuenta_id:int|null,monto:float|string,referencia?:string|null}> $lineas
+     * La fecha del pago es la que trae CADA línea (`fecha`, del formulario — mismo
+     * criterio que Cuentas por Pagar); si la línea no la trae, se usa HOY (cuando
+     * sale el dinero), NUNCA la fecha de la compra (eso causaba los "pagos
+     * retrofechados" que movían el efectivo a días ya cerrados). Así el pago desde
+     * la Entrada y desde Cuentas por Pagar quedan sincronizados.
+     *
+     * @param array<array{metodo_pago_id:int|null,cuenta_id:int|null,monto:float|string,referencia?:string|null,fecha?:string|null}> $lineas
      */
     private function registrarPagosIniciales(Entrada $entrada, array $lineas, int $userId, int|string|null $turnoId = 'auto'): void
     {
@@ -57,8 +63,9 @@ class EntradaController extends Controller
                 'turno_id'       => $turnoId,
                 'metodo_pago_id' => $linea['metodo_pago_id'] ?? null,
                 'cuenta_id'      => $linea['cuenta_id'] ?? null,
-                'fecha'          => $entrada->fecha instanceof \Carbon\CarbonInterface
-                    ? $entrada->fecha->toDateString() : substr((string) $entrada->fecha, 0, 10),
+                'fecha'          => !empty($linea['fecha'])          // fecha del formulario (como CxP);
+                    ? substr((string) $linea['fecha'], 0, 10)         // si no viene, HOY — nunca la de la compra
+                    : now()->toDateString(),
                 'monto'          => round((float) $linea['monto'], 2),
                 'referencia'     => $linea['referencia'] ?? null,
             ]);
@@ -228,6 +235,7 @@ class EntradaController extends Controller
             'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'            => 'required|numeric|min:0.01',
             'pagos.*.referencia'       => 'nullable|string|max:200',
+            'pagos.*.fecha'            => ['nullable', 'date'],
             // "Afecta caja a:" — turno de cuya caja sale el efectivo del pago.
             'turno_id'                 => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
@@ -449,6 +457,7 @@ class EntradaController extends Controller
             'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'            => 'required|numeric|min:0.01',
             'pagos.*.referencia'       => 'nullable|string|max:200',
+            'pagos.*.fecha'            => ['nullable', 'date'],
             // Pagos YA registrados EDITADOS en la misma pantalla (solo admin). Se
             // guardan junto con todo lo demás en un solo submit — sin botón por fila.
             'pagos_editados'                  => 'nullable|array',

@@ -12,6 +12,7 @@ import Switch from '@/Components/UI/Switch';
 import Badge from '@/Components/UI/Badge';
 import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
 import type { PageProps } from '@/types';
+import { hoyLocal } from '@/lib/fechas';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -214,9 +215,9 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
     // Los pagos ya registrados no se tocan aquí (se corrigen en Finanzas →
     // Cuentas por pagar); esto permite pagar el saldo — p. ej. cuando se
     // agrega un producto y el total sube.
-    interface LineaPago { key: string; metodo_pago_id: number | ''; cuenta_id: number | ''; monto: string; }
+    interface LineaPago { key: string; metodo_pago_id: number | ''; cuenta_id: number | ''; monto: string; fecha: string; }
     const nuevaLinea = (monto = ''): LineaPago =>
-        ({ key: Math.random().toString(36).slice(2), metodo_pago_id: '', cuenta_id: '', monto });
+        ({ key: Math.random().toString(36).slice(2), metodo_pago_id: '', cuenta_id: '', monto, fecha: hoyLocal() });
     const [pagosNuevos, setPagosNuevos] = useState<LineaPago[]>([]);
 
     const cuentasDeLinea = (l: LineaPago) =>
@@ -434,6 +435,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                 metodo_pago_id: p.metodo_pago_id,
                 cuenta_id:      p.cuenta_id || null,
                 monto:          p.monto,
+                fecha:          p.fecha,
             })),
             // Pagos YA registrados editados / anulados (solo admin) — se guardan en
             // el MISMO submit, sin botón por método.
@@ -877,7 +879,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                             {pagosNuevos.map((p, idx) => {
                                 const cuentas = cuentasDeLinea(p);
                                 return (
-                                    <div key={p.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_140px_auto] gap-3 items-end">
+                                    <div key={p.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_150px_140px_auto] gap-3 items-end">
                                         <Select
                                             label={idx === 0 ? 'Método de pago' : undefined}
                                             required
@@ -896,6 +898,12 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                 label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
                                             }))}
                                             disabled={cuentas.length === 0}
+                                        />
+                                        <Input
+                                            label={idx === 0 ? 'Fecha' : undefined}
+                                            required type="date"
+                                            value={p.fecha}
+                                            onChange={e => setPago(p.key, { fecha: e.target.value })}
                                         />
                                         <Input
                                             label={idx === 0 ? 'Monto (S/)' : undefined}
@@ -956,8 +964,9 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                     )}
 
                     <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        Los pagos que registres aquí se asientan en tesorería con la fecha de la entrada. Los pagos
-                        anteriores se corrigen en Finanzas → Cuentas por pagar (el admin puede editarlos o anularlos).
+                        Cada pago que registres aquí se asienta en tesorería con <strong>su propia fecha</strong> (el campo
+                        Fecha de la línea, por defecto hoy). Para corregir o anular un pago <strong>ya registrado</strong>,
+                        usa Finanzas → Cuentas por pagar.
                     </p>
                 </section>
 
