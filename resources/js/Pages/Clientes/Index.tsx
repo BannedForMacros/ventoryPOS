@@ -158,7 +158,7 @@ export default function ClientesIndex({ clientes, busqueda }: Props) {
             />
 
             <Table
-                data={clientes.data}
+                data={clientes}
                 columns={columns}
                 searchPlaceholder="Buscar por nombre o documento..."
                 emptyMessage="No hay clientes registrados"

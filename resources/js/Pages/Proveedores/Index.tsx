@@ -154,7 +154,7 @@ export default function ProveedoresIndex({ proveedores, busqueda }: Props) {
             />
 
             <Table
-                data={proveedores.data}
+                data={proveedores}
                 columns={columns}
                 searchPlaceholder="Buscar por razón social, RUC o contacto..."
                 emptyMessage="No hay proveedores registrados"

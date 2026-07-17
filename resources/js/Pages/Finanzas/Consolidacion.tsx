@@ -235,7 +235,7 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
                 />
             </div>
 
-            <Table data={turnos.data} columns={columns}
+            <Table data={turnos} columns={columns}
                 searchPlaceholder="Buscar caja o cajera..."
                 emptyMessage={estado === 'pendientes' ? 'No hay turnos cerrados pendientes de consolidar' : 'Aún no hay turnos consolidados'}
                 initialSearch={buscar}

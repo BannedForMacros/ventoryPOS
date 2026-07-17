@@ -136,7 +136,7 @@ export default function GastosIndex({ gastos, tipos, scope, buscar, locales, tur
             </div>
 
             <Table
-                data={gastos.data}
+                data={gastos}
                 columns={columns}
                 searchPlaceholder="Buscar gasto..."
                 initialSearch={buscar}

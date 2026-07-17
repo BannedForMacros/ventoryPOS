@@ -252,7 +252,7 @@ export default function Adelantos({ adelantos, totalActivo, estado, buscar, prov
                 />
             </div>
 
-            <Table data={adelantos.data} columns={columns}
+            <Table data={adelantos} columns={columns}
                 searchPlaceholder="Buscar proveedor..." emptyMessage="No hay adelantos registrados"
                 initialSearch={buscar}
                 onServerSearch={(t) => router.get(route('finanzas.adelantos.index'),

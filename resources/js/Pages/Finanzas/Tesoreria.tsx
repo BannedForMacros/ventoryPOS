@@ -191,7 +191,7 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos, puede, busca
             </div>
 
             <Table
-                data={movimientos.data}
+                data={movimientos}
                 columns={columns}
                 searchPlaceholder="Buscar movimiento..."
                 initialSearch={buscar}

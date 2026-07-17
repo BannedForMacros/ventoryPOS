@@ -347,7 +347,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
                 />
             </div>
 
-            <Table data={anticipos.data} columns={columns}
+            <Table data={anticipos} columns={columns}
                 searchPlaceholder="Buscar cliente..." emptyMessage="No hay anticipos registrados"
                 initialSearch={buscar}
                 onServerSearch={(t) => router.get(route('finanzas.anticipos.index'),

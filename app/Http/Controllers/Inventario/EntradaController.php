@@ -370,6 +370,15 @@ class EntradaController extends Controller
                 ->with('cuentas:id,nombre,banco,numero_cuenta')
                 ->orderBy('nombre')->get(['id', 'nombre', 'tipo_id']),
             'stocks'    => $stocks,
+            // Productos de esta entrada ABSORBIDOS por el inventario inicial (la
+            // fecha de la entrada cae en o antes del corte de apertura): su
+            // mercadería vive en el conteo físico, no en el stock en vivo, así
+            // que el form NO debe restringir su reducción (edición documental).
+            'productosAbsorbidos' => $entrada->estado === 'confirmado'
+                ? $entrada->detalles->pluck('producto_id')->unique()
+                    ->filter(fn ($pid) => \App\Models\Stock::absorbidoPorApertura($entrada->almacen_id, (int) $pid, $entrada->fecha))
+                    ->values()
+                : collect(),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
         ]);
     }

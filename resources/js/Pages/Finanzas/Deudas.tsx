@@ -299,7 +299,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 />
             </div>
 
-            <Table data={deudas.data} columns={columns}
+            <Table data={deudas} columns={columns}
                 searchPlaceholder="Buscar deuda..." emptyMessage="No hay deudas registradas"
                 initialSearch={buscar}
                 onServerSearch={(t) => router.get(route('finanzas.deudas.index'),

@@ -547,7 +547,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                 </div>
             </div>
 
-            <Table data={cotizaciones.data} columns={columns} searchable={false}
+            <Table data={cotizaciones} columns={columns} searchable={false}
                 emptyMessage="No hay cotizaciones en este filtro" />
 
             {/* ── Modal crear / editar ─────────────────────────────────── */}

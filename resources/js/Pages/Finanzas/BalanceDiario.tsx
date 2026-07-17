@@ -111,7 +111,7 @@ export default function BalanceDiario({ balances, hoy }: Props) {
             />
 
             <Table
-                data={balances.data}
+                data={balances}
                 columns={columns}
                 searchPlaceholder="Buscar fecha..."
                 emptyMessage="Aún no hay balances. Genera el balance de hoy con el botón de arriba."

@@ -84,6 +84,9 @@ interface Props extends PageProps {
     turnos: TurnoLite[];
     pagoTurnoId: number | null;
     stocks: StockRow[];
+    /** Productos cuya mercadería quedó dentro del inventario inicial (entrada
+     *  con fecha <= corte de apertura): editarlos no toca stock → sin restricción. */
+    productosAbsorbidos: number[];
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
 }
@@ -109,7 +112,7 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
     return String(Math.round((t / q) * 10000) / 10000);
 }
 
-export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen }: Props) {
     // "Afecta caja a:" — por defecto NO afecta ninguna caja ('' = Sin turno). Solo
     // si el usuario elige un turno los pagos nuevos descuentan de esa caja. No
     // preseleccionamos el turno del pago anterior para no re-imputar sin querer.
@@ -298,6 +301,11 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
         });
 
         originalPorProducto.forEach((aporto, prodId) => {
+            // Absorbido por el inventario inicial: la entrada no aporta al stock
+            // en vivo (vive en el conteo del corte) → reducirla es solo corrección
+            // documental, sin restricción de stock (mismo criterio que el backend).
+            if ((productosAbsorbidos ?? []).includes(prodId)) return;
+
             const stockAct = stockMap.get(prodId) ?? 0;
             const consumido = Math.max(0, aporto - stockAct);
             if (consumido > 0) {
@@ -312,7 +320,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
         });
 
         return m;
-    }, [entrada, stocks, productos]);
+    }, [entrada, stocks, productos, productosAbsorbidos]);
 
     /** Suma de cantidad_base por producto en el ESTADO ACTUAL del form (no el original). */
     const sumaActualPorProducto = useMemo(() => {

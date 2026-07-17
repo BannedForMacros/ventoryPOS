@@ -282,7 +282,7 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
                     Historial de turnos
                 </p>
                 <Table
-                    data={turnos.data}
+                    data={turnos}
                     columns={columnasTurnos}
                     emptyMessage="Sin historial de turnos"
                     searchPlaceholder="Buscar en historial..."

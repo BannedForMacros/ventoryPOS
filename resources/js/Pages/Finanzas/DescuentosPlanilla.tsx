@@ -237,7 +237,7 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
                 />
             </div>
 
-            <Table data={descuentos.data} columns={columns}
+            <Table data={descuentos} columns={columns}
                 searchPlaceholder="Buscar trabajador o motivo..."
                 emptyMessage="No hay descuentos registrados"
                 initialSearch={buscar}
