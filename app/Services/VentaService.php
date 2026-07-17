@@ -349,7 +349,14 @@ class VentaService
             );
         }
 
-        $montoPagadoReal = round($totalPagado - $vueltoGlobal, 2);
+        // Los ABONOS previos (cobros de crédito por CxC) SIGUEN vigentes al editar:
+        // `actualizar()` revierte/recrea solo los pagos de la venta, no los abonos,
+        // así que su dinero ya está en tesorería y debe contarse en lo pagado. Antes
+        // se ignoraban → una venta a crédito con abonos, al editarla, mostraba
+        // Pagado 0 / saldo completo y "reaparecía" como crédito, con la transferencia
+        // del abono sobrando en caja. (En creación no hay abonos → suma 0, sin efecto.)
+        $abonosPrevios   = round((float) $venta->abonos()->sum('monto'), 2);
+        $montoPagadoReal = round($totalPagado - $vueltoGlobal + $abonosPrevios, 2);
         $venta->update([
             'monto_pagado'    => $esCredito ? $montoPagadoReal : (float) $venta->total,
             'saldo_pendiente' => $esCredito ? max(0, round((float) $venta->total - $montoPagadoReal, 2)) : 0,
