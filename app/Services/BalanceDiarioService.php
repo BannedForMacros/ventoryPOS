@@ -342,6 +342,67 @@ class BalanceDiarioService
      */
     private function stockValorizadoA(int $empresaId, string $fechaCorte): float
     {
+        // ── Fuente preferida: KARDEX (movimientos_inventario) ───────────────
+        // El kardex guarda, por (almacén, producto), el saldo y el costo
+        // promedio VIGENTES en cada movimiento. El valor del inventario a una
+        // fecha = última fila de cada producto hasta el fin de ese día. Es
+        // históricamente ESTABLE: reabrir un balance no lo re-valoriza al costo
+        // actual (antes: se reconstruía desde el stock de hoy al precio_costo de
+        // hoy y el número "subía" con cada cambio de costo). Requiere kardex
+        // poblado (kardex:reconstruir / botón Recalcular stock); sin él, cae al
+        // método legado.
+        // Solo si el kardex CUBRE esa fecha: (1) hay filas ≤ corte y (2) el corte
+        // no es anterior al inventario inicial (antes de la apertura el kardex
+        // solo tiene fragmentos — entradas migradas — y daría un falso parcial).
+        $primeraApertura = DB::table('stock_iniciales')
+            ->where('empresa_id', $empresaId)
+            ->min('fecha');
+        $tieneKardex = ($primeraApertura === null || $fechaCorte >= substr((string) $primeraApertura, 0, 10))
+            && DB::table('movimientos_inventario')
+                ->where('empresa_id', $empresaId)
+                ->where('fecha', '<=', $fechaCorte . ' 23:59:59')
+                ->exists();
+
+        if ($tieneKardex) {
+            // CANTIDAD a la fecha: última fila del kardex de cada (almacén,
+            // producto) hasta el fin del día (histórica, exacta).
+            // COSTO "precio del día" CONOCIDO A ESA FECHA (misma base del Excel,
+            // pero congelada): última COMPRA hasta la fecha; sin compras aún, el
+            // precio_costo del producto; último recurso, el CPP histórico.
+            // Compras posteriores ya no re-valorizan días pasados.
+            $corte = $fechaCorte . ' 23:59:59';
+            $v = DB::selectOne(
+                'WITH saldos AS (
+                    SELECT DISTINCT ON (mi.almacen_id, mi.producto_id) mi.producto_id, mi.saldo_cantidad
+                    FROM movimientos_inventario mi
+                    WHERE mi.empresa_id = ? AND mi.fecha <= ?
+                    ORDER BY mi.almacen_id, mi.producto_id, mi.fecha DESC, mi.id DESC
+                ),
+                compra_dia AS (
+                    SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_unitario
+                    FROM movimientos_inventario mi
+                    WHERE mi.empresa_id = ? AND mi.fecha <= ?
+                      AND mi.tipo IN (\'entrada\', \'transferencia_recepcion\') AND mi.costo_unitario > 0
+                    ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
+                ),
+                cpp AS (
+                    SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_promedio
+                    FROM movimientos_inventario mi
+                    WHERE mi.empresa_id = ? AND mi.fecha <= ?
+                    ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
+                )
+                SELECT COALESCE(SUM(s.saldo_cantidad * COALESCE(cd.costo_unitario, NULLIF(p.precio_costo, 0), cp.costo_promedio, 0)), 0) AS v
+                FROM saldos s
+                LEFT JOIN compra_dia cd ON cd.producto_id = s.producto_id
+                LEFT JOIN cpp cp ON cp.producto_id = s.producto_id
+                JOIN productos p ON p.id = s.producto_id AND p.activo = true',
+                [$empresaId, $corte, $empresaId, $corte, $empresaId, $corte],
+            );
+
+            return round((float) $v->v, 2);
+        }
+
+        // ── Método LEGADO (sin kardex): reconstrucción al costo actual ──────
         $actual = (float) DB::table('stock')
             ->join('productos', 'productos.id', '=', 'stock.producto_id')
             ->where('productos.empresa_id', $empresaId)

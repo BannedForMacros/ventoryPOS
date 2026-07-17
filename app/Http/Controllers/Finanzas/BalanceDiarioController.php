@@ -463,6 +463,88 @@ class BalanceDiarioController extends Controller
             // Para fechas pasadas se reconstruye revirtiendo los movimientos
             // posteriores al corte (mismo criterio que la línea del balance).
             case 'stock': {
+                // ── Fuente preferida: KARDEX — misma base que la línea del
+                // balance (BalanceDiarioService::stockValorizadoA): última fila
+                // de cada producto hasta el fin del día = saldo y costo promedio
+                // HISTÓRICOS (estables; no se re-valorizan al costo de hoy).
+                // Mismo criterio de cobertura que stockValorizadoA: kardex solo
+                // desde la apertura (antes solo hay fragmentos migrados).
+                $primeraApertura = DB::table('stock_iniciales')
+                    ->where('empresa_id', $empresaId)->min('fecha');
+                $tieneKardex = ($primeraApertura === null || $fecha >= substr((string) $primeraApertura, 0, 10))
+                    && DB::table('movimientos_inventario')
+                        ->where('empresa_id', $empresaId)
+                        ->where('fecha', '<=', $fecha . ' 23:59:59')
+                        ->exists();
+
+                if ($tieneKardex) {
+                    // Cantidad histórica del kardex × costo "precio del día"
+                    // conocido a la fecha (última compra ≤ fecha; sin compras,
+                    // precio_costo; último recurso CPP histórico) — idéntico a
+                    // BalanceDiarioService::stockValorizadoA para que el total
+                    // y este detalle cuadren al centavo.
+                    $corte = $fecha . ' 23:59:59';
+                    $filas = collect(DB::select(
+                        'WITH saldos AS (
+                            SELECT DISTINCT ON (mi.almacen_id, mi.producto_id) mi.producto_id, mi.saldo_cantidad
+                            FROM movimientos_inventario mi
+                            WHERE mi.empresa_id = ? AND mi.fecha <= ?
+                            ORDER BY mi.almacen_id, mi.producto_id, mi.fecha DESC, mi.id DESC
+                         ),
+                         compra_dia AS (
+                            SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_unitario
+                            FROM movimientos_inventario mi
+                            WHERE mi.empresa_id = ? AND mi.fecha <= ?
+                              AND mi.tipo IN (\'entrada\', \'transferencia_recepcion\') AND mi.costo_unitario > 0
+                            ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
+                         ),
+                         cpp AS (
+                            SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_promedio
+                            FROM movimientos_inventario mi
+                            WHERE mi.empresa_id = ? AND mi.fecha <= ?
+                            ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
+                         )
+                         SELECT p.id as producto_id, p.nombre,
+                                SUM(s.saldo_cantidad) as cantidad,
+                                COALESCE(MAX(cd.costo_unitario), NULLIF(MIN(p.precio_costo), 0), MAX(cp.costo_promedio), 0) as costo,
+                                SUM(s.saldo_cantidad) * COALESCE(MAX(cd.costo_unitario), NULLIF(MIN(p.precio_costo), 0), MAX(cp.costo_promedio), 0) as valor
+                         FROM saldos s
+                         LEFT JOIN compra_dia cd ON cd.producto_id = s.producto_id
+                         LEFT JOIN cpp cp ON cp.producto_id = s.producto_id
+                         JOIN productos p ON p.id = s.producto_id AND p.activo = true
+                         WHERE p.empresa_id = ?
+                         GROUP BY p.id, p.nombre',
+                        [$empresaId, $corte, $empresaId, $corte, $empresaId, $corte, $empresaId],
+                    ))
+                        ->map(function ($f) {
+                            $f->cantidad = round((float) $f->cantidad, 4);
+                            $f->valor    = round((float) $f->valor, 2);
+                            return $f;
+                        })
+                        ->filter(fn ($f) => abs((float) $f->cantidad) > 0.0001)
+                        ->sortByDesc('valor')
+                        ->take(1000)
+                        ->values();
+
+                    $fmtCant = fn ($n) => rtrim(rtrim(number_format((float) $n, 2), '0'), '.');
+
+                    return response()->json([
+                        'tipo'  => 'grupos',
+                        'cards' => [
+                            ['label' => 'Valor del inventario al ' . $fecha, 'valor' => round((float) $filas->sum('valor'), 2), 'color' => 'success'],
+                            ['label' => 'Productos con stock', 'valor' => $filas->count(), 'esNumero' => true],
+                        ],
+                        'grupos' => $filas->map(fn ($f, $i) => [
+                            'id'        => (string) $i,
+                            'titulo'    => $f->nombre,
+                            'subtitulo' => $fmtCant($f->cantidad) . ' und × S/ ' . number_format((float) $f->costo, 2) . ' (costo del día)',
+                            'monto'     => round((float) $f->valor, 2),
+                            'items'     => [],
+                        ])->values(),
+                    ]);
+                }
+
+                // ── Método LEGADO (sin kardex) ──────────────────────────────
                 // Costo efectivo: precio_costo del producto; si está en 0, el
                 // costo_promedio real del inventario (mismo criterio que el balance).
                 $filas = DB::table('stock')
