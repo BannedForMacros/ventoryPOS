@@ -22,6 +22,8 @@ export interface Stat {
     icon?: React.ReactNode;
     /** Línea de apoyo bajo el valor (contexto, no otra cifra). */
     sub?: React.ReactNode;
+    /** Hace la card clicable (cursor + hover); p.ej. abrir un detalle/auditoría. */
+    onClick?: () => void;
 }
 
 const COLOR: Record<NonNullable<Stat['color']>, string> = {
@@ -54,9 +56,11 @@ export default function StatGrid({ stats, cols: colsProp, size = 'md' }: StatGri
                 return (
                     <div
                         key={i}
-                        className={`min-w-0 ${lg
+                        onClick={s.onClick}
+                        role={s.onClick ? 'button' : undefined}
+                        className={`min-w-0 ${s.onClick ? 'cursor-pointer' : ''} ${lg
                             ? 'rounded-2xl px-5 py-4 vp-fade-up transition-all duration-200 hover:shadow-md hover:-translate-y-0.5'
-                            : 'rounded-xl px-3 py-2.5'}`}
+                            : `rounded-xl px-3 py-2.5${s.onClick ? ' transition-all duration-150 hover:shadow-md hover:-translate-y-0.5' : ''}`}`}
                         style={{
                             border: s.destacado
                                 ? `1.5px solid color-mix(in srgb, ${accent} 45%, var(--color-border))`

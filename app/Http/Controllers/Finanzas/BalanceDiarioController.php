@@ -150,6 +150,7 @@ class BalanceDiarioController extends Controller
         $saldosCuentas = Cuenta::deEmpresa($user->empresa_id)->activo()
             ->orderByDesc('es_efectivo')->orderBy('nombre')->get()
             ->map(fn ($c) => [
+                'id'          => $c->id, // para abrir el detalle/auditoría al hacer clic
                 'nombre'      => $c->nombre,
                 'banco'       => $c->banco,
                 'es_efectivo' => (bool) $c->es_efectivo,

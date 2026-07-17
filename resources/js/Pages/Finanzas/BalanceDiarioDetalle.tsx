@@ -78,7 +78,7 @@ interface Props extends PageProps {
     gastos: Gasto[];
     salidasDia: { label: string; monto: number }[];
     movimientosDia: GrupoMovimientosDia[];
-    saldosCuentas: { nombre: string; banco: string | null; es_efectivo: boolean; saldo: number }[];
+    saldosCuentas: { id: number; nombre: string; banco: string | null; es_efectivo: boolean; saldo: number }[];
     variaciones: Variacion[];
     balanceAnteriorFecha: string | null;
     esAdmin?: boolean;
@@ -463,6 +463,19 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                     valor: money(c.saldo),
                     color: c.saldo < 0 ? 'danger' as const : undefined,
                     icon: c.es_efectivo ? <Coins size={16} /> : <Landmark size={16} />,
+                    sub: 'Clic: entradas/salidas + auditoría',
+                    // Abre el mismo detalle de la línea del balance: TODO lo que
+                    // entró/salió de la cuenta con registrado/editado (auditoría).
+                    onClick: () => abrirDetalle({
+                        id: 0,
+                        seccion: 'favor',
+                        categoria: c.es_efectivo ? 'efectivo' : 'cuenta_bancaria',
+                        descripcion: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
+                        ref_id: c.id,
+                        monto: String(c.saldo),
+                        es_manual: false,
+                        conciliado: false,
+                    }),
                 }))} />
             </div>
 
