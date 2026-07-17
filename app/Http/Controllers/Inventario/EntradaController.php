@@ -456,6 +456,13 @@ class EntradaController extends Controller
 
             $errores = [];
             foreach ($viejosBase as $productoId => $cantVieja) {
+                // Entrada absorbida por el inventario inicial (fecha <= corte de
+                // apertura): sus unidades viven en el conteo físico, NO en el stock
+                // en vivo. Reducirla es corrección documental — no valida stock.
+                if (Stock::absorbidoPorApertura($almacenAnterior, (int) $productoId, $entrada->fecha)) {
+                    continue;
+                }
+
                 $cantNueva = (float) $nuevosBase->get($productoId, 0);
                 $delta     = $cantNueva - $cantVieja;
                 if ($delta >= 0) continue; // suma o igual: no hay riesgo
@@ -496,6 +503,12 @@ class EntradaController extends Controller
                     $entrada->loadMissing('detalles');
                     foreach ($entrada->detalles as $d) {
                         $productosAfectados->push($d->producto_id);
+                        // Absorbida por la apertura: nunca aportó al stock en vivo,
+                        // no hay nada que revertir (evita el ruido entrada_reverso
+                        // y el falso descuadre al editar entradas del día del corte).
+                        if (Stock::absorbidoPorApertura($almacenAnterior, $d->producto_id, $entrada->fecha)) {
+                            continue;
+                        }
                         Stock::ajustar(
                             almacenId:        $almacenAnterior,
                             productoId:       $d->producto_id,
@@ -659,6 +672,12 @@ class EntradaController extends Controller
                 if ($eraConfirmada) {
                     $entrada->refresh()->loadMissing('detalles');
                     foreach ($entrada->detalles as $d) {
+                        // Con fecha (nueva) en o antes del corte de apertura: la
+                        // mercadería ya está contada en el inventario inicial —
+                        // reaplicarla duplicaría stock. Solo corrección documental.
+                        if (Stock::absorbidoPorApertura($entrada->almacen_id, $d->producto_id, $entrada->fecha)) {
+                            continue;
+                        }
                         Stock::ajustar(
                             almacenId:    $entrada->almacen_id,
                             productoId:   $d->producto_id,

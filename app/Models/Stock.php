@@ -297,6 +297,19 @@ class Stock extends Model
             ->where('td.producto_id', $productoId), 't.fecha_recepcion')
             ->sum('td.cantidad_base_recibida');
 
+        // Las VENTAS (y sus pendientes/entregas de anticipo) solo descuentan si el
+        // producto descuenta stock al vender — misma regla que el POS en vivo
+        // (deboDescontarStock): un SERVICIO (flete, carguío...) o un producto con
+        // controla_stock=false jamás salió del inventario al venderse; restarlo
+        // aquí fabricaría negativos fantasma en cada recálculo.
+        $productoModel  = Producto::find($productoId);
+        $localModel     = ($localId = \DB::table('almacenes')->where('id', $almacenId)->value('local_id'))
+            ? Local::find($localId) : null;
+        $ventaDescuenta = $productoModel === null
+            || app(\App\Services\ConfiguracionOperacionService::class)->deboDescontarStock($productoModel, $localModel);
+
+        if ($ventaDescuenta) {
+
         // Ventas completadas (-): se descuentan del almacén tipo='local' del local de la venta
         $cantidad -= (float) $post(\DB::table('venta_items as vi')
             ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
@@ -310,6 +323,56 @@ class Stock extends Model
             ->where('v.estado', 'completada')
             ->where('vi.producto_id', $productoId), 'v.fecha_venta')
             ->sum('vi.cantidad_base');
+
+        // ── Pendientes por entregar (anticipos del POS) ─────────────────────
+        // Una venta "pendiente por entregar" resta COMPLETA en venta_items, pero
+        // físicamente esa mercadería NO salió al vender: sale recién al registrar
+        // cada ENTREGA. Dos correcciones simétricas:
+        //
+        // (a) Devolver lo AÚN NO entregado de las ventas contadas arriba: el
+        //     pendiente actual sigue en el almacén. (Antes el recálculo lo daba
+        //     por salido → stock reconstruido menor al físico.)
+        $cantidad += (float) $post(\DB::table('cliente_anticipo_items as ci')
+            ->join('cliente_anticipos as an', 'an.id', '=', 'ci.cliente_anticipo_id')
+            ->join('ventas as v', 'v.id', '=', 'an.venta_id')
+            ->join('almacenes as a', function ($j) {
+                $j->on('a.local_id', '=', 'v.local_id')
+                  ->on('a.empresa_id', '=', 'v.empresa_id')
+                  ->where('a.tipo', '=', 'local')
+                  ->where('a.activo', '=', true);
+            })
+            ->where('a.id', $almacenId)
+            ->where('v.estado', 'completada')
+            ->where('ci.producto_id', $productoId), 'v.fecha_venta')
+            ->selectRaw('COALESCE(SUM(ci.cantidad_pendiente * ci.factor_conversion), 0) as t')
+            ->value('t');
+
+        // (b) Restar las ENTREGAS posteriores al corte cuya venta quedó ABSORBIDA
+        //     por la apertura (venta ≤ corte no se resta arriba, pero su entrega
+        //     posterior sí sacó mercadería del conteo — bug Mochica: 100
+        //     entregados el 16 reaparecían en cada recálculo). Sin apertura no
+        //     aplica: la venta ya restó todo y (a) devolvió el pendiente actual.
+        if ($corte) {
+            $cantidad -= (float) \DB::table('cliente_anticipo_aplicacion_items as cai')
+                ->join('cliente_anticipo_aplicaciones as ca', 'ca.id', '=', 'cai.cliente_anticipo_aplicacion_id')
+                ->join('cliente_anticipo_items as ci', 'ci.id', '=', 'cai.cliente_anticipo_item_id')
+                ->join('cliente_anticipos as an', 'an.id', '=', 'ca.cliente_anticipo_id')
+                ->join('ventas as v', 'v.id', '=', 'an.venta_id')
+                ->join('almacenes as a', function ($j) {
+                    $j->on('a.local_id', '=', 'v.local_id')
+                      ->on('a.empresa_id', '=', 'v.empresa_id')
+                      ->where('a.tipo', '=', 'local')
+                      ->where('a.activo', '=', true);
+                })
+                ->where('a.id', $almacenId)
+                ->where('ci.producto_id', $productoId)
+                ->where('ca.fecha', '>', $corte)
+                ->where('v.fecha_venta', '<=', $corte)
+                ->selectRaw('COALESCE(SUM(cai.cantidad * ci.factor_conversion), 0) as t')
+                ->value('t');
+        }
+
+        } // fin if ($ventaDescuenta): ventas + pendientes + entregas de anticipo
 
         // Devoluciones completadas con restock=true (+) en almacén tipo='local' del local
         $cantidad += (float) $post(\DB::table('devoluciones_detalle as dd')
@@ -395,6 +458,28 @@ class Stock extends Model
     }
 
     /**
+     * ¿El movimiento de un documento está ABSORBIDO por el inventario inicial?
+     *
+     * Si existe apertura (stock_iniciales) para el par (almacén, producto) con
+     * fecha de corte >= la fecha del documento, ese documento quedó DENTRO del
+     * conteo físico: su stock ya vive en la apertura y NO debe aplicarse ni
+     * revertirse en vivo (Stock::reconstruir lo excluye por el corte). Editar
+     * una entrada del día del corte (o anterior) es solo corrección documental
+     * (precios/cantidades): el inventario no se toca.
+     */
+    public static function absorbidoPorApertura(int $almacenId, int $productoId, $fecha): bool
+    {
+        $f = substr((string) $fecha, 0, 10);
+        if ($f === '') return false;
+
+        return DB::table('stock_iniciales')
+            ->where('almacen_id', $almacenId)
+            ->where('producto_id', $productoId)
+            ->whereDate('fecha', '>=', $f)
+            ->exists();
+    }
+
+    /**
      * Devuelve los pares (almacen_id, producto_id) que tienen al menos un movimiento
      * en cualquiera de las tablas de movimientos. Necesario para que "recalcular"
      * cubra inventario que llegó por transferencia o cierre, no solo por entrada.
@@ -449,6 +534,21 @@ class Stock extends Model
             ->join('cierres_inventario as c', 'c.id', '=', 'ci.cierre_id')
             ->whereIn('c.almacen_id', $almacenIds)
             ->select('c.almacen_id', 'ci.producto_id')
+            ->distinct()->get());
+
+        // Anticipos/pendientes por entregar (items y entregas): producto ×
+        // almacén-de-ventas del local. Cubre tanto el pendiente aún en almacén
+        // como las entregas ya realizadas.
+        $pares = $pares->merge(\DB::table('cliente_anticipo_items as ci')
+            ->join('cliente_anticipos as an', 'an.id', '=', 'ci.cliente_anticipo_id')
+            ->join('ventas as v', 'v.id', '=', 'an.venta_id')
+            ->join('almacenes as a', function ($j) {
+                $j->on('a.local_id', '=', 'v.local_id')
+                  ->on('a.empresa_id', '=', 'v.empresa_id')
+                  ->where('a.tipo', '=', 'local');
+            })
+            ->whereIn('a.id', $almacenIds)
+            ->select(\DB::raw('a.id as almacen_id'), 'ci.producto_id')
             ->distinct()->get());
 
         // Inventario inicial (apertura): DEBE incluirse aunque el producto no tenga

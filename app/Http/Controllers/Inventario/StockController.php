@@ -165,9 +165,17 @@ class StockController extends Controller
             ];
         });
 
+        // Regenerar también el KARDEX desde los documentos finales: el ledger en
+        // vivo acumula ruido operativo (entrada_reverso / entrada_edicion de cada
+        // edición); reconstruirlo lo deja limpio, cronológico y cuadrado con el
+        // stock recién recalculado (apertura del corte + movimientos posteriores).
+        \Illuminate\Support\Facades\Artisan::call('kardex:reconstruir', [
+            '--empresa' => $request->user()->empresa_id,
+        ]);
+
         \App\Services\AuditoriaService::log('stock.recalculado', null, $stats);
 
         return redirect()->back()->with('success',
-            'Stock reconstruido a partir de entradas, salidas, transferencias, ventas, devoluciones y cierres confirmados.');
+            'Stock y kardex reconstruidos: inventario inicial + entradas, salidas, transferencias, ventas, entregas de pendientes, devoluciones y cierres confirmados.');
     }
 }

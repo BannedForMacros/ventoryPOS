@@ -146,19 +146,64 @@ class ReconstruirKardex extends Command
         }
 
         // (-) Ventas completadas — solo si el almacén es tipo 'local' del local de la venta
-        if ($almacen->tipo === 'local' && $almacen->local_id) {
+        // y el producto descuenta stock al vender (misma regla que el POS y que
+        // Stock::reconstruir): servicios / controla_stock=false nunca salieron.
+        $productoModel  = \App\Models\Producto::find($productoId);
+        $localModel     = $almacen->local_id ? \App\Models\Local::find($almacen->local_id) : null;
+        $ventaDescuenta = $productoModel === null
+            || app(\App\Services\ConfiguracionOperacionService::class)->deboDescontarStock($productoModel, $localModel);
+
+        if ($almacen->tipo === 'local' && $almacen->local_id && $ventaDescuenta) {
+            // Pendiente ORIGINAL por venta (anticipos "por entregar" del POS): esa
+            // porción NO salió del almacén al vender — sale en cada ENTREGA (fila
+            // entrega_pendiente más abajo). La fila de venta refleja solo lo que
+            // se llevó el cliente en el momento.
+            $pendientePorVenta = DB::table('cliente_anticipo_items as ci')
+                ->join('cliente_anticipos as an', 'an.id', '=', 'ci.cliente_anticipo_id')
+                ->whereNotNull('an.venta_id')
+                ->where('ci.producto_id', $productoId)
+                ->selectRaw('an.venta_id, SUM(ci.cantidad * ci.factor_conversion) as t')
+                ->groupBy('an.venta_id')
+                ->pluck('t', 'venta_id');
+
             foreach ($post(DB::table('venta_items as vi')
                 ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
                 ->where('v.local_id', $almacen->local_id)
                 ->where('v.empresa_id', $almacen->empresa_id)
                 ->where('v.estado', 'completada')
                 ->where('vi.producto_id', $productoId), 'v.fecha_venta')
-                ->get(['vi.cantidad_base', 'v.id', 'v.fecha_venta', 'v.user_id']) as $r) {
+                ->selectRaw('v.id, v.fecha_venta, v.user_id, SUM(vi.cantidad_base) as base')
+                ->groupBy('v.id', 'v.fecha_venta', 'v.user_id')
+                ->get() as $r) {
+                $salioAlVender = (float) $r->base - (float) ($pendientePorVenta[$r->id] ?? 0);
+                if (abs($salioAlVender) < 0.0001) continue; // todo quedó pendiente: sin movimiento físico
                 $movs[] = $this->mov($r->fecha_venta, (int) $r->id, 'venta', 'venta', (int) $r->id,
-                    -1 * (float) $r->cantidad_base, 0, false, null, $r->user_id);
+                    -1 * $salioAlVender, 0, false, null, $r->user_id);
             }
 
-            // (+) Devoluciones completadas con restock
+            // (-) Entregas de anticipos/pendientes: el stock salió al ENTREGAR,
+            //     no al vender (misma fuente que Stock::reconstruir).
+            foreach ($post(DB::table('cliente_anticipo_aplicacion_items as cai')
+                ->join('cliente_anticipo_aplicaciones as ca', 'ca.id', '=', 'cai.cliente_anticipo_aplicacion_id')
+                ->join('cliente_anticipo_items as ci', 'ci.id', '=', 'cai.cliente_anticipo_item_id')
+                ->join('cliente_anticipos as an', 'an.id', '=', 'ca.cliente_anticipo_id')
+                ->join('ventas as v', 'v.id', '=', 'an.venta_id')
+                ->where('v.local_id', $almacen->local_id)
+                ->where('v.empresa_id', $almacen->empresa_id)
+                ->where('ci.producto_id', $productoId), 'ca.fecha')
+                ->get([
+                    'cai.cantidad', 'ci.factor_conversion', 'ca.id as aplicacion_id',
+                    'ca.fecha', 'ca.numero', 'ca.user_id', 'an.venta_id',
+                ]) as $r) {
+                $movs[] = $this->mov($r->fecha, (int) $r->aplicacion_id, 'entrega_pendiente', 'venta', (int) $r->venta_id,
+                    -1 * (float) $r->cantidad * (float) $r->factor_conversion, 0, false, $r->numero, $r->user_id);
+            }
+
+        }
+
+        // (+) Devoluciones completadas con restock — gobernadas solo por el flag
+        // restock (retorno físico real), independiente de si la venta descontó.
+        if ($almacen->tipo === 'local' && $almacen->local_id) {
             foreach ($post(DB::table('devoluciones_detalle as dd')
                 ->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
                 ->where('d.local_id', $almacen->local_id)

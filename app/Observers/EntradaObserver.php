@@ -17,6 +17,13 @@ class EntradaObserver
         $entrada->loadMissing('detalles');
 
         foreach ($entrada->detalles as $detalle) {
+            // Entrada en o antes de la fecha del inventario inicial: su mercadería
+            // ya quedó DENTRO del conteo físico (apertura). Aplicarle stock la
+            // duplicaría; solo es registro documental de la compra.
+            if (Stock::absorbidoPorApertura($entrada->almacen_id, $detalle->producto_id, $entrada->fecha)) {
+                continue;
+            }
+
             Stock::ajustar(
                 almacenId:    $entrada->almacen_id,
                 productoId:   $detalle->producto_id,
