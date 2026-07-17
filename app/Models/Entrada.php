@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Entrada extends Model
 {
@@ -15,6 +16,7 @@ class Entrada extends Model
         'user_id',
         'proveedor_id',
         'numero_documento',
+        'correlativo',
         'proveedor',
         'tipo',
         'fecha',
@@ -137,5 +139,35 @@ class Entrada extends Model
         }
 
         $this->update(['estado' => 'confirmado']);
+    }
+
+    /**
+     * Correlativo interno de la entrada: E-AAAAMMDD-NNN, donde AAAAMMDD es la
+     * `fecha` de la entrada y NNN es la secuencia (3 dígitos) dentro de
+     * (empresa_id, ese día). Ej: primera entrada del 2026-07-17 → E-20260717-001.
+     *
+     * ROBUSTEZ ante huecos: se usa MAX de la secuencia ya emitida ese día — NO
+     * COUNT — para que borrar una entrada intermedia no reutilice su número (una
+     * vez asignado es inmutable, como una factura).
+     *
+     * CONCURRENCIA: esta función NO bloquea filas. La unicidad la garantiza el
+     * índice único parcial `entradas_empresa_correlativo_uq (empresa_id,
+     * correlativo)`; si dos requests calculan el mismo número, el segundo recibe
+     * UniqueConstraintViolationException y el llamador reintenta (optimistic +
+     * retry, mismo patrón que Venta::generarNumero).
+     */
+    public static function generarCorrelativo(int $empresaId, string $fecha): string
+    {
+        $dia     = str_replace('-', '', substr($fecha, 0, 10)); // AAAAMMDD
+        $prefijo = "E-{$dia}-";
+
+        // split_part(correlativo, '-', 3) devuelve la porción NNN de 'E-AAAAMMDD-NNN'.
+        $max = (int) DB::table('entradas')
+            ->where('empresa_id', $empresaId)
+            ->where('correlativo', 'like', $prefijo . '%')
+            ->selectRaw("COALESCE(MAX(CAST(split_part(correlativo, '-', 3) AS INTEGER)), 0) as n")
+            ->value('n');
+
+        return $prefijo . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 }

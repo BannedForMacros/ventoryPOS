@@ -40,6 +40,7 @@ interface Entrada extends Record<string, unknown> {
     fecha: string;
     tipo: string;
     proveedor: string | null;
+    correlativo: string | null;
     numero_documento: string | null;
     almacen: Almacen;
     user: UserItem;
@@ -216,6 +217,12 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
         {
             key: 'fecha', label: 'Fecha', sortable: true,
             render: (e) => <span className="text-sm">{fmtFecha(e.fecha)}</span>,
+        },
+        {
+            key: 'correlativo', label: 'Correlativo', sortable: true,
+            render: (e) => e.correlativo
+                ? <span className="font-mono text-xs" style={{ color: 'var(--color-text)' }}>{e.correlativo}</span>
+                : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
         {
             key: 'tipo', label: 'Tipo', sortable: true,
@@ -421,6 +428,11 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                 <p className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                     {TIPOS[e.tipo] ?? e.tipo}
                                 </p>
+                                {e.correlativo && (
+                                    <p className="text-[11px] font-mono mt-0.5" style={{ color: 'var(--color-text)' }}>
+                                        {e.correlativo}
+                                    </p>
+                                )}
                             </div>
                             <div className="text-right">
                                 <p className="text-lg font-bold font-mono leading-tight" style={{ color: 'var(--color-text)' }}>
@@ -772,6 +784,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
 
                         {/* Cabecera: metadatos clave en grid 2 col */}
                         <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+                            {verDetalle.correlativo && <Meta label="Correlativo" value={verDetalle.correlativo} mono />}
                             <Meta label="Fecha" value={fmtFecha(verDetalle.fecha)} />
                             <Meta label="Tipo" value={TIPOS[verDetalle.tipo] ?? verDetalle.tipo} />
                             <Meta label="Almacén" value={`${verDetalle.almacen.nombre}${verDetalle.almacen.local ? ' · ' + verDetalle.almacen.local.nombre : ''}`} />

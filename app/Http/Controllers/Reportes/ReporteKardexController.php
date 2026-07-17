@@ -43,7 +43,24 @@ class ReporteKardexController extends Controller
                                          ->orWhere('productos.codigo', 'ilike', "%{$v}%"))
             ));
 
+        // El "documento" se resuelve EN VIVO según la referencia del movimiento:
+        //   venta   → ventas.numero      (ej. V-0001)
+        //   entrada → entradas.correlativo (ej. E-20260716-001)
+        //   resto   → movimientos_inventario.documento (fallback ya guardado)
+        // Los LEFT JOIN llevan el filtro de referencia_tipo en el ON para no cruzar
+        // un referencia_id de entrada contra el id de una venta (y viceversa).
+        // Seleccionamos movimientos_inventario.* explícito para no pisar columnas.
         $movimientos = (clone $base)
+            ->leftJoin('ventas', function ($j) {
+                $j->on('ventas.id', '=', 'movimientos_inventario.referencia_id')
+                  ->where('movimientos_inventario.referencia_tipo', '=', 'venta');
+            })
+            ->leftJoin('entradas', function ($j) {
+                $j->on('entradas.id', '=', 'movimientos_inventario.referencia_id')
+                  ->where('movimientos_inventario.referencia_tipo', '=', 'entrada');
+            })
+            ->select('movimientos_inventario.*')
+            ->selectRaw('COALESCE(ventas.numero, entradas.correlativo, movimientos_inventario.documento) as documento_resuelto')
             ->with([
                 'producto:id,nombre,codigo',
                 'almacen:id,nombre',
@@ -58,7 +75,9 @@ class ReporteKardexController extends Controller
                 'fecha'            => optional($m->fecha)->format('Y-m-d H:i'),
                 'tipo'             => $m->tipo,
                 'tipo_label'       => MovimientoInventario::etiquetaTipo($m->tipo),
-                'documento'        => $m->documento,
+                'documento'        => $m->documento_resuelto ?? $m->documento,
+                'referencia_tipo'  => $m->referencia_tipo,
+                'referencia_id'    => $m->referencia_id,
                 'almacen'          => $m->almacen?->nombre ?? '—',
                 'producto'         => $m->producto?->nombre ?? '—',
                 'producto_codigo'  => $m->producto?->codigo,

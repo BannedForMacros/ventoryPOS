@@ -79,6 +79,38 @@ class EntradaController extends Controller
         }
     }
 
+    /**
+     * Asigna (una sola vez) el correlativo interno E-AAAAMMDD-NNN a la entrada.
+     *
+     * Debe llamarse DENTRO de la transacción de store()/update() y DESPUÉS de que
+     * la entrada tenga su `fecha` definitiva. Envuelve cada intento en una
+     * transacción anidada (SAVEPOINT en PostgreSQL): si otro request ganó el mismo
+     * número, el UNIQUE parcial dispara UniqueConstraintViolationException, el
+     * savepoint hace rollback (sin abortar la transacción externa) y se reintenta
+     * con el siguiente número. Patrón optimistic-insert + retry, como en ventas.
+     */
+    private function asignarCorrelativo(Entrada $entrada, int $empresaId, string|\Carbon\CarbonInterface $fecha): void
+    {
+        $fechaStr = $fecha instanceof \Carbon\CarbonInterface
+            ? $fecha->toDateString()
+            : substr((string) $fecha, 0, 10);
+
+        for ($intento = 1; $intento <= 5; $intento++) {
+            try {
+                DB::transaction(function () use ($entrada, $empresaId, $fechaStr) {
+                    $entrada->update(['correlativo' => Entrada::generarCorrelativo($empresaId, $fechaStr)]);
+                });
+                return;
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                if ($intento >= 5) {
+                    throw $e; // no debería pasar bajo carga normal
+                }
+                // colisión con el índice único: recalcula en el siguiente intento
+                // (MAX verá ahora el número recién insertado por el ganador).
+            }
+        }
+    }
+
     public function index(Request $request)
     {
         $user       = $request->user();
@@ -239,6 +271,10 @@ class EntradaController extends Controller
                 'metodo_pago_id'   => $data['pagos'][0]['metodo_pago_id'] ?? ($estadoPago === 'pagado' ? ($data['metodo_pago_id'] ?? null) : null),
                 'cuenta_id'        => $data['pagos'][0]['cuenta_id'] ?? ($estadoPago === 'pagado' ? ($data['cuenta_id'] ?? null) : null),
             ]);
+
+            // Correlativo interno E-AAAAMMDD-NNN (por empresa+día de la fecha).
+            // Inmutable una vez asignado: si luego se edita la fecha NO se regenera.
+            $this->asignarCorrelativo($entrada, $user->empresa_id, $data['fecha']);
 
             foreach ($data['detalles'] as $d) {
                 $cantidadBase = round((float) $d['cantidad'] * (float) $d['factor_conversion'], 4);
@@ -546,6 +582,13 @@ class EntradaController extends Controller
                     'fecha'            => $data['fecha'],
                     'observacion'      => $data['observacion'] ?? null,
                 ]);
+
+                // El correlativo es INMUTABLE: si ya lo tiene NO se regenera aunque
+                // cambie la fecha. Solo se asigna si por alguna razón faltaba (p. ej.
+                // entradas legacy previas a esta feature).
+                if (empty($entrada->correlativo)) {
+                    $this->asignarCorrelativo($entrada, $entrada->empresa_id, $entrada->fecha);
+                }
 
                 $entrada->detalles()->delete();
 

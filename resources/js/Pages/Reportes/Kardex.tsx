@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Filter, X, Search, ScrollText, ArrowDownCircle, ArrowUpCircle, Package } from 'lucide-react';
+import axios from 'axios';
+import { Filter, X, Search, ScrollText, ArrowDownCircle, ArrowUpCircle, Package, Wallet, Loader2, ShoppingCart } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
+import Modal from '@/Components/UI/Modal';
 import type { PageProps } from '@/types';
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; }
@@ -14,6 +16,8 @@ interface MovimientoRow {
     tipo:             string;
     tipo_label:       string;
     documento:        string | null;
+    referencia_tipo:  string | null;
+    referencia_id:    number | null;
     almacen:          string;
     producto:         string;
     producto_codigo:  string | null;
@@ -24,6 +28,44 @@ interface MovimientoRow {
     saldo_cantidad:   number;
     saldo_valorizado: number;
     usuario:          string | null;
+}
+
+// ── Tipos del detalle bajo demanda (modal) ────────────────────────────────
+// Entrada: subset del payload de `inventario.entradas.detalle-json`.
+interface EntradaDetItem {
+    id: number;
+    cantidad: string;
+    factor_conversion: string;
+    cantidad_base: string;
+    precio_costo: string;
+    subtotal: string;
+    producto: { id: number; nombre: string; codigo: string | null } | null;
+    unidad_medida: { id: number; nombre: string; abreviatura: string } | null;
+}
+interface EntradaDet {
+    id: number;
+    fecha: string;
+    tipo: string;
+    proveedor: string | null;
+    numero_documento: string | null;
+    total: string;
+    estado: 'borrador' | 'confirmado';
+    estado_pago: 'pendiente' | 'parcial' | 'pagado';
+    monto_pagado: string;
+    almacen: { nombre: string; local?: { nombre: string } | null };
+    user: { name: string };
+    detalles: EntradaDetItem[];
+    metodo_pago?: { id: number; nombre: string } | null;
+    cuenta?: { id: number; nombre: string } | null;
+}
+// Venta: subset del payload del ticket (`ventas.ticket`).
+interface VentaTicketItem { cant: number; desc: string; precio: number; importe: number; unidad: string | null; }
+interface VentaTicket {
+    documento: { tipo: string; numero: string | null; fecha: string | null; vendedor: string | null; caja: string | null };
+    cliente:   { nombre: string; doc: string | null };
+    items:     VentaTicketItem[];
+    totales:   { subtotal: number; igv: number; descuento: number; total: number; moneda: string };
+    pago:      { metodo: string | null; recibido: number | null; vuelto: number | null };
 }
 
 interface Kpis { movimientos: number; total_entra: number; total_sale: number; stock_actual: number; }
@@ -58,6 +100,37 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    // ── Modal de detalle (venta / entrada) ────────────────────────────────
+    // `detalleTipo` marca qué payload esperamos; `detalle*` guardan el fetch.
+    const [detalleTipo,   setDetalleTipo]   = useState<'venta' | 'entrada' | null>(null);
+    const [detalleLoading, setDetalleLoading] = useState(false);
+    const [entradaDet,    setEntradaDet]    = useState<EntradaDet | null>(null);
+    const [ventaDet,      setVentaDet]      = useState<VentaTicket | null>(null);
+
+    // Una fila abre modal solo si apunta a una venta o entrada con id.
+    const filaClicable = (m: MovimientoRow) =>
+        (m.referencia_tipo === 'venta' || m.referencia_tipo === 'entrada') && !!m.referencia_id;
+
+    function abrirDetalle(m: MovimientoRow) {
+        if (!filaClicable(m) || !m.referencia_id) return;
+        const tipo = m.referencia_tipo as 'venta' | 'entrada';
+        setDetalleTipo(tipo);
+        setEntradaDet(null);
+        setVentaDet(null);
+        setDetalleLoading(true);
+
+        const req = tipo === 'entrada'
+            ? axios.get(route('inventario.entradas.detalle-json', m.referencia_id)).then(res => setEntradaDet(res.data.entrada))
+            : axios.get(route('ventas.ticket', m.referencia_id)).then(res => setVentaDet(res.data));
+
+        req.catch(() => toast.error('No se pudo cargar el detalle.'))
+           .finally(() => setDetalleLoading(false));
+    }
+
+    function cerrarDetalle() {
+        setDetalleTipo(null);
+    }
 
     function filtrar(patch: Partial<Filters>) {
         router.get(route('reportes.kardex'), { ...filters, ...patch }, { preserveState: true, replace: true });
@@ -168,8 +241,12 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
                     <tbody>
                         {movimientos.data.map(m => {
                             const up = m.entra != null; // suma stock = verde, resta = rojo
+                            const clic = filaClicable(m);
                             return (
-                                <tr key={m.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                <tr key={m.id}
+                                    onClick={clic ? () => abrirDetalle(m) : undefined}
+                                    className={clic ? 'kardex-row-clicable' : ''}
+                                    style={{ borderBottom: '1px solid var(--color-border)', cursor: clic ? 'pointer' : 'default' }}>
                                     <td className="px-3 py-2 text-xs whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{m.fecha ?? '—'}</td>
                                     <td className="px-3 py-2">
                                         <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
@@ -225,7 +302,187 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
                     ))}
                 </div>
             )}
+
+            {/* Modal de detalle: se abre al clicar una fila de venta o entrada.
+                Un solo Modal; el cuerpo cambia según `detalleTipo`. */}
+            <Modal
+                isOpen={detalleTipo !== null}
+                onClose={cerrarDetalle}
+                title={detalleTipo === 'venta' ? 'Detalle de venta' : 'Detalle de entrada'}
+                size="lg"
+            >
+                {detalleLoading ? (
+                    <div className="flex items-center justify-center py-12 gap-2" style={{ color: 'var(--color-text-muted)' }}>
+                        <Loader2 size={18} className="animate-spin" />
+                        <span className="text-sm">Cargando detalle...</span>
+                    </div>
+                ) : detalleTipo === 'entrada' && entradaDet ? (
+                    <DetalleEntrada e={entradaDet} />
+                ) : detalleTipo === 'venta' && ventaDet ? (
+                    <DetalleVenta v={ventaDet} />
+                ) : null}
+            </Modal>
+
+            {/* Hover para filas clicables — indica que hay detalle disponible. */}
+            <style>{`
+                .kardex-row-clicable:hover {
+                    background-color: color-mix(in srgb, var(--color-primary) 6%, transparent);
+                }
+            `}</style>
         </AppLayout>
+    );
+}
+
+// ── Cuerpo del modal: ENTRADA ──────────────────────────────────────────────
+function DetalleEntrada({ e }: { e: EntradaDet }) {
+    const saldo = Math.max(0, Number(e.total) - Number(e.monto_pagado ?? 0));
+    return (
+        <div className="space-y-5">
+            <div className="flex flex-wrap items-center gap-2 pb-3" style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                      style={{ color: e.estado === 'confirmado' ? '#16a34a' : '#ca8a04', backgroundColor: e.estado === 'confirmado' ? 'color-mix(in srgb, #16a34a 12%, transparent)' : 'rgba(250,204,21,0.15)' }}>
+                    {e.estado === 'confirmado' ? 'Confirmado' : 'Borrador'}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                      style={{ color: e.estado_pago === 'pagado' ? '#16a34a' : '#ca8a04', backgroundColor: e.estado_pago === 'pagado' ? 'color-mix(in srgb, #16a34a 12%, transparent)' : 'rgba(250,204,21,0.15)' }}>
+                    <Wallet size={11} />{e.estado_pago === 'pagado' ? 'Pagado' : e.estado_pago === 'parcial' ? 'Pago parcial' : 'Pago pendiente'}
+                </span>
+                <span className="ml-auto text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>#{e.id}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+                <MetaKardex label="Almacén" value={`${e.almacen.nombre}${e.almacen.local ? ' · ' + e.almacen.local.nombre : ''}`} />
+                <MetaKardex label="Registrado por" value={e.user.name} />
+                {e.proveedor && <MetaKardex label="Proveedor" value={e.proveedor} />}
+                {e.numero_documento && <MetaKardex label="Nº documento" value={e.numero_documento} mono />}
+            </div>
+
+            <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                    Productos ({e.detalles.length})
+                </h3>
+                <div className="rounded-xl border divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                    {e.detalles.map(d => (
+                        <div key={d.id} className="px-3 py-2.5 text-sm flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>{d.producto?.nombre ?? '—'}</p>
+                                <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                                    {Number(d.cantidad).toFixed(2)} {d.unidad_medida?.abreviatura ?? ''}
+                                    {' · '}S/ {Number(d.precio_costo).toFixed(2)} c/u
+                                </p>
+                            </div>
+                            <p className="text-sm font-mono font-semibold whitespace-nowrap" style={{ color: 'var(--color-text)' }}>
+                                S/ {Number(d.subtotal).toFixed(2)}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="rounded-xl p-3" style={{ backgroundColor: 'var(--color-bg)' }}>
+                <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>Total</span>
+                    <span className="text-lg font-bold font-mono" style={{ color: 'var(--color-text)' }}>S/ {Number(e.total).toFixed(2)}</span>
+                </div>
+                {e.estado_pago === 'pagado' && e.metodo_pago ? (
+                    <div className="flex justify-between items-center mt-2 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                        <span className="text-xs flex items-center gap-1.5" style={{ color: 'var(--color-text-muted)' }}><Wallet size={12} />Pagado con</span>
+                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                            {e.metodo_pago.nombre}
+                            {e.cuenta && <span style={{ color: 'var(--color-text-muted)' }}> · {e.cuenta.nombre}</span>}
+                        </span>
+                    </div>
+                ) : e.estado_pago !== 'pagado' && (
+                    <div className="flex justify-between items-center mt-2 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Saldo pendiente</span>
+                        <span className="text-sm font-mono font-bold" style={{ color: 'var(--color-danger)' }}>S/ {saldo.toFixed(2)}</span>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ── Cuerpo del modal: VENTA ────────────────────────────────────────────────
+function DetalleVenta({ v }: { v: VentaTicket }) {
+    return (
+        <div className="space-y-5">
+            <div className="flex flex-wrap items-center gap-2 pb-3" style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                      style={{ color: 'var(--color-primary)', backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)' }}>
+                    <ShoppingCart size={11} />{v.documento.tipo}
+                </span>
+                {v.documento.numero && <span className="text-sm font-mono font-semibold" style={{ color: 'var(--color-text)' }}>{v.documento.numero}</span>}
+                <span className="ml-auto text-xs" style={{ color: 'var(--color-text-muted)' }}>{v.documento.fecha ?? ''}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+                <MetaKardex label="Cliente" value={v.cliente.nombre} />
+                {v.cliente.doc && <MetaKardex label="Documento" value={v.cliente.doc} mono />}
+                {v.documento.vendedor && <MetaKardex label="Vendedor" value={v.documento.vendedor} />}
+                {v.documento.caja && <MetaKardex label="Caja" value={v.documento.caja} />}
+            </div>
+
+            <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                    Productos ({v.items.length})
+                </h3>
+                <div className="rounded-xl border divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                    {v.items.map((it, i) => (
+                        <div key={i} className="px-3 py-2.5 text-sm flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>{it.desc}</p>
+                                <p className="text-xs mt-0.5 font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                                    {it.cant.toFixed(2)} {it.unidad ?? ''}{' · '}S/ {it.precio.toFixed(2)} c/u
+                                </p>
+                            </div>
+                            <p className="text-sm font-mono font-semibold whitespace-nowrap" style={{ color: 'var(--color-text)' }}>
+                                S/ {it.importe.toFixed(2)}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="rounded-xl p-3 space-y-1.5" style={{ backgroundColor: 'var(--color-bg)' }}>
+                {v.totales.descuento > 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                        <span style={{ color: 'var(--color-text-muted)' }}>Descuento</span>
+                        <span className="font-mono" style={{ color: 'var(--color-danger)' }}>- S/ {v.totales.descuento.toFixed(2)}</span>
+                    </div>
+                )}
+                <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>Total</span>
+                    <span className="text-lg font-bold font-mono" style={{ color: 'var(--color-text)' }}>S/ {v.totales.total.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center mt-2 pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                    <span className="text-xs flex items-center gap-1.5" style={{ color: 'var(--color-text-muted)' }}><Wallet size={12} />Método de pago</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{v.pago.metodo ?? '—'}</span>
+                </div>
+                {v.pago.recibido != null && (
+                    <div className="flex justify-between items-center text-xs">
+                        <span style={{ color: 'var(--color-text-muted)' }}>Recibido (efectivo)</span>
+                        <span className="font-mono" style={{ color: 'var(--color-text)' }}>S/ {v.pago.recibido.toFixed(2)}</span>
+                    </div>
+                )}
+                {v.pago.vuelto != null && (
+                    <div className="flex justify-between items-center text-xs">
+                        <span style={{ color: 'var(--color-text-muted)' }}>Vuelto</span>
+                        <span className="font-mono" style={{ color: 'var(--color-text)' }}>S/ {v.pago.vuelto.toFixed(2)}</span>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/** Item label+valor para los modales de detalle del kardex. */
+function MetaKardex({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+    return (
+        <div>
+            <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            <p className={`text-sm ${mono ? 'font-mono' : ''}`} style={{ color: 'var(--color-text)' }}>{value}</p>
+        </div>
     );
 }
 
