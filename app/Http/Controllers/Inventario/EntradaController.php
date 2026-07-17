@@ -93,6 +93,20 @@ class EntradaController extends Controller
             ->when($request->estado, fn ($q, $e) => $q->where('estado', $e))
             ->when($request->fecha_desde, fn ($q, $f) => $q->whereDate('fecha', '>=', $f))
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
+            // Búsqueda SERVER-SIDE sobre TODA la base (no solo la página visible):
+            // documento, proveedor de texto libre y proveedor del catálogo. Antes se
+            // filtraba en el cliente sobre las 25 filas de la página, así que una
+            // entrada en otra página nunca aparecía al buscar (bug reportado).
+            ->when($request->buscar, function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(function ($sub) use ($t) {
+                    $sub->where('numero_documento', 'ilike', "%{$t}%")
+                        ->orWhere('proveedor', 'ilike', "%{$t}%")
+                        ->orWhereHas('proveedorRel', fn ($p) => $p
+                            ->where('razon_social', 'ilike', "%{$t}%")
+                            ->orWhere('nombre_comercial', 'ilike', "%{$t}%"));
+                });
+            })
             ->orderByDesc('fecha')
             ->orderByDesc('id')
             ->paginate(25)
@@ -102,7 +116,7 @@ class EntradaController extends Controller
             'entradas'        => $entradas,
             'almacenes'       => $this->scope->almacenesVisibles($user),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
-            'filters'         => $request->only(['almacen_id', 'estado', 'fecha_desde', 'fecha_hasta']),
+            'filters'         => $request->only(['almacen_id', 'estado', 'fecha_desde', 'fecha_hasta', 'buscar']),
             // Para el modal de quick-pago en el Index. Eager cuentas para evitar query
             // adicional al abrir el modal y permitir filtrar cuentas por metodo en cliente.
             'metodosPago'     => MetodoPago::deEmpresa($user->empresa_id)->activo()

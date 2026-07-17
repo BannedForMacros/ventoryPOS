@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet, Eye, Loader2 } from 'lucide-react';
@@ -88,7 +88,28 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
     const [filtrEstado, setFiltrEstado]   = useState(filters.estado ?? '');
     // Search vive a nivel de página para compartirse entre la vista de cards (mobile)
     // y la tabla (desktop). El Table interno recibe searchable=false para no duplicar.
-    const [search, setSearch]             = useState('');
+    // Se inicializa desde el server para conservar el término al paginar/recargar.
+    const [search, setSearch]             = useState(filters.buscar ?? '');
+
+    // Búsqueda/filtros SERVER-SIDE: cada cambio consulta TODA la base (debounced),
+    // no solo las 25 filas de la página actual. Así una entrada en otra página
+    // aparece al buscar (antes se filtraba en el cliente y no la encontraba).
+    const primeraCarga = useRef(true);
+    useEffect(() => {
+        if (primeraCarga.current) { primeraCarga.current = false; return; }
+        const t = setTimeout(() => {
+            router.get(
+                route('inventario.entradas.index'),
+                {
+                    buscar: search || undefined,
+                    almacen_id: filtrAlmacen || undefined,
+                    estado: filtrEstado || undefined,
+                },
+                { preserveState: true, preserveScroll: true, replace: true },
+            );
+        }, 350);
+        return () => clearTimeout(t);
+    }, [search, filtrAlmacen, filtrEstado]);
 
     // Modal Ver detalle: id de la entrada cuya info se está mostrando + payload del fetch.
     const [verEntradaId, setVerEntradaId]   = useState<number | null>(null);
@@ -291,19 +312,9 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
         },
     ];
 
-    const filtered = useMemo(() => {
-        const s = search.trim().toLowerCase();
-        return entradas.data.filter(e => {
-            if (filtrAlmacen && e.almacen.id !== Number(filtrAlmacen)) return false;
-            if (filtrEstado  && e.estado !== filtrEstado) return false;
-            if (!s) return true;
-            const haystack = [
-                e.proveedor ?? '', e.numero_documento ?? '', e.almacen.nombre,
-                e.user.name, TIPOS[e.tipo] ?? e.tipo, e.fecha,
-            ].join(' ').toLowerCase();
-            return haystack.includes(s);
-        });
-    }, [entradas.data, filtrAlmacen, filtrEstado, search]);
+    // El filtrado ya lo hace el servidor sobre toda la base; aquí solo pintamos
+    // lo que llega. (Antes se filtraba en cliente sobre la página → no cruzaba páginas.)
+    const filtered = entradas.data;
 
     return (
         <AppLayout title="Entradas">
@@ -327,7 +338,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     />
                     <input
                         type="text"
-                        placeholder="Buscar por proveedor, documento, almacén..."
+                        placeholder="Buscar por documento o proveedor (toda la base)..."
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         className="w-full rounded-xl border py-2 pl-9 pr-9 text-sm outline-none transition-all"
@@ -529,7 +540,16 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     {Array.from({ length: entradas.last_page }, (_, i) => i + 1).map(page => (
                         <button
                             key={page}
-                            onClick={() => router.get(route('inventario.entradas.index'), { page }, { preserveState: true })}
+                            onClick={() => router.get(
+                                route('inventario.entradas.index'),
+                                {
+                                    page,
+                                    buscar: search || undefined,
+                                    almacen_id: filtrAlmacen || undefined,
+                                    estado: filtrEstado || undefined,
+                                },
+                                { preserveState: true, preserveScroll: true },
+                            )}
                             className="w-8 h-8 rounded-lg text-xs font-medium transition-colors"
                             style={{
                                 backgroundColor: page === entradas.current_page ? 'var(--color-primary)' : 'transparent',
