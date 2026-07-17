@@ -23,6 +23,7 @@ interface Pago {
     observacion?: string | null;
     metodo_pago_id?: number | null;
     cuenta_id?: number | null;
+    turno_id?: number | null;
     proveedor_adelanto_id: number | null;
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
@@ -45,6 +46,13 @@ interface EntradaCxp extends Record<string, unknown> {
 
 interface AdelantoMin { id: number; proveedor_id: number; saldo: string; }
 
+interface TurnoLite {
+    id: number; user_id: number; caja_id: number; fecha_apertura: string;
+    estado: 'abierto' | 'cerrado';
+    user?: { id: number; name: string } | null;
+    caja?: { id: number; nombre: string } | null;
+}
+
 interface Paginado<T> { data: T[]; total: number; }
 
 interface Props extends PageProps {
@@ -56,6 +64,7 @@ interface Props extends PageProps {
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
     adelantos: AdelantoMin[];
+    turnos: TurnoLite[];
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -68,8 +77,15 @@ const nombreProveedor = (e: EntradaCxp) =>
     e.proveedor_rel?.razon_social ?? e.proveedor_rel?.nombre_comercial ?? e.proveedor ?? '—';
 const saldoDe = (e: EntradaCxp) => Math.max(0, Number(e.total) - Number(e.monto_pagado));
 
-export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, estado, buscar, metodosPago, cuentas, adelantos }: Props) {
+export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, estado, buscar, metodosPago, cuentas, adelantos, turnos }: Props) {
     const { flash } = usePage<Props>().props;
+    // "Afecta caja a:" — texto del turno (#id · fecha hora · usuario · caja · abierto).
+    const turnoLabel = (t: TurnoLite) => {
+        const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
+        const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        return [`#${t.id}`, `${f} ${hora}`, t.user?.name, t.caja?.nombre].filter(Boolean).join(' · ')
+            + (t.estado === 'abierto' ? ' · abierto' : '');
+    };
     const [abonando, setAbonando] = useState<EntradaCxp | null>(null);
     const [detalle, setDetalle]   = useState<EntradaCxp | null>(null);
     const [saving, setSaving]     = useState(false);
@@ -77,14 +93,14 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
     const [usarAdelanto, setUsarAdelanto] = useState(false);
     const [form, setForm] = useState({
         monto: '', fecha: hoy(), metodo_pago_id: '', cuenta_id: '',
-        proveedor_adelanto_id: '', referencia: '', observacion: '',
+        proveedor_adelanto_id: '', referencia: '', observacion: '', turno_id: '',
     });
     // Edición / anulación de un pago ya registrado (solo admin).
     const [editandoPago, setEditandoPago]   = useState<Pago | null>(null);
     const [anulandoPago, setAnulandoPago]   = useState<Pago | null>(null);
     const [motivoAnular, setMotivoAnular]   = useState('');
     const [formPago, setFormPago] = useState({
-        monto: '', fecha: '', metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
+        monto: '', fecha: '', metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '', turno_id: '',
     });
 
     function abrirEditarPago(p: Pago) {
@@ -96,6 +112,8 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
             cuenta_id:      p.cuenta_id ? String(p.cuenta_id) : '',
             referencia:     p.referencia ?? '',
             observacion:    p.observacion ?? '',
+            // Preselecciona el turno actual del pago para no re-imputar sin querer.
+            turno_id:       p.turno_id ? String(p.turno_id) : '',
         });
         setEditandoPago(p);
     }
@@ -112,6 +130,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
             cuenta_id:      esAdelantoPago ? null : (formPago.cuenta_id || null),
             referencia:     formPago.referencia || null,
             observacion:    formPago.observacion || null,
+            turno_id:       formPago.turno_id || null,
         } as any, {
             onSuccess: () => { setEditandoPago(null); setDetalle(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -152,7 +171,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
         setUsarAdelanto(false);
         setForm({
             monto: saldoDe(e).toFixed(2), fecha: hoy(), metodo_pago_id: '', cuenta_id: '',
-            proveedor_adelanto_id: '', referencia: '', observacion: '',
+            proveedor_adelanto_id: '', referencia: '', observacion: '', turno_id: '',
         });
     }
 
@@ -164,6 +183,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
             metodo_pago_id:        usarAdelanto ? null : (form.metodo_pago_id || null),
             cuenta_id:             usarAdelanto ? null : (form.cuenta_id || null),
             proveedor_adelanto_id: usarAdelanto ? (form.proveedor_adelanto_id || null) : null,
+            turno_id:              form.turno_id || null,
         } as any, {
             onSuccess: () => { setAbonando(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -372,6 +392,20 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
                             value={form.observacion}
                             onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
                         />
+
+                        {/* "Afecta caja a:" — de qué caja/turno sale el efectivo. Default
+                            "Sin turno" = no afecta ninguna caja. */}
+                        {turnos.length > 0 && (
+                            <Select label="Afecta caja a (turno)"
+                                options={[
+                                    { value: '', label: 'Sin turno (no afecta caja)' },
+                                    ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) })),
+                                ]}
+                                value={form.turno_id}
+                                onChange={v => setForm(f => ({ ...f, turno_id: String(v) }))}
+                                hint="Elige de qué caja salió el efectivo, para que la consolidación de ese turno lo reste."
+                            />
+                        )}
                     </div>
                 )}
             </Modal>
@@ -509,6 +543,20 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
                             onChange={e => setFormPago(f => ({ ...f, referencia: e.target.value }))} />
                         <Input label="Observación" value={formPago.observacion}
                             onChange={e => setFormPago(f => ({ ...f, observacion: e.target.value }))} />
+
+                        {/* "Afecta caja a:" — preseleccionado con el turno actual del pago
+                            para no re-imputar sin querer al guardar. */}
+                        {turnos.length > 0 && (
+                            <Select label="Afecta caja a (turno)"
+                                options={[
+                                    { value: '', label: 'Sin turno (no afecta caja)' },
+                                    ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) })),
+                                ]}
+                                value={formPago.turno_id}
+                                onChange={v => setFormPago(f => ({ ...f, turno_id: String(v) }))}
+                                hint="De qué caja salió el efectivo. Al guardar, la consolidación de ese turno lo reflejará."
+                            />
+                        )}
                     </div>
                 )}
             </Modal>

@@ -71,7 +71,34 @@ class CuentasPorCobrarController extends Controller
             'busqueda'       => (string) $request->input('busqueda', ''),
             'metodosPago'    => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
             'cuentas'        => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
+            // "Afecta caja a:" — turnos para elegir a qué caja entra el cobro (los de
+            // hoy o abiertos ahora). null = no afecta ninguna caja.
+            'turnos'         => Turno::deEmpresa($user->empresa_id)
+                ->with(['user:id,name', 'caja:id,nombre'])
+                ->where(fn ($q) => $q->whereDate('fecha_apertura', now()->toDateString())->orWhere('estado', 'abierto'))
+                ->orderByDesc('fecha_apertura')->limit(40)
+                ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
+            // Turno sugerido por defecto para el cobro: el propio abierto del usuario, o
+            // el único abierto en su ámbito (misma auto-resolución que usa abonar()).
+            'turnoActivoId'  => $this->turnoSugerido($user),
         ]);
+    }
+
+    /**
+     * Turno al que se imputaría un cobro por defecto: 1) el turno propio abierto del
+     * usuario; 2) si no tiene, el ÚNICO turno abierto en su ámbito; 3) ninguno.
+     */
+    private function turnoSugerido($user): ?int
+    {
+        $turnoId = Turno::turnoActivoDelUsuario($user->id)?->id;
+        if (!$turnoId) {
+            $abiertos = Turno::deEmpresa($user->empresa_id)->where('estado', 'abierto')
+                ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id))
+                ->pluck('id');
+            $turnoId = $abiertos->count() === 1 ? $abiertos->first() : null;
+        }
+
+        return $turnoId;
     }
 
     /**
@@ -90,18 +117,16 @@ class CuentasPorCobrarController extends Controller
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
+            // "Afecta caja a:" — turno de cuya caja entra el cobro. null = "Sin turno".
+            'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
         // Turno al que se imputa el abono (y si es efectivo, suma a esa caja):
-        // 1) el turno propio abierto del usuario; 2) si el usuario no tiene turno
-        // (p.ej. admin), el ÚNICO turno abierto en su ámbito; 3) ninguno.
-        $turnoId = Turno::turnoActivoDelUsuario($user->id)?->id;
-        if (!$turnoId) {
-            $abiertos = Turno::deEmpresa($user->empresa_id)->where('estado', 'abierto')
-                ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id))
-                ->pluck('id');
-            $turnoId = $abiertos->count() === 1 ? $abiertos->first() : null;
-        }
+        // si el front manda 'turno_id' (aunque sea null = "Sin turno"), se respeta.
+        // Si NO lo manda (llamadores viejos), se auto-resuelve como antes.
+        $turnoId = $request->has('turno_id')
+            ? ($data['turno_id'] ?? null)
+            : $this->turnoSugerido($user);
 
         DB::transaction(function () use ($venta, $user, $data, $turnoId) {
             $abono = VentaAbono::create($data + [

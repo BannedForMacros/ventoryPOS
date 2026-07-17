@@ -8,6 +8,7 @@ use App\Models\Entrada;
 use App\Models\EntradaPago;
 use App\Models\MetodoPago;
 use App\Models\ProveedorAdelanto;
+use App\Models\Turno;
 use App\Services\AuditoriaService;
 use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
@@ -67,6 +68,13 @@ class CuentasPorPagarController extends Controller
             // Adelantos con saldo para ofrecer "pagar consumiendo adelanto".
             'adelantos'      => ProveedorAdelanto::deEmpresa($user->empresa_id)->activo()
                 ->where('saldo', '>', 0)->get(['id', 'proveedor_id', 'saldo']),
+            // "Afecta caja a:" — turnos para elegir de qué caja sale el efectivo del
+            // pago (los de hoy o abiertos ahora). null = no afecta ninguna caja.
+            'turnos'         => Turno::deEmpresa($user->empresa_id)
+                ->with(['user:id,name', 'caja:id,nombre'])
+                ->where(fn ($q) => $q->whereDate('fecha_apertura', now()->toDateString())->orWhere('estado', 'abierto'))
+                ->orderByDesc('fecha_apertura')->limit(40)
+                ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
         ]);
     }
 
@@ -92,6 +100,9 @@ class CuentasPorPagarController extends Controller
             'proveedor_adelanto_id' => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
             'referencia'            => ['nullable', 'string', 'max:200'],
             'observacion'           => ['nullable', 'string', 'max:500'],
+            // "Afecta caja a:" — turno de cuya caja sale el efectivo. null = no afecta
+            // ninguna caja. Va directo al EntradaPago (turno_id es fillable).
+            'turno_id'              => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
         DB::transaction(function () use ($entrada, $user, $data) {
