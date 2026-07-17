@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
 use App\Models\Cuenta;
+use App\Models\CuentaMovimiento;
 use App\Models\Deuda;
 use App\Models\MetodoPago;
 use App\Services\AuditoriaService;
@@ -77,19 +78,59 @@ class DeudaController extends Controller
             'fecha_inicio'      => ['required', 'date'],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
             'observacion'       => ['nullable', 'string', 'max:500'],
+            // Desembolso opcional: mover el dinero en tesorería al crear la deuda.
+            // Por defecto SÍ se mueve; se puede desactivar para deudas históricas
+            // (ya gastadas / sin rastro de caja).
+            'registrar_caja'    => ['boolean'],
+            'metodo_pago_id'    => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'         => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
-        $deuda = Deuda::create($data + [
-            'empresa_id' => $user->empresa_id,
-            'user_id'    => $user->id,
-            'saldo'      => $data['monto_original'],
-            'estado'     => 'activa',
-        ]);
+        $registrarCaja = $request->boolean('registrar_caja', true);
+
+        $deuda = DB::transaction(function () use ($data, $user, $registrarCaja) {
+            $deuda = Deuda::create([
+                'empresa_id'        => $user->empresa_id,
+                'user_id'           => $user->id,
+                'direccion'         => $data['direccion'],
+                'tipo'              => $data['tipo'],
+                'nombre'            => $data['nombre'],
+                'monto_original'    => $data['monto_original'],
+                'fecha_inicio'      => $data['fecha_inicio'],
+                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+                'observacion'       => $data['observacion'] ?? null,
+                'saldo'             => $data['monto_original'],
+                'estado'            => 'activa',
+            ]);
+
+            // Desembolso inicial. NO es una amortización: no toca el saldo (que
+            // sigue siendo el monto por pagar/cobrar). Solo mueve el dinero:
+            //   por_pagar  → nos ENTRA el préstamo   → INGRESO a la cuenta
+            //   por_cobrar → SALE lo que prestamos    → EGRESO de la cuenta
+            // ref_tipo='deuda', ref_id=deuda->id → un único asiento reversible.
+            if ($registrarCaja) {
+                $esIngreso = $deuda->direccion === Deuda::DIRECCION_POR_PAGAR;
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                    $user,
+                    $data['fecha_inicio'],
+                    $esIngreso ? 'ingreso' : 'egreso',
+                    (float) $data['monto_original'],
+                    "Desembolso de deuda — {$deuda->nombre}",
+                    'deuda',
+                    $deuda->id,
+                );
+            }
+
+            return $deuda;
+        });
 
         AuditoriaService::log('deuda.creada', $deuda, [
-            'nombre'    => $deuda->nombre,
-            'direccion' => $deuda->direccion,
-            'monto'     => (float) $deuda->monto_original,
+            'nombre'     => $deuda->nombre,
+            'direccion'  => $deuda->direccion,
+            'monto'      => (float) $deuda->monto_original,
+            'desembolso' => $registrarCaja,
         ], $user);
 
         return back()->with('success', 'Deuda registrada correctamente.');
@@ -162,6 +203,12 @@ class DeudaController extends Controller
         return back()->with('success', 'Movimiento registrado correctamente.');
     }
 
+    /**
+     * Anula (oculta del balance) una deuda sin tocar tesorería, igual que con
+     * las cuotas: anular es un "ocultar" reversible, no una reversión de caja.
+     * El desembolso y los movimientos siguen en tesorería y se recuperan al
+     * reactivar. Para deshacer el dinero por completo usa "eliminar" (destroy).
+     */
     public function anular(Request $request, Deuda $deuda)
     {
         $user = $request->user();
@@ -221,10 +268,20 @@ class DeudaController extends Controller
         $delta      = round((float) $data['monto_original'] - (float) $deuda->monto_original, 2);
         $nuevoSaldo = max(0, round((float) $deuda->saldo + $delta, 2));
 
-        $deuda->update($data + [
-            'saldo'  => $nuevoSaldo,
-            'estado' => $nuevoSaldo <= 0.01 ? 'pagada' : 'activa',
-        ]);
+        DB::transaction(function () use ($deuda, $data, $nuevoSaldo) {
+            $deuda->update($data + [
+                'saldo'  => $nuevoSaldo,
+                'estado' => $nuevoSaldo <= 0.01 ? 'pagada' : 'activa',
+            ]);
+
+            // Mantener coherente el desembolso inicial (si existe): su monto y
+            // fecha siguen al principal. No se toca la cuenta ni la dirección
+            // (la edición no las cambia). Si no hubo desembolso, no crea nada.
+            CuentaMovimiento::where('ref_tipo', 'deuda')->where('ref_id', $deuda->id)->update([
+                'monto' => round((float) $data['monto_original'], 2),
+                'fecha' => substr($data['fecha_inicio'], 0, 10),
+            ]);
+        });
 
         AuditoriaService::log('deuda.editada', $deuda, [
             'antes'   => $antes,
@@ -303,6 +360,9 @@ class DeudaController extends Controller
             foreach ($deuda->pagos as $pago) {
                 $this->tesoreria->revertir('deuda_pago', $pago->id);
             }
+
+            // Revertir también el desembolso inicial (ingreso/egreso al crear).
+            $this->tesoreria->revertir('deuda', $deuda->id);
 
             $deuda->pagos()->delete();
             $deuda->delete();

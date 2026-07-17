@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown } from 'lucide-react';
+import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus } from 'lucide-react';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -18,7 +18,8 @@ import Callout from '@/Components/UI/Callout';
 import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
-import type { PageProps } from '@/types';
+import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
+import type { PageProps, Cliente } from '@/types';
 
 interface AplicacionItem {
     id: number;
@@ -62,7 +63,7 @@ interface Anticipo extends Record<string, unknown> {
     observacion: string | null;
     fecha_entrega_estimada?: string | null;
     valor_pasivo_hoy?: number;
-    cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string } | null;
+    cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string; es_cliente_general?: boolean } | null;
     producto?: { id: number; nombre: string; precio_venta: string } | null;
     venta?: { id: number; numero: string } | null;
     metodo_pago?: { nombre: string } | null;
@@ -78,7 +79,7 @@ interface Props extends PageProps {
     totalPasivo: number;
     estado: string;
     buscar?: string;
-    clientes: { id: number; nombres?: string; apellidos?: string; razon_social?: string }[];
+    clientes: { id: number; nombres?: string; apellidos?: string; razon_social?: string; es_cliente_general?: boolean }[];
     productos: { id: number; nombre: string; precio_venta: string }[];
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
@@ -88,8 +89,10 @@ import { hoyLocal } from '@/lib/fechas';
 
 const hoy = () => hoyLocal();
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
-const nombreCliente = (c?: { nombres?: string; apellidos?: string; razon_social?: string } | null) =>
-    c?.razon_social ?? (`${c?.nombres ?? ''} ${c?.apellidos ?? ''}`.trim() || '—');
+const nombreCliente = (c?: { nombres?: string; apellidos?: string; razon_social?: string; es_cliente_general?: boolean } | null) =>
+    c?.es_cliente_general
+        ? 'Clientes varios'
+        : (c?.razon_social ?? (`${c?.nombres ?? ''} ${c?.apellidos ?? ''}`.trim() || '—'));
 
 const esMultiItem = (a: Anticipo) => (a.items?.length ?? 0) > 0;
 
@@ -116,6 +119,7 @@ const emptyForm = () => ({
 export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clientes, productos, metodosPago, cuentas }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo]   = useState(false);
+    const [modalCrearCliente, setModalCrearCliente] = useState(false);
     const [aplicando, setAplicando]     = useState<Anticipo | null>(null);
     const [anulando, setAnulando]       = useState<Anticipo | null>(null);
     const [detalle, setDetalle]         = useState<Anticipo | null>(null);
@@ -127,6 +131,12 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
     const [entregas, setEntregas]       = useState<Record<number, string>>({});
     const [excesoACxc, setExcesoACxc]   = useState(false);
     const [formAnular, setFormAnular]   = useState({ accion: 'devuelto', motivo: '' });
+
+    // Cliente general ("Clientes varios"): para anticipos/depósitos sin dueño identificado.
+    const clienteGeneral = useMemo(
+        () => clientes.find(c => c.es_cliente_general) ?? null,
+        [clientes],
+    );
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -364,13 +374,35 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
                 }
             >
                 <div className="space-y-4">
-                    <SearchableSelect label="Cliente" required
-                        options={clientes.map(c => ({ value: String(c.id), label: nombreCliente(c) }))}
-                        value={form.cliente_id}
-                        onChange={v => setForm(f => ({ ...f, cliente_id: String(v) }))}
-                        placeholder="— Seleccionar cliente —"
-                        error={errors.cliente_id}
-                    />
+                    <div>
+                        <div className="flex items-end gap-2">
+                            <div className="flex-1 min-w-0">
+                                <SearchableSelect label="Cliente" required
+                                    options={clientes.map(c => ({ value: String(c.id), label: nombreCliente(c) }))}
+                                    value={form.cliente_id}
+                                    onChange={v => setForm(f => ({ ...f, cliente_id: String(v) }))}
+                                    placeholder="— Seleccionar cliente —"
+                                    searchPlaceholder="Buscar por nombre..."
+                                    error={errors.cliente_id}
+                                />
+                            </div>
+                            {/* Alta rápida de cliente sin salir del anticipo */}
+                            <Button type="button" variant="secondary" startContent={<UserPlus size={15} />}
+                                onClick={() => setModalCrearCliente(true)}
+                                title="Crear nuevo cliente">
+                                Nuevo
+                            </Button>
+                        </div>
+                        {/* Acceso rápido a "Clientes varios" (depósito sin dueño identificado) */}
+                        {clienteGeneral && form.cliente_id !== String(clienteGeneral.id) && (
+                            <button type="button"
+                                onClick={() => setForm(f => ({ ...f, cliente_id: String(clienteGeneral.id) }))}
+                                className="mt-1 text-[11px] font-medium hover:underline"
+                                style={{ color: 'var(--color-primary)' }}>
+                                Usar «Clientes varios»
+                            </button>
+                        )}
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                         <Input label="Fecha" required type="date" value={form.fecha}
                             onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
@@ -666,6 +698,19 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
                     </div>
                 )}
             </Modal>
+
+            {/* Alta de cliente sin salir del anticipo (reutiliza el modal del POS).
+                Al guardar, Inertia refresca la lista `clientes` y auto-seleccionamos
+                el nuevo en el formulario en curso. */}
+            <ModalCrearCliente
+                isOpen={modalCrearCliente}
+                onClose={() => setModalCrearCliente(false)}
+                onCreated={(c: Cliente) => {
+                    setForm(f => ({ ...f, cliente_id: String(c.id) }));
+                    setModalCrearCliente(false);
+                    toast.success(`Cliente "${nombreCliente(c as unknown as { nombres?: string; apellidos?: string; razon_social?: string })}" creado y seleccionado.`);
+                }}
+            />
         </AppLayout>
     );
 }

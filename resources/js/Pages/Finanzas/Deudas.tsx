@@ -12,6 +12,7 @@ import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
+import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
@@ -65,6 +66,8 @@ const TIPO_LABEL: Record<string, string> = {
 const emptyForm = () => ({
     direccion: 'por_pagar', tipo: 'bancaria', nombre: '',
     monto_original: '', fecha_inicio: hoy(), fecha_vencimiento: '', observacion: '',
+    // Desembolso: por defecto SÍ mueve el dinero en caja al crear la deuda.
+    registrar_caja: true, metodo_pago_id: '', cuenta_id: '',
 });
 
 export default function Deudas({ deudas, totales, estado, buscar, metodosPago, cuentas, puede }: Props) {
@@ -160,6 +163,8 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         router.post(route('finanzas.deudas.store'), {
             ...form,
             fecha_vencimiento: form.fecha_vencimiento || null,
+            metodo_pago_id: form.registrar_caja ? (form.metodo_pago_id || null) : null,
+            cuenta_id:      form.registrar_caja ? (form.cuenta_id || null) : null,
         } as any, {
             onSuccess: () => { setModalNuevo(false); setForm(emptyForm()); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -351,6 +356,50 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                         onChange={e => setForm(f => ({ ...f, fecha_vencimiento: e.target.value }))} error={errors.fecha_vencimiento} />
                     <Input label="Observación" value={form.observacion}
                         onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} />
+
+                    {/* Desembolso: mueve el dinero en tesorería al crear la deuda.
+                        por_pagar → INGRESO (nos entra el préstamo);
+                        por_cobrar → EGRESO (sale lo que prestamos). */}
+                    <div className="rounded-xl p-3 space-y-3" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                        <Checkbox
+                            checked={form.registrar_caja}
+                            onChange={e => setForm(f => ({ ...f, registrar_caja: e.target.checked }))}
+                            label={form.direccion === 'por_pagar' ? '¿A qué cuenta entró el dinero?' : '¿De qué cuenta salió el dinero?'}
+                            description={form.registrar_caja
+                                ? (form.direccion === 'por_pagar'
+                                    ? 'Se registrará un INGRESO por el monto a la cuenta elegida.'
+                                    : 'Se registrará un EGRESO por el monto de la cuenta elegida.')
+                                : 'Desactivado: solo se registra la deuda, sin mover caja (préstamo histórico ya gastado).'}
+                        />
+                        {form.registrar_caja && (
+                            <div className="space-y-3">
+                                <Select label="Método de pago"
+                                    options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
+                                    value={form.metodo_pago_id}
+                                    onChange={v => { const cts = cuentasDeMetodo(String(v)); setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
+                                    placeholder="— Seleccionar —"
+                                />
+                                {cuentasDeMetodo(form.metodo_pago_id).length > 0 ? (
+                                    <Select label="Cuenta"
+                                        options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                                        value={form.cuenta_id}
+                                        onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
+                                        placeholder="— Seleccionar —"
+                                        error={errors.cuenta_id}
+                                    />
+                                ) : form.metodo_pago_id ? (
+                                    <Callout variant="info">
+                                        El dinero se registrará en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
+                                        que el sistema crea y vincula automáticamente a este método.
+                                    </Callout>
+                                ) : (
+                                    <Callout variant="info">
+                                        Sin método: el desembolso irá a la caja <strong>Efectivo</strong>.
+                                    </Callout>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </Modal>
 

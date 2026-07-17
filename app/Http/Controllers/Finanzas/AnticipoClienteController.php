@@ -45,6 +45,10 @@ class AnticipoClienteController extends Controller
     {
         $user = $request->user();
 
+        // Garantiza el Cliente General ("Clientes varios") para poder registrar
+        // depósitos sin dueño identificado (idempotente, sin migración).
+        Cliente::asegurarGeneralDeEmpresa($user->empresa_id);
+
         $query = ClienteAnticipo::deEmpresa($user->empresa_id)
             ->with([
                 'cliente', 'producto', 'metodoPago', 'cuenta', 'venta:id,numero',
@@ -87,9 +91,12 @@ class AnticipoClienteController extends Controller
             'totalPasivo' => round((float) $totalPasivo, 2),
             'estado'      => $request->input('estado', 'activos'),
             'buscar'      => $request->input('buscar', ''),
+            // Incluye "Clientes varios" (cliente general) de primero, para
+            // registrar depósitos sin cliente identificado — mismo patrón que
+            // Cotizaciones.
             'clientes'    => Cliente::where('empresa_id', $user->empresa_id)->where('activo', true)
-                ->where('es_cliente_general', false)
-                ->orderBy('nombres')->get(['id', 'nombres', 'apellidos', 'razon_social']),
+                ->orderByDesc('es_cliente_general')
+                ->orderBy('nombres')->get(['id', 'nombres', 'apellidos', 'razon_social', 'es_cliente_general']),
             'productos'   => Producto::where('empresa_id', $user->empresa_id)->where('activo', true)
                 ->orderBy('nombre')->get(['id', 'nombre', 'precio_venta']),
             'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),

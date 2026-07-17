@@ -75,4 +75,20 @@ class Cliente extends Model
             ->where('es_cliente_general', true)
             ->first();
     }
+
+    /**
+     * Garantiza que la empresa tenga su Cliente General ("Clientes varios") y
+     * lo devuelve. Idempotente: el índice único parcial
+     * (clientes_un_general_por_empresa) asegura a lo sumo uno por empresa, y
+     * firstOrCreate no lo duplica en llamadas repetidas. Útil para tenants que
+     * nunca tuvieron el DNI 99999999 del backfill (A15), de modo que módulos
+     * como Cotizaciones/Anticipos siempre puedan ofrecer "Clientes varios".
+     */
+    public static function asegurarGeneralDeEmpresa(int $empresaId): self
+    {
+        return static::firstOrCreate(
+            ['empresa_id' => $empresaId, 'es_cliente_general' => true],
+            ['nombres' => 'Clientes varios', 'apellidos' => '', 'activo' => true],
+        );
+    }
 }
