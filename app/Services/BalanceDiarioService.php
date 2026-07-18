@@ -50,53 +50,71 @@ class BalanceDiarioService
                 return $balance; // confirmado = snapshot inmutable
             }
 
-            // Balance anterior: último confirmado antes de esta fecha.
-            $anterior = BalanceDiario::deEmpresa($empresaId)
-                ->confirmado()
-                ->where('fecha', '<', $fecha)
-                ->orderByDesc('fecha')
-                ->first();
-
-            // Gastos del día (operativos, del Excel "GASTOS DEL DÍA").
-            $gastosDia = (float) Gasto::deEmpresa($empresaId)
-                ->where('fecha', $fecha)
-                ->sum('monto');
-
-            // ── UTILIDAD OPERATIVA del día: ventas − costo de lo vendido − gastos.
-            // Es la ganancia REAL ("cuánto vendí, cuánto gané"). NO se usa el
-            // Δpatrimonio como utilidad: pagar proveedores o comprar mercadería
-            // baja el saldo pero NO es pérdida. El costo usa el snapshot congelado
-            // del ítem (mismo criterio del Reporte de Utilidad).
-            $ventasDia = (float) Venta::deEmpresa($empresaId)
-                ->where('estado', 'completada')
-                ->whereBetween('fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
-                ->sum('total');
-
-            $costoSql = "COALESCE(NULLIF(vi.costo_unitario_base, 0), NULLIF(p.precio_costo, 0),
-                (SELECT s.costo_promedio FROM stock s WHERE s.producto_id = p.id AND s.costo_promedio > 0 ORDER BY s.id LIMIT 1), 0)";
-            $costoDia = (float) DB::table('venta_items as vi')
-                ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
-                ->join('productos as p', 'p.id', '=', 'vi.producto_id')
-                ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
-                ->whereBetween('v.fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
-                ->selectRaw("COALESCE(SUM(vi.cantidad_base * {$costoSql}), 0) as c")->value('c');
-
-            $utilidadDia = round($ventasDia - $costoDia - $gastosDia, 2);
-
-            $balance->update([
-                'balance_anterior' => $anterior?->balance_neto,
-                'gastos_dia'       => round($gastosDia, 2),
-                'ventas_dia'       => round($ventasDia, 2),
-                'costo_dia'        => round($costoDia, 2),
-                'utilidad_dia'     => $utilidadDia,
-            ]);
-
-            $this->regenerarItemsAutomaticos($balance);
-
-            $balance->recalcularTotales();
+            $this->reconstruir($balance);
 
             return $balance->fresh('items');
         });
+    }
+
+    /**
+     * Recalcula las métricas del día (balance anterior, gastos, y la UTILIDAD
+     * OPERATIVA = ventas − costo de lo vendido − gastos) y regenera las líneas
+     * automáticas + totales. La utilidad operativa es la ganancia REAL del día
+     * ("cuánto vendí, cuánto gané"): NO se usa el Δpatrimonio, porque pagar
+     * proveedores o comprar mercadería baja el saldo sin ser pérdida. El costo
+     * usa el snapshot congelado del ítem (mismo criterio del Reporte de Utilidad).
+     */
+    private function reconstruir(BalanceDiario $balance): void
+    {
+        $empresaId = $balance->empresa_id;
+        $fecha     = $balance->fecha->toDateString();
+
+        $anterior = BalanceDiario::deEmpresa($empresaId)
+            ->confirmado()
+            ->where('fecha', '<', $fecha)
+            ->orderByDesc('fecha')
+            ->first();
+
+        $gastosDia = (float) Gasto::deEmpresa($empresaId)
+            ->where('fecha', $fecha)
+            ->sum('monto');
+
+        $ventasDia = (float) Venta::deEmpresa($empresaId)
+            ->where('estado', 'completada')
+            ->whereBetween('fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
+            ->sum('total');
+
+        $costoSql = "COALESCE(NULLIF(vi.costo_unitario_base, 0), NULLIF(p.precio_costo, 0),
+            (SELECT s.costo_promedio FROM stock s WHERE s.producto_id = p.id AND s.costo_promedio > 0 ORDER BY s.id LIMIT 1), 0)";
+        $costoDia = (float) DB::table('venta_items as vi')
+            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
+            ->join('productos as p', 'p.id', '=', 'vi.producto_id')
+            ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
+            ->whereBetween('v.fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
+            ->selectRaw("COALESCE(SUM(vi.cantidad_base * {$costoSql}), 0) as c")->value('c');
+
+        $balance->update([
+            'balance_anterior' => $anterior?->balance_neto,
+            'gastos_dia'       => round($gastosDia, 2),
+            'ventas_dia'       => round($ventasDia, 2),
+            'costo_dia'        => round($costoDia, 2),
+            'utilidad_dia'     => round($ventasDia - $costoDia - $gastosDia, 2),
+        ]);
+
+        $this->regenerarItemsAutomaticos($balance);
+        $balance->recalcularTotales();
+    }
+
+    /**
+     * Regenera un balance a la estructura actual SIN cambiar su estado. Sirve
+     * para poner al día balances YA confirmados tras un cambio de modelo, sin
+     * reabrirlos uno por uno (comando balance:regenerar). El patrimonio
+     * (balance_neto) no cambia; solo se limpian las líneas y se completan
+     * ventas/costo/utilidad del día.
+     */
+    public function regenerarForzado(BalanceDiario $balance): void
+    {
+        DB::transaction(fn () => $this->reconstruir($balance));
     }
 
     /**
@@ -402,7 +420,11 @@ class BalanceDiarioService
                     WHERE mi.empresa_id = ? AND mi.fecha <= ?
                     ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
                 )
-                SELECT COALESCE(SUM(s.saldo_cantidad * COALESCE(cd.costo_unitario, NULLIF(p.precio_costo, 0), cp.costo_promedio, 0)), 0) AS v
+                -- GREATEST(...,0): el stock NEGATIVO es un error de registro
+                -- (ventas antes de ingresar la compra), no inventario real; nunca
+                -- debe restar valor fantasma al balance. Se avisa aparte para
+                -- corregirlo (ver alerta de stock negativo en el controlador).
+                SELECT COALESCE(SUM(GREATEST(s.saldo_cantidad, 0) * COALESCE(cd.costo_unitario, NULLIF(p.precio_costo, 0), cp.costo_promedio, 0)), 0) AS v
                 FROM saldos s
                 LEFT JOIN compra_dia cd ON cd.producto_id = s.producto_id
                 LEFT JOIN cpp cp ON cp.producto_id = s.producto_id

@@ -431,6 +431,30 @@ class BalanceDiarioController extends Controller
             ->values();
     }
 
+    /**
+     * Recalcular STOCK del balance: reconstruye el kardex y el stock de la
+     * empresa. Corrige el valor de inventario cuando quedó viejo por entradas
+     * registradas TARDE o editadas (stock negativo / kardex desalineado). Un
+     * clic desde la alerta del balance, sin ir a Inventario.
+     */
+    public function recalcularStock(Request $request, string $fecha)
+    {
+        $user = $request->user();
+        abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha), 404);
+        abort_unless((bool) $user->rol->es_admin, 403);
+
+        \Illuminate\Support\Facades\Artisan::call('kardex:reconstruir', [
+            '--empresa' => $user->empresa_id,
+            '--silent'  => true,
+        ]);
+        \Illuminate\Support\Facades\Artisan::call('stock:recalcular', [
+            '--empresa' => $user->empresa_id,
+        ]);
+
+        return redirect()->route('finanzas.balance.show', ['fecha' => $fecha])
+            ->with('success', 'Kardex y stock reconstruidos. El inventario del balance quedó al día.');
+    }
+
     public function detalleItem(Request $request, string $fecha, string $categoria)
     {
         $user = $request->user();

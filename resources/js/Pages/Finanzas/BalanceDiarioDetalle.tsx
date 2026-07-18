@@ -236,6 +236,16 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
         });
     }
 
+    // Reconstruye kardex + stock de la empresa: arregla el valor de inventario
+    // del balance cuando quedó viejo (entradas registradas tarde/editadas).
+    const [recalcStock, setRecalcStock] = useState(false);
+    function reconstruirStock() {
+        setRecalcStock(true);
+        router.post(route('finanzas.balance.recalcular-stock', { fecha: balance.fecha.slice(0, 10) }), {}, {
+            onFinish: () => setRecalcStock(false),
+        });
+    }
+
     function renderSeccion(seccion: 'favor' | 'contra') {
         const items = balance.items.filter(i => i.seccion === seccion);
         const esFavor = seccion === 'favor';
@@ -530,10 +540,11 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                     {alertaStock.kardex_desalineado > 0 && (
                         <p className="text-xs mb-1" style={{ color: 'var(--color-text)' }}>
                             <strong>{alertaStock.kardex_desalineado}</strong> producto(s) con el kardex desactualizado respecto al stock real
-                            (suele pasar al editar/revertir entradas). El valor del stock en este balance puede estar viejo —{' '}
-                            <button onClick={() => router.reload()} className="underline font-semibold" style={{ color: 'var(--color-primary)' }}>
-                                Recalcular
-                            </button>{' '}o corre «Recalcular stock» en Inventario.
+                            (suele pasar al registrar/editar entradas tarde). El valor del stock en este balance puede estar viejo —{' '}
+                            <button onClick={reconstruirStock} disabled={recalcStock}
+                                className="underline font-semibold disabled:opacity-50" style={{ color: 'var(--color-primary)' }}>
+                                {recalcStock ? 'Reconstruyendo…' : 'Reconstruir stock ahora'}
+                            </button>.
                         </p>
                     )}
                     {alertaStock.negativos.length > 0 && (
@@ -553,69 +564,6 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                     )}
                 </div>
             )}
-
-            {/* ¿Cuánto tengo? — saldo REAL por cuenta a esta fecha (neto) */}
-            <div className="mb-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--color-text-muted)' }}>
-                    Cuánto tengo por cuenta — saldo real a esta fecha
-                </p>
-                <StatGrid cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-5" stats={saldosCuentas.map(c => ({
-                    label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
-                    valor: money(c.saldo),
-                    color: c.saldo < 0 ? 'danger' as const : undefined,
-                    icon: c.es_efectivo ? <Coins size={16} /> : <Landmark size={16} />,
-                    sub: 'Clic: entradas/salidas + auditoría',
-                    // Abre el mismo detalle de la línea del balance: TODO lo que
-                    // entró/salió de la cuenta con registrado/editado (auditoría).
-                    onClick: () => abrirDetalle({
-                        id: 0,
-                        seccion: 'favor',
-                        categoria: c.es_efectivo ? 'efectivo' : 'cuenta_bancaria',
-                        descripcion: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
-                        ref_tipo: 'cuenta',
-                        ref_id: c.id,
-                        monto: String(c.saldo),
-                        es_manual: false,
-                        conciliado: false,
-                    }),
-                }))} />
-            </div>
-
-            {/* Histórico del PATRIMONIO del dueño (cuánto tiene, día a día). */}
-            {patrimonioHistorial.length > 1 && (() => {
-                const vals = patrimonioHistorial.map(p => p.patrimonio);
-                const min = Math.min(...vals), max = Math.max(...vals);
-                const rango = (max - min) || 1;
-                const W = 100, H = 28;
-                const pts = patrimonioHistorial.map((p, i) => {
-                    const x = (i / (patrimonioHistorial.length - 1)) * W;
-                    const y = H - ((p.patrimonio - min) / rango) * H;
-                    return `${x.toFixed(1)},${y.toFixed(1)}`;
-                }).join(' ');
-                const ultimo = vals[vals.length - 1];
-                const sube = ultimo >= vals[0];
-                const col = sube ? 'var(--color-success)' : 'var(--color-danger)';
-                return (
-                    <div className="mb-5 rounded-2xl px-4 py-3"
-                        style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
-                        <div className="flex items-center justify-between mb-2">
-                            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                                Patrimonio del dueño — histórico
-                            </p>
-                            <span className="inline-flex items-center gap-1 text-sm font-bold" style={{ color: col }}>
-                                {sube ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}{money(ultimo)}
-                            </span>
-                        </div>
-                        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height: 40 }}>
-                            <polyline points={pts} fill="none" stroke={col} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-                        </svg>
-                        <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                            <span>{patrimonioHistorial[0].fecha.slice(5)}</span>
-                            <span>{patrimonioHistorial[patrimonioHistorial.length - 1].fecha.slice(5)}</span>
-                        </div>
-                    </div>
-                );
-            })()}
 
             {/* Secciones favor / contra */}
             <div className="flex flex-col lg:flex-row gap-4 items-start">
@@ -653,9 +601,8 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                         ))}
                     </div>
                     <p className="px-3 py-2 text-[11px]" style={{ color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)' }}>
-                        Utilidad real = (balance hoy − balance ayer) + gastos del día.
-                        El gasto baja el balance pero no es pérdida del negocio: se suma
-                        de vuelta para ver cuánto generó la operación antes de gastos.
+                        Estos gastos ya están restados en la <strong>Utilidad del día</strong>
+                        (ventas − costo − gastos). Clic en un gasto para ver su detalle.
                     </p>
                 </div>
             </div>
@@ -800,44 +747,6 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                         })}
                     </div>
                 )}
-            </div>
-
-            {/* Card consolidador: todo A FAVOR, todo EN CONTRA, gastos y el balance */}
-            <div className="mt-4 rounded-2xl overflow-hidden"
-                style={{ border: '2px solid var(--color-primary)', backgroundColor: 'var(--color-surface)' }}>
-                <div className="px-4 py-2" style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, var(--color-bg))' }}>
-                    <p className="text-sm font-bold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
-                        Consolidado del día
-                    </p>
-                </div>
-                <div className="px-4 py-3 grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Total a favor</p>
-                        <p className="text-xl font-bold" style={{ color: 'var(--color-success)' }}>{money(balance.total_favor)}</p>
-                    </div>
-                    <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Total en contra</p>
-                        <p className="text-xl font-bold" style={{ color: 'var(--color-danger)' }}>−{money(balance.total_contra)}</p>
-                    </div>
-                    <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Gastos del día</p>
-                        <p className="text-xl font-bold" style={{ color: 'var(--color-warning)' }}>{money(balance.gastos_dia)}</p>
-                        <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>ya restados en "Gastos emitidos" (en contra); no se restan dos veces</p>
-                    </div>
-                    <div className="rounded-xl px-3 py-2 -my-1"
-                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, var(--color-bg))' }}>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
-                            BALANCE = a favor − en contra
-                        </p>
-                        <p className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>{money(balance.balance_neto)}</p>
-                        {balance.utilidad_real !== null && (
-                            <p className="text-xs font-semibold"
-                                style={{ color: Number(balance.utilidad_real) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                Utilidad real: {Number(balance.utilidad_real) >= 0 ? '+' : ''}{money(balance.utilidad_real)}
-                            </p>
-                        )}
-                    </div>
-                </div>
             </div>
 
             {/* Modal agregar línea manual */}
