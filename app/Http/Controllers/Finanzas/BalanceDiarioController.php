@@ -616,16 +616,20 @@ class BalanceDiarioController extends Controller
                 // ingresos (no en gastos emitidos).
                 $porCajero = [];
                 if (!$esEgreso) {
-                    $porCajero = CuentaMovimiento::deEmpresa($empresaId)
-                        ->where('cuenta_movimientos.tipo', 'ingreso')
-                        ->whereDate('cuenta_movimientos.fecha', $fecha)
-                        ->whereIn('cuenta_movimientos.ref_tipo', ['venta', 'venta_abono'])
-                        ->when($cuentaIds !== null, fn ($qq) => $qq->whereIn('cuenta_movimientos.cuenta_id', $cuentaIds))
-                        ->leftJoin('users', 'users.id', '=', 'cuenta_movimientos.user_id')
-                        ->groupBy('users.id', 'users.name')
-                        ->selectRaw("users.id as user_id, COALESCE(users.name, '—') as usuario,
-                                     SUM(cuenta_movimientos.monto) as total, COUNT(*) as ops")
-                        ->orderByRaw('SUM(cuenta_movimientos.monto) DESC')
+                    // Nota: se califica cada columna con su tabla porque users
+                    // también tiene empresa_id (el scope deEmpresa dejaría la
+                    // columna ambigua al unir con users).
+                    $porCajero = DB::table('cuenta_movimientos as m')
+                        ->where('m.empresa_id', $empresaId)
+                        ->where('m.tipo', 'ingreso')
+                        ->whereDate('m.fecha', $fecha)
+                        ->whereIn('m.ref_tipo', ['venta', 'venta_abono'])
+                        ->when($cuentaIds !== null, fn ($qq) => $qq->whereIn('m.cuenta_id', $cuentaIds))
+                        ->leftJoin('users as u', 'u.id', '=', 'm.user_id')
+                        ->groupBy('u.id', 'u.name')
+                        ->selectRaw("u.id as user_id, COALESCE(u.name, '—') as usuario,
+                                     SUM(m.monto) as total, COUNT(*) as ops")
+                        ->orderByRaw('SUM(m.monto) DESC')
                         ->get()
                         ->map(fn ($r) => ['user_id' => $r->user_id, 'usuario' => $r->usuario, 'total' => round((float) $r->total, 2), 'ops' => (int) $r->ops])
                         ->values();
