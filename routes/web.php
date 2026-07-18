@@ -260,7 +260,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // ── GASTOS ───────────────────────────────────────────────────────────
     Route::middleware('permiso:gastos')->group(function () {
-        Route::apiResource('gastos', GastoController::class)->except(['show', 'update']);
+        Route::apiResource('gastos', GastoController::class)->except(['show']);
+        // Reactivar un gasto eliminado (soft delete). Id explícito porque el
+        // binding por defecto no resuelve filas borradas.
+        Route::post('gastos/{id}/restore', [GastoController::class, 'restore'])->name('gastos.restore');
     });
 
     // ── POS ──────────────────────────────────────────────────────────────

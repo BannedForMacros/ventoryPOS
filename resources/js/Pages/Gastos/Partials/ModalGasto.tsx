@@ -5,7 +5,7 @@ import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
-import type { GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, Turno } from '@/types';
+import type { Gasto, GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, Turno } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
 
 export interface GastoForm {
@@ -43,9 +43,12 @@ interface Props {
     esAdmin:          boolean;
     turnosAbiertos:   Turno[];
     metodosPago?:     MetodoPagoConCuentas[];
+    // Si viene, el modal entra en modo EDICIÓN de ese gasto.
+    gastoEditar?:     Gasto | null;
 }
 
-export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos, metodosPago = [] }: Props) {
+export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos, metodosPago = [], gastoEditar = null }: Props) {
+    const editando = !!gastoEditar;
     // Método por defecto: efectivo si existe, si no el primero disponible.
     const metodoPorDefecto = (): number | '' =>
         (metodosPago.find(m => m.tipo?.slug === 'efectivo') ?? metodosPago[0])?.id ?? '';
@@ -54,13 +57,39 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
 
-    // Cuando cambia el turno activo, sincronizar turno_id
+    // Al abrir: precargar el gasto a editar, o resetear para uno nuevo.
     useEffect(() => {
+        if (!isOpen) return;
+        if (gastoEditar) {
+            setForm({
+                gasto_tipo_id:         gastoEditar.gasto_tipo_id,
+                gasto_concepto_id:     gastoEditar.gasto_concepto_id,
+                monto:                 String(gastoEditar.monto),
+                fecha:                 gastoEditar.fecha.slice(0, 10),
+                comentario:            gastoEditar.comentario ?? '',
+                turno_id:              gastoEditar.turno_id,
+                local_id:              gastoEditar.local_id ?? '',
+                // '' = mantener la cuenta actual (no se toca la tesorería salvo
+                // que el usuario elija otro método a propósito).
+                metodo_pago_id:        '',
+                cuenta_metodo_pago_id: '',
+            });
+        } else {
+            setForm(emptyGasto(turnoActivo?.id ?? null, metodoPorDefecto()));
+        }
+        setErrors({});
+    }, [isOpen, gastoEditar?.id]);
+
+    // Cuando cambia el turno activo, sincronizar turno_id (solo al crear).
+    useEffect(() => {
+        if (editando) return;
         setForm(f => ({ ...f, turno_id: turnoActivo?.id ?? null }));
     }, [turnoActivo?.id]);
 
-    // Si los métodos llegan después del montaje y aún no hay uno elegido, fijar el default.
+    // Si los métodos llegan después del montaje y aún no hay uno elegido, fijar
+    // el default (solo al crear; al editar '' significa "mantener cuenta").
     useEffect(() => {
+        if (editando) return;
         if (form.metodo_pago_id === '' && metodosPago.length > 0) {
             setForm(f => ({ ...f, metodo_pago_id: metodoPorDefecto() }));
         }
@@ -99,23 +128,28 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
 
     function submit() {
         setSaving(true);
-        router.post(route('gastos.store'), form as any, {
+        const opts = {
             onSuccess: () => { setSaving(false); handleClose(); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
-        });
+        };
+        if (gastoEditar) {
+            router.put(route('gastos.update', gastoEditar.id), form as any, opts);
+        } else {
+            router.post(route('gastos.store'), form as any, opts);
+        }
     }
 
     return (
         <Modal
             isOpen={isOpen}
             onClose={handleClose}
-            title="Registrar gasto"
+            title={editando ? 'Editar gasto' : 'Registrar gasto'}
             size="md"
             footer={
                 <>
                     <Button variant="ghost" onClick={handleClose}>Cancelar</Button>
                     <Button onClick={submit} disabled={saving}>
-                        {saving ? 'Guardando...' : 'Registrar gasto'}
+                        {saving ? 'Guardando...' : (editando ? 'Guardar cambios' : 'Registrar gasto')}
                     </Button>
                 </>
             }
@@ -140,8 +174,8 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     </div>
                 )}
 
-                {/* Admin: selector de turno abierto */}
-                {esTurnogasto && esAdmin && turnosAbiertos.length > 0 && (
+                {/* Admin: selector de turno abierto (no se cambia al editar) */}
+                {!editando && esTurnogasto && esAdmin && turnosAbiertos.length > 0 && (
                     <Select
                         label="Turno"
                         required
@@ -205,16 +239,23 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                 {/* Se paga con: método de pago y, si tiene cuentas, la cuenta.
                     Mismo patrón que el panel de pago del POS. */}
                 {metodosPago.length > 0 && (
-                    <Select
-                        label="Se paga con"
-                        required
-                        value={form.metodo_pago_id}
-                        onChange={handleMetodoChange}
-                        options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
-                        placeholder="Seleccionar método de pago"
-                        error={errors.metodo_pago_id}
-                        disabled={saving}
-                    />
+                    <div>
+                        <Select
+                            label={editando ? 'Cambiar cuenta (opcional)' : 'Se paga con'}
+                            required={!editando}
+                            value={form.metodo_pago_id}
+                            onChange={handleMetodoChange}
+                            options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                            placeholder={editando ? 'Mantener cuenta actual' : 'Seleccionar método de pago'}
+                            error={errors.metodo_pago_id}
+                            disabled={saving}
+                        />
+                        {editando && (
+                            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                Déjalo en blanco para mantener la misma cuenta. Elige un método solo si quieres mover el gasto a otra cuenta.
+                            </p>
+                        )}
+                    </div>
                 )}
 
                 {cuentasDelMetodo.length > 0 && (
@@ -233,8 +274,8 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     />
                 )}
 
-                {/* Local — solo para gastos administrativos cuando es admin */}
-                {!esTurnogasto && esAdmin && (
+                {/* Local — solo para gastos administrativos cuando es admin (no se cambia al editar) */}
+                {!editando && !esTurnogasto && esAdmin && (
                     <Select
                         label="Local"
                         required

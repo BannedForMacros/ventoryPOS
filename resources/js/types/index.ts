@@ -232,12 +232,15 @@ export interface Gasto extends Record<string, unknown> {
     gasto_tipo_id:      number;
     gasto_concepto_id:  number;
     monto:              string;
+    cuenta_id?:         number | null;
     fecha:              string;
     comentario:         string | null;
     tipo?:              GastoTipo;
     concepto?:          GastoConcepto;
     user?:              User;
     local?:             Local;
+    turno?:             Turno;
+    deleted_at?:        string | null;
     created_at:         string;
     updated_at:         string;
 }

@@ -4,9 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Gasto extends Model
 {
+    // Borrado suave: eliminar un gasto conserva la fila (para el filtro
+    // "Eliminados" y poder reactivarlo). El egreso de tesorería se revierte
+    // al eliminar y se vuelve a asentar al reactivar (ver GastoController).
+    use SoftDeletes;
+
     protected $fillable = [
         'empresa_id', 'local_id', 'user_id', 'turno_id',
         'gasto_tipo_id', 'gasto_concepto_id',
