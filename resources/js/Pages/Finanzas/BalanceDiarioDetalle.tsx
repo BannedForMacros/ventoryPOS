@@ -79,6 +79,7 @@ interface Props extends PageProps {
     salidasDia: { label: string; monto: number }[];
     movimientosDia: GrupoMovimientosDia[];
     saldosCuentas: { id: number; nombre: string; banco: string | null; es_efectivo: boolean; saldo: number }[];
+    saldosEntidad: { entidad: string; es_efectivo: boolean; saldo: number }[];
     variaciones: Variacion[];
     balanceAnteriorFecha: string | null;
     esAdmin?: boolean;
@@ -116,7 +117,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
     otro_contra:        'Otro',
 };
 
-export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas, variaciones, balanceAnteriorFecha, puedeReabrir }: Props) {
+export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas, saldosEntidad, variaciones, balanceAnteriorFecha, puedeReabrir }: Props) {
     const { flash } = usePage<Props>().props;
     const editable = balance.estado === 'borrador';
 
@@ -451,6 +452,31 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                     );
                 })}
             </div>
+
+            {/* Resumen textual por ENTIDAD (Efectivo, BBVA, BCP…) — un vistazo
+                rápido de "cuánto tengo en cada banco" antes del detalle por cuenta. */}
+            {saldosEntidad.length > 0 && (
+                <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                    {saldosEntidad.map(e => (
+                        <span key={e.entidad} className="inline-flex items-center gap-1.5">
+                            {e.es_efectivo ? <Coins size={14} /> : <Landmark size={14} />}
+                            <span style={{ color: 'var(--color-text-muted)' }}>{e.entidad}:</span>
+                            <span className="font-bold tabular-nums"
+                                style={{ color: e.saldo < 0 ? 'var(--color-danger)' : 'var(--color-text)' }}>
+                                {money(e.saldo)}
+                            </span>
+                        </span>
+                    ))}
+                    <span className="inline-flex items-center gap-1.5 pl-1 sm:border-l"
+                        style={{ borderColor: 'var(--color-border)' }}>
+                        <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Total</span>
+                        <span className="font-bold tabular-nums"
+                            style={{ color: saldosEntidad.reduce((a, e) => a + e.saldo, 0) < 0 ? 'var(--color-danger)' : 'var(--color-text)' }}>
+                            {money(saldosEntidad.reduce((a, e) => a + e.saldo, 0))}
+                        </span>
+                    </span>
+                </div>
+            )}
 
             {/* ¿Cuánto tengo? — saldo REAL por cuenta a esta fecha (neto:
                 ingresos bruto A FAVOR − gastos emitidos de esa cuenta) */}

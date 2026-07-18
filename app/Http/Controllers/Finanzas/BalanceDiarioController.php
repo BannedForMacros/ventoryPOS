@@ -157,6 +157,20 @@ class BalanceDiarioController extends Controller
                 'saldo'       => $tesoreria->saldo($c->id, $fecha),
             ])->values();
 
+        // ── Resumen por ENTIDAD (banco) — línea textual arriba de las cuentas.
+        // Junta todas las cuentas de una misma entidad: Efectivo por un lado y
+        // cada banco (BBVA, BCP…) sumando sus cuentas. Responde de un vistazo
+        // "¿cuánto tengo en efectivo / en el BBVA / en el BCP?".
+        $saldosEntidad = $saldosCuentas
+            ->groupBy(fn ($c) => $c['es_efectivo'] ? 'Efectivo' : ($c['banco'] ?: $c['nombre']))
+            ->map(fn ($grupo, $entidad) => [
+                'entidad'     => (string) $entidad,
+                'es_efectivo' => (bool) $grupo->first()['es_efectivo'],
+                'saldo'       => round((float) $grupo->sum('saldo'), 2),
+            ])
+            ->sortByDesc('es_efectivo')
+            ->values();
+
         // ── Variación vs día anterior (por categoría) ───────────────────
         // Compara el monto de cada categoría HOY contra el último balance
         // CONFIRMADO anterior (que congeló los valores reales de ese día). Así
@@ -209,6 +223,7 @@ class BalanceDiarioController extends Controller
             'salidasDia'     => $salidasDia,
             'movimientosDia' => $movimientosDia,
             'saldosCuentas'  => $saldosCuentas,
+            'saldosEntidad'  => $saldosEntidad,
             'variaciones'    => $variaciones,
             'balanceAnteriorFecha' => $anterior?->fecha?->toDateString(),
             'esAdmin'            => (bool) $user->rol->es_admin,
