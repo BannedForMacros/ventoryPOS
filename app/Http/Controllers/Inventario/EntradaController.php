@@ -576,7 +576,13 @@ class EntradaController extends Controller
                                 'referencia_tipo' => 'entrada',
                                 'referencia_id'   => $entrada->id,
                                 'documento'       => $entrada->numero_documento,
-                                'fecha'           => now(),
+                                // La reversión debe fecharse con la fecha ORIGINAL de la
+                                // entrada (aún no actualizada aquí), NO con now(): así
+                                // cancela EXACTO el movimiento original y la re-aplicación
+                                // posterior. Con now(), una entrada retrofechada dejaba la
+                                // reversión en un día distinto → el kardex "as-of-date"
+                                // leía el saldo revertido y el stock caía fantasma (bug).
+                                'fecha'           => $entrada->fecha,
                                 'user_id'         => $user->id,
                                 'empresa_id'      => $entrada->empresa_id,
                             ],
