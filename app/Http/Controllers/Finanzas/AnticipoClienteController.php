@@ -195,6 +195,85 @@ class AnticipoClienteController extends Controller
     }
 
     /**
+     * Edita un anticipo EN DINERO: cliente, fecha, monto, método/cuenta, el
+     * turno al que afecta caja y la observación. Reasienta tesorería (revierte
+     * el ingreso original y lo vuelve a registrar con los datos nuevos).
+     *
+     * Solo se permite en anticipos "por dinero" (tipo 'monto'), activos, que
+     * NO provienen de una venta del POS y que aún NO tienen aplicaciones
+     * (nada entregado/usado): así el saldo sigue igual al monto y editar el
+     * importe no descuadra despachos ya hechos. Los de material/POS o ya
+     * aplicados se ajustan anulando/reactivando o desde su venta.
+     */
+    public function update(Request $request, ClienteAnticipo $anticipo)
+    {
+        $user = $request->user();
+        abort_if($anticipo->empresa_id !== $user->empresa_id, 403);
+
+        if ($anticipo->tipo_valorizacion !== 'monto' || $anticipo->venta_id || $anticipo->items()->exists()) {
+            throw ValidationException::withMessages([
+                'anticipo' => 'Solo se pueden editar anticipos en dinero. Los de material o los pendientes por entregar de una venta se ajustan desde su venta o anulándolos.',
+            ]);
+        }
+        abort_unless($anticipo->estado === 'activo', 422, 'Solo se editan anticipos activos.');
+        if ($anticipo->aplicaciones()->exists()) {
+            throw ValidationException::withMessages([
+                'anticipo' => 'Este anticipo ya tiene entregas/aplicaciones registradas. Anúlalo y regístralo de nuevo si necesitas corregirlo.',
+            ]);
+        }
+
+        $data = $request->validate([
+            'cliente_id'     => ['required', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id)->where('activo', true)],
+            'fecha'          => ['required', 'date'],
+            'monto'          => ['required', 'numeric', 'min:0.01'],
+            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'observacion'    => ['nullable', 'string', 'max:500'],
+            // "Afecta caja a:" — turno de cuya caja entra el dinero. null = "Sin turno".
+            'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
+        ]);
+
+        $turnoId = $request->has('turno_id') ? ($data['turno_id'] ?? null) : $anticipo->turno_id;
+
+        $antes = [
+            'monto' => (float) $anticipo->monto,
+            'fecha' => $anticipo->fecha->toDateString(),
+        ];
+
+        DB::transaction(function () use ($anticipo, $user, $data, $turnoId) {
+            $anticipo->update($data + [
+                // Sin aplicaciones, el saldo sigue al monto.
+                'saldo'    => $data['monto'],
+                'turno_id' => $turnoId,
+            ]);
+
+            // Reasienta tesorería con los datos nuevos (mismo patrón que editar abono).
+            $this->tesoreria->revertir('cliente_anticipo', $anticipo->id);
+            $anticipo->load('cliente');
+            $nombre = $anticipo->cliente?->razon_social
+                ?? trim(($anticipo->cliente?->nombres ?? '') . ' ' . ($anticipo->cliente?->apellidos ?? ''));
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                $user,
+                $data['fecha'],
+                'ingreso',
+                (float) $data['monto'],
+                "Anticipo de cliente — {$nombre} [editado]",
+                'cliente_anticipo',
+                $anticipo->id,
+            );
+        });
+
+        AuditoriaService::log('anticipo_cliente.editado', $anticipo, [
+            'antes'   => $antes,
+            'despues' => ['monto' => (float) $data['monto'], 'fecha' => $data['fecha']],
+        ], $user);
+
+        return back()->with('success', 'Anticipo actualizado: tesorería se reasentó.');
+    }
+
+    /**
      * Aplica el anticipo: el cliente retiró mercadería (despacho) y el pasivo
      * baja. Puede vincularse a una venta existente.
      *

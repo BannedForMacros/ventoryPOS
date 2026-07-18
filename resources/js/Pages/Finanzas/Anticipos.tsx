@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus } from 'lucide-react';
+import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus, Pencil } from 'lucide-react';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -61,11 +61,14 @@ interface Anticipo extends Record<string, unknown> {
     cantidad_pendiente: string | null;
     estado: string;
     observacion: string | null;
+    turno_id?: number | null;
     fecha_entrega_estimada?: string | null;
     valor_pasivo_hoy?: number;
     cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string; es_cliente_general?: boolean } | null;
     producto?: { id: number; nombre: string; precio_venta: string } | null;
     venta?: { id: number; numero: string } | null;
+    metodo_pago_id?: number | null;
+    cuenta_id?: number | null;
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
     aplicaciones: Aplicacion[];
@@ -136,6 +139,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
             + (t.estado === 'abierto' ? ' · abierto' : '');
     };
     const [modalNuevo, setModalNuevo]   = useState(false);
+    const [editando, setEditando]       = useState<Anticipo | null>(null);
     const [modalCrearCliente, setModalCrearCliente] = useState(false);
     const [aplicando, setAplicando]     = useState<Anticipo | null>(null);
     const [anulando, setAnulando]       = useState<Anticipo | null>(null);
@@ -197,6 +201,44 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
             turno_id:       form.turno_id || null,
         } as any, {
             onSuccess: () => { setModalNuevo(false); setForm(emptyForm()); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    /** Solo se editan anticipos EN DINERO, activos, sin entregas y que no vengan del POS. */
+    const puedeEditar = (a: Anticipo) =>
+        a.estado === 'activo' && a.tipo_valorizacion === 'monto'
+        && !esMultiItem(a) && !a.venta && (a.aplicaciones?.length ?? 0) === 0;
+
+    /** Abre el modal de edición sembrando el formulario con el anticipo. */
+    function abrirEditar(a: Anticipo) {
+        setErrors({});
+        setForm({
+            ...emptyForm(),
+            cliente_id:     String(a.cliente?.id ?? ''),
+            fecha:          a.fecha,
+            monto:          String(a.monto),
+            metodo_pago_id: a.metodo_pago_id ? String(a.metodo_pago_id) : '',
+            cuenta_id:      a.cuenta_id ? String(a.cuenta_id) : '',
+            turno_id:       a.turno_id ? String(a.turno_id) : '',
+            observacion:    a.observacion ?? '',
+        });
+        setEditando(a);
+    }
+
+    function submitEditar() {
+        if (!editando) return;
+        setSaving(true);
+        router.put(route('finanzas.anticipos.update', editando.id), {
+            cliente_id:     form.cliente_id,
+            fecha:          form.fecha,
+            monto:          form.monto,
+            metodo_pago_id: form.metodo_pago_id || null,
+            cuenta_id:      form.cuenta_id || null,
+            turno_id:       form.turno_id || null,
+            observacion:    form.observacion,
+        } as any, {
+            onSuccess: () => { setEditando(null); setForm(emptyForm()); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         });
     }
@@ -325,6 +367,13 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
                         style={{ color: 'var(--color-text-muted)' }}>
                         <Eye size={15} />
                     </button>
+                    {puedeEditar(a) && (
+                        <button onClick={() => abrirEditar(a)}
+                            className="p-1.5 rounded-lg hover:bg-black/5" title="Editar anticipo (solo en dinero)"
+                            style={{ color: 'var(--color-text-muted)' }}>
+                            <Pencil size={15} />
+                        </button>
+                    )}
                     {a.estado === 'activo' && (
                         <>
                             <button onClick={() => {
@@ -493,6 +542,65 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
                     )}
                     <Input label="Observación" value={form.observacion}
                         onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} />
+                </div>
+            </Modal>
+
+            {/* Modal editar anticipo (solo en dinero) */}
+            <Modal isOpen={editando !== null} onClose={() => setEditando(null)}
+                title={editando ? `Editar anticipo — ${nombreCliente(editando.cliente)}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEditando(null)}>Cancelar</Button>
+                        <Button onClick={submitEditar} disabled={saving}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <Callout variant="info">
+                        Editar reasienta el dinero en tesorería con los nuevos datos. Si el anticipo es en efectivo con turno, ajusta la caja de ese turno.
+                    </Callout>
+                    <SearchableSelect label="Cliente" required
+                        options={clientes.map(c => ({ value: String(c.id), label: nombreCliente(c) }))}
+                        value={form.cliente_id}
+                        onChange={v => setForm(f => ({ ...f, cliente_id: String(v) }))}
+                        placeholder="— Seleccionar cliente —"
+                        searchPlaceholder="Buscar por nombre..."
+                        error={errors.cliente_id}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                        <Input label="Fecha" required type="date" value={form.fecha}
+                            onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                        <Input label="Monto recibido" required type="number" min="0.01" step="0.01" value={form.monto}
+                            onChange={e => setForm(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                    </div>
+                    <Select label="Método de pago"
+                        options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
+                        value={form.metodo_pago_id}
+                        onChange={v => { const cts = cuentasDeMetodo(String(v)); setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
+                        placeholder="— Seleccionar —"
+                    />
+                    {cuentasDeMetodo(form.metodo_pago_id).length > 0 && (
+                        <Select label="Cuenta destino"
+                            options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                            value={form.cuenta_id}
+                            onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
+                            placeholder="— Seleccionar —"
+                        />
+                    )}
+                    {turnos.length > 0 && (
+                        <Select label="Afecta caja a (turno)"
+                            options={[
+                                { value: '', label: 'Sin turno (no afecta caja)' },
+                                ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) })),
+                            ]}
+                            value={form.turno_id}
+                            onChange={v => setForm(f => ({ ...f, turno_id: String(v) }))}
+                            hint="Si el anticipo es en efectivo, entra a la caja de este turno y suma a su efectivo esperado. «Sin turno» no afecta ninguna caja."
+                        />
+                    )}
+                    <Input label="Observación" value={form.observacion}
+                        onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} />
+                    {errors.anticipo && <Callout variant="danger">{errors.anticipo}</Callout>}
                 </div>
             </Modal>
 
