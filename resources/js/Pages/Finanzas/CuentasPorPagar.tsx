@@ -451,7 +451,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
                                 <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
                                     Mercadería de la compra
                                 </p>
-                                <a href={route('inventario.entradas.editar', detalle.id)}
+                                <a href={`/inventario/entradas/${detalle.id}/editar`}
                                     className="text-[11px] underline inline-flex items-center gap-1" style={{ color: 'var(--color-primary)' }}>
                                     <ReceiptText size={12} /> Ver / editar entrada
                                 </a>
