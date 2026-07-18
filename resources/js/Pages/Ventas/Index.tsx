@@ -60,6 +60,7 @@ interface Resumen {
     total_efectivo:   number;
     efectivo_ventas:  number;   // efectivo de ventas del turno
     efectivo_abonos:  number;   // efectivo de abonos de crédito del turno
+    anticipos_efectivo: number; // anticipos de clientes en efectivo (entran a caja)
     total_vendido:    number;   // cobrado + por cobrar
     por_cobrar:       number;   // crédito pendiente del turno
     abonos:           number;   // cobros de crédito recibidos en el turno
@@ -69,6 +70,7 @@ interface Resumen {
     apertura:         number;
     efectivo_en_caja: number;
     abonos_detalle:   { cliente: string; venta: string | null; metodo: string; monto: number }[];
+    anticipos_detalle:{ cliente: string; metodo: string; monto: number }[];
     gastos_detalle:   { concepto: string; monto: number }[];
     compras_detalle:  { proveedor: string; documento: string | null; monto: number }[];
 }
@@ -640,6 +642,7 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
         `Apertura ${money(resumen.apertura)}`,
         `ventas ${money(resumen.efectivo_ventas)}`,
         resumen.efectivo_abonos > 0 ? `abonos ${money(resumen.efectivo_abonos)}` : null,
+        resumen.anticipos_efectivo > 0 ? `anticipos ${money(resumen.anticipos_efectivo)}` : null,
         resumen.gastos > 0 ? `− gastos ${money(resumen.gastos)}` : null,
         resumen.compras > 0 ? `− compras ${money(resumen.compras)}` : null,
     ].filter(Boolean).join(' · ');
@@ -794,6 +797,7 @@ function DetalleCajaModal({ open, onClose, resumen }: { open: boolean; onClose: 
                         {fila('Apertura', resumen.apertura)}
                         {fila('Ventas en efectivo', resumen.efectivo_ventas)}
                         {resumen.efectivo_abonos > 0 && fila('Abonos en efectivo', resumen.efectivo_abonos)}
+                        {resumen.anticipos_efectivo > 0 && fila('Anticipos en efectivo', resumen.anticipos_efectivo)}
                         {resumen.gastos > 0 && fila('Gastos', resumen.gastos, '−')}
                         {resumen.compras > 0 && fila('Compras pagadas en efectivo', resumen.compras, '−')}
                         {resumen.reembolsos > 0 && fila('Reembolsos (devoluciones)', resumen.reembolsos, '−')}
@@ -835,6 +839,25 @@ function DetalleCajaModal({ open, onClose, resumen }: { open: boolean; onClose: 
                                 <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
                                     <span style={{ color: 'var(--color-text)' }}>
                                         {a.cliente}{a.venta ? ` · ${a.venta}` : ''} <span style={{ color: 'var(--color-text-muted)' }}>({a.metodo})</span>
+                                    </span>
+                                    <span className="font-mono font-semibold">{money(a.monto)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* Anticipos recibidos */}
+                {resumen.anticipos_detalle.length > 0 && (
+                    <section>
+                        <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Anticipos de clientes recibidos
+                        </p>
+                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                            {resumen.anticipos_detalle.map((a, i) => (
+                                <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
+                                    <span style={{ color: 'var(--color-text)' }}>
+                                        {a.cliente} <span style={{ color: 'var(--color-text-muted)' }}>({a.metodo})</span>
                                     </span>
                                     <span className="font-mono font-semibold">{money(a.monto)}</span>
                                 </div>

@@ -541,6 +541,19 @@ class VentaController extends Controller
         $efectivoAbonos = (float) \App\Models\VentaAbono::whereIn('turno_id', $turnoIds)
             ->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))->sum('monto');
 
+        // Anticipos de clientes recibidos EN ESTE TURNO (dinero que entró a caja,
+        // aparte de ventas y abonos). Solo el efectivo suma al esperado del cajón
+        // (mismo criterio que Turno::calcularMontoEsperado). Los anulados/devueltos
+        // no cuentan.
+        $anticiposBase = \App\Models\ClienteAnticipo::whereIn('turno_id', $turnoIds)
+            ->whereNotIn('estado', ['anulado', 'devuelto']);
+        $anticiposEfectivo = (float) (clone $anticiposBase)
+            ->where(fn($q) =>
+                $q->whereHas('metodoPago.tipo', fn($t) => $t->where('slug', 'efectivo'))
+                  ->orWhere(fn($q2) => $q2->whereNull('metodo_pago_id')
+                        ->whereHas('cuenta', fn($c) => $c->where('es_efectivo', true))))
+            ->sum('monto');
+
         $gastos = (float) \App\Models\Gasto::whereIn('turno_id', $turnoIds)->sum('monto');
 
         // Reconciliación con el crédito: lo cobrado por métodos (arriba) NO cubre
@@ -573,6 +586,22 @@ class VentaController extends Controller
                     : 'General',
                 'venta'  => $a->venta?->numero,
                 'metodo' => $a->metodoPago?->nombre ?? '—',
+                'monto'  => round((float) $a->monto, 2),
+            ]);
+
+        // Detalle de anticipos del turno para el modal (todos los métodos; el que
+        // no es efectivo se muestra igual, pero no suma al efectivo esperado).
+        $anticiposDetalle = (clone $anticiposBase)
+            ->with(['cliente', 'metodoPago'])
+            ->orderByDesc('id')->get()
+            ->map(fn ($a) => [
+                'cliente' => $a->cliente
+                    ? ($a->cliente->es_cliente_general
+                        ? 'Clientes varios'
+                        : ($a->cliente->razon_social
+                            ?? trim(($a->cliente->nombres ?? '') . ' ' . ($a->cliente->apellidos ?? ''))))
+                    : '—',
+                'metodo' => $a->metodoPago?->nombre ?? 'Efectivo',
                 'monto'  => round((float) $a->monto, 2),
             ]);
 
@@ -611,6 +640,7 @@ class VentaController extends Controller
             'total_efectivo'   => round($efectivoVentas + $efectivoAbonos, 2),
             'efectivo_ventas'  => round($efectivoVentas, 2),
             'efectivo_abonos'  => round($efectivoAbonos, 2),
+            'anticipos_efectivo' => round($anticiposEfectivo, 2), // anticipos en efectivo (entran a caja)
             'total_vendido'    => round($totalVendido, 2),    // cobrado + por cobrar
             'por_cobrar'       => round($porCobrar, 2),       // crédito pendiente del turno
             'abonos'           => round($abonos, 2),          // cobros de crédito recibidos en el turno
@@ -622,6 +652,7 @@ class VentaController extends Controller
             // (apertura + ventas + abonos − gastos − reembolsos − compras).
             'efectivo_en_caja' => round((float) $turnos->sum(fn ($t) => $t->calcularMontoEsperado()), 2),
             'abonos_detalle'   => $abonosDetalle,
+            'anticipos_detalle'=> $anticiposDetalle,
             'gastos_detalle'   => $gastosDetalle,
             'compras_detalle'  => $comprasDetalle,
         ];
