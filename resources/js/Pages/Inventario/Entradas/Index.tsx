@@ -11,6 +11,7 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
+import { fmtFecha } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 
 interface Almacen { id: number; nombre: string; local?: { nombre: string } | null; }
@@ -176,26 +177,6 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
             // venia de que ni onSuccess ni onError corrian (ej: 419 CSRF expirado).
             onFinish: () => { setSavingPago(false); },
         });
-    }
-
-    /**
-     * Formatea fechas que el backend serializa como ISO. OJO con zona horaria:
-     * Laravel manda "2026-05-20T00:00:00.000000Z" (UTC midnight). Si lo pasas
-     * directo a `new Date()` y luego a `toLocaleDateString`, en zonas con offset
-     * negativo (Perú UTC-5) la fecha retrocede al dia anterior — el usuario crea
-     * la entrada el 20 y la ve como 19.
-     *
-     * Fix: para fechas "puras" (sin hora real) extraemos YYYY-MM-DD y construimos
-     * un Date local con los componentes — asi no hay conversion de zona horaria.
-     */
-    function fmtFecha(iso: string): string {
-        if (!iso) return '';
-        const dateOnly = iso.slice(0, 10); // "2026-05-20"
-        const [y, m, d] = dateOnly.split('-').map(Number);
-        if (!y || !m || !d) return iso;
-        const date = new Date(y, m - 1, d);
-        if (isNaN(date.getTime())) return iso;
-        return date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
     }
 
     useEffect(() => {

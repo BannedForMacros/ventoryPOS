@@ -10,6 +10,7 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
+import { fmtFecha } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 
 interface Almacen { id: number; nombre: string; local?: { nombre: string } | null; }
@@ -66,7 +67,7 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
     const columns: Column<Salida>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
-            render: (s) => <span className="text-sm">{s.fecha}</span>,
+            render: (s) => <span className="text-sm">{fmtFecha(s.fecha)}</span>,
         },
         {
             key: 'tipo', label: 'Tipo', sortable: true,
@@ -77,7 +78,7 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
             render: (s) => (
                 <span className="text-sm">
                     {s.almacen.nombre}
-                    {s.almacen.local && (
+                    {s.almacen.local && s.almacen.local.nombre !== s.almacen.nombre && (
                         <span className="ml-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
                             · {s.almacen.local.nombre}
                         </span>
@@ -99,7 +100,7 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
             key: 'turno_id', label: 'Origen',
             render: (s) => s.turno_id
                 ? <Badge variant="secondary">Turno #{s.turno_id}</Badge>
-                : <Badge variant="secondary">Ad-hoc</Badge>,
+                : <Badge variant="secondary">Sin turno</Badge>,
         },
         {
             key: 'total', label: 'Total valorizado',
