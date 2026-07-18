@@ -407,14 +407,14 @@ class VentaController extends Controller
 
         // Turno a resumir en las cards: el filtrado explícitamente, o el turno
         // abierto del usuario (cajera) / el más reciente abierto en su ámbito (admin).
-        $turnoResumen = $this->resolverTurnoResumen($user, $esAdmin, $request);
+        $turnosResumen = $this->resolverTurnosResumen($user, $esAdmin, $request);
 
         return Inertia::render('Ventas/Index', [
             'ventas'  => $ventas,
             'locales' => $locales,
             'esAdmin' => $esAdmin,
             'turnos'  => $this->turnosParaFiltro($user, $esAdmin, $request, $fechaDesde, $fechaHasta),
-            'resumen' => $turnoResumen ? $this->resumenDeTurno($turnoResumen) : null,
+            'resumen' => $turnosResumen->isNotEmpty() ? $this->resumenDeTurnos($turnosResumen) : null,
             // Reflejar en la UI las fechas efectivas (incluye el default de hoy).
             'filters' => array_merge(
                 $request->only(['estado', 'fecha_desde', 'fecha_hasta', 'local_id', 'turno_id', 'q']),
@@ -439,19 +439,24 @@ class VentaController extends Controller
     }
 
     /** Resuelve qué turno resumir en las cards. */
-    private function resolverTurnoResumen(User $user, bool $esAdmin, Request $request): ?Turno
+    private function resolverTurnosResumen(User $user, bool $esAdmin, Request $request): \Illuminate\Support\Collection
     {
         $base = Turno::deEmpresa($user->empresa_id)->with(['user:id,name', 'caja:id,nombre']);
 
+        // Turno específico (filtro ?turno_id): solo ese.
         if ($request->turno_id) {
-            return $base->find($request->turno_id);
+            $t = $base->find($request->turno_id);
+            return $t ? collect([$t]) : collect();
         }
 
+        // Sin filtro: TODAS las cajas abiertas. Así el ADMIN ve el efectivo total
+        // de todos los turnos abiertos (antes salía solo el último); la cajera
+        // sigue viendo solo el suyo.
         return $base->where('estado', 'abierto')
             ->when(!$esAdmin, fn($q) => $q->where('user_id', $user->id))
             ->when($user->local_id, fn($q) => $q->where('local_id', $user->local_id))
             ->orderByDesc('fecha_apertura')
-            ->first();
+            ->get();
     }
 
     /**
@@ -459,8 +464,14 @@ class VentaController extends Controller
      * (groupBy método + cuenta) sobre venta_pagos; nada de iterar todas las
      * ventas en PHP. Espejo del desglose del cierre de turno.
      */
-    private function resumenDeTurno(Turno $turno): array
+    private function resumenDeTurnos(\Illuminate\Support\Collection $turnos): array
     {
+        // Uno o VARIOS turnos: cuando un ADMIN entra a Ventas sin filtrar un turno,
+        // se agregan TODAS las cajas abiertas (antes salía solo la última). Los
+        // montos suman sobre el conjunto; $turno es la referencia del encabezado.
+        $turnoIds = $turnos->pluck('id')->all();
+        $turno    = $turnos->first();
+
         // Cuenta por defecto por método: cuando el método tiene UNA sola cuenta,
         // la usamos para los pagos que no registraron cuenta (cuenta_metodo_pago_id
         // null). Así "Yape" deja de salir como "sin cuenta" cuando es inequívoco.
@@ -481,7 +492,7 @@ class VentaController extends Controller
             ->leftJoin('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
             ->leftJoin('metodos_pago as mp', 'mp.id', '=', 'venta_pagos.metodo_pago_id')
             ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
-            ->where('ventas.turno_id', $turno->id)
+            ->whereIn('ventas.turno_id', $turnoIds)
             ->where('ventas.estado', 'completada')
             ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
             ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(venta_pagos.monto) as total')
@@ -491,7 +502,7 @@ class VentaController extends Controller
         // las cuentas quedan como detalle anidado. Antes se hacía una card por
         // método+cuenta y salían p.ej. dos "Yape" (una por cada cuenta), confuso.
         $porMetodo = [];
-        foreach ($filas->concat($this->abonosPorMetodo($turno)) as $f) {
+        foreach ($filas->concat($this->abonosPorMetodo($turnoIds)) as $f) {
             [$cuenta, $banco] = $this->resolverCuentaMetodo($f, $cuentaDefault);
             $metodo = $f->metodo ?? 'Otro';
             $monto  = (float) $f->total;
@@ -525,17 +536,17 @@ class VentaController extends Controller
 
         // Efectivo separado en ventas vs abonos (para el detalle de la card de caja).
         $efectivoVentas = (float) \App\Models\VentaPago::whereHas('venta', fn($q) =>
-            $q->where('turno_id', $turno->id)->where('estado', 'completada')
+            $q->whereIn('turno_id', $turnoIds)->where('estado', 'completada')
         )->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))->sum('monto');
-        $efectivoAbonos = (float) \App\Models\VentaAbono::where('turno_id', $turno->id)
+        $efectivoAbonos = (float) \App\Models\VentaAbono::whereIn('turno_id', $turnoIds)
             ->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))->sum('monto');
 
-        $gastos = (float) \App\Models\Gasto::where('turno_id', $turno->id)->sum('monto');
+        $gastos = (float) \App\Models\Gasto::whereIn('turno_id', $turnoIds)->sum('monto');
 
         // Reconciliación con el crédito: lo cobrado por métodos (arriba) NO cubre
         // las ventas a cuenta por cobrar. total_vendido = cobrado + por_cobrar.
         // Sin esto, a la cajera le "faltaba" el monto de las ventas al crédito.
-        $ventasTurno  = Venta::where('turno_id', $turno->id)->where('estado', 'completada');
+        $ventasTurno  = Venta::whereIn('turno_id', $turnoIds)->where('estado', 'completada');
         $totalVendido = (float) (clone $ventasTurno)->sum('total');
         $porCobrar    = (float) (clone $ventasTurno)->sum('saldo_pendiente');
         // cobrado = lo aplicado a las ventas (monto_pagado), no la suma bruta de
@@ -544,15 +555,15 @@ class VentaController extends Controller
 
         // Abonos a cuentas por cobrar recibidos en este turno (dinero extra que
         // entró a caja, aparte de las ventas del turno).
-        $abonos = (float) \App\Models\VentaAbono::where('turno_id', $turno->id)->sum('monto');
+        $abonos = (float) \App\Models\VentaAbono::whereIn('turno_id', $turnoIds)->sum('monto');
 
         // Reembolsos de devoluciones en efectivo (descuentan la caja del turno).
         $reembolsos = (float) \App\Models\DevolucionPago::whereHas('devolucion', fn($q) =>
-            $q->where('turno_id', $turno->id)->whereIn('estado', ['aprobada', 'completada'])
+            $q->whereIn('turno_id', $turnoIds)->whereIn('estado', ['aprobada', 'completada'])
         )->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))->sum('monto');
 
         // Detalle para el modal "ver detalle de caja" (corroboración).
-        $abonosDetalle = \App\Models\VentaAbono::where('turno_id', $turno->id)
+        $abonosDetalle = \App\Models\VentaAbono::whereIn('turno_id', $turnoIds)
             ->with(['venta.cliente', 'metodoPago'])
             ->orderByDesc('id')->get()
             ->map(fn ($a) => [
@@ -565,7 +576,7 @@ class VentaController extends Controller
                 'monto'  => round((float) $a->monto, 2),
             ]);
 
-        $gastosDetalle = \App\Models\Gasto::where('turno_id', $turno->id)
+        $gastosDetalle = \App\Models\Gasto::whereIn('turno_id', $turnoIds)
             ->with('concepto')->orderByDesc('id')->get()
             ->map(fn ($g) => [
                 'concepto' => $g->concepto?->nombre ?? $g->comentario ?? 'Gasto',
@@ -573,7 +584,7 @@ class VentaController extends Controller
             ]);
 
         // Pagos de entradas (compras) en EFECTIVO desde esta caja (salen del cajón).
-        $comprasQuery = \App\Models\EntradaPago::where('turno_id', $turno->id)
+        $comprasQuery = \App\Models\EntradaPago::whereIn('turno_id', $turnoIds)
             ->where(fn($q) =>
                 $q->whereHas('metodoPago.tipo', fn($t) => $t->where('slug', 'efectivo'))
                   ->orWhere(fn($q2) => $q2->whereNull('metodo_pago_id')
@@ -586,13 +597,14 @@ class VentaController extends Controller
                 'monto'     => round((float) $p->monto, 2),
             ]);
 
+        $variosTurnos = count($turnoIds) > 1;
         return [
             'turno' => [
-                'id'     => $turno->id,
+                'id'     => $variosTurnos ? 0 : $turno->id,
                 'fecha'  => $turno->fecha_apertura,
-                'cajera' => $turno->user?->name,
-                'caja'   => $turno->caja?->nombre,
-                'estado' => $turno->estado,
+                'cajera' => $variosTurnos ? null : $turno->user?->name,
+                'caja'   => $variosTurnos ? ('Todas las cajas abiertas (' . count($turnoIds) . ')') : $turno->caja?->nombre,
+                'estado' => $variosTurnos ? 'abierto' : $turno->estado,
             ],
             'metodos'          => $metodos,
             'cobrado'          => round($cobrado, 2),         // aplicado a ventas (monto_pagado)
@@ -605,9 +617,10 @@ class VentaController extends Controller
             'gastos'           => round($gastos, 2),
             'reembolsos'       => round($reembolsos, 2),      // devoluciones en efectivo
             'compras'          => round($compras, 2),         // pagos de entradas en efectivo (salen de caja)
-            'apertura'         => round((float) $turno->monto_apertura, 2),
-            // Efectivo real esperado (apertura + ventas + abonos − gastos − reembolsos − compras).
-            'efectivo_en_caja' => round((float) $turno->calcularMontoEsperado(), 2),
+            'apertura'         => round((float) $turnos->sum('monto_apertura'), 2),
+            // Efectivo real esperado, SUMADO sobre todas las cajas del conjunto
+            // (apertura + ventas + abonos − gastos − reembolsos − compras).
+            'efectivo_en_caja' => round((float) $turnos->sum(fn ($t) => $t->calcularMontoEsperado()), 2),
             'abonos_detalle'   => $abonosDetalle,
             'gastos_detalle'   => $gastosDetalle,
             'compras_detalle'  => $comprasDetalle,
@@ -629,14 +642,14 @@ class VentaController extends Controller
      * método + cuenta (misma forma que las ventas). Los abonos guardan la cuenta
      * DIRECTA en venta_abonos.cuenta_id (no usan el pivote de las ventas).
      */
-    private function abonosPorMetodo(Turno $turno)
+    private function abonosPorMetodo(array $turnoIds)
     {
         return \App\Models\VentaAbono::query()
             ->from('venta_abonos as va')
             ->leftJoin('metodos_pago as mp', 'mp.id', '=', 'va.metodo_pago_id')
             ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
             ->leftJoin('cuentas as c', 'c.id', '=', 'va.cuenta_id')
-            ->where('va.turno_id', $turno->id)
+            ->whereIn('va.turno_id', $turnoIds)
             ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
             ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(va.monto) as total')
             ->get();

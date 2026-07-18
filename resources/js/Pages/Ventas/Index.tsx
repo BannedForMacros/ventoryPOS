@@ -649,7 +649,7 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
             <div className="flex items-center gap-2 mb-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
                 <Clock size={13} />
                 <span className="font-semibold uppercase tracking-wide">
-                    Caja del turno #{resumen.turno.id}
+                    {resumen.turno.id === 0 ? 'Caja — todas las abiertas' : `Caja del turno #${resumen.turno.id}`}
                 </span>
                 <span className="hidden sm:inline">
                     · {fecha}{resumen.turno.cajera ? ` · ${resumen.turno.cajera}` : ''}{resumen.turno.caja ? ` · ${resumen.turno.caja}` : ''}
@@ -784,7 +784,7 @@ function DetalleCajaModal({ open, onClose, resumen }: { open: boolean; onClose: 
 
     return (
         <Modal isOpen={open} onClose={onClose} size="2xl"
-            title={`Detalle de caja — turno #${resumen.turno.id}`}
+            title={resumen.turno.id === 0 ? 'Detalle de caja — todas las abiertas' : `Detalle de caja — turno #${resumen.turno.id}`}
             footer={<Button variant="ghost" onClick={onClose}>Cerrar</Button>}>
             <div className="space-y-5">
                 {/* Reconciliación del efectivo */}
