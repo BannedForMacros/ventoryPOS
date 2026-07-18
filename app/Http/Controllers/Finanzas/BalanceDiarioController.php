@@ -609,27 +609,49 @@ class BalanceDiarioController extends Controller
                     }
                 }
 
-                // Generado por CAJERO ese día EN ESTA ENTIDAD: cuánto trajo cada
-                // usuario en ventas/cobros que entraron a esta cuenta/entidad
-                // (respeta el tab de sub-cuenta). Se listan TODOS los cajeros
-                // (sin aplicar el filtro de usuario) para poder elegir. Solo en
-                // ingresos (no en gastos emitidos).
+                // Desglose del detalle:
+                //  • EFECTIVO → NETO POR TURNO del día: lo que quedó en efectivo en
+                //    la caja de cada turno (cada cajera). Es la reconciliación de
+                //    caja que pide el cliente. Usa el monto esperado del cierre
+                //    (o el calculado si el turno sigue abierto) y, si ya cerró,
+                //    también lo declarado (contado) y la diferencia.
+                //  • BANCOS → NETO POR CAJERO acumulado a la fecha (quién movió el
+                //    dinero de esa entidad); la suma cuadra con el card.
                 $porCajero = [];
-                if (!$esEgreso) {
-                    // Nota: se califica cada columna con su tabla porque users
-                    // también tiene empresa_id (el scope deEmpresa dejaría la
-                    // columna ambigua al unir con users).
+                $porTurno  = [];
+                if (!$esEgreso && $categoria === 'efectivo') {
+                    $porTurno = \App\Models\Turno::deEmpresa($empresaId)
+                        ->whereDate('fecha_apertura', $fecha)
+                        ->with(['user:id,name', 'caja:id,nombre'])
+                        ->orderBy('fecha_apertura')->get()
+                        ->map(function ($t) {
+                            $esperado = ($t->estado === 'cerrado' && $t->monto_cierre_esperado !== null)
+                                ? (float) $t->monto_cierre_esperado
+                                : $t->calcularMontoEsperado();
+                            return [
+                                'turno_id'   => $t->id,
+                                'user_id'    => $t->user_id,
+                                'cajera'     => $t->user?->name ?? '—',
+                                'caja'       => $t->caja?->nombre ?? 'Caja',
+                                'estado'     => $t->estado,
+                                'esperado'   => round($esperado, 2),
+                                'declarado'  => $t->monto_cierre_declarado !== null ? (float) $t->monto_cierre_declarado : null,
+                                'diferencia' => $t->diferencia !== null ? (float) $t->diferencia : null,
+                            ];
+                        })->values();
+                } elseif (!$esEgreso) {
+                    // Bancos: neto por cajero (columnas calificadas porque users
+                    // también tiene empresa_id → deEmpresa sería ambiguo).
+                    $netoSql = "SUM(CASE WHEN m.tipo = 'ingreso' THEN m.monto ELSE -m.monto END)";
                     $porCajero = DB::table('cuenta_movimientos as m')
                         ->where('m.empresa_id', $empresaId)
-                        ->where('m.tipo', 'ingreso')
-                        ->whereDate('m.fecha', $fecha)
-                        ->whereIn('m.ref_tipo', ['venta', 'venta_abono'])
+                        ->whereDate('m.fecha', '<=', $fecha)
                         ->when($cuentaIds !== null, fn ($qq) => $qq->whereIn('m.cuenta_id', $cuentaIds))
                         ->leftJoin('users as u', 'u.id', '=', 'm.user_id')
                         ->groupBy('u.id', 'u.name')
-                        ->selectRaw("u.id as user_id, COALESCE(u.name, '—') as usuario,
-                                     SUM(m.monto) as total, COUNT(*) as ops")
-                        ->orderByRaw('SUM(m.monto) DESC')
+                        ->selectRaw("u.id as user_id, COALESCE(u.name, '—') as usuario, {$netoSql} as total, COUNT(*) as ops")
+                        ->havingRaw("ROUND({$netoSql}, 2) <> 0")
+                        ->orderByRaw("{$netoSql} DESC")
                         ->get()
                         ->map(fn ($r) => ['user_id' => $r->user_id, 'usuario' => $r->usuario, 'total' => round((float) $r->total, 2), 'ops' => (int) $r->ops])
                         ->values();
@@ -648,6 +670,7 @@ class BalanceDiarioController extends Controller
                     'subcuentas' => $subcuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values(),
                     'cuentaSel'  => $cuentaSel,
                     'porCajero'  => $porCajero,
+                    'porTurno'   => $porTurno,
                     'userSel'    => $userSel,
                 ]);
             }

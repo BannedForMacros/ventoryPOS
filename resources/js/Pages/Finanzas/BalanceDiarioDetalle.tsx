@@ -867,12 +867,58 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             </div>
                         )}
 
-                        {/* Jerarquía 2 — Generado por CAJERO ese día (scoped a la entidad/cuenta).
-                            Clic en un cajero filtra los movimientos a sus ventas. */}
+                        {/* Jerarquía 2 (efectivo) — Neto en efectivo POR TURNO del día.
+                            Cada turno = una cajera; clic filtra los movimientos a ella. */}
+                        {(detalleData.porTurno?.length ?? 0) > 0 && (
+                            <div className="rounded-xl px-3 py-2.5" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                        Efectivo en caja por turno (hoy) — clic para filtrar
+                                    </p>
+                                    {(detalleData?.userSel ?? null) !== null && (
+                                        <button onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, detalleData?.cuentaSel ?? null, null)}
+                                            className="text-[11px] underline" style={{ color: 'var(--color-primary)' }}>Ver todos</button>
+                                    )}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {detalleData.porTurno.map((t: any) => {
+                                        const activo = (detalleData?.userSel ?? null) === t.user_id;
+                                        return (
+                                            <button key={t.turno_id}
+                                                onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, detalleData?.cuentaSel ?? null, t.user_id)}
+                                                className="text-left px-3 py-2 rounded-lg border transition-colors min-w-[9rem]"
+                                                style={{
+                                                    borderColor: activo ? 'var(--color-primary)' : 'var(--color-border)',
+                                                    backgroundColor: activo ? 'color-mix(in srgb, var(--color-primary) 8%, transparent)' : 'var(--color-surface)',
+                                                }}>
+                                                <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>{t.cajera}</p>
+                                                <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{t.caja} · {t.estado}</p>
+                                                <p className="text-base font-bold tabular-nums mt-0.5">
+                                                    {money(t.esperado)} <span className="text-[10px] font-normal" style={{ color: 'var(--color-text-muted)' }}>en caja</span>
+                                                </p>
+                                                {t.declarado !== null && (
+                                                    <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                        contado {money(t.declarado)}
+                                                        {t.diferencia !== null && Math.abs(t.diferencia) >= 0.01 && (
+                                                            <span style={{ color: t.diferencia < 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
+                                                                {' '}· dif {t.diferencia > 0 ? '+' : ''}{money(t.diferencia)}
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Jerarquía 2 (bancos) — Neto por CAJERO acumulado (quién movió el dinero).
+                            Clic en un cajero filtra los movimientos a él. */}
                         {(detalleData.porCajero?.length ?? 0) > 0 && (
                             <div className="rounded-xl px-3 py-2.5" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
                                 <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--color-text-muted)' }}>
-                                    Generado por cajero (hoy) — clic para filtrar
+                                    Neto en caja por cajero (suma = saldo del card) — clic para filtrar
                                 </p>
                                 <div className="flex flex-wrap gap-1.5">
                                     <button
@@ -897,7 +943,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                                     color: activo ? 'var(--color-primary)' : 'var(--color-text)',
                                                 }}>
                                                 <span className="font-medium">{u.usuario}</span>
-                                                <span className="font-bold tabular-nums">{money(u.total)}</span>
+                                                <span className="font-bold tabular-nums" style={{ color: u.total < 0 ? 'var(--color-danger)' : undefined }}>{money(u.total)}</span>
                                                 <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>({u.ops})</span>
                                             </button>
                                         );
