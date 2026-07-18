@@ -250,13 +250,22 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
         { key: 'cliente', label: 'Cliente', render: (a) => <span className="font-medium">{nombreCliente(a.cliente)}</span> },
         {
             key: 'tipo_valorizacion', label: 'Modalidad',
-            render: (a) => esMultiItem(a)
-                ? <Badge variant="warning">
-                    Por entregar{a.venta?.numero ? ` · Venta ${a.venta.numero}` : ''} ({a.items!.length} prod.)
-                  </Badge>
-                : a.tipo_valorizacion === 'material'
-                    ? <Badge variant="primary">Material: {a.producto?.nombre ?? '—'}</Badge>
-                    : <Badge variant="secondary">Dinero</Badge>,
+            render: (a) => {
+                // Ya entregado (estado 'aplicado') → VERDE, para no confundir con
+                // lo que aún está por entregar (amarillo).
+                const entregado = a.estado === 'aplicado';
+                if (esMultiItem(a)) {
+                    return (
+                        <Badge variant={entregado ? 'success' : 'warning'}>
+                            {entregado ? 'Entregado' : 'Por entregar'}{a.venta?.numero ? ` · Venta ${a.venta.numero}` : ''} ({a.items!.length} prod.)
+                        </Badge>
+                    );
+                }
+                if (a.tipo_valorizacion === 'material') {
+                    return <Badge variant={entregado ? 'success' : 'primary'}>Material: {a.producto?.nombre ?? '—'}</Badge>;
+                }
+                return <Badge variant={entregado ? 'success' : 'secondary'}>Dinero</Badge>;
+            },
         },
         { key: 'monto', label: 'Recibido', align: 'right', render: (a) => <span>{money(a.monto)}</span> },
         {

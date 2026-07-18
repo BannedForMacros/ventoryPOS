@@ -24,6 +24,7 @@ interface Pago {
     metodo_pago_id?: number | null;
     cuenta_id?: number | null;
     turno_id?: number | null;
+    turno?: { id: number; caja?: { nombre: string } | null } | null;
     proveedor_adelanto_id: number | null;
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
@@ -97,16 +98,6 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
     };
     const [abonando, setAbonando] = useState<EntradaCxp | null>(null);
     const [detalle, setDetalle]   = useState<EntradaCxp | null>(null);
-
-    // Cambiar la caja de un pago directo desde la ventana (sin editar la entrada).
-    function cambiarAfectaCaja(pagoId: number, turnoId: number | null) {
-        // Optimista: refleja en el modal al instante.
-        setDetalle(d => d ? { ...d, pagos_parciales: d.pagos_parciales.map(p => p.id === pagoId ? { ...p, turno_id: turnoId } : p) } : d);
-        router.put(route('finanzas.cxp.pagos.afecta-caja', pagoId), { turno_id: turnoId }, {
-            preserveScroll: true, preserveState: true,
-            onError: () => toast.error('No se pudo actualizar la caja del pago.'),
-        });
-    }
     const [saving, setSaving]     = useState(false);
     const [errors, setErrors]     = useState<Record<string, string>>({});
     const [usarAdelanto, setUsarAdelanto] = useState(false);
@@ -508,20 +499,12 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
                                                     {[p.observacion, p.user?.name ? `por ${p.user.name}` : null].filter(Boolean).join(' · ')}
                                                 </p>
                                             )}
-                                            {/* Afecta caja directo (solo pagos normales; solo turnos abiertos) */}
-                                            {!p.proveedor_adelanto_id && turnos.length > 0 && (
-                                                <div className="mt-1 flex items-center gap-1.5">
-                                                    <span className="text-[10px] whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>Afecta caja:</span>
-                                                    <select
-                                                        value={p.turno_id ?? ''}
-                                                        onChange={e => cambiarAfectaCaja(p.id, e.target.value === '' ? null : Number(e.target.value))}
-                                                        className="text-[11px] rounded border px-1.5 py-0.5 outline-none max-w-[13rem]"
-                                                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
-                                                    >
-                                                        <option value="">Sin caja</option>
-                                                        {turnos.map(t => <option key={t.id} value={t.id}>{turnoLabel(t)}</option>)}
-                                                    </select>
-                                                </div>
+                                            {/* Solo OBSERVAR: qué caja afectó este pago (si afectó alguna).
+                                                Para cambiarlo se edita el pago con el lápiz. */}
+                                            {p.turno?.caja?.nombre && (
+                                                <p className="text-[10px] inline-flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
+                                                    <Banknote size={11} /> Afectó caja: {p.turno.caja.nombre}
+                                                </p>
                                             )}
                                         </div>
                                         <span className="font-bold text-sm whitespace-nowrap" style={{ color: 'var(--color-danger)' }}>

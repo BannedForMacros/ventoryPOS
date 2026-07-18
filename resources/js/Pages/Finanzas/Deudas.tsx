@@ -202,6 +202,16 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         },
         { key: 'nombre', label: 'Nombre', sortable: true, render: (d) => <span className="font-medium">{d.nombre}</span> },
         { key: 'tipo', label: 'Tipo', render: (d) => <span className="text-sm">{TIPO_LABEL[d.tipo] ?? d.tipo}</span> },
+        {
+            // Método(s) de pago usados en los movimientos de esta deuda/préstamo.
+            key: 'metodo', label: 'Método de pago',
+            render: (d) => {
+                const metodos = [...new Set((d.pagos ?? []).map(p => p.metodo_pago?.nombre).filter(Boolean))];
+                return metodos.length > 0
+                    ? <span className="text-sm">{metodos.join(' · ')}</span>
+                    : <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>—</span>;
+            },
+        },
         { key: 'monto_original', label: 'Original', align: 'right', render: (d) => <span>{money(d.monto_original)}</span> },
         {
             key: 'saldo', label: 'Saldo', sortable: true, align: 'right',

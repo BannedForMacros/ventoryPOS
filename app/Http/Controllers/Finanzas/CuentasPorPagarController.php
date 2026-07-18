@@ -33,6 +33,8 @@ class CuentasPorPagarController extends Controller
             ->with([
                 'proveedorRel', 'almacen',
                 'pagosParciales.metodoPago', 'pagosParciales.cuenta', 'pagosParciales.adelanto', 'pagosParciales.user',
+                // Caja que afectó el pago (solo para MOSTRAR en la ventana; se edita con el lápiz).
+                'pagosParciales.turno:id,caja_id', 'pagosParciales.turno.caja:id,nombre',
                 // Mercadería que originó la deuda: se muestra en la MISMA ventana
                 // de pagos (antes había que salir a Entradas para saber qué se compró).
                 'detalles.producto:id,nombre,codigo', 'detalles.unidadMedida:id,nombre,abreviatura',
@@ -166,33 +168,6 @@ class CuentasPorPagarController extends Controller
         });
 
         return back()->with('success', 'Pago al proveedor registrado correctamente.');
-    }
-
-    /**
-     * Cambia SOLO la caja ("afecta caja a:") de un pago ya registrado, directo
-     * desde la ventana de pagos (sin entrar a editar la entrada). NO mueve
-     * tesorería ni el monto, solo asigna de qué caja salió el efectivo, así que
-     * NO requiere admin: cualquier usuario que registra pagos puede hacerlo.
-     * Solo turnos ABIERTOS (un turno cerrado ya congeló su efectivo esperado y
-     * el cambio no reflejaría).
-     */
-    public function afectaCajaPago(Request $request, EntradaPago $pago)
-    {
-        $user = $request->user();
-        abort_if(!$pago->entrada || $pago->entrada->empresa_id !== $user->empresa_id, 403);
-
-        $data = $request->validate([
-            'turno_id' => ['nullable', 'integer', Rule::exists('turnos', 'id')
-                ->where('empresa_id', $user->empresa_id)->where('estado', 'abierto')],
-        ]);
-
-        $pago->update(['turno_id' => $data['turno_id'] ?? null]);
-
-        \App\Services\AuditoriaService::log('entrada.afecta_caja', $pago->entrada, [
-            'pago_id' => $pago->id, 'turno_id' => $data['turno_id'] ?? null,
-        ], $user);
-
-        return back()->with('success', 'Caja del pago actualizada.');
     }
 
     /**
