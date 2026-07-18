@@ -381,13 +381,20 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
     // y cuánto GANÓ hoy de verdad (utilidad operativa = ventas − costo − gastos).
     // La "variación de patrimonio" (Δ vs ayer) va aparte y NO es la utilidad:
     // pagar proveedores o comprar mercadería la baja sin ser pérdida.
-    const stats: { label: string; valor: string | null; color?: string; signo?: boolean; hint?: string; ayer?: number | null }[] = [
-        { label: 'Patrimonio del dueño', valor: balance.balance_neto, hint: 'Todo lo que tiene hoy: a favor − lo que debe', ayer: comparativo?.patrimonio ?? null },
-        { label: 'Utilidad del día', valor: balance.utilidad_dia, signo: true, hint: 'Ventas − costo de lo vendido − gastos (ganancia REAL del día)', ayer: comparativo?.utilidad ?? null },
-        { label: 'Ventas del día', valor: balance.ventas_dia, color: 'var(--color-success)', hint: 'Total vendido hoy', ayer: comparativo?.ventas ?? null },
-        { label: 'Costo de lo vendido', valor: balance.costo_dia, hint: 'Costo de la mercadería que salió en las ventas de hoy', ayer: comparativo?.costo ?? null },
-        { label: 'Gastos del día', valor: balance.gastos_dia, color: 'var(--color-warning)', hint: 'Gastos operativos reales del día', ayer: comparativo?.gastos ?? null },
+    // El PATRIMONIO (hoy vs ayer) es la comparación que importa → va como card
+    // grande aparte. Las demás son las métricas operativas del día, sin "ayer".
+    const stats: { label: string; valor: string | null; color?: string; signo?: boolean; hint?: string }[] = [
+        { label: 'Utilidad del día', valor: balance.utilidad_dia, signo: true, hint: 'Ventas − costo de lo vendido − gastos (ganancia REAL del día)' },
+        { label: 'Ventas del día', valor: balance.ventas_dia, color: 'var(--color-success)', hint: 'Total vendido hoy' },
+        { label: 'Costo de lo vendido', valor: balance.costo_dia, hint: 'Costo de la mercadería que salió en las ventas de hoy' },
+        { label: 'Gastos del día', valor: balance.gastos_dia, color: 'var(--color-warning)', hint: 'Gastos operativos reales del día' },
     ];
+
+    // Patrimonio hoy vs ayer.
+    const patHoy  = Number(balance.balance_neto);
+    const patAyer = comparativo?.patrimonio ?? (balance.balance_anterior !== null ? Number(balance.balance_anterior) : null);
+    const patDelta = patAyer !== null ? patHoy - patAyer : null;
+    const patAyerFecha = comparativo?.fecha ?? balanceAnteriorFecha;
 
     return (
         <AppLayout title={`Balance ${balance.fecha}`}>
@@ -458,8 +465,45 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                 </div>
             </Modal>
 
-            {/* Resumen */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+            {/* ── PATRIMONIO DEL DUEÑO — la comparación que importa: hoy vs ayer.
+                Es "todo lo que tiene el dueño" (a favor − lo que debe). Card grande
+                y destacada. */}
+            <div className="mb-4 rounded-2xl px-5 py-4"
+                style={{ border: '2px solid var(--color-primary)', backgroundColor: 'color-mix(in srgb, var(--color-primary) 5%, var(--color-surface))' }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-primary)' }}>
+                    Patrimonio del dueño <span className="normal-case font-normal" style={{ color: 'var(--color-text-muted)' }}>— todo lo que tiene (a favor − lo que debe)</span>
+                </p>
+                <div className="flex flex-wrap items-end gap-x-8 gap-y-3 mt-2">
+                    <div>
+                        <p className="text-3xl font-bold leading-none" style={{ color: 'var(--color-text)' }}>{money(balance.balance_neto)}</p>
+                        <p className="text-[11px] mt-1" style={{ color: 'var(--color-text-muted)' }}>hoy</p>
+                    </div>
+                    {patAyer !== null && (
+                        <div>
+                            <p className="text-2xl font-semibold leading-none" style={{ color: 'var(--color-text-muted)' }}>{money(patAyer)}</p>
+                            <p className="text-[11px] mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                ayer{patAyerFecha ? ` (${new Date(patAyerFecha + 'T00:00:00').toLocaleDateString('es-PE')})` : ''}
+                            </p>
+                        </div>
+                    )}
+                    {patDelta !== null && (
+                        <div className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2"
+                            style={{ backgroundColor: patDelta >= 0 ? 'color-mix(in srgb, var(--color-success) 14%, transparent)' : 'color-mix(in srgb, var(--color-danger) 14%, transparent)' }}>
+                            {patDelta >= 0 ? <ArrowUpRight size={20} style={{ color: 'var(--color-success)' }} /> : <ArrowDownRight size={20} style={{ color: 'var(--color-danger)' }} />}
+                            <span className="text-xl font-bold tabular-nums" style={{ color: patDelta >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                {patDelta > 0 ? '+' : ''}{money(patDelta)}
+                            </span>
+                            <span className="text-[11px] ml-0.5" style={{ color: 'var(--color-text-muted)' }}>vs ayer</span>
+                        </div>
+                    )}
+                </div>
+                <p className="text-[11px] mt-3" style={{ color: 'var(--color-text-muted)' }}>
+                    Esta variación <strong>no es ganancia ni pérdida</strong>: pagar proveedores o comprar mercadería baja el patrimonio sin ser pérdida. La ganancia real del día es la <strong>Utilidad del día</strong>.
+                </p>
+            </div>
+
+            {/* Métricas operativas del día */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
                 {stats.map(s => {
                     const n = s.valor !== null ? Number(s.valor) : null;
                     const color = s.color ?? (s.signo && n !== null
@@ -474,40 +518,13 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             <p className="text-lg font-bold" style={{ color }}>
                                 {n === null ? '—' : `${s.signo && n > 0 ? '+' : ''}${money(n)}`}
                             </p>
-                            {/* Versus con el día anterior: ayer + variación */}
-                            {s.ayer !== null && s.ayer !== undefined && n !== null ? (
-                                <p className="text-[10px] leading-tight mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    ayer {money(s.ayer)}
-                                    <span className="font-semibold ml-1"
-                                        style={{ color: (n - s.ayer) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                        {(n - s.ayer) >= 0 ? '▲ +' : '▼ '}{money(n - s.ayer)}
-                                    </span>
-                                </p>
-                            ) : s.hint ? (
+                            {s.hint && (
                                 <p className="text-[10px] leading-tight mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{s.hint}</p>
-                            ) : null}
+                            )}
                         </div>
                     );
                 })}
             </div>
-
-            {/* Variación del patrimonio vs ayer — secundaria y explicada: NO es la
-                utilidad. Baja al pagar proveedores o comprar mercadería (no es pérdida). */}
-            {balance.diferencia !== null && (
-                <div className="mb-4 flex flex-wrap items-center gap-2 text-xs rounded-xl px-3 py-2"
-                    style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
-                    <span className="font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                        Variación de patrimonio vs {balanceAnteriorFecha ?? 'ayer'}:
-                    </span>
-                    <span className="font-bold tabular-nums"
-                        style={{ color: Number(balance.diferencia) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                        {Number(balance.diferencia) > 0 ? '+' : ''}{money(balance.diferencia)}
-                    </span>
-                    <span style={{ color: 'var(--color-text-muted)' }}>
-                        — no es ganancia/pérdida: pagar proveedores o comprar mercadería la baja sin ser pérdida. La ganancia real es la <strong>Utilidad del día</strong>.
-                    </span>
-                </div>
-            )}
 
             {/* Resumen textual por ENTIDAD (Efectivo, BBVA, BCP…) — un vistazo
                 rápido de "cuánto tengo en cada banco" antes del detalle por cuenta. */}
