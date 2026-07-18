@@ -75,6 +75,20 @@ class Turno extends Model
             ->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))
             ->sum('monto');
 
+        // Anticipos de clientes cobrados EN EFECTIVO durante el turno: ese
+        // billete entra al cajón, así que el sistema debe esperarlo. Se cuenta
+        // el MONTO recibido (aunque luego se aplique en mercadería, el efectivo
+        // ya entró y quedó). Anulados/devueltos no cuentan (el dinero se revirtió
+        // o se regresó al cliente). Efectivo = método efectivo, o sin método con
+        // cuenta de efectivo (mismo criterio que las compras de abajo).
+        $anticiposEfectivo = (float) \App\Models\ClienteAnticipo::where('turno_id', $this->id)
+            ->whereNotIn('estado', ['anulado', 'devuelto'])
+            ->where(fn($q) =>
+                $q->whereHas('metodoPago.tipo', fn($t) => $t->where('slug', 'efectivo'))
+                  ->orWhere(fn($q2) => $q2->whereNull('metodo_pago_id')
+                        ->whereHas('cuenta', fn($c) => $c->where('es_efectivo', true)))
+            )->sum('monto');
+
         // Reembolsos de devoluciones en efectivo del turno (descuentan caja)
         $reembolsosEfectivo = (float) \App\Models\DevolucionPago::whereHas('devolucion', fn($q) =>
             $q->where('turno_id', $this->id)
@@ -99,6 +113,7 @@ class Turno extends Model
         return $apertura
              + $ventasEfectivo
              + $abonosEfectivo
+             + $anticiposEfectivo
              - $gastosEfectivo
              - $reembolsosEfectivo
              - $comprasEfectivo

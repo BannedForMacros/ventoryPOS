@@ -74,6 +74,13 @@ interface Anticipo extends Record<string, unknown> {
 
 interface Paginado<T> { data: T[]; total: number; }
 
+interface TurnoLite {
+    id: number; user_id: number; caja_id: number; fecha_apertura: string;
+    estado: 'abierto' | 'cerrado';
+    user?: { id: number; name: string } | null;
+    caja?: { id: number; nombre: string } | null;
+}
+
 interface Props extends PageProps {
     anticipos: Paginado<Anticipo>;
     totalPasivo: number;
@@ -83,6 +90,8 @@ interface Props extends PageProps {
     productos: { id: number; nombre: string; precio_venta: string }[];
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
+    turnos: TurnoLite[];
+    turnoActivoId: number | null;
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -114,10 +123,18 @@ const valorHoy = (a: Anticipo) => {
 const emptyForm = () => ({
     cliente_id: '', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '',
     tipo_valorizacion: 'monto', producto_id: '', cantidad: '', observacion: '',
+    turno_id: '',
 });
 
-export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clientes, productos, metodosPago, cuentas }: Props) {
+export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clientes, productos, metodosPago, cuentas, turnos, turnoActivoId }: Props) {
     const { flash } = usePage<Props>().props;
+    // "Afecta caja a:" — texto del turno (#id · fecha hora · usuario · caja · abierto).
+    const turnoLabel = (t: TurnoLite) => {
+        const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
+        const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        return [`#${t.id}`, `${f} ${hora}`, t.user?.name, t.caja?.nombre].filter(Boolean).join(' · ')
+            + (t.estado === 'abierto' ? ' · abierto' : '');
+    };
     const [modalNuevo, setModalNuevo]   = useState(false);
     const [modalCrearCliente, setModalCrearCliente] = useState(false);
     const [aplicando, setAplicando]     = useState<Anticipo | null>(null);
@@ -177,6 +194,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
             cuenta_id:      form.cuenta_id || null,
             producto_id:    form.tipo_valorizacion === 'material' ? (form.producto_id || null) : null,
             cantidad:       form.tipo_valorizacion === 'material' ? (form.cantidad || null) : null,
+            turno_id:       form.turno_id || null,
         } as any, {
             onSuccess: () => { setModalNuevo(false); setForm(emptyForm()); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -340,7 +358,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
                 title="Anticipos de clientes"
                 subtitle="Dinero recibido por adelantado a cambio de mercadería futura"
                 actions={
-                    <Button onClick={() => { setErrors({}); setForm(emptyForm()); setModalNuevo(true); }}>
+                    <Button onClick={() => { setErrors({}); setForm({ ...emptyForm(), turno_id: turnoActivoId ? String(turnoActivoId) : '' }); setModalNuevo(true); }}>
                         <Plus size={15} className="mr-1 flex-shrink-0" />Nuevo anticipo
                     </Button>
                 }
@@ -436,6 +454,20 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
                             El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
                             que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
                         </Callout>
+                    )}
+                    {/* "Afecta caja a:" — a qué caja/turno entra el dinero del anticipo.
+                        Por defecto el turno activo del cajero; se puede elegir "Sin turno"
+                        u otro. Solo el efectivo con turno suma al esperado de esa caja. */}
+                    {turnos.length > 0 && (
+                        <Select label="Afecta caja a (turno)"
+                            options={[
+                                { value: '', label: 'Sin turno (no afecta caja)' },
+                                ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) })),
+                            ]}
+                            value={form.turno_id}
+                            onChange={v => setForm(f => ({ ...f, turno_id: String(v) }))}
+                            hint="Si el anticipo es en efectivo, entra a la caja de este turno y suma a su efectivo esperado. «Sin turno» no afecta ninguna caja."
+                        />
                     )}
                     <Select label="Modalidad" required
                         options={[

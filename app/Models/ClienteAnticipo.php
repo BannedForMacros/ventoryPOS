@@ -16,6 +16,7 @@ class ClienteAnticipo extends Model
         'estado', 'observacion',
         'moneda', 'tipo_cambio', 'monto_moneda',
         'venta_id', 'fecha_entrega_estimada',
+        'turno_id',
     ];
 
     protected function casts(): array
@@ -39,6 +40,7 @@ class ClienteAnticipo extends Model
     public function cuenta(): BelongsTo     { return $this->belongsTo(Cuenta::class); }
     public function producto(): BelongsTo   { return $this->belongsTo(Producto::class); }
     public function venta(): BelongsTo      { return $this->belongsTo(Venta::class); }
+    public function turno(): BelongsTo      { return $this->belongsTo(Turno::class); }
     public function aplicaciones(): HasMany { return $this->hasMany(ClienteAnticipoAplicacion::class); }
     public function items(): HasMany        { return $this->hasMany(ClienteAnticipoItem::class); }
 

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\Stock;
+use App\Models\Turno;
 use App\Services\AuditoriaService;
 use App\Services\ConfiguracionOperacionService;
 use App\Services\LocalScopeService;
@@ -101,7 +102,35 @@ class AnticipoClienteController extends Controller
                 ->orderBy('nombre')->get(['id', 'nombre', 'precio_venta']),
             'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
             'cuentas'     => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
+            // "Afecta caja a:" — turnos para elegir a qué caja entra el dinero del
+            // anticipo (los de hoy o abiertos ahora). null = no afecta ninguna caja.
+            'turnos'      => Turno::deEmpresa($user->empresa_id)
+                ->with(['user:id,name', 'caja:id,nombre'])
+                ->where(fn ($q) => $q->whereDate('fecha_apertura', now()->toDateString())->orWhere('estado', 'abierto'))
+                ->orderByDesc('fecha_apertura')->limit(40)
+                ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
+            // Turno sugerido por defecto: el propio abierto del usuario, o el único
+            // abierto en su ámbito (misma auto-resolución que usa store()).
+            'turnoActivoId' => $this->turnoSugerido($user),
         ]);
+    }
+
+    /**
+     * Turno al que se imputaría el dinero del anticipo por defecto: 1) el turno
+     * propio abierto del usuario; 2) si no tiene, el ÚNICO turno abierto en su
+     * ámbito; 3) ninguno. Mismo patrón que Cuentas por Cobrar.
+     */
+    private function turnoSugerido($user): ?int
+    {
+        $turnoId = Turno::turnoActivoDelUsuario($user->id)?->id;
+        if (!$turnoId) {
+            $abiertos = Turno::deEmpresa($user->empresa_id)->where('estado', 'abierto')
+                ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id))
+                ->pluck('id');
+            $turnoId = $abiertos->count() === 1 ? $abiertos->first() : null;
+        }
+
+        return $turnoId;
     }
 
     public function store(Request $request)
@@ -118,15 +147,23 @@ class AnticipoClienteController extends Controller
             'producto_id'       => ['required_if:tipo_valorizacion,material', 'nullable', 'integer', Rule::exists('productos', 'id')->where('empresa_id', $user->empresa_id)],
             'cantidad'          => ['required_if:tipo_valorizacion,material', 'nullable', 'numeric', 'min:0.0001'],
             'observacion'       => ['nullable', 'string', 'max:500'],
+            // "Afecta caja a:" — turno de cuya caja entra el dinero. null = "Sin turno".
+            'turno_id'          => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
-        $anticipo = DB::transaction(function () use ($data, $user) {
+        // Turno al que se imputa el anticipo (si es efectivo, suma a esa caja):
+        // si el front manda 'turno_id' (aunque sea null = "Sin turno"), se respeta;
+        // si NO lo manda (llamadores viejos), se auto-resuelve.
+        $turnoId = $request->has('turno_id') ? ($data['turno_id'] ?? null) : $this->turnoSugerido($user);
+
+        $anticipo = DB::transaction(function () use ($data, $user, $turnoId) {
             $anticipo = ClienteAnticipo::create($data + [
                 'empresa_id'         => $user->empresa_id,
                 'user_id'            => $user->id,
                 'saldo'              => $data['monto'],
                 'cantidad_pendiente' => $data['tipo_valorizacion'] === 'material' ? $data['cantidad'] : null,
                 'estado'             => 'activo',
+                'turno_id'           => $turnoId,
             ]);
 
             // F7 — El dinero del anticipo ingresa a tesorería.
