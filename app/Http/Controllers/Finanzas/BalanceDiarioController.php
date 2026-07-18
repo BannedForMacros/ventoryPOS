@@ -493,17 +493,32 @@ class BalanceDiarioController extends Controller
                 // (Efectivo, BCP, BBVA…): se juntan TODAS las cuentas de la
                 // entidad (BCP Soles + Yape = BCP). Compat: si llega ref_id
                 // (balances viejos por cuenta) se respeta esa cuenta.
-                $entidad = $request->input('entidad');
-                $cuentaIds = null; // null = todas
+                $entidad   = $request->input('entidad');
+                $cuentaSel = $request->integer('cuenta_id') ?: null; // sub-cuenta (tab)
+
+                // Sub-cuentas de la entidad (para los TABS del detalle: una
+                // entidad BCP puede tener BCP Soles + Yape + BCP Dólares).
+                $subcuentas = collect();
                 if ($categoria === 'efectivo') {
-                    $cuentaIds = Cuenta::deEmpresa($empresaId)->where('es_efectivo', true)->pluck('id');
+                    $subcuentas = Cuenta::deEmpresa($empresaId)->where('es_efectivo', true)
+                        ->orderBy('nombre')->get(['id', 'nombre']);
                 } elseif ($categoria === 'cuenta_bancaria') {
-                    $cuentaIds = $entidad
-                        ? Cuenta::deEmpresa($empresaId)->where('es_efectivo', false)->where('banco', $entidad)->pluck('id')
-                        : ($refId ? collect([$refId]) : Cuenta::deEmpresa($empresaId)->where('es_efectivo', false)->pluck('id'));
+                    $subcuentas = Cuenta::deEmpresa($empresaId)->where('es_efectivo', false)
+                        ->when($entidad, fn ($q) => $q->where('banco', $entidad))
+                        ->orderBy('nombre')->get(['id', 'nombre']);
+                }
+
+                $cuentaIds = null; // null = todas
+                if ($cuentaSel) {
+                    // Tab de una sub-cuenta específica.
+                    $cuentaIds = collect([$cuentaSel]);
                 } elseif ($esEgreso && $refId) {
                     // Gastos emitidos desglosados por cuenta (balances viejos).
                     $cuentaIds = collect([$refId]);
+                } elseif ($categoria === 'efectivo' || $categoria === 'cuenta_bancaria') {
+                    $cuentaIds = $subcuentas->isNotEmpty()
+                        ? $subcuentas->pluck('id')
+                        : ($refId ? collect([$refId]) : null);
                 }
 
                 $q = CuentaMovimiento::deEmpresa($empresaId)
@@ -592,6 +607,24 @@ class BalanceDiarioController extends Controller
                     }
                 }
 
+                // Ventas del DÍA del balance por MÉTODO DE PAGO (reconciliación
+                // de caja: cuánto entró por Efectivo, Yape, Tarjeta… ese día).
+                // Solo en ingresos (efectivo/banca), no en gastos emitidos.
+                $metodosDia = [];
+                if (!$esEgreso) {
+                    $metodosDia = DB::table('venta_pagos as vp')
+                        ->join('ventas as v', 'v.id', '=', 'vp.venta_id')
+                        ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
+                        ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
+                        ->whereBetween('v.fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
+                        ->groupBy('mp.id', 'mp.nombre')
+                        ->selectRaw('mp.nombre as metodo, SUM(vp.monto) as total, COUNT(DISTINCT v.id) as ventas')
+                        ->orderByRaw('SUM(vp.monto) DESC')
+                        ->get()
+                        ->map(fn ($r) => ['metodo' => $r->metodo, 'total' => round((float) $r->total, 2), 'ventas' => (int) $r->ventas])
+                        ->values();
+                }
+
                 return response()->json([
                     'tipo'   => 'grupos',
                     'desde'  => $desde,
@@ -600,6 +633,10 @@ class BalanceDiarioController extends Controller
                     'itemCols'   => $itemCols,
                     'montoLabel' => 'Monto',
                     'grupos'     => $grupos,
+                    // Tabs por sub-cuenta de la entidad + desglose del día por método.
+                    'subcuentas' => $subcuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values(),
+                    'cuentaSel'  => $cuentaSel,
+                    'metodosDia' => $metodosDia,
                 ]);
             }
 

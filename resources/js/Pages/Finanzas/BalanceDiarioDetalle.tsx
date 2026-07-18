@@ -148,7 +148,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
     const [detalleCargando, setDetalleCargando] = useState(false);
     const [rango, setRango]               = useState({ desde: '', hasta: '' });
 
-    async function cargarDetalle(item: Item, desde?: string, hasta?: string) {
+    async function cargarDetalle(item: Item, desde?: string, hasta?: string, cuentaId?: number | null) {
         setDetalleCargando(true);
         try {
             const params = new URLSearchParams();
@@ -158,6 +158,8 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
             if ((item.categoria === 'efectivo' || item.categoria === 'cuenta_bancaria') && item.ref_tipo === 'entidad') {
                 params.set('entidad', item.descripcion);
             }
+            // Tab de una sub-cuenta específica de la entidad.
+            if (cuentaId) params.set('cuenta_id', String(cuentaId));
             if (desde) params.set('desde', desde);
             if (hasta) params.set('hasta', hasta);
             const url = route('finanzas.balance.detalle', { fecha: balance.fecha.slice(0, 10), categoria: item.categoria })
@@ -836,6 +838,45 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} />
                                 </div>
                                 <Button onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta)}>Filtrar</Button>
+                            </div>
+                        )}
+
+                        {/* Tabs por sub-cuenta de la entidad (BCP Soles / Yape / BCP Dólares) */}
+                        {(detalleData.subcuentas?.length ?? 0) > 1 && (
+                            <div className="flex flex-wrap gap-1.5">
+                                {[{ id: null, nombre: 'Todas' }, ...detalleData.subcuentas].map((c: any) => {
+                                    const activo = (detalleData?.cuentaSel ?? null) === c.id;
+                                    return (
+                                        <button key={c.id ?? 'todas'}
+                                            onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, c.id)}
+                                            className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors"
+                                            style={{
+                                                borderColor: activo ? 'var(--color-primary)' : 'var(--color-border)',
+                                                backgroundColor: activo ? 'color-mix(in srgb, var(--color-primary) 10%, transparent)' : 'transparent',
+                                                color: activo ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                            }}>
+                                            {c.nombre}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Ventas del día por método de pago (reconciliación de caja) */}
+                        {(detalleData.metodosDia?.length ?? 0) > 0 && (
+                            <div className="rounded-xl px-3 py-2.5" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                <p className="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Ventas del día por método de pago
+                                </p>
+                                <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+                                    {detalleData.metodosDia.map((m: any) => (
+                                        <span key={m.metodo} className="inline-flex items-center gap-1.5">
+                                            <span style={{ color: 'var(--color-text-muted)' }}>{m.metodo}:</span>
+                                            <span className="font-bold tabular-nums">{money(m.total)}</span>
+                                            <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>({m.ventas})</span>
+                                        </span>
+                                    ))}
+                                </div>
                             </div>
                         )}
 
