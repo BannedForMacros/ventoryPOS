@@ -15,6 +15,8 @@ class BalanceDiario extends Model
         'empresa_id', 'user_id', 'fecha', 'estado',
         'total_favor', 'total_contra', 'balance_neto',
         'balance_anterior', 'diferencia', 'gastos_dia', 'utilidad_real',
+        // Utilidad OPERATIVA del día (la ganancia real: ventas − costo − gastos).
+        'ventas_dia', 'costo_dia', 'utilidad_dia',
         'observacion',
     ];
 
@@ -31,6 +33,9 @@ class BalanceDiario extends Model
             'diferencia'       => 'decimal:2',
             'gastos_dia'       => 'decimal:2',
             'utilidad_real'    => 'decimal:2',
+            'ventas_dia'       => 'decimal:2',
+            'costo_dia'        => 'decimal:2',
+            'utilidad_dia'     => 'decimal:2',
         ];
     }
 

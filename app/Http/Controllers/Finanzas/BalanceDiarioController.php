@@ -217,6 +217,53 @@ class BalanceDiarioController extends Controller
             && !BalanceDiario::deEmpresa($user->empresa_id)->confirmado()
                 ->where('fecha', '>', $balance->fecha->toDateString())->exists();
 
+        // ── Alertas de calidad de datos (por qué el patrimonio podría verse mal)
+        // 1) Productos con STOCK NEGATIVO al corte: casi siempre entradas
+        //    registradas DESPUÉS de las ventas o compras sin ingresar. Restan
+        //    valor fantasma al inventario y bajan el patrimonio sin ser pérdida.
+        // 2) Kardex DESALINEADO del stock vivo: al editar/revertir entradas el
+        //    kardex queda viejo y el balance lee un valor que ya no es real →
+        //    hay que "Recalcular stock" para reconstruirlo.
+        $stockNegativo = collect(DB::select(
+            'WITH saldos AS (
+                SELECT DISTINCT ON (mi.almacen_id, mi.producto_id) mi.producto_id, mi.saldo_cantidad
+                FROM movimientos_inventario mi
+                WHERE mi.empresa_id = ? AND mi.fecha <= ?
+                ORDER BY mi.almacen_id, mi.producto_id, mi.fecha DESC, mi.id DESC
+            )
+            SELECT p.nombre, s.saldo_cantidad AS cantidad
+            FROM saldos s JOIN productos p ON p.id = s.producto_id AND p.activo = true
+            WHERE s.saldo_cantidad < 0
+            ORDER BY s.saldo_cantidad ASC LIMIT 50',
+            [$user->empresa_id, $balance->fecha->toDateString() . ' 23:59:59'],
+        ))->map(fn ($r) => ['nombre' => $r->nombre, 'cantidad' => (float) $r->cantidad]);
+
+        $kardexDesalineado = (int) (DB::selectOne(
+            'WITH kardex AS (
+                SELECT DISTINCT ON (mi.almacen_id, mi.producto_id) mi.almacen_id, mi.producto_id, mi.saldo_cantidad AS q
+                FROM movimientos_inventario mi WHERE mi.empresa_id = ?
+                ORDER BY mi.almacen_id, mi.producto_id, mi.fecha DESC, mi.id DESC
+            )
+            SELECT COUNT(*) AS n
+            FROM kardex k JOIN productos p ON p.id = k.producto_id AND p.activo = true
+            LEFT JOIN stock s ON s.producto_id = k.producto_id AND s.almacen_id = k.almacen_id
+            WHERE ABS(COALESCE(s.cantidad, 0) - k.q) > 0.01',
+            [$user->empresa_id],
+        )?->n ?? 0);
+
+        // ── Histórico del PATRIMONIO del dueño: últimos días confirmados +
+        // este. Da el "¿cuánto tiene el dueño?" y su tendencia día a día.
+        $patrimonioHistorial = BalanceDiario::deEmpresa($user->empresa_id)
+            ->where(fn ($q) => $q->confirmado()->orWhere('id', $balance->id))
+            ->where('fecha', '<=', $balance->fecha->toDateString())
+            ->orderByDesc('fecha')->limit(21)->get(['fecha', 'balance_neto', 'utilidad_dia', 'estado'])
+            ->sortBy('fecha')->values()
+            ->map(fn ($b) => [
+                'fecha'      => $b->fecha->toDateString(),
+                'patrimonio' => (float) $b->balance_neto,
+                'utilidad'   => $b->utilidad_dia !== null ? (float) $b->utilidad_dia : null,
+            ]);
+
         return Inertia::render('Finanzas/BalanceDiarioDetalle', [
             'balance'        => $balance,
             'gastos'         => $gastos,
@@ -228,6 +275,11 @@ class BalanceDiarioController extends Controller
             'balanceAnteriorFecha' => $anterior?->fecha?->toDateString(),
             'esAdmin'            => (bool) $user->rol->es_admin,
             'puedeReabrir'       => $esUltimoConfirmado && (bool) $user->rol->es_admin,
+            'alertaStock'        => [
+                'negativos'          => $stockNegativo,
+                'kardex_desalineado' => $kardexDesalineado,
+            ],
+            'patrimonioHistorial' => $patrimonioHistorial,
         ]);
     }
 
@@ -404,18 +456,28 @@ class BalanceDiarioController extends Controller
                 // (antes solo ingresos): así se explica por qué el monto cambió
                 // vs ayer sin saltar entre dos paneles. Gastos emitidos sigue
                 // siendo solo egresos (es la contra-línea).
+                // Cuentas de esta línea. F11: efectivo/banco son POR ENTIDAD
+                // (Efectivo, BCP, BBVA…): se juntan TODAS las cuentas de la
+                // entidad (BCP Soles + Yape = BCP). Compat: si llega ref_id
+                // (balances viejos por cuenta) se respeta esa cuenta.
+                $entidad = $request->input('entidad');
+                $cuentaIds = null; // null = todas
+                if ($categoria === 'efectivo') {
+                    $cuentaIds = Cuenta::deEmpresa($empresaId)->where('es_efectivo', true)->pluck('id');
+                } elseif ($categoria === 'cuenta_bancaria') {
+                    $cuentaIds = $entidad
+                        ? Cuenta::deEmpresa($empresaId)->where('es_efectivo', false)->where('banco', $entidad)->pluck('id')
+                        : ($refId ? collect([$refId]) : Cuenta::deEmpresa($empresaId)->where('es_efectivo', false)->pluck('id'));
+                } elseif ($esEgreso && $refId) {
+                    // Gastos emitidos desglosados por cuenta (balances viejos).
+                    $cuentaIds = collect([$refId]);
+                }
+
                 $q = CuentaMovimiento::deEmpresa($empresaId)
                     ->whereBetween('fecha', [$desde, $hasta])
                     ->when($esEgreso, fn ($qq) => $qq->where('tipo', 'egreso'))
+                    ->when($cuentaIds !== null, fn ($qq) => $qq->whereIn('cuenta_id', $cuentaIds))
                     ->with(['user:id,name', 'cuenta:id,nombre']);
-
-                if (!$esEgreso) {
-                    $q->where('cuenta_id', $refId ?? TesoreriaService::efectivo($empresaId)->id);
-                } elseif ($refId) {
-                    // Gastos emitidos desglosados por cuenta: filtrar la cuenta
-                    // de la línea (sin ref_id — balances viejos — muestra todas).
-                    $q->where('cuenta_id', $refId);
-                }
 
                 $movs = $q->orderByDesc('fecha')->orderByDesc('id')->limit(1000)->get();
 

@@ -62,9 +62,33 @@ class BalanceDiarioService
                 ->where('fecha', $fecha)
                 ->sum('monto');
 
+            // ── UTILIDAD OPERATIVA del día: ventas − costo de lo vendido − gastos.
+            // Es la ganancia REAL ("cuánto vendí, cuánto gané"). NO se usa el
+            // Δpatrimonio como utilidad: pagar proveedores o comprar mercadería
+            // baja el saldo pero NO es pérdida. El costo usa el snapshot congelado
+            // del ítem (mismo criterio del Reporte de Utilidad).
+            $ventasDia = (float) Venta::deEmpresa($empresaId)
+                ->where('estado', 'completada')
+                ->whereBetween('fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
+                ->sum('total');
+
+            $costoSql = "COALESCE(NULLIF(vi.costo_unitario_base, 0), NULLIF(p.precio_costo, 0),
+                (SELECT s.costo_promedio FROM stock s WHERE s.producto_id = p.id AND s.costo_promedio > 0 ORDER BY s.id LIMIT 1), 0)";
+            $costoDia = (float) DB::table('venta_items as vi')
+                ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
+                ->join('productos as p', 'p.id', '=', 'vi.producto_id')
+                ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
+                ->whereBetween('v.fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
+                ->selectRaw("COALESCE(SUM(vi.cantidad_base * {$costoSql}), 0) as c")->value('c');
+
+            $utilidadDia = round($ventasDia - $costoDia - $gastosDia, 2);
+
             $balance->update([
                 'balance_anterior' => $anterior?->balance_neto,
                 'gastos_dia'       => round($gastosDia, 2),
+                'ventas_dia'       => round($ventasDia, 2),
+                'costo_dia'        => round($costoDia, 2),
+                'utilidad_dia'     => $utilidadDia,
             ]);
 
             $this->regenerarItemsAutomaticos($balance);
@@ -94,25 +118,27 @@ class BalanceDiarioService
 
         // ── A FAVOR ──────────────────────────────────────────────────────
 
-        // F7/F10 — Efectivo y cuentas bancarias EN BRUTO (pedido del cliente):
-        // A FAVOR muestra TODO lo ingresado a cada cuenta hasta la fecha;
-        // las salidas van como línea "Gastos emitidos" EN CONTRA. El neto
-        // (favor − contra) da el mismo saldo real, pero cada lado muestra
-        // su monto completo, como en su Excel.
+        // F11 — Efectivo y bancos al SALDO REAL NETO (ingresos − egresos),
+        // AGRUPADO POR ENTIDAD. Antes se mostraba el ingreso BRUTO a favor y las
+        // salidas como "gastos emitidos" en contra: inflaba ambos lados y, al
+        // pagar proveedores, parecía pérdida. Ahora una línea por entidad con lo
+        // que REALMENTE hay. Agrupar por entidad resuelve el caso de dos cuentas
+        // del mismo banco (BCP Soles + Yape): una puede salir negativa y otra
+        // positiva, pero la entidad muestra el saldo único real (como el banco).
         $fechaCorte = $balance->fecha->toDateString();
         Cuenta::deEmpresa($empresaId)->activo()
             ->orderByDesc('es_efectivo')->orderBy('nombre')->get()
-            ->each(function (Cuenta $c) use (&$items, &$orden, $fechaCorte) {
-                $ingresosBrutos = (float) \App\Models\CuentaMovimiento::where('cuenta_id', $c->id)
-                    ->where('fecha', '<=', $fechaCorte)
-                    ->where('tipo', 'ingreso')
-                    ->sum('monto');
+            ->groupBy(fn (Cuenta $c) => $c->es_efectivo ? 'efectivo' : ('banco:' . ($c->banco ?: $c->nombre)))
+            ->each(function ($grupo, $clave) use (&$items, &$orden, $fechaCorte) {
+                $esEfectivo = str_starts_with((string) $clave, 'efectivo');
+                $saldo = round($grupo->sum(fn (Cuenta $c) => $this->tesoreria->saldo($c->id, $fechaCorte)), 2);
+                $entidad = $esEfectivo ? 'Efectivo' : substr((string) $clave, 6); // quita "banco:"
                 $items[] = [
                     'seccion'     => 'favor',
-                    'categoria'   => $c->es_efectivo ? 'efectivo' : 'cuenta_bancaria',
-                    'descripcion' => $c->nombre,
-                    'ref_tipo'    => 'cuenta', 'ref_id' => $c->id,
-                    'monto'       => round($ingresosBrutos, 2),
+                    'categoria'   => $esEfectivo ? 'efectivo' : 'cuenta_bancaria',
+                    'descripcion' => $entidad,
+                    'ref_tipo'    => 'entidad', 'ref_id' => null,
+                    'monto'       => $saldo,
                     'orden'       => ++$orden,
                 ];
             });
@@ -240,27 +266,12 @@ class BalanceDiarioService
             'monto' => round($cxp, 2), 'orden' => ++$orden,
         ];
 
-        // F10 — Gastos emitidos POR CUENTA: todas las salidas de dinero hasta
-        // la fecha (pagos a proveedores, gastos, cuotas, faltantes...),
-        // desglosadas por cuenta/método (pedido del cliente: saber DE QUÉ
-        // cuenta salió cada sol). Contraparte EN CONTRA de las cuentas en
-        // bruto: favor(bruto) − gastos emitidos de la cuenta = saldo real.
-        Cuenta::deEmpresa($empresaId)->activo()
-            ->orderByDesc('es_efectivo')->orderBy('nombre')->get()
-            ->each(function (Cuenta $c) use (&$items, &$orden, $fechaCorte) {
-                $egresos = (float) \App\Models\CuentaMovimiento::where('cuenta_id', $c->id)
-                    ->where('fecha', '<=', $fechaCorte)
-                    ->where('tipo', 'egreso')
-                    ->sum('monto');
-                if ($egresos < 0.01) return; // sin salidas: no ensuciar EN CONTRA
-
-                $items[] = [
-                    'seccion' => 'contra', 'categoria' => 'gastos_emitidos',
-                    'descripcion' => "Gastos emitidos — {$c->nombre}",
-                    'ref_tipo' => 'cuenta', 'ref_id' => $c->id,
-                    'monto' => round($egresos, 2), 'orden' => ++$orden,
-                ];
-            });
+        // NOTA (F11): la línea "Gastos emitidos" (egresos brutos por cuenta) se
+        // eliminó. Antes era la contraparte del efectivo/banco en BRUTO; ahora
+        // que A FAVOR muestra el saldo NETO real, sumar los egresos aquí sería
+        // contarlos dos veces y hacer aparecer el patrimonio como pérdida. El
+        // detalle de salidas de cada cuenta se ve en el desplegable de la
+        // entidad y en "movimientos del día". EN CONTRA = solo lo que DEBEMOS.
 
         // Anticipos de clientes A LA FECHA: nacidos hasta el corte, con el
         // saldo/pendiente que tenían ese día (las entregas posteriores se
