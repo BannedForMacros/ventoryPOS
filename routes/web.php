@@ -385,6 +385,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.tesoreria,ver')->get('tesoreria', [TesoreriaController::class, 'index'])->name('tesoreria.index');
         Route::middleware('permiso:finanzas.tesoreria,editar')->post('tesoreria/ajustar', [TesoreriaController::class, 'ajustar'])->name('tesoreria.ajustar');
         Route::middleware('permiso:finanzas.tesoreria,crear')->post('tesoreria/movimiento', [TesoreriaController::class, 'movimiento'])->name('tesoreria.movimiento');
+        Route::middleware('permiso:finanzas.tesoreria,editar')->delete('tesoreria/movimiento/{movimiento}', [TesoreriaController::class, 'destroy'])->name('tesoreria.movimiento.destroy');
 
         // Balance diario
         Route::middleware('permiso:finanzas.balance,ver')->get('balance', [BalanceDiarioController::class, 'index'])->name('balance.index');

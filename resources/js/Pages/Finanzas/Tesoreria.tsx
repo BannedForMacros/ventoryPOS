@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Coins, Landmark, Scale, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight } from 'lucide-react';
+import { Coins, Landmark, Scale, ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, Trash2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -40,7 +40,7 @@ interface Props extends PageProps {
     cuentas: CuentaSaldo[];
     cuentaId: number;
     movimientos: Paginado<Movimiento>;
-    puede: { ajustar: boolean; crear: boolean };
+    puede: { ajustar: boolean; crear: boolean; eliminar: boolean };
     buscar?: string;
 }
 
@@ -74,6 +74,18 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos, puede, busca
     // Movimiento manual de ajuste con monto exacto.
     const [modalMovimiento, setModalMovimiento] = useState(false);
     const [formMov, setFormMov] = useState({ cuenta_id: '', fecha: hoy(), tipo: 'ingreso', monto: '', descripcion: '' });
+    // Confirmación de borrado de un ajuste manual equivocado.
+    const [aEliminar, setAeliminar] = useState<Movimiento | null>(null);
+
+    function eliminarMov() {
+        if (!aEliminar) return;
+        setSaving(true);
+        router.delete(route('finanzas.tesoreria.movimiento.destroy', aEliminar.id), {
+            preserveScroll: true,
+            onSuccess: () => { setAeliminar(null); setSaving(false); },
+            onError:   () => { setSaving(false); toast.error('No se pudo eliminar el movimiento.'); },
+        });
+    }
 
     function abrirMovimiento() {
         setErrors({});
@@ -140,6 +152,24 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos, puede, busca
             key: 'user', label: 'Registrado por',
             render: (m) => <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{m.user?.name ?? '—'}</span>,
         },
+        // Solo los AJUSTES manuales se pueden eliminar. Los movimientos que
+        // nacen de una venta/gasto/pago no llevan botón: se corrigen desde su
+        // operación de origen.
+        ...(puede.eliminar ? [{
+            key: 'acciones', label: '', align: 'right' as const,
+            render: (m: Movimiento) => m.ref_tipo === 'ajuste' ? (
+                <button
+                    onClick={() => setAeliminar(m)}
+                    title="Eliminar ajuste manual"
+                    className="inline-flex items-center justify-center p-1.5 rounded-lg transition-colors"
+                    style={{ color: 'var(--color-danger)' }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'color-mix(in srgb, var(--color-danger) 12%, transparent)')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                    <Trash2 size={15} />
+                </button>
+            ) : <span style={{ color: 'var(--color-border)' }}>—</span>,
+        }] : []),
     ];
 
     return (
@@ -282,6 +312,34 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos, puede, busca
                         value={formMov.descripcion}
                         onChange={e => setFormMov(f => ({ ...f, descripcion: e.target.value }))} error={errors.descripcion} />
                 </div>
+            </Modal>
+
+            {/* Confirmar borrado de un ajuste manual equivocado */}
+            <Modal isOpen={!!aEliminar} onClose={() => setAeliminar(null)}
+                title="Eliminar movimiento de ajuste" size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setAeliminar(null)}>Cancelar</Button>
+                        <Button variant="danger" onClick={eliminarMov} disabled={saving}>
+                            {saving ? 'Eliminando...' : 'Eliminar'}
+                        </Button>
+                    </>
+                }
+            >
+                {aEliminar && (
+                    <div className="space-y-3">
+                        <Callout variant="danger">
+                            Se eliminará este ajuste manual y el saldo de la cuenta se recalculará solo.
+                            Queda registrado en auditoría. Esto solo aplica a ajustes manuales.
+                        </Callout>
+                        <div className="text-sm rounded-xl px-3 py-2" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                            <p className="font-bold" style={{ color: aEliminar.tipo === 'ingreso' ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                {aEliminar.tipo === 'ingreso' ? '+' : '−'}{money(aEliminar.monto)} · {fdate(aEliminar.fecha)}
+                            </p>
+                            <p style={{ color: 'var(--color-text-muted)' }}>{aEliminar.descripcion}</p>
+                        </div>
+                    </div>
+                )}
             </Modal>
         </AppLayout>
     );

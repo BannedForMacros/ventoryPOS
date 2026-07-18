@@ -63,8 +63,9 @@ class TesoreriaController extends Controller
             // Acciones visibles según la matriz de permisos del rol (los
             // ajustes se otorgan desde Configuración → Roles, nada hardcodeado).
             'puede'       => [
-                'ajustar' => $user->tienePermiso('finanzas.tesoreria', 'editar'),
-                'crear'   => $user->tienePermiso('finanzas.tesoreria', 'crear'),
+                'ajustar'  => $user->tienePermiso('finanzas.tesoreria', 'editar'),
+                'crear'    => $user->tienePermiso('finanzas.tesoreria', 'crear'),
+                'eliminar' => $user->tienePermiso('finanzas.tesoreria', 'editar'),
             ],
         ]);
     }
@@ -134,5 +135,36 @@ class TesoreriaController extends Controller
 
         return back()->with('success', 'Movimiento de ajuste registrado: '
             . ($data['tipo'] === 'ingreso' ? '+' : '−') . 'S/ ' . number_format((float) $data['monto'], 2));
+    }
+
+    /**
+     * Elimina un movimiento MANUAL de ajuste (ref_tipo = 'ajuste'). Solo esos:
+     * los movimientos AUTOMÁTICOS (ventas, gastos, pagos, abonos…) NO se borran
+     * desde aquí — esos se corrigen anulando/editando su operación de origen.
+     * Si te equivocaste al registrar un ajuste manual, aquí lo eliminas y el
+     * saldo de la cuenta se recalcula solo. Queda auditado.
+     */
+    public function destroy(Request $request, CuentaMovimiento $movimiento)
+    {
+        $user = $request->user();
+
+        // Debe ser de la misma empresa y ser un ajuste manual, nunca un
+        // movimiento generado por una operación real del negocio.
+        abort_unless($movimiento->empresa_id === $user->empresa_id, 403);
+        abort_unless($movimiento->ref_tipo === 'ajuste', 422,
+            'Solo se pueden eliminar movimientos manuales de ajuste. Los demás se corrigen desde su operación de origen.');
+
+        // Snapshot para auditoría ANTES de borrar (luego el modelo ya no existe).
+        \App\Services\AuditoriaService::log('tesoreria.movimiento_eliminado', $movimiento, [
+            'cuenta_id'   => $movimiento->cuenta_id,
+            'tipo'        => $movimiento->tipo,
+            'monto'       => (float) $movimiento->monto,
+            'fecha'       => optional($movimiento->fecha)->toDateString(),
+            'descripcion' => $movimiento->descripcion,
+        ], $user);
+
+        $movimiento->delete();
+
+        return back()->with('success', 'Movimiento de ajuste eliminado. El saldo se recalculó.');
     }
 }
