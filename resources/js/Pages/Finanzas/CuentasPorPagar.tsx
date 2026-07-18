@@ -42,6 +42,15 @@ interface EntradaCxp extends Record<string, unknown> {
     proveedor_rel?: { id: number; razon_social?: string; nombre_comercial?: string } | null;
     almacen?: { nombre: string } | null;
     pagos_parciales: Pago[];
+    // Mercadería que originó la deuda (para verla en la misma ventana).
+    detalles?: {
+        id: number;
+        cantidad: string;
+        precio_costo: string;
+        subtotal: string;
+        producto?: { nombre: string; codigo?: string | null } | null;
+        unidad_medida?: { abreviatura?: string | null; nombre?: string } | null;
+    }[];
 }
 
 interface AdelantoMin { id: number; proveedor_id: number; saldo: string; }
@@ -88,6 +97,16 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
     };
     const [abonando, setAbonando] = useState<EntradaCxp | null>(null);
     const [detalle, setDetalle]   = useState<EntradaCxp | null>(null);
+
+    // Cambiar la caja de un pago directo desde la ventana (sin editar la entrada).
+    function cambiarAfectaCaja(pagoId: number, turnoId: number | null) {
+        // Optimista: refleja en el modal al instante.
+        setDetalle(d => d ? { ...d, pagos_parciales: d.pagos_parciales.map(p => p.id === pagoId ? { ...p, turno_id: turnoId } : p) } : d);
+        router.put(route('finanzas.cxp.pagos.afecta-caja', pagoId), { turno_id: turnoId }, {
+            preserveScroll: true, preserveState: true,
+            onError: () => toast.error('No se pudo actualizar la caja del pago.'),
+        });
+    }
     const [saving, setSaving]     = useState(false);
     const [errors, setErrors]     = useState<Record<string, string>>({});
     const [usarAdelanto, setUsarAdelanto] = useState(false);
@@ -425,6 +444,43 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
                             { label: 'Pagado', valor: money(detalle.monto_pagado), color: 'success' },
                             { label: 'Saldo', valor: money(saldoDe(detalle)), color: 'danger' },
                         ]} />
+
+                        {/* Mercadería que originó la deuda + enlace a la entrada */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                    Mercadería de la compra
+                                </p>
+                                <a href={route('inventario.entradas.editar', detalle.id)}
+                                    className="text-[11px] underline inline-flex items-center gap-1" style={{ color: 'var(--color-primary)' }}>
+                                    <ReceiptText size={12} /> Ver / editar entrada
+                                </a>
+                            </div>
+                            {(detalle.detalles?.length ?? 0) === 0 ? (
+                                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Sin detalle de mercadería registrado.</p>
+                            ) : (
+                                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                    {detalle.detalles!.map((d, i) => (
+                                        <div key={d.id} className="flex items-center justify-between gap-3 px-4 py-2 text-xs"
+                                            style={{
+                                                borderBottom: i < detalle.detalles!.length - 1 ? '1px solid var(--color-border)' : undefined,
+                                                backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
+                                            }}>
+                                            <span className="min-w-0 flex-1 truncate" style={{ color: 'var(--color-text)' }}>
+                                                {d.producto?.nombre ?? 'Producto'}
+                                                {d.producto?.codigo && <span className="ml-1" style={{ color: 'var(--color-text-muted)' }}>({d.producto.codigo})</span>}
+                                            </span>
+                                            <span className="whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>
+                                                {Number(d.cantidad)} {d.unidad_medida?.abreviatura ?? ''} × {money(d.precio_costo)}
+                                            </span>
+                                            <span className="font-semibold whitespace-nowrap tabular-nums w-20 text-right">{money(d.subtotal)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Pagos</p>
                         {detalle.pagos_parciales.length === 0 ? (
                             <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>Sin pagos registrados</p>
                         ) : (
@@ -451,6 +507,21 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
                                                 <p className="truncate" style={{ color: 'var(--color-text-muted)' }}>
                                                     {[p.observacion, p.user?.name ? `por ${p.user.name}` : null].filter(Boolean).join(' · ')}
                                                 </p>
+                                            )}
+                                            {/* Afecta caja directo (solo pagos normales; solo turnos abiertos) */}
+                                            {!p.proveedor_adelanto_id && turnos.length > 0 && (
+                                                <div className="mt-1 flex items-center gap-1.5">
+                                                    <span className="text-[10px] whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>Afecta caja:</span>
+                                                    <select
+                                                        value={p.turno_id ?? ''}
+                                                        onChange={e => cambiarAfectaCaja(p.id, e.target.value === '' ? null : Number(e.target.value))}
+                                                        className="text-[11px] rounded border px-1.5 py-0.5 outline-none max-w-[13rem]"
+                                                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                                                    >
+                                                        <option value="">Sin caja</option>
+                                                        {turnos.map(t => <option key={t.id} value={t.id}>{turnoLabel(t)}</option>)}
+                                                    </select>
+                                                </div>
                                             )}
                                         </div>
                                         <span className="font-bold text-sm whitespace-nowrap" style={{ color: 'var(--color-danger)' }}>

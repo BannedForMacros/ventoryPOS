@@ -471,6 +471,9 @@ class EntradaController extends Controller
             'pagos_anulados.*'                => ['integer'],
             // "Afecta caja a:" — turno cuya caja entregó el efectivo del pago NUEVO.
             'turno_id'                 => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
+            // Si el usuario TOCÓ el selector "Afecta caja a:", re-imputar también
+            // los pagos YA registrados a ese turno (no solo los nuevos).
+            'reimputar_pagos_turno'    => ['nullable', 'boolean'],
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
@@ -705,6 +708,26 @@ class EntradaController extends Controller
 
                 // "Afecta caja a:" para los pagos NUEVOS (null = no afecta caja).
                 $turnoArg = array_key_exists('turno_id', $data) ? ($data['turno_id'] ?: null) : null;
+
+                // Si el usuario TOCÓ el selector, re-imputar el turno de los pagos
+                // YA registrados (los que no fueron editados/anulados uno por uno).
+                // Es solo la asignación de caja (no mueve tesorería), por eso NO
+                // requiere admin: arregla el caso "edito la entrada para que afecte
+                // a caja y no se actualizaba". Solo turnos abiertos (el selector ya
+                // los limita); re-imputar a uno cerrado no reflejaría.
+                if (!empty($data['reimputar_pagos_turno'])) {
+                    $idsExcluir = array_merge(
+                        collect($editados)->pluck('id')->filter()->all(),
+                        collect($anulados)->all(),
+                    );
+                    $entrada->pagosParciales()
+                        ->when($idsExcluir, fn ($q) => $q->whereNotIn('id', $idsExcluir))
+                        ->update(['turno_id' => $turnoArg]);
+
+                    \App\Services\AuditoriaService::log('entrada.afecta_caja', $entrada, [
+                        'turno_id' => $turnoArg,
+                    ], $user);
+                }
 
                 // Pagos NUEVOS desde la edición (entrada_pagos + egreso en tesorería).
                 $lineas = $data['pagos'] ?? [];

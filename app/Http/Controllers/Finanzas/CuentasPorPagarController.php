@@ -30,7 +30,13 @@ class CuentasPorPagarController extends Controller
 
         $query = Entrada::deEmpresa($user->empresa_id)
             ->confirmado()
-            ->with(['proveedorRel', 'almacen', 'pagosParciales.metodoPago', 'pagosParciales.cuenta', 'pagosParciales.adelanto', 'pagosParciales.user'])
+            ->with([
+                'proveedorRel', 'almacen',
+                'pagosParciales.metodoPago', 'pagosParciales.cuenta', 'pagosParciales.adelanto', 'pagosParciales.user',
+                // Mercadería que originó la deuda: se muestra en la MISMA ventana
+                // de pagos (antes había que salir a Entradas para saber qué se compró).
+                'detalles.producto:id,nombre,codigo', 'detalles.unidadMedida:id,nombre,abreviatura',
+            ])
             ->when($request->input('proveedor_id'), fn ($q, $v) => $q->where('proveedor_id', $v))
             ->when($request->input('fecha_desde'), fn ($q, $v) => $q->where('fecha', '>=', $v))
             ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->where('fecha', '<=', $v))
@@ -68,11 +74,12 @@ class CuentasPorPagarController extends Controller
             // Adelantos con saldo para ofrecer "pagar consumiendo adelanto".
             'adelantos'      => ProveedorAdelanto::deEmpresa($user->empresa_id)->activo()
                 ->where('saldo', '>', 0)->get(['id', 'proveedor_id', 'saldo']),
-            // "Afecta caja a:" — turnos para elegir de qué caja sale el efectivo del
-            // pago (los de hoy o abiertos ahora). null = no afecta ninguna caja.
+            // "Afecta caja a:" — SOLO turnos ABIERTOS (un turno cerrado ya tiene su
+            // efectivo esperado congelado, no reflejaría el cambio). null = no
+            // afecta ninguna caja.
             'turnos'         => Turno::deEmpresa($user->empresa_id)
                 ->with(['user:id,name', 'caja:id,nombre'])
-                ->where(fn ($q) => $q->whereDate('fecha_apertura', now()->toDateString())->orWhere('estado', 'abierto'))
+                ->where('estado', 'abierto')
                 ->orderByDesc('fecha_apertura')->limit(40)
                 ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
         ]);
@@ -159,6 +166,33 @@ class CuentasPorPagarController extends Controller
         });
 
         return back()->with('success', 'Pago al proveedor registrado correctamente.');
+    }
+
+    /**
+     * Cambia SOLO la caja ("afecta caja a:") de un pago ya registrado, directo
+     * desde la ventana de pagos (sin entrar a editar la entrada). NO mueve
+     * tesorería ni el monto, solo asigna de qué caja salió el efectivo, así que
+     * NO requiere admin: cualquier usuario que registra pagos puede hacerlo.
+     * Solo turnos ABIERTOS (un turno cerrado ya congeló su efectivo esperado y
+     * el cambio no reflejaría).
+     */
+    public function afectaCajaPago(Request $request, EntradaPago $pago)
+    {
+        $user = $request->user();
+        abort_if(!$pago->entrada || $pago->entrada->empresa_id !== $user->empresa_id, 403);
+
+        $data = $request->validate([
+            'turno_id' => ['nullable', 'integer', Rule::exists('turnos', 'id')
+                ->where('empresa_id', $user->empresa_id)->where('estado', 'abierto')],
+        ]);
+
+        $pago->update(['turno_id' => $data['turno_id'] ?? null]);
+
+        \App\Services\AuditoriaService::log('entrada.afecta_caja', $pago->entrada, [
+            'pago_id' => $pago->id, 'turno_id' => $data['turno_id'] ?? null,
+        ], $user);
+
+        return back()->with('success', 'Caja del pago actualizada.');
     }
 
     /**

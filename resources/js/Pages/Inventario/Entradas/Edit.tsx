@@ -114,11 +114,13 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
 }
 
 export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen }: Props) {
-    // "Afecta caja a:" — por defecto NO afecta ninguna caja ('' = Sin turno). Solo
-    // si el usuario elige un turno los pagos nuevos descuentan de esa caja. No
-    // preseleccionamos el turno del pago anterior para no re-imputar sin querer.
-    const [turnoIdCaja, setTurnoIdCaja] = useState<number | ''>('');
-    void pagoTurnoId;
+    // "Afecta caja a:" — arranca en el turno actual de los pagos (si sigue
+    // ABIERTO), para reflejar el estado real. Re-imputar solo ocurre si el
+    // usuario TOCA el selector (turnoTocado), para no cambiarlo sin querer.
+    const [turnoIdCaja, setTurnoIdCaja] = useState<number | ''>(
+        pagoTurnoId && turnos.some(t => t.id === pagoTurnoId) ? pagoTurnoId : '',
+    );
+    const [turnoTocado, setTurnoTocado] = useState(false);
     const turnoLabel = (t: TurnoLite) => {
         const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
         const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
@@ -450,6 +452,8 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                 })) : [],
             pagos_anulados: puedeEditarPagos ? editPagos.filter(r => r.eliminar).map(r => r.id) : [],
             turno_id: turnoIdCaja || null,
+            // Solo re-imputar la caja de los pagos ya registrados si el usuario tocó el selector.
+            reimputar_pagos_turno: turnoTocado,
         }, {
             onSuccess: () => setProcessing(false),
             onError:   (e) => {
@@ -860,12 +864,12 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                 label="Afecta caja a (turno)"
                                 placeholder="Sin turno / no salió de caja"
                                 value={turnoIdCaja}
-                                onChange={v => setTurnoIdCaja(v === '' ? '' : Number(v))}
+                                onChange={v => { setTurnoIdCaja(v === '' ? '' : Number(v)); setTurnoTocado(true); }}
                                 options={[
                                     { value: '', label: 'Sin turno / no salió de caja' },
                                     ...turnos.map(t => ({ value: t.id, label: turnoLabel(t) })),
                                 ]}
-                                hint="Elige de qué caja salió el efectivo, para que la consolidación de ese turno lo reste."
+                                hint="Solo turnos abiertos. Al cambiarlo, se re-imputa la caja de los pagos ya registrados de esta compra."
                             />
                         </div>
                     )}
