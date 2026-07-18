@@ -495,6 +495,7 @@ class BalanceDiarioController extends Controller
                 // (balances viejos por cuenta) se respeta esa cuenta.
                 $entidad   = $request->input('entidad');
                 $cuentaSel = $request->integer('cuenta_id') ?: null; // sub-cuenta (tab)
+                $userSel   = $request->integer('user_id') ?: null;   // filtrar por cajero
 
                 // Sub-cuentas de la entidad (para los TABS del detalle: una
                 // entidad BCP puede tener BCP Soles + Yape + BCP Dólares).
@@ -525,6 +526,7 @@ class BalanceDiarioController extends Controller
                     ->whereBetween('fecha', [$desde, $hasta])
                     ->when($esEgreso, fn ($qq) => $qq->where('tipo', 'egreso'))
                     ->when($cuentaIds !== null, fn ($qq) => $qq->whereIn('cuenta_id', $cuentaIds))
+                    ->when($userSel, fn ($qq) => $qq->where('user_id', $userSel))
                     ->with(['user:id,name', 'cuenta:id,nombre']);
 
                 $movs = $q->orderByDesc('fecha')->orderByDesc('id')->limit(1000)->get();
@@ -607,21 +609,25 @@ class BalanceDiarioController extends Controller
                     }
                 }
 
-                // Ventas del DÍA del balance por MÉTODO DE PAGO (reconciliación
-                // de caja: cuánto entró por Efectivo, Yape, Tarjeta… ese día).
-                // Solo en ingresos (efectivo/banca), no en gastos emitidos.
-                $metodosDia = [];
+                // Generado por CAJERO ese día EN ESTA ENTIDAD: cuánto trajo cada
+                // usuario en ventas/cobros que entraron a esta cuenta/entidad
+                // (respeta el tab de sub-cuenta). Se listan TODOS los cajeros
+                // (sin aplicar el filtro de usuario) para poder elegir. Solo en
+                // ingresos (no en gastos emitidos).
+                $porCajero = [];
                 if (!$esEgreso) {
-                    $metodosDia = DB::table('venta_pagos as vp')
-                        ->join('ventas as v', 'v.id', '=', 'vp.venta_id')
-                        ->join('metodos_pago as mp', 'mp.id', '=', 'vp.metodo_pago_id')
-                        ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
-                        ->whereBetween('v.fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
-                        ->groupBy('mp.id', 'mp.nombre')
-                        ->selectRaw('mp.nombre as metodo, SUM(vp.monto) as total, COUNT(DISTINCT v.id) as ventas')
-                        ->orderByRaw('SUM(vp.monto) DESC')
+                    $porCajero = CuentaMovimiento::deEmpresa($empresaId)
+                        ->where('cuenta_movimientos.tipo', 'ingreso')
+                        ->whereDate('cuenta_movimientos.fecha', $fecha)
+                        ->whereIn('cuenta_movimientos.ref_tipo', ['venta', 'venta_abono'])
+                        ->when($cuentaIds !== null, fn ($qq) => $qq->whereIn('cuenta_movimientos.cuenta_id', $cuentaIds))
+                        ->leftJoin('users', 'users.id', '=', 'cuenta_movimientos.user_id')
+                        ->groupBy('users.id', 'users.name')
+                        ->selectRaw("users.id as user_id, COALESCE(users.name, '—') as usuario,
+                                     SUM(cuenta_movimientos.monto) as total, COUNT(*) as ops")
+                        ->orderByRaw('SUM(cuenta_movimientos.monto) DESC')
                         ->get()
-                        ->map(fn ($r) => ['metodo' => $r->metodo, 'total' => round((float) $r->total, 2), 'ventas' => (int) $r->ventas])
+                        ->map(fn ($r) => ['user_id' => $r->user_id, 'usuario' => $r->usuario, 'total' => round((float) $r->total, 2), 'ops' => (int) $r->ops])
                         ->values();
                 }
 
@@ -633,10 +639,12 @@ class BalanceDiarioController extends Controller
                     'itemCols'   => $itemCols,
                     'montoLabel' => 'Monto',
                     'grupos'     => $grupos,
-                    // Tabs por sub-cuenta de la entidad + desglose del día por método.
+                    // Jerarquía del detalle: tabs por sub-cuenta de la entidad +
+                    // desglose "generado por cajero" (filtrable por usuario).
                     'subcuentas' => $subcuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values(),
                     'cuentaSel'  => $cuentaSel,
-                    'metodosDia' => $metodosDia,
+                    'porCajero'  => $porCajero,
+                    'userSel'    => $userSel,
                 ]);
             }
 

@@ -148,7 +148,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
     const [detalleCargando, setDetalleCargando] = useState(false);
     const [rango, setRango]               = useState({ desde: '', hasta: '' });
 
-    async function cargarDetalle(item: Item, desde?: string, hasta?: string, cuentaId?: number | null) {
+    async function cargarDetalle(item: Item, desde?: string, hasta?: string, cuentaId?: number | null, userId?: number | null) {
         setDetalleCargando(true);
         try {
             const params = new URLSearchParams();
@@ -158,8 +158,9 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
             if ((item.categoria === 'efectivo' || item.categoria === 'cuenta_bancaria') && item.ref_tipo === 'entidad') {
                 params.set('entidad', item.descripcion);
             }
-            // Tab de una sub-cuenta específica de la entidad.
+            // Filtros del detalle: sub-cuenta (tab) y cajero (usuario).
             if (cuentaId) params.set('cuenta_id', String(cuentaId));
+            if (userId) params.set('user_id', String(userId));
             if (desde) params.set('desde', desde);
             if (hasta) params.set('hasta', hasta);
             const url = route('finanzas.balance.detalle', { fecha: balance.fecha.slice(0, 10), categoria: item.categoria })
@@ -837,45 +838,70 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         className="text-sm rounded-lg px-2 py-1.5 border outline-none"
                                         style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} />
                                 </div>
-                                <Button onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta)}>Filtrar</Button>
+                                <Button onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, detalleData?.cuentaSel ?? null, detalleData?.userSel ?? null)}>Filtrar</Button>
                             </div>
                         )}
 
-                        {/* Tabs por sub-cuenta de la entidad (BCP Soles / Yape / BCP Dólares) */}
+                        {/* Jerarquía 1 — Sub-cuenta de la entidad (BCP Soles / Yape / BCP Dólares).
+                            Preserva el filtro de cajero al cambiar. */}
                         {(detalleData.subcuentas?.length ?? 0) > 1 && (
-                            <div className="flex flex-wrap gap-1.5">
-                                {[{ id: null, nombre: 'Todas' }, ...detalleData.subcuentas].map((c: any) => {
-                                    const activo = (detalleData?.cuentaSel ?? null) === c.id;
-                                    return (
-                                        <button key={c.id ?? 'todas'}
-                                            onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, c.id)}
-                                            className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors"
-                                            style={{
-                                                borderColor: activo ? 'var(--color-primary)' : 'var(--color-border)',
-                                                backgroundColor: activo ? 'color-mix(in srgb, var(--color-primary) 10%, transparent)' : 'transparent',
-                                                color: activo ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                                            }}>
-                                            {c.nombre}
-                                        </button>
-                                    );
-                                })}
+                            <div>
+                                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--color-text-muted)' }}>Cuenta</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {[{ id: null, nombre: 'Todas' }, ...detalleData.subcuentas].map((c: any) => {
+                                        const activo = (detalleData?.cuentaSel ?? null) === c.id;
+                                        return (
+                                            <button key={c.id ?? 'todas'}
+                                                onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, c.id, detalleData?.userSel ?? null)}
+                                                className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors"
+                                                style={{
+                                                    borderColor: activo ? 'var(--color-primary)' : 'var(--color-border)',
+                                                    backgroundColor: activo ? 'color-mix(in srgb, var(--color-primary) 10%, transparent)' : 'transparent',
+                                                    color: activo ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                                }}>
+                                                {c.nombre}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         )}
 
-                        {/* Ventas del día por método de pago (reconciliación de caja) */}
-                        {(detalleData.metodosDia?.length ?? 0) > 0 && (
+                        {/* Jerarquía 2 — Generado por CAJERO ese día (scoped a la entidad/cuenta).
+                            Clic en un cajero filtra los movimientos a sus ventas. */}
+                        {(detalleData.porCajero?.length ?? 0) > 0 && (
                             <div className="rounded-xl px-3 py-2.5" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Ventas del día por método de pago
+                                <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                                    Generado por cajero (hoy) — clic para filtrar
                                 </p>
-                                <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-                                    {detalleData.metodosDia.map((m: any) => (
-                                        <span key={m.metodo} className="inline-flex items-center gap-1.5">
-                                            <span style={{ color: 'var(--color-text-muted)' }}>{m.metodo}:</span>
-                                            <span className="font-bold tabular-nums">{money(m.total)}</span>
-                                            <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>({m.ventas})</span>
-                                        </span>
-                                    ))}
+                                <div className="flex flex-wrap gap-1.5">
+                                    <button
+                                        onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, detalleData?.cuentaSel ?? null, null)}
+                                        className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors"
+                                        style={{
+                                            borderColor: (detalleData?.userSel ?? null) === null ? 'var(--color-primary)' : 'var(--color-border)',
+                                            backgroundColor: (detalleData?.userSel ?? null) === null ? 'color-mix(in srgb, var(--color-primary) 10%, transparent)' : 'transparent',
+                                            color: (detalleData?.userSel ?? null) === null ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                        }}>
+                                        Todos
+                                    </button>
+                                    {detalleData.porCajero.map((u: any) => {
+                                        const activo = (detalleData?.userSel ?? null) === u.user_id;
+                                        return (
+                                            <button key={u.user_id ?? 'sin'}
+                                                onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, detalleData?.cuentaSel ?? null, u.user_id)}
+                                                className="text-xs px-3 py-1.5 rounded-lg border transition-colors inline-flex items-center gap-1.5"
+                                                style={{
+                                                    borderColor: activo ? 'var(--color-primary)' : 'var(--color-border)',
+                                                    backgroundColor: activo ? 'color-mix(in srgb, var(--color-primary) 10%, transparent)' : 'transparent',
+                                                    color: activo ? 'var(--color-primary)' : 'var(--color-text)',
+                                                }}>
+                                                <span className="font-medium">{u.usuario}</span>
+                                                <span className="font-bold tabular-nums">{money(u.total)}</span>
+                                                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>({u.ops})</span>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
