@@ -90,6 +90,7 @@ interface Props extends PageProps {
     puedeReabrir?: boolean;
     alertaStock: { negativos: { nombre: string; cantidad: number }[]; kardex_desalineado: number };
     patrimonioHistorial: { fecha: string; patrimonio: number; utilidad: number | null }[];
+    comparativo: { fecha: string; patrimonio: number; ventas: number; costo: number; gastos: number; utilidad: number | null } | null;
 }
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
@@ -123,7 +124,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
     otro_contra:        'Otro',
 };
 
-export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas, saldosEntidad, variaciones, balanceAnteriorFecha, puedeReabrir, alertaStock, patrimonioHistorial }: Props) {
+export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas, saldosEntidad, variaciones, balanceAnteriorFecha, puedeReabrir, alertaStock, patrimonioHistorial, comparativo }: Props) {
     const { flash } = usePage<Props>().props;
     const editable = balance.estado === 'borrador';
 
@@ -380,12 +381,12 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
     // y cuánto GANÓ hoy de verdad (utilidad operativa = ventas − costo − gastos).
     // La "variación de patrimonio" (Δ vs ayer) va aparte y NO es la utilidad:
     // pagar proveedores o comprar mercadería la baja sin ser pérdida.
-    const stats: { label: string; valor: string | null; color?: string; signo?: boolean; hint?: string }[] = [
-        { label: 'Patrimonio del dueño', valor: balance.balance_neto, hint: 'Todo lo que tiene hoy: a favor − lo que debe' },
-        { label: 'Utilidad del día', valor: balance.utilidad_dia, signo: true, hint: 'Ventas − costo de lo vendido − gastos (ganancia REAL del día)' },
-        { label: 'Ventas del día', valor: balance.ventas_dia, color: 'var(--color-success)', hint: 'Total vendido hoy' },
-        { label: 'Costo de lo vendido', valor: balance.costo_dia, hint: 'Costo de la mercadería que salió en las ventas de hoy' },
-        { label: 'Gastos del día', valor: balance.gastos_dia, color: 'var(--color-warning)', hint: 'Gastos operativos reales del día' },
+    const stats: { label: string; valor: string | null; color?: string; signo?: boolean; hint?: string; ayer?: number | null }[] = [
+        { label: 'Patrimonio del dueño', valor: balance.balance_neto, hint: 'Todo lo que tiene hoy: a favor − lo que debe', ayer: comparativo?.patrimonio ?? null },
+        { label: 'Utilidad del día', valor: balance.utilidad_dia, signo: true, hint: 'Ventas − costo de lo vendido − gastos (ganancia REAL del día)', ayer: comparativo?.utilidad ?? null },
+        { label: 'Ventas del día', valor: balance.ventas_dia, color: 'var(--color-success)', hint: 'Total vendido hoy', ayer: comparativo?.ventas ?? null },
+        { label: 'Costo de lo vendido', valor: balance.costo_dia, hint: 'Costo de la mercadería que salió en las ventas de hoy', ayer: comparativo?.costo ?? null },
+        { label: 'Gastos del día', valor: balance.gastos_dia, color: 'var(--color-warning)', hint: 'Gastos operativos reales del día', ayer: comparativo?.gastos ?? null },
     ];
 
     return (
@@ -473,9 +474,18 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             <p className="text-lg font-bold" style={{ color }}>
                                 {n === null ? '—' : `${s.signo && n > 0 ? '+' : ''}${money(n)}`}
                             </p>
-                            {s.hint && (
+                            {/* Versus con el día anterior: ayer + variación */}
+                            {s.ayer !== null && s.ayer !== undefined && n !== null ? (
+                                <p className="text-[10px] leading-tight mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    ayer {money(s.ayer)}
+                                    <span className="font-semibold ml-1"
+                                        style={{ color: (n - s.ayer) >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                        {(n - s.ayer) >= 0 ? '▲ +' : '▼ '}{money(n - s.ayer)}
+                                    </span>
+                                </p>
+                            ) : s.hint ? (
                                 <p className="text-[10px] leading-tight mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{s.hint}</p>
-                            )}
+                            ) : null}
                         </div>
                     );
                 })}

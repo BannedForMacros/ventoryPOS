@@ -280,6 +280,15 @@ class BalanceDiarioController extends Controller
                 'kardex_desalineado' => $kardexDesalineado,
             ],
             'patrimonioHistorial' => $patrimonioHistorial,
+            // Comparativo con el día anterior (el "versus") para cada card.
+            'comparativo'        => $anterior ? [
+                'fecha'      => $anterior->fecha->toDateString(),
+                'patrimonio' => (float) $anterior->balance_neto,
+                'ventas'     => (float) $anterior->ventas_dia,
+                'costo'      => (float) $anterior->costo_dia,
+                'gastos'     => (float) $anterior->gastos_dia,
+                'utilidad'   => $anterior->utilidad_dia !== null ? (float) $anterior->utilidad_dia : null,
+            ] : null,
         ]);
     }
 
