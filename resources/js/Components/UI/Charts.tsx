@@ -160,6 +160,7 @@ export function AreaChart({ data, series, height = 220, money = true }: AreaChar
 
 interface DonutChartProps {
     data: Array<{ label: string; valor: number; color?: string }>;
+    /** Ancho MÁXIMO de la dona: crece hasta llenar la card (responsive). */
     size?: number;
     money?: boolean;
     /** Texto central (p. ej. el total). */
@@ -168,10 +169,12 @@ interface DonutChartProps {
     vertical?: boolean;
 }
 
-export function DonutChart({ data, size = 168, money = true, centro, vertical = false }: DonutChartProps) {
+const truncar = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+
+export function DonutChart({ data, size = 250, money = true, centro, vertical = false }: DonutChartProps) {
     const [hover, setHover] = useState<number | null>(null);
     const total = data.reduce((s, d) => s + Math.max(0, d.valor), 0);
-    const R = 50, STROKE = 16, C = 2 * Math.PI * R;
+    const R = 50, STROKE = 17, C = 2 * Math.PI * R;
 
     if (total <= 0) {
         return <div className="flex items-center justify-center text-xs py-8" style={{ color: 'var(--color-text-muted)' }}>Sin datos en el período</div>;
@@ -187,10 +190,17 @@ export function DonutChart({ data, size = 168, money = true, centro, vertical = 
 
     const fmt = money ? fmtMoney : (v: number) => v.toLocaleString('es-PE');
 
+    // Texto central: dentro del SVG para que escale con la dona.
+    const centroTop  = hover !== null ? truncar(segs[hover].label, 18) : (centro?.label ?? '');
+    const centroBig  = hover !== null ? `${Math.round(segs[hover].frac * 100)}%` : (centro?.valor ?? '');
+    const bigFont    = Math.min(11, 105 / Math.max(1, centroBig.length));
+
     return (
-        <div className={vertical ? 'flex flex-col items-center gap-4' : 'flex items-center gap-4 flex-wrap'}>
-            <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
-                <svg viewBox="0 0 120 120" width={size} height={size}>
+        <div className={vertical
+            ? 'flex flex-col items-center gap-4'
+            : 'flex flex-wrap items-center justify-center gap-x-6 gap-y-3'}>
+            <div className="relative w-full flex-1 mx-auto" style={{ minWidth: 150, maxWidth: size }}>
+                <svg viewBox="0 0 120 120" className="w-full h-auto block">
                     <g transform="rotate(-90 60 60)">
                         {segs.map((s, i) => (
                             <circle key={i} cx={60} cy={60} r={R} fill="none"
@@ -202,23 +212,27 @@ export function DonutChart({ data, size = 168, money = true, centro, vertical = 
                             />
                         ))}
                     </g>
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
                     {hover !== null ? (
                         <>
-                            <span className="text-[10px] font-medium px-3 leading-tight" style={{ color: 'var(--color-text-muted)' }}>{segs[hover].label}</span>
-                            <span className="text-sm font-bold" style={{ color: 'var(--color-text)' }}>{Math.round(segs[hover].frac * 100)}%</span>
+                            <text x={60} y={56} textAnchor="middle" fontSize={6.5} fontWeight={600}
+                                fill="var(--color-text-muted)">{centroTop}</text>
+                            <text x={60} y={68} textAnchor="middle" fontSize={bigFont} fontWeight={700}
+                                fill="var(--color-text)">{centroBig}</text>
                         </>
                     ) : centro ? (
                         <>
-                            <span className="text-sm font-bold" style={{ color: 'var(--color-text)' }}>{centro.valor}</span>
-                            {centro.label && <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{centro.label}</span>}
+                            <text x={60} y={centro.label ? 58 : 63} textAnchor="middle" fontSize={bigFont} fontWeight={700}
+                                fill="var(--color-text)">{centro.valor}</text>
+                            {centro.label && (
+                                <text x={60} y={68} textAnchor="middle" fontSize={6}
+                                    fill="var(--color-text-muted)">{centro.label}</text>
+                            )}
                         </>
                     ) : null}
-                </div>
+                </svg>
             </div>
 
-            <div className={vertical ? 'w-full space-y-1' : 'flex-1 min-w-[140px] space-y-1'}>
+            <div className={vertical ? 'w-full space-y-1' : 'flex-1 min-w-[190px] w-full space-y-1'}>
                 {segs.map((s, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs cursor-default rounded px-1 py-0.5"
                         style={{ backgroundColor: hover === i ? 'color-mix(in srgb, var(--color-primary) 8%, transparent)' : undefined }}
@@ -230,6 +244,63 @@ export function DonutChart({ data, size = 168, money = true, centro, vertical = 
                     </div>
                 ))}
             </div>
+        </div>
+    );
+}
+
+/* ═══ BARRAS HORIZONTALES (ranking / distribución) ═════════════════════ */
+
+interface BarListProps {
+    data: Array<{ label: string; valor: number; extra?: string; color?: string }>;
+    money?: boolean;
+    /** Pintar cada barra con un color de la paleta (si no, todas primary). */
+    multicolor?: boolean;
+    /** Mostrar % de participación junto al valor. */
+    porcentaje?: boolean;
+    maxItems?: number;
+}
+
+export function BarList({ data, money = true, multicolor = false, porcentaje = true, maxItems }: BarListProps) {
+    const [hover, setHover] = useState<number | null>(null);
+    const items = maxItems ? data.slice(0, maxItems) : data;
+    const total = data.reduce((s, d) => s + Math.max(0, d.valor), 0);
+    const max = Math.max(1, ...items.map(d => d.valor));
+    const fmt = money ? fmtMoney : (v: number) => v.toLocaleString('es-PE');
+
+    if (items.length === 0) {
+        return <div className="flex items-center justify-center text-xs py-8" style={{ color: 'var(--color-text-muted)' }}>Sin datos en el período</div>;
+    }
+
+    return (
+        <div className="space-y-2.5">
+            {items.map((d, i) => {
+                const color = d.color ?? (multicolor ? CHART_COLORS[i % CHART_COLORS.length] : 'var(--color-primary)');
+                const pct = total > 0 ? Math.round((Math.max(0, d.valor) / total) * 100) : 0;
+                return (
+                    <div key={i} className="group cursor-default rounded-lg px-1.5 py-1 -mx-1.5 transition-colors"
+                        style={{ backgroundColor: hover === i ? 'color-mix(in srgb, var(--color-primary) 6%, transparent)' : undefined }}
+                        onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+                        <div className="flex items-baseline justify-between gap-2 mb-1">
+                            <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                                {d.label}
+                                {d.extra && <span className="ml-1.5 font-normal text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{d.extra}</span>}
+                            </span>
+                            <span className="text-xs font-bold whitespace-nowrap" style={{ color: 'var(--color-text)' }}>
+                                {fmt(d.valor)}
+                                {porcentaje && <span className="ml-1 font-medium text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{pct}%</span>}
+                            </span>
+                        </div>
+                        <div className="h-2 rounded-full overflow-hidden"
+                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-border) 55%, transparent)' }}>
+                            <div className="h-full rounded-full transition-all"
+                                style={{
+                                    width: `${(Math.max(0, d.valor) / max) * 100}%`,
+                                    background: `linear-gradient(90deg, color-mix(in srgb, ${color} 78%, #fff) 0%, ${color} 100%)`,
+                                }} />
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }

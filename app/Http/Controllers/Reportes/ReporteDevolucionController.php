@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Reportes;
 use App\Http\Controllers\Controller;
 use App\Models\Devolucion;
 use App\Models\DevolucionMotivo;
+use App\Models\Venta;
 use App\Services\LocalScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,22 +26,10 @@ class ReporteDevolucionController extends Controller
             ->whereBetween('fecha', [$desde . ' 00:00:00', $hasta . ' 23:59:59'])
             ->when($request->estado, fn ($q, $v) => $q->where('estado', $v))
             ->when($request->motivo_id, fn ($q, $v) => $q->where('motivo_id', $v))
+            ->when($request->forma, fn ($q, $v) => $q->where('forma_reembolso', $v))
             ->when($request->local_id, fn ($q, $v) => $q->where('local_id', $v))
             ->when($request->user_id, fn ($q, $v) => $q->where('user_id', $v))
             ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id));
-
-        $devoluciones = (clone $base)
-            ->with([
-                'user:id,name',
-                'userAprobacion:id,name',
-                'motivo:id,nombre',
-                'local:id,nombre',
-                'venta:id,numero,fecha_venta,total',
-            ])
-            ->orderByDesc('fecha')
-            ->orderByDesc('id')
-            ->paginate(25)
-            ->withQueryString();
 
         $kpis = [
             'total_devoluciones' => (int)   (clone $base)->count(),
@@ -52,13 +41,36 @@ class ReporteDevolucionController extends Controller
             'anuladas'           => (int)   (clone $base)->where('estado', 'anulada')->count(),
         ];
 
-        // Top motivos
+        // Tasa de devolución: monto devuelto vs ventas completadas del rango
+        $ventasRango = (float) Venta::deEmpresa($user->empresa_id)
+            ->where('estado', 'completada')
+            ->whereBetween('fecha_venta', [$desde . ' 00:00:00', $hasta . ' 23:59:59'])
+            ->when($request->local_id, fn ($q, $v) => $q->where('local_id', $v))
+            ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id))
+            ->sum('total');
+        $kpis['ventas_rango'] = $ventasRango;
+        $kpis['tasa']         = $ventasRango > 0 ? round(($kpis['monto_devuelto'] / $ventasRango) * 100, 2) : null;
+
+        // Serie diaria
+        $serieDiaria = (clone $base)
+            ->select(
+                DB::raw('DATE(fecha) as dia'),
+                DB::raw('COUNT(*) as devoluciones'),
+                DB::raw('SUM(monto_devolucion) as monto'),
+            )
+            ->groupBy('dia')->orderBy('dia')->get()
+            ->map(fn ($r) => [
+                'dia'          => $r->dia,
+                'devoluciones' => (int)   $r->devoluciones,
+                'monto'        => (float) $r->monto,
+            ]);
+
+        // Por motivo
         $porMotivo = (clone $base)
             ->select('motivo_id', DB::raw('COUNT(*) as count'), DB::raw('SUM(monto_devolucion) as total'))
             ->groupBy('motivo_id')
             ->with('motivo:id,nombre')
-            ->orderByDesc('count')
-            ->get()
+            ->orderByDesc('total')->get()
             ->map(fn ($r) => [
                 'motivo_id' => $r->motivo_id,
                 'nombre'    => $r->motivo?->nombre ?? '—',
@@ -66,10 +78,45 @@ class ReporteDevolucionController extends Controller
                 'total'     => (float) $r->total,
             ]);
 
+        // Por estado
+        $porEstado = (clone $base)
+            ->select('estado', DB::raw('COUNT(*) as count'), DB::raw('SUM(monto_devolucion) as total'))
+            ->groupBy('estado')->orderByDesc('count')->get()
+            ->map(fn ($r) => [
+                'estado' => $r->estado,
+                'count'  => (int)   $r->count,
+                'total'  => (float) $r->total,
+            ]);
+
+        // Por forma de reembolso
+        $porForma = (clone $base)
+            ->select('forma_reembolso', DB::raw('COUNT(*) as count'), DB::raw('SUM(monto_reembolso) as total'))
+            ->groupBy('forma_reembolso')->orderByDesc('count')->get()
+            ->map(fn ($r) => [
+                'forma' => $r->forma_reembolso,
+                'count' => (int)   $r->count,
+                'total' => (float) $r->total,
+            ]);
+
+        $devoluciones = (clone $base)
+            ->with([
+                'user:id,name',
+                'userAprobacion:id,name',
+                'motivo:id,nombre',
+                'local:id,nombre',
+                'venta:id,numero,cliente_id,total,fecha_venta',
+                'venta.cliente:id,nombres,apellidos,razon_social',
+                'detalles',
+                'detalles.producto:id,nombre',
+                'detalles.ventaItem:id,producto_nombre,unidad_nombre',
+                'pagos.metodoPago:id,nombre',
+            ])
+            ->orderByDesc('fecha')->orderByDesc('id')
+            ->paginate(25)->withQueryString();
+
         $motivos = DevolucionMotivo::deEmpresa($user->empresa_id)
             ->activo()
-            ->orderBy('orden')
-            ->orderBy('nombre')
+            ->orderBy('orden')->orderBy('nombre')
             ->get(['id', 'nombre']);
 
         $locales  = $this->scope->localesVisibles($user);
@@ -78,7 +125,10 @@ class ReporteDevolucionController extends Controller
         return Inertia::render('Reportes/Devoluciones', [
             'devoluciones' => $devoluciones,
             'kpis'         => $kpis,
+            'serie_diaria' => $serieDiaria,
             'por_motivo'   => $porMotivo,
+            'por_estado'   => $porEstado,
+            'por_forma'    => $porForma,
             'motivos'      => $motivos,
             'locales'      => $locales,
             'usuarios'     => $usuarios,
@@ -87,6 +137,7 @@ class ReporteDevolucionController extends Controller
                 'fecha_hasta' => $hasta,
                 'estado'      => $request->estado,
                 'motivo_id'   => $request->motivo_id,
+                'forma'       => $request->forma,
                 'local_id'    => $request->local_id,
                 'user_id'     => $request->user_id,
             ],

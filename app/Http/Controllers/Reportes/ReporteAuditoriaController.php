@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Auditoria;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class ReporteAuditoriaController extends Controller
@@ -14,15 +15,51 @@ class ReporteAuditoriaController extends Controller
     {
         $user = $request->user();
 
-        $registros = Auditoria::deEmpresa($user->empresa_id)
+        $desde = $request->fecha_desde ?: now()->subDays(6)->toDateString();
+        $hasta = $request->fecha_hasta ?: now()->toDateString();
+
+        $base = Auditoria::deEmpresa($user->empresa_id)
+            ->whereBetween('created_at', [$desde . ' 00:00:00', $hasta . ' 23:59:59'])
+            ->when($request->accion, fn ($q, $v) => $q->where('accion', $v))
+            ->when($request->user_id, fn ($q, $v) => $q->where('user_id', $v));
+
+        $labels = Auditoria::accionLabels();
+
+        // ── KPIs ──────────────────────────────────────────────────────────
+        $porAccion = (clone $base)
+            ->select('accion', DB::raw('COUNT(*) as total'))
+            ->groupBy('accion')->orderByDesc('total')->get()
+            ->map(fn ($r) => [
+                'accion' => $r->accion,
+                'label'  => $labels[$r->accion] ?? $r->accion,
+                'total'  => (int) $r->total,
+            ]);
+
+        $kpis = [
+            'total_acciones'   => (int) $porAccion->sum('total'),
+            'usuarios_activos' => (int) (clone $base)->distinct('user_id')->count('user_id'),
+            'acciones_hoy'     => (int) (clone $base)->whereDate('created_at', now()->toDateString())->count(),
+            'accion_top'       => $porAccion->first()['label'] ?? '—',
+        ];
+
+        // ── Desglose por usuario (snapshot user_name, sobrevive a bajas) ──
+        $porUsuario = (clone $base)
+            ->select('user_name', DB::raw('COUNT(*) as total'))
+            ->groupBy('user_name')->orderByDesc('total')->limit(10)->get()
+            ->map(fn ($r) => ['nombre' => $r->user_name ?? '—', 'total' => (int) $r->total]);
+
+        // ── Serie diaria ──────────────────────────────────────────────────
+        $serieDiaria = (clone $base)
+            ->select(DB::raw('DATE(created_at) as dia'), DB::raw('COUNT(*) as total'))
+            ->groupBy('dia')->orderBy('dia')->get()
+            ->map(fn ($r) => ['dia' => $r->dia, 'total' => (int) $r->total]);
+
+        // ── Listado ───────────────────────────────────────────────────────
+        $registros = (clone $base)
             ->with('user:id,name,email')
-            ->when($request->accion, fn($q, $v) => $q->where('accion', $v))
-            ->when($request->user_id, fn($q, $v) => $q->where('user_id', $v))
-            ->when($request->fecha_desde, fn($q, $v) => $q->whereDate('created_at', '>=', $v))
-            ->when($request->fecha_hasta, fn($q, $v) => $q->whereDate('created_at', '<=', $v))
             ->orderByDesc('created_at')
             ->orderByDesc('id')
-            ->paginate(50)
+            ->paginate(25)
             ->withQueryString()
             ->through(fn ($r) => [
                 'id'           => $r->id,
@@ -39,12 +76,21 @@ class ReporteAuditoriaController extends Controller
             ]);
 
         return Inertia::render('Reportes/Auditoria', [
-            'registros' => $registros,
-            'usuarios'  => User::where('empresa_id', $user->empresa_id)
+            'registros'    => $registros,
+            'kpis'         => $kpis,
+            'por_accion'   => $porAccion,
+            'por_usuario'  => $porUsuario,
+            'serie_diaria' => $serieDiaria,
+            'usuarios'     => User::where('empresa_id', $user->empresa_id)
                 ->orderBy('name')
                 ->get(['id', 'name']),
-            'acciones'  => Auditoria::accionLabels(),
-            'filters'   => $request->only(['accion', 'user_id', 'fecha_desde', 'fecha_hasta']),
+            'acciones'     => $labels,
+            'filters'      => [
+                'fecha_desde' => $desde,
+                'fecha_hasta' => $hasta,
+                'accion'      => $request->accion,
+                'user_id'     => $request->user_id,
+            ],
         ]);
     }
 }

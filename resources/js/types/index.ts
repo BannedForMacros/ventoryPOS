@@ -392,6 +392,13 @@ export interface Venta extends Record<string, unknown> {
     estado:                'completada' | 'anulada';
     observacion:           string | null;
     fecha_venta:           string;
+    es_credito:            boolean;
+    monto_pagado:          string;
+    saldo_pendiente:       string;
+    fecha_vencimiento:     string | null;
+    moneda?:               string;
+    tipo_cambio?:          string | null;
+    monto_moneda?:         string | null;
     user?:                 User;
     cliente?:              Cliente;
     local?:                Local;
