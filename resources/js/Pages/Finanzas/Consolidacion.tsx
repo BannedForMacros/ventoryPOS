@@ -7,6 +7,7 @@ import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Table, { Column } from '@/Components/UI/Table';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Select from '@/Components/UI/Select';
@@ -224,17 +225,15 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
                 </div>
             )}
 
-            <div className="mb-5">
-                <div className="w-56">
-                    <Select label="Estado" value={estado}
-                        onChange={(v) => router.get(route('finanzas.consolidacion.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                        options={[
-                            { value: 'pendientes',   label: 'Pendientes de consolidar' },
-                            { value: 'consolidados', label: 'Consolidados' },
-                            { value: 'todos',        label: 'Todos' },
-                        ]} />
-                </div>
-            </div>
+            <FiltrosCard cols={3}>
+                <Select label="Estado" value={estado}
+                    onChange={(v) => router.get(route('finanzas.consolidacion.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                    options={[
+                        { value: 'pendientes',   label: 'Pendientes de consolidar' },
+                        { value: 'consolidados', label: 'Consolidados' },
+                        { value: 'todos',        label: 'Todos' },
+                    ]} />
+            </FiltrosCard>
 
             <Table data={turnos} columns={columns}
                 searchPlaceholder="Buscar caja o cajera..."

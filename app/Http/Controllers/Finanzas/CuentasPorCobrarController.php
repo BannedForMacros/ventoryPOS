@@ -62,9 +62,22 @@ class CuentasPorCobrarController extends Controller
             ->conSaldoPendiente()
             ->sum('saldo_pendiente');
 
+        // KPIs de cabecera (siempre sobre el universo pendiente, no sobre el filtro)
+        $basePendiente = Venta::deEmpresa($user->empresa_id)->conSaldoPendiente();
+        $vencidas = (clone $basePendiente)
+            ->whereNotNull('fecha_vencimiento')
+            ->whereDate('fecha_vencimiento', '<', now()->toDateString());
+        $kpis = [
+            'ventas_con_saldo'   => (int)   (clone $basePendiente)->count(),
+            'clientes_con_deuda' => (int)   (clone $basePendiente)->distinct()->count('cliente_id'),
+            'vencidas'           => (int)   (clone $vencidas)->count(),
+            'monto_vencido'      => round((float) (clone $vencidas)->sum('saldo_pendiente'), 2),
+        ];
+
         return Inertia::render('Finanzas/CuentasPorCobrar', [
             'ventas'         => $ventas,
             'totalPendiente' => round($totalPendiente, 2),
+            'kpis'           => $kpis,
             // Acciones visibles según la matriz de permisos del rol.
             'puede'          => [
                 'editar'   => $user->tienePermiso('finanzas.cuentas-por-cobrar', 'editar'),

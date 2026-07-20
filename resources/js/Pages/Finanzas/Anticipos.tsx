@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus, Pencil } from 'lucide-react';
+import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus, Pencil, Users, Package, Coins } from 'lucide-react';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -11,6 +11,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Table, { Column } from '@/Components/UI/Table';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
@@ -86,6 +87,7 @@ interface TurnoLite {
 interface Props extends PageProps {
     anticipos: Paginado<Anticipo>;
     totalPasivo: number;
+    kpis: { activos: number; clientes: number; material: number; dinero: number };
     estado: string;
     buscar?: string;
     clientes: { id: number; nombres?: string; apellidos?: string; razon_social?: string; es_cliente_general?: boolean }[];
@@ -128,7 +130,7 @@ const emptyForm = () => ({
     turno_id: '',
 });
 
-export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clientes, productos, metodosPago, cuentas, turnos, turnoActivoId }: Props) {
+export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar, clientes, productos, metodosPago, cuentas, turnos, turnoActivoId }: Props) {
     const { flash } = usePage<Props>().props;
     // "Afecta caja a:" — texto del turno (#id · fecha hora · usuario · caja · abierto).
     const turnoLabel = (t: TurnoLite) => {
@@ -413,27 +415,37 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
             />
 
             <div className="mb-5">
-                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                <StatGrid size="lg" cols="grid-cols-2 lg:grid-cols-4" stats={[
                     {
                         label: 'Pasivo a precio del día', valor: money(totalPasivo), color: 'danger', destacado: true,
                         icon: <PiggyBank size={19} />, sub: 'Se revaloriza con el precio de venta de hoy',
                     },
+                    {
+                        label: 'En mercadería', valor: money(kpis.material), color: 'warning',
+                        icon: <Package size={19} />, sub: 'Pendiente por entregar (material)',
+                    },
+                    {
+                        label: 'En dinero', valor: money(kpis.dinero), color: 'primary',
+                        icon: <Coins size={19} />, sub: 'Saldo en soles por aplicar',
+                    },
+                    {
+                        label: 'Clientes con anticipo', valor: kpis.clientes, color: 'primary',
+                        icon: <Users size={19} />, sub: `${kpis.activos} anticipo${kpis.activos !== 1 ? 's' : ''} activo${kpis.activos !== 1 ? 's' : ''}`,
+                    },
                 ]} />
             </div>
 
-            <div className="mb-5 flex flex-wrap items-end gap-3">
-                <div className="w-56">
-                    <Select label="Estado" value={estado}
-                        onChange={(v) => router.get(route('finanzas.anticipos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                        options={[
-                            { value: 'activos',  label: 'Activos' },
-                            { value: 'aplicado', label: 'Aplicados' },
-                            { value: 'devuelto', label: 'Devueltos' },
-                            { value: 'anulado',  label: 'Anulados' },
-                            { value: 'todos',    label: 'Todos' },
-                        ]} />
-                </div>
-            </div>
+            <FiltrosCard cols={3}>
+                <Select label="Estado" value={estado}
+                    onChange={(v) => router.get(route('finanzas.anticipos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                    options={[
+                        { value: 'activos',  label: 'Activos' },
+                        { value: 'aplicado', label: 'Aplicados' },
+                        { value: 'devuelto', label: 'Devueltos' },
+                        { value: 'anulado',  label: 'Anulados' },
+                        { value: 'todos',    label: 'Todos' },
+                    ]} />
+            </FiltrosCard>
 
             <Table data={anticipos} columns={columns}
                 searchPlaceholder="Buscar cliente..." emptyMessage="No hay anticipos registrados"

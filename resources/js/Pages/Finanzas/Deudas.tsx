@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, RotateCcw } from 'lucide-react';
+import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, RotateCcw, CalendarClock } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Table, { Column } from '@/Components/UI/Table';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
@@ -45,7 +46,7 @@ interface Paginado<T> { data: T[]; total: number; }
 
 interface Props extends PageProps {
     deudas: Paginado<Deuda>;
-    totales: { por_pagar: number; por_cobrar: number };
+    totales: { por_pagar: number; por_cobrar: number; activas: number; vencidas: number; monto_vencido: number };
     estado: string;
     buscar?: string;
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
@@ -290,7 +291,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             />
 
             <div className="mb-5">
-                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                <StatGrid size="lg" cols="grid-cols-2 lg:grid-cols-4" stats={[
                     {
                         label: 'Debemos', valor: money(totales.por_pagar), color: 'danger', destacado: true,
                         icon: <TrendingDown size={19} />, sub: 'Bancos, personas y personal',
@@ -299,21 +300,28 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                         label: 'Nos deben', valor: money(totales.por_cobrar), color: 'success',
                         icon: <TrendingUp size={19} />, sub: 'Préstamos otorgados a terceros',
                     },
+                    {
+                        label: 'Deudas activas', valor: totales.activas, color: 'primary',
+                        icon: <Coins size={19} />, sub: 'En ambas direcciones',
+                    },
+                    {
+                        label: 'Vencidas', valor: totales.vencidas, color: 'warning',
+                        icon: <CalendarClock size={19} />,
+                        sub: totales.vencidas > 0 ? `${money(totales.monto_vencido)} pasada la fecha` : 'Nada fuera de fecha',
+                    },
                 ]} />
             </div>
 
-            <div className="mb-5">
-                <div className="w-56">
-                    <Select label="Estado" value={estado}
-                        onChange={(v) => router.get(route('finanzas.deudas.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                        options={[
-                            { value: 'activas',  label: 'Activas' },
-                            { value: 'pagadas',  label: 'Pagadas' },
-                            { value: 'anuladas', label: 'Anuladas' },
-                            { value: 'todas',    label: 'Todas' },
-                        ]} />
-                </div>
-            </div>
+            <FiltrosCard cols={3}>
+                <Select label="Estado" value={estado}
+                    onChange={(v) => router.get(route('finanzas.deudas.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                    options={[
+                        { value: 'activas',  label: 'Activas' },
+                        { value: 'pagadas',  label: 'Pagadas' },
+                        { value: 'anuladas', label: 'Anuladas' },
+                        { value: 'todas',    label: 'Todas' },
+                    ]} />
+            </FiltrosCard>
 
             <Table data={deudas} columns={columns}
                 searchPlaceholder="Buscar deuda..." emptyMessage="No hay deudas registradas"

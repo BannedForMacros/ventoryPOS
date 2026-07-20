@@ -72,9 +72,24 @@ class CuentasPorPagarController extends Controller
             ->selectRaw('COALESCE(SUM(GREATEST(total - monto_pagado, 0)), 0) as v')
             ->value('v');
 
+        // KPIs de cabecera (universo pendiente, independiente del filtro visible)
+        $basePendiente = Entrada::deEmpresa($user->empresa_id)
+            ->confirmado()
+            ->where('estado_pago', '!=', 'pagado')
+            ->whereRaw('total - monto_pagado > 0.01');
+        $kpis = [
+            'compras_con_saldo'     => (int) (clone $basePendiente)->count(),
+            // Proveedor formal (proveedor_id) o texto libre: cuenta ambos sin duplicar
+            'proveedores_con_deuda' => (int) (clone $basePendiente)
+                ->selectRaw("COUNT(DISTINCT COALESCE(proveedor_id::text, proveedor)) as c")
+                ->value('c'),
+            'abonado'               => round((float) (clone $basePendiente)->sum('monto_pagado'), 2),
+        ];
+
         return Inertia::render('Finanzas/CuentasPorPagar', [
             'entradas'       => $entradas,
             'totalPendiente' => round($totalPendiente, 2),
+            'kpis'           => $kpis,
             'esAdmin'        => (bool) $user->rol->es_admin,
             'estado'         => $request->input('estado', 'pendientes'),
             'buscar'         => $request->input('buscar', ''),

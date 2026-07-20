@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Eye, Ban, Handshake, TrendingUp, Pencil, RotateCcw } from 'lucide-react';
+import { Plus, Eye, Ban, Handshake, TrendingUp, Pencil, RotateCcw, Users, PackageCheck } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -9,6 +9,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Table, { Column } from '@/Components/UI/Table';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
@@ -46,6 +47,7 @@ interface Paginado<T> { data: T[]; total: number; }
 interface Props extends PageProps {
     adelantos: Paginado<Adelanto>;
     totalActivo: number;
+    kpis: { activos: number; proveedores: number; aplicado: number };
     estado: string;
     buscar?: string;
     proveedores: { id: number; razon_social?: string; nombre_comercial?: string }[];
@@ -65,7 +67,7 @@ const emptyForm = () => ({
     proveedor_id: '', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
 });
 
-export default function Adelantos({ adelantos, totalActivo, estado, buscar, proveedores, metodosPago, cuentas, puede }: Props) {
+export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar, proveedores, metodosPago, cuentas, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo] = useState(false);
     const [anulando, setAnulando]     = useState<Adelanto | null>(null);
@@ -232,27 +234,37 @@ export default function Adelantos({ adelantos, totalActivo, estado, buscar, prov
             />
 
             <div className="mb-5">
-                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                <StatGrid size="lg" cols="grid-cols-2 lg:grid-cols-4" stats={[
                     {
                         label: 'Saldo a favor', valor: money(totalActivo), color: 'success', destacado: true,
                         icon: <TrendingUp size={19} />, sub: 'Pendiente de recibir material',
                     },
+                    {
+                        label: 'Adelantos activos', valor: kpis.activos, color: 'primary',
+                        icon: <Handshake size={19} />, sub: 'Con saldo por aplicar',
+                    },
+                    {
+                        label: 'Proveedores', valor: kpis.proveedores, color: 'primary',
+                        icon: <Users size={19} />, sub: 'Con adelanto vigente',
+                    },
+                    {
+                        label: 'Aplicado histórico', valor: money(kpis.aplicado), color: 'muted',
+                        icon: <PackageCheck size={19} />, sub: 'Adelantos ya consumidos en compras',
+                    },
                 ]} />
             </div>
 
-            <div className="mb-5">
-                <div className="w-56">
-                    <Select label="Estado" value={estado}
-                        onChange={(v) => router.get(route('finanzas.adelantos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                        options={[
-                            { value: 'activos',  label: 'Activos' },
-                            { value: 'aplicado', label: 'Aplicados' },
-                            { value: 'devuelto', label: 'Devueltos' },
-                            { value: 'anulado',  label: 'Anulados' },
-                            { value: 'todos',    label: 'Todos' },
-                        ]} />
-                </div>
-            </div>
+            <FiltrosCard cols={3}>
+                <Select label="Estado" value={estado}
+                    onChange={(v) => router.get(route('finanzas.adelantos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                    options={[
+                        { value: 'activos',  label: 'Activos' },
+                        { value: 'aplicado', label: 'Aplicados' },
+                        { value: 'devuelto', label: 'Devueltos' },
+                        { value: 'anulado',  label: 'Anulados' },
+                        { value: 'todos',    label: 'Todos' },
+                    ]} />
+            </FiltrosCard>
 
             <Table data={adelantos} columns={columns}
                 searchPlaceholder="Buscar proveedor..." emptyMessage="No hay adelantos registrados"

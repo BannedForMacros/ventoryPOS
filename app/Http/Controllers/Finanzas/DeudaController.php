@@ -51,9 +51,15 @@ class DeudaController extends Controller
 
         $deudas = $query->orderBy('direccion')->orderBy('tipo')->orderBy('nombre')->paginate(25)->withQueryString();
 
+        $vencidas = Deuda::deEmpresa($user->empresa_id)->activa()
+            ->whereNotNull('fecha_vencimiento')
+            ->whereDate('fecha_vencimiento', '<', now()->toDateString());
         $totales = [
-            'por_pagar'  => round((float) Deuda::deEmpresa($user->empresa_id)->porPagar()->activa()->sum('saldo'), 2),
-            'por_cobrar' => round((float) Deuda::deEmpresa($user->empresa_id)->porCobrar()->activa()->sum('saldo'), 2),
+            'por_pagar'     => round((float) Deuda::deEmpresa($user->empresa_id)->porPagar()->activa()->sum('saldo'), 2),
+            'por_cobrar'    => round((float) Deuda::deEmpresa($user->empresa_id)->porCobrar()->activa()->sum('saldo'), 2),
+            'activas'       => (int) Deuda::deEmpresa($user->empresa_id)->activa()->count(),
+            'vencidas'      => (int) (clone $vencidas)->count(),
+            'monto_vencido' => round((float) (clone $vencidas)->sum('saldo'), 2),
         ];
 
         return Inertia::render('Finanzas/Deudas', [

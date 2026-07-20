@@ -88,13 +88,23 @@ class AnticipoClienteController extends Controller
             });
 
         // Total del pasivo a precio del día (lo que mostrará el balance).
-        $totalPasivo = ClienteAnticipo::deEmpresa($user->empresa_id)->activo()
-            ->with(['producto', 'items.unidad'])->get()
-            ->sum(fn (ClienteAnticipo $a) => $a->valorPasivoHoy());
+        $activosCol = ClienteAnticipo::deEmpresa($user->empresa_id)->activo()
+            ->with(['producto', 'items.unidad'])->get();
+        $totalPasivo = $activosCol->sum(fn (ClienteAnticipo $a) => $a->valorPasivoHoy());
+
+        // KPIs de cabecera (sobre los anticipos ACTIVOS, independiente del filtro)
+        $kpis = [
+            'activos'  => $activosCol->count(),
+            'clientes' => $activosCol->pluck('cliente_id')->unique()->count(),
+            'material' => round((float) $activosCol->where('tipo_valorizacion', 'material')
+                ->sum(fn (ClienteAnticipo $a) => $a->valorPasivoHoy()), 2),
+            'dinero'   => round((float) $activosCol->where('tipo_valorizacion', 'monto')->sum('saldo'), 2),
+        ];
 
         return Inertia::render('Finanzas/Anticipos', [
             'anticipos'   => $anticipos,
             'totalPasivo' => round((float) $totalPasivo, 2),
+            'kpis'        => $kpis,
             'estado'      => $request->input('estado', 'activos'),
             'buscar'      => $request->input('buscar', ''),
             // Incluye "Clientes varios" (cliente general) de primero, para

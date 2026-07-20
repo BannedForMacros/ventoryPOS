@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { HandCoins, Eye, Receipt, ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import { HandCoins, Eye, Receipt, ChevronDown, ChevronRight, Pencil, Trash2, Users, CalendarClock } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Table, { Column } from '@/Components/UI/Table';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
@@ -78,6 +79,7 @@ interface Paginado<T> { data: T[]; total: number; current_page: number; last_pag
 interface Props extends PageProps {
     ventas: Paginado<VentaCxc>;
     totalPendiente: number;
+    kpis: { ventas_con_saldo: number; clientes_con_deuda: number; vencidas: number; monto_vencido: number };
     estado: string;
     busqueda: string;
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
@@ -94,7 +96,7 @@ const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const nombreCliente = (v: VentaCxc) =>
     v.cliente?.razon_social ?? (`${v.cliente?.nombres ?? ''} ${v.cliente?.apellidos ?? ''}`.trim() || '—');
 
-export default function CuentasPorCobrar({ ventas, totalPendiente, estado, busqueda, metodosPago, cuentas, puede, turnos, turnoActivoId }: Props) {
+export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado, busqueda, metodosPago, cuentas, puede, turnos, turnoActivoId }: Props) {
     const { flash } = usePage<Props>().props;
     // "Afecta caja a:" — texto del turno (#id · fecha hora · usuario · caja · abierto).
     const turnoLabel = (t: TurnoLite) => {
@@ -269,25 +271,36 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, busqu
             />
 
             <div className="mb-5">
-                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                <StatGrid size="lg" cols="grid-cols-2 lg:grid-cols-4" stats={[
                     {
                         label: 'Total por cobrar', valor: money(totalPendiente), color: 'danger', destacado: true,
                         icon: <HandCoins size={19} />, sub: 'Saldo pendiente de ventas a crédito',
                     },
+                    {
+                        label: 'Ventas con saldo', valor: kpis.ventas_con_saldo, color: 'primary',
+                        icon: <Receipt size={19} />, sub: 'Créditos abiertos',
+                    },
+                    {
+                        label: 'Clientes con deuda', valor: kpis.clientes_con_deuda, color: 'primary',
+                        icon: <Users size={19} />, sub: 'Clientes distintos por cobrar',
+                    },
+                    {
+                        label: 'Vencidas', valor: kpis.vencidas, color: 'warning',
+                        icon: <CalendarClock size={19} />,
+                        sub: kpis.vencidas > 0 ? `${money(kpis.monto_vencido)} pasada la fecha` : 'Nada fuera de fecha',
+                    },
                 ]} />
             </div>
 
-            <div className="mb-4">
-                <div className="w-56">
-                    <Select label="Estado" value={estado}
-                        onChange={(v) => router.get(route('finanzas.cxc.index'), { estado: v, busqueda: busqueda || undefined }, { preserveState: true, replace: true })}
-                        options={[
-                            { value: 'pendientes', label: 'Con saldo pendiente' },
-                            { value: 'saldadas',   label: 'Saldadas' },
-                            { value: 'todas',      label: 'Todas las ventas a crédito' },
-                        ]} />
-                </div>
-            </div>
+            <FiltrosCard cols={3}>
+                <Select label="Estado" value={estado}
+                    onChange={(v) => router.get(route('finanzas.cxc.index'), { estado: v, busqueda: busqueda || undefined }, { preserveState: true, replace: true })}
+                    options={[
+                        { value: 'pendientes', label: 'Con saldo pendiente' },
+                        { value: 'saldadas',   label: 'Saldadas' },
+                        { value: 'todas',      label: 'Todas las ventas a crédito' },
+                    ]} />
+            </FiltrosCard>
 
             <Table
                 data={ventas}

@@ -57,9 +57,19 @@ class AdelantoProveedorController extends Controller
 
         $totalActivo = (float) ProveedorAdelanto::deEmpresa($user->empresa_id)->activo()->sum('saldo');
 
+        // KPIs de cabecera (sobre adelantos ACTIVOS, independiente del filtro)
+        $baseActivo = ProveedorAdelanto::deEmpresa($user->empresa_id)->activo();
+        $kpis = [
+            'activos'     => (int)   (clone $baseActivo)->count(),
+            'proveedores' => (int)   (clone $baseActivo)->distinct()->count('proveedor_id'),
+            'aplicado'    => round((float) ProveedorAdelanto::deEmpresa($user->empresa_id)
+                ->where('estado', 'aplicado')->sum('monto'), 2),
+        ];
+
         return Inertia::render('Finanzas/Adelantos', [
             'adelantos'   => $adelantos,
             'totalActivo' => round($totalActivo, 2),
+            'kpis'        => $kpis,
             // Acciones visibles según la matriz de permisos del rol.
             'puede'       => [
                 'editar'   => $user->tienePermiso('finanzas.adelantos', 'editar'),

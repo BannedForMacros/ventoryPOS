@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Banknote, Eye, Pencil, ReceiptText, Trash2 } from 'lucide-react';
+import { Banknote, Eye, Pencil, ReceiptText, Trash2, Users, PiggyBank } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Table, { Column } from '@/Components/UI/Table';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
@@ -67,6 +68,7 @@ interface Paginado<T> { data: T[]; total: number; }
 interface Props extends PageProps {
     entradas: Paginado<EntradaCxp>;
     totalPendiente: number;
+    kpis: { compras_con_saldo: number; proveedores_con_deuda: number; abonado: number };
     esAdmin?: boolean;
     estado: string;
     buscar?: string;
@@ -86,7 +88,7 @@ const nombreProveedor = (e: EntradaCxp) =>
     e.proveedor_rel?.razon_social ?? e.proveedor_rel?.nombre_comercial ?? e.proveedor ?? '—';
 const saldoDe = (e: EntradaCxp) => Math.max(0, Number(e.total) - Number(e.monto_pagado));
 
-export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, estado, buscar, metodosPago, cuentas, adelantos, turnos }: Props) {
+export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmin, estado, buscar, metodosPago, cuentas, adelantos, turnos }: Props) {
     const { flash } = usePage<Props>().props;
     // "Afecta caja a:" — texto del turno (#id · fecha hora · usuario · caja · abierto).
     const turnoLabel = (t: TurnoLite) => {
@@ -258,26 +260,36 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
             />
 
             <div className="mb-5">
-                <StatGrid size="lg" cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" stats={[
+                <StatGrid size="lg" cols="grid-cols-2 lg:grid-cols-4" stats={[
                     {
                         label: 'Total por pagar', valor: money(totalPendiente), color: 'danger', destacado: true,
                         icon: <Banknote size={19} />, sub: 'Compras con saldo pendiente',
                     },
+                    {
+                        label: 'Compras con saldo', valor: kpis.compras_con_saldo, color: 'primary',
+                        icon: <ReceiptText size={19} />, sub: 'Entradas aún por pagar',
+                    },
+                    {
+                        label: 'Proveedores con deuda', valor: kpis.proveedores_con_deuda, color: 'primary',
+                        icon: <Users size={19} />, sub: 'Proveedores distintos',
+                    },
+                    {
+                        label: 'Abonado a cuenta', valor: money(kpis.abonado), color: 'success',
+                        icon: <PiggyBank size={19} />, sub: 'Pagos parciales de compras pendientes',
+                    },
                 ]} />
             </div>
 
-            <div className="mb-5">
-                <div className="w-56">
-                    <Select label="Estado" value={estado}
-                        onChange={(v) => router.get(route('finanzas.cxp.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                        options={[
-                            { value: 'pendientes', label: 'Con saldo pendiente' },
-                            { value: 'parciales',  label: 'Pago parcial' },
-                            { value: 'pagadas',    label: 'Pagadas' },
-                            { value: 'todas',      label: 'Todas las entradas' },
-                        ]} />
-                </div>
-            </div>
+            <FiltrosCard cols={3}>
+                <Select label="Estado" value={estado}
+                    onChange={(v) => router.get(route('finanzas.cxp.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                    options={[
+                        { value: 'pendientes', label: 'Con saldo pendiente' },
+                        { value: 'parciales',  label: 'Pago parcial' },
+                        { value: 'pagadas',    label: 'Pagadas' },
+                        { value: 'todas',      label: 'Todas las entradas' },
+                    ]} />
+            </FiltrosCard>
 
             <Table
                 data={entradas}

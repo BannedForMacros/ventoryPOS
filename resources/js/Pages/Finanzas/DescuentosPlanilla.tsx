@@ -8,6 +8,7 @@ import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Table, { Column } from '@/Components/UI/Table';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
@@ -225,18 +226,16 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
                 </div>
             )}
 
-            <div className="mb-5">
-                <div className="w-56">
-                    <Select label="Estado" value={estado}
-                        onChange={(v) => router.get(route('finanzas.planilla-descuentos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                        options={[
-                            { value: 'pendientes', label: 'Pendientes' },
-                            { value: 'aplicados',  label: 'Aplicados' },
-                            { value: 'anulados',   label: 'Anulados' },
-                            { value: 'todos',      label: 'Todos' },
-                        ]} />
-                </div>
-            </div>
+            <FiltrosCard cols={3}>
+                <Select label="Estado" value={estado}
+                    onChange={(v) => router.get(route('finanzas.planilla-descuentos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                    options={[
+                        { value: 'pendientes', label: 'Pendientes' },
+                        { value: 'aplicados',  label: 'Aplicados' },
+                        { value: 'anulados',   label: 'Anulados' },
+                        { value: 'todos',      label: 'Todos' },
+                    ]} />
+            </FiltrosCard>
 
             <Table data={descuentos} columns={columns}
                 searchPlaceholder="Buscar trabajador o motivo..."
