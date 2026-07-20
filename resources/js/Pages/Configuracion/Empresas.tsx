@@ -41,6 +41,11 @@ type FormData = {
     restock_default: boolean;
     activo: boolean;
     logo: File | null;
+    // Plantilla del ticket impreso (se guarda como empresas.ticket_config).
+    ticket_cliente_celular: boolean;
+    ticket_cliente_direccion: boolean;
+    ticket_pie: string;
+    ticket_lineas_extra: string;
 };
 
 const emptyForm: FormData = {
@@ -65,6 +70,10 @@ const emptyForm: FormData = {
     restock_default: true,
     activo: true,
     logo: null,
+    ticket_cliente_celular: true,
+    ticket_cliente_direccion: true,
+    ticket_pie: '',
+    ticket_lineas_extra: '',
 };
 
 export default function Empresas({ empresas }: Props) {
@@ -105,6 +114,10 @@ export default function Empresas({ empresas }: Props) {
             restock_default: emp.restock_default ?? true,
             activo: emp.activo,
             logo: null,
+            ticket_cliente_celular: emp.ticket_config?.cliente_celular ?? true,
+            ticket_cliente_direccion: emp.ticket_config?.cliente_direccion ?? true,
+            ticket_pie: emp.ticket_config?.pie ?? '',
+            ticket_lineas_extra: (emp.ticket_config?.lineas_extra ?? []).join('\n'),
         });
         setModalOpen(true);
     }
@@ -485,6 +498,69 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </label>
                         )}
+                    </div>
+
+                    {/* ── Sección: Ticket de venta (plantilla de impresión) ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Ticket de venta</p>
+                        <p className="text-xs -mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                            Controla qué se imprime en la ticketera. Los cambios aplican de inmediato, sin actualizar el programa de impresión de las cajas.
+                        </p>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.ticket_cliente_celular}
+                                onChange={e => setData('ticket_cliente_celular', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Imprimir celular del cliente</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Sale como "Celular:" debajo del nombre, solo si el cliente tiene teléfono registrado.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.ticket_cliente_direccion}
+                                onChange={e => setData('ticket_cliente_direccion', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Imprimir dirección del cliente</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Sale como "Direc:" debajo del nombre, solo si el cliente tiene dirección registrada.
+                                </span>
+                            </span>
+                        </label>
+
+                        <div>
+                            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>
+                                Texto del pie del ticket
+                            </label>
+                            <input type="text" maxLength={500}
+                                value={data.ticket_pie}
+                                onChange={e => setData('ticket_pie', e.target.value)}
+                                placeholder="Gracias por su preferencia"
+                                className="w-full rounded-xl border px-3 py-2 text-sm"
+                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                            {errors.ticket_pie && <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.ticket_pie}</p>}
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>
+                                Líneas extra al final (una por renglón)
+                            </label>
+                            <textarea rows={3} maxLength={500}
+                                value={data.ticket_lineas_extra}
+                                onChange={e => setData('ticket_lineas_extra', e.target.value)}
+                                placeholder={'Yape/Plin: 999 999 999\nSíguenos: @minegocio'}
+                                className="w-full rounded-xl border px-3 py-2 text-sm"
+                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                Se imprimen centradas al final de todos los tickets (venta, cotización y entrega de anticipo).
+                            </p>
+                            {errors.ticket_lineas_extra && <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.ticket_lineas_extra}</p>}
+                        </div>
                     </div>
 
                     {/* ── Sección: Consolidación de caja ── */}

@@ -26,6 +26,13 @@ class EmpresaRequest extends FormRequest
             // Logo de la empresa: archivo PNG/JPG (opcional). Se sube en el form
             // multipart; si no viene, el logo actual se conserva.
             'logo'             => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
+            // Plantilla del ticket impreso: el admin decide qué sale sin tocar
+            // el agente de impresión. Se ensamblan en ticket_config (JSON).
+            'ticket_cliente_celular'   => 'boolean',
+            'ticket_cliente_direccion' => 'boolean',
+            'ticket_pie'               => 'nullable|string|max:500',
+            // Líneas libres al final del ticket, una por renglón (Yape, redes...).
+            'ticket_lineas_extra'      => 'nullable|string|max:500',
             'activo'           => 'boolean',
             // Tasa de IGV aplicable a la empresa (en %). 18.00 default Perú.
             // Topes generosos para tolerar reformas tributarias o paises con

@@ -49,6 +49,22 @@ class EmpresaController extends Controller
             ])->withInput();
         }
 
+        // Plantilla del ticket: los campos ticket_* del form se guardan como un
+        // solo JSON (ticket_config). TicketPrintService lo lee al armar el payload.
+        $lineasExtra = array_values(array_filter(array_map(
+            'trim',
+            preg_split('/\r\n|\r|\n/', (string) ($datos['ticket_lineas_extra'] ?? ''))
+        ), fn ($l) => $l !== ''));
+
+        $datos['ticket_config'] = [
+            'cliente_celular'   => (bool) ($datos['ticket_cliente_celular'] ?? true),
+            'cliente_direccion' => (bool) ($datos['ticket_cliente_direccion'] ?? true),
+            'pie'               => trim((string) ($datos['ticket_pie'] ?? '')) ?: null,
+            'lineas_extra'      => $lineasExtra,
+        ];
+        unset($datos['ticket_cliente_celular'], $datos['ticket_cliente_direccion'],
+              $datos['ticket_pie'], $datos['ticket_lineas_extra']);
+
         // Logo: es un archivo, se maneja aparte del update de columnas. Solo se
         // reemplaza si llega un archivo nuevo; si no viene, se conserva el actual.
         unset($datos['logo']);

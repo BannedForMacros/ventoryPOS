@@ -20,6 +20,8 @@ class Empresa extends Model
         'telefono',
         'email',
         'logo',
+        // Plantilla del ticket impreso (JSON): qué campos salen y textos libres.
+        'ticket_config',
         'activo',
         'tasa_igv',
         'modo_almacen',
@@ -44,6 +46,7 @@ class Empresa extends Model
     {
         return [
             'activo'                          => 'boolean',
+            'ticket_config'                   => 'array',
             'tasa_igv'                        => 'decimal:2',
             'descuenta_stock_en_venta'        => 'boolean',
             'permite_stock_negativo'          => 'boolean',

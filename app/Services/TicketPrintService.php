@@ -28,6 +28,51 @@ class TicketPrintService
     ];
 
     /**
+     * Plantilla del ticket con defaults. El admin la edita en Configuración →
+     * Empresas (columna empresas.ticket_config); aquí se decide QUÉ se manda al
+     * agente, así los cambios de plantilla no requieren recompilar el exe.
+     */
+    private function configTicket(?Empresa $empresa): array
+    {
+        $cfg = $empresa?->ticket_config;
+
+        return array_merge([
+            'cliente_celular'   => true,
+            'cliente_direccion' => true,
+            'pie'               => null,
+            'lineas_extra'      => [],
+        ], is_array($cfg) ? $cfg : []);
+    }
+
+    /** Pie del ticket de VENTA: texto configurado (o el default) + líneas extra. */
+    private function pieVenta(array $cfg): string
+    {
+        $pie = trim((string) ($cfg['pie'] ?? '')) ?: 'Gracias por su preferencia';
+
+        return $this->conLineasExtra($cfg, $pie);
+    }
+
+    /** Añade las líneas extra configuradas al final de un pie ya armado. */
+    private function conLineasExtra(array $cfg, string $pie): string
+    {
+        $extras = implode("\n", array_filter((array) ($cfg['lineas_extra'] ?? [])));
+
+        return trim($pie . ($extras !== '' ? "\n" . $extras : ''));
+    }
+
+    /** Bloque cliente del payload aplicando la plantilla (qué campos salen). */
+    private function clientePayload(?\App\Models\Cliente $cliente, string $nombreCli, ?string $docCli, array $cfg): array
+    {
+        return [
+            'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
+            'doc'       => $docCli,
+            // null = el agente no imprime la línea; la plantilla decide.
+            'direccion' => ($cfg['cliente_direccion'] ?? true) ? ($cliente?->direccion ?: null) : null,
+            'telefono'  => ($cfg['cliente_celular'] ?? true) ? ($cliente?->telefono ?: null) : null,
+        ];
+    }
+
+    /**
      * Construye el ticket imprimible de una venta.
      * El token enruta el ticket a la impresora de la caja correcta: el agente
      * solo imprime si coincide con el token configurado en esa PC.
@@ -43,6 +88,7 @@ class TicketPrintService
         $local   = $venta->local;
         // La caja directa de la venta; si falta (ventas antiguas), la del turno.
         $caja    = $venta->caja ?? $venta->turno?->caja;
+        $cfg     = $this->configTicket($empresa);
 
         // ── Cliente ─────────────────────────────────────────────────────────
         // nombre_completo = razon_social o "nombres apellidos" (accessor del modelo).
@@ -83,14 +129,7 @@ class TicketPrintService
                 'caja'     => $caja?->nombre,
             ],
 
-            'cliente' => [
-                'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
-                'doc'       => $docCli,
-                'direccion' => null,
-                // Teléfono/celular del cliente: solo si lo tiene. null = no se
-                // imprime (nunca sale un separador vacío tipo " - (celular)").
-                'telefono'  => $cliente?->telefono ?: null,
-            ],
+            'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg),
 
             'items' => $venta->items->map(fn ($item) => [
                 'cant'    => (float) $item->cantidad,
@@ -115,7 +154,7 @@ class TicketPrintService
                 'vuelto'   => $vuelto > 0 ? $vuelto : null,
             ],
 
-            'pie'        => 'Gracias por su preferencia',
+            'pie'        => $this->pieVenta($cfg),
             'qr'         => null,
             // Abrir el cajón portamonedas solo cuando entró efectivo.
             'abrirCajon' => $hayEfectivo,
@@ -136,6 +175,7 @@ class TicketPrintService
 
         $empresa = $cot->empresa;
         $local   = $cot->local;
+        $cfg     = $this->configTicket($empresa);
 
         // Cliente (nombre_completo = razon_social o "nombres apellidos").
         $cliente   = $cot->cliente;
@@ -177,14 +217,7 @@ class TicketPrintService
                 'caja'     => null,
             ],
 
-            'cliente' => [
-                'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
-                'doc'       => $docCli,
-                'direccion' => null,
-                // Teléfono/celular del cliente: solo si lo tiene. null = no se
-                // imprime (nunca sale un separador vacío tipo " - (celular)").
-                'telefono'  => $cliente?->telefono ?: null,
-            ],
+            'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg),
 
             'items' => $cot->items->map(fn ($item) => [
                 'cant'    => (float) $item->cantidad,
@@ -209,7 +242,7 @@ class TicketPrintService
                 'vuelto'   => null,
             ],
 
-            'pie'        => $pie,
+            'pie'        => $this->conLineasExtra($cfg, $pie),
             'qr'         => null,
             'abrirCajon' => false,
             'copias'     => 1,
@@ -232,6 +265,7 @@ class TicketPrintService
         $empresa  = $anticipo?->empresa;
         $local    = $anticipo?->venta?->local;
         $cliente  = $anticipo?->cliente;
+        $cfg      = $this->configTicket($empresa);
 
         $nombreCli = trim((string) ($cliente?->nombre_completo ?? ''));
         $docCli    = ($cliente && $cliente->numero_documento)
@@ -279,14 +313,7 @@ class TicketPrintService
                 'caja'     => null,
             ],
 
-            'cliente' => [
-                'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
-                'doc'       => $docCli,
-                'direccion' => null,
-                // Teléfono/celular del cliente: solo si lo tiene. null = no se
-                // imprime (nunca sale un separador vacío tipo " - (celular)").
-                'telefono'  => $cliente?->telefono ?: null,
-            ],
+            'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg),
 
             'items' => $items,
 
@@ -304,7 +331,7 @@ class TicketPrintService
                 'vuelto'   => null,
             ],
 
-            'pie'        => $pie,
+            'pie'        => $this->conLineasExtra($cfg, $pie),
             'qr'         => null,
             'abrirCajon' => false,
             'copias'     => 1,

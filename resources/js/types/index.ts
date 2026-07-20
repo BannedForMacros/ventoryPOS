@@ -1,6 +1,14 @@
 export type ModoCierreCaja = 'rapido' | 'con_declaraciones';
 export type ModoCierreInventario = 'por_venta' | 'declarado';
 
+/** Plantilla del ticket impreso; la edita el admin en Configuración → Empresas. */
+export interface TicketConfig {
+    cliente_celular?: boolean;
+    cliente_direccion?: boolean;
+    pie?: string | null;
+    lineas_extra?: string[];
+}
+
 export interface Empresa extends Record<string, unknown> {
     id: number;
     razon_social: string;
@@ -10,6 +18,7 @@ export interface Empresa extends Record<string, unknown> {
     telefono: string | null;
     email: string | null;
     logo: string | null;
+    ticket_config: TicketConfig | null;
     tasa_igv: number | string;
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
