@@ -617,8 +617,9 @@ class BalanceDiarioController extends Controller
                 //    también lo declarado (contado) y la diferencia.
                 //  • BANCOS → NETO POR CAJERO acumulado a la fecha (quién movió el
                 //    dinero de esa entidad); la suma cuadra con el card.
-                $porCajero = [];
-                $porTurno  = [];
+                $porCajero  = [];
+                $porTurno   = [];
+                $cajaGrande = null;
                 if (!$esEgreso && $categoria === 'efectivo') {
                     $porTurno = \App\Models\Turno::deEmpresa($empresaId)
                         ->whereDate('fecha_apertura', $fecha)
@@ -639,6 +640,62 @@ class BalanceDiarioController extends Controller
                                 'diferencia' => $t->diferencia !== null ? (float) $t->diferencia : null,
                             ];
                         })->values();
+
+                    // ¿DÓNDE está el efectivo? (opt-in: empresas.usa_caja_grande)
+                    // Custodia física a la fecha: lo que hay en cada cajón
+                    // (turno abierto → esperado en vivo; caja sin turno → lo
+                    // que QUEDÓ al último cierre, efectivo_arrastre) y el
+                    // resto = "Caja Grande" (administración). La suma cuadra
+                    // con el saldo de las cuentas Efectivo a la fecha.
+                    $empresa = \App\Models\Empresa::find($empresaId);
+                    if ($empresa?->usa_caja_grande) {
+                        $finDia   = $fecha . ' 23:59:59';
+                        $tesoreria = app(TesoreriaService::class);
+                        $saldoEfectivo = round((float) $subcuentas->sum(
+                            fn ($c) => $tesoreria->saldo($c->id, $fecha)
+                        ), 2);
+
+                        $enCajas = \App\Models\Caja::where('empresa_id', $empresaId)
+                            ->where('activo', true)
+                            ->orderBy('nombre')
+                            ->get(['id', 'nombre'])
+                            ->map(function ($caja) use ($finDia) {
+                                $abierto = \App\Models\Turno::where('caja_id', $caja->id)
+                                    ->where('estado', 'abierto')
+                                    ->where('fecha_apertura', '<=', $finDia)
+                                    ->orderByDesc('fecha_apertura')
+                                    ->first();
+                                if ($abierto) {
+                                    return [
+                                        'caja'   => $caja->nombre,
+                                        'estado' => 'abierto',
+                                        'monto'  => round($abierto->calcularMontoEsperado(), 2),
+                                    ];
+                                }
+                                $cerrado = \App\Models\Turno::where('caja_id', $caja->id)
+                                    ->where('estado', 'cerrado')
+                                    ->where('fecha_cierre', '<=', $finDia)
+                                    ->orderByDesc('fecha_cierre')
+                                    ->first();
+                                return [
+                                    'caja'   => $caja->nombre,
+                                    'estado' => 'cerrado',
+                                    // Cierres anteriores a esta función no registraron
+                                    // qué quedó en el cajón (NULL) → 0 es lo honesto.
+                                    'monto'  => round((float) ($cerrado?->efectivo_arrastre ?? 0), 2),
+                                ];
+                            })->values();
+
+                        $totalEnCajas = round((float) $enCajas->sum('monto'), 2);
+                        $montoAdmin   = round($saldoEfectivo - $totalEnCajas, 2);
+                        $cajaGrande = [
+                            'en_cajas'       => $enCajas,
+                            'total_en_cajas' => $totalEnCajas,
+                            'caja_grande'    => $montoAdmin,
+                            'saldo_efectivo' => $saldoEfectivo,
+                            'negativo'       => $montoAdmin < 0,
+                        ];
+                    }
                 } elseif (!$esEgreso) {
                     // Bancos: neto por cajero (columnas calificadas porque users
                     // también tiene empresa_id → deEmpresa sería ambiguo).
@@ -671,6 +728,7 @@ class BalanceDiarioController extends Controller
                     'cuentaSel'  => $cuentaSel,
                     'porCajero'  => $porCajero,
                     'porTurno'   => $porTurno,
+                    'cajaGrande' => $cajaGrande,
                     'userSel'    => $userSel,
                 ]);
             }

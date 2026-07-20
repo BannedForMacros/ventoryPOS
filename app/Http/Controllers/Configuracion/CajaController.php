@@ -38,6 +38,8 @@ class CajaController extends Controller
             'caja_chica_activa'         => ['boolean'],
             'caja_chica_monto_sugerido' => ['nullable', 'numeric', 'min:0'],
             'caja_chica_en_arqueo'      => ['boolean'],
+            // Solo aplica si la empresa usa modo de apertura 'fondo_fijo'.
+            'fondo_fijo_monto'          => ['nullable', 'numeric', 'min:0'],
             'activo'                    => ['boolean'],
         ]);
 
@@ -80,6 +82,8 @@ class CajaController extends Controller
             'caja_chica_activa'         => ['boolean'],
             'caja_chica_monto_sugerido' => ['nullable', 'numeric', 'min:0'],
             'caja_chica_en_arqueo'      => ['boolean'],
+            // Solo aplica si la empresa usa modo de apertura 'fondo_fijo'.
+            'fondo_fijo_monto'          => ['nullable', 'numeric', 'min:0'],
             'activo'                    => ['boolean'],
         ]);
 

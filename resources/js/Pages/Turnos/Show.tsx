@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
-    AlertTriangle, ArrowLeft, ArrowRight, Clock, Lock,
+    AlertTriangle, ArrowLeft, ArrowRight, Clock, HandCoins, Lock,
     RotateCcw, ShoppingCart, TrendingDown, Wallet,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
@@ -10,7 +10,7 @@ import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
-import type { PageProps, Turno } from '@/types';
+import type { PageProps, Turno, TurnoRetiro } from '@/types';
 
 interface Props extends PageProps {
     turno:            Turno;
@@ -35,6 +35,16 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
 
     const esCerrado = turno.estado === 'cerrado';
     const motivoValido = motivoReabrir.trim().length >= 10;
+
+    const retiros = (turno.retiros ?? []) as TurnoRetiro[];
+    const totalRetiros = retiros.reduce((s, r) => s + parseFloat(r.monto), 0);
+    const entregadoAlCierre = retiros
+        .filter(r => r.momento === 'cierre')
+        .reduce((s, r) => s + parseFloat(r.monto), 0);
+
+    function aprobarRetiro(retiro: TurnoRetiro) {
+        router.post(route('turnos.retiros.aprobar', retiro.id), {}, { preserveScroll: true });
+    }
 
     function reabrir() {
         if (!motivoValido) {
@@ -293,6 +303,81 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
                 </Section>
             </div>
 
+            {/* ── Retiros de efectivo (entregas a administración) ── */}
+            {retiros.length > 0 && (
+                <div className="mb-6">
+                    <Section title="Retiros de efectivo (entregas a administración)">
+                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr style={{ backgroundColor: 'var(--color-bg)' }}>
+                                        <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Fecha</th>
+                                        <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Concepto</th>
+                                        <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Registró</th>
+                                        <th className="text-left px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Estado</th>
+                                        <th className="text-right px-3 py-2 text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Monto</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                                    {retiros.map(r => (
+                                        <tr key={r.id}>
+                                            <td className="px-3 py-2 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>
+                                                {new Date(r.created_at).toLocaleString('es-PE')}
+                                            </td>
+                                            <td className="px-3 py-2" style={{ color: 'var(--color-text)' }}>
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    <HandCoins size={13} style={{ color: 'var(--color-primary)' }} />
+                                                    {r.concepto}
+                                                    {r.momento === 'cierre' && (
+                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                                            style={{ color: 'var(--color-primary)', backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)' }}>
+                                                            al cierre
+                                                        </span>
+                                                    )}
+                                                </span>
+                                                {r.observacion && (
+                                                    <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{r.observacion}</p>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2" style={{ color: 'var(--color-text)' }}>{r.user?.name ?? '—'}</td>
+                                            <td className="px-3 py-2">
+                                                {r.estado === 'aprobado' ? (
+                                                    <Badge variant="success">aprobado</Badge>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-2">
+                                                        <Badge variant="warning">sin aprobar</Badge>
+                                                        {esAdmin && (
+                                                            <button onClick={() => aprobarRetiro(r)}
+                                                                className="text-xs font-semibold hover:underline"
+                                                                style={{ color: 'var(--color-primary)' }}>
+                                                                Aprobar
+                                                            </button>
+                                                        )}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2 text-right font-medium" style={{ color: 'var(--color-danger)' }}>
+                                                − S/ {parseFloat(r.monto).toFixed(2)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr style={{ backgroundColor: 'var(--color-bg)', borderTop: '2px solid var(--color-border)' }}>
+                                        <td colSpan={4} className="px-3 py-2 font-semibold text-sm" style={{ color: 'var(--color-text)' }}>
+                                            Total retirado
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-bold text-sm" style={{ color: 'var(--color-danger)' }}>
+                                            − S/ {totalRetiros.toFixed(2)}
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </Section>
+                </div>
+            )}
+
             {/* ── Arqueo de cierre (solo si cerrado) ── */}
             {esCerrado && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -402,6 +487,25 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
                                     <FilaCierreResultado
                                         diferencia={parseFloat(turno.diferencia ?? '0')}
                                     />
+                                    {turno.destino_efectivo && (
+                                        <div className="px-4 py-3 space-y-1.5"
+                                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 4%, transparent)' }}>
+                                            <div className="flex items-center justify-between text-sm">
+                                                <span style={{ color: 'var(--color-text)' }}>Quedó en caja (para el siguiente turno)</span>
+                                                <span className="font-bold" style={{ color: 'var(--color-success)' }}>
+                                                    S/ {parseFloat(turno.efectivo_arrastre ?? '0').toFixed(2)}
+                                                </span>
+                                            </div>
+                                            {entregadoAlCierre > 0 && (
+                                                <div className="flex items-center justify-between text-sm">
+                                                    <span style={{ color: 'var(--color-text)' }}>Entregado a administración al cierre</span>
+                                                    <span className="font-bold" style={{ color: 'var(--color-primary)' }}>
+                                                        S/ {entregadoAlCierre.toFixed(2)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             {turno.observacion_cierre && (

@@ -33,10 +33,14 @@ interface FilaMetodo {
     monto_declarado: string;
 }
 
+type DestinoEfectivo = 'caja' | 'administracion' | 'parcial';
+
 interface CerrarForm {
     arqueo:             FilaArqueo[];
     arqueo_metodos:     FilaMetodo[];
     observacion_cierre: string;
+    destino_efectivo:   DestinoEfectivo;
+    efectivo_queda:     string;
 }
 
 interface Props {
@@ -52,9 +56,13 @@ interface Props {
     cierreInventarioTurno:          CierreInventarioRef | null;
     usaFondosIniciales:             boolean;
     fondosInicialesEnDeclaracion:   boolean;
+    /** Config empresa: preguntar qué pasa con el efectivo final al cerrar. */
+    preguntaDestino:                boolean;
+    /** Retiros de efectivo registrados durante el turno (ya descontados del esperado). */
+    totalRetiros:                   number;
 }
 
-export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMetodo, totalVentas, totalGastos, montoEsperado, metodosPago, modoCierreCaja, modoCierreInventario, cierreInventarioTurno, usaFondosIniciales, fondosInicialesEnDeclaracion }: Props) {
+export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMetodo, totalVentas, totalGastos, montoEsperado, metodosPago, modoCierreCaja, modoCierreInventario, cierreInventarioTurno, usaFondosIniciales, fondosInicialesEnDeclaracion, preguntaDestino, totalRetiros }: Props) {
     const caja = turno.caja!;
     const requiereArqueo  = modoCierreCaja === 'con_declaraciones';
     const requiereCierreInv = modoCierreInventario === 'declarado';
@@ -66,6 +74,8 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
             .filter(m => m.tipo?.slug !== 'efectivo')
             .map(m => ({ metodo_pago_id: m.id, monto_declarado: '' })),
         observacion_cierre: '',
+        destino_efectivo:   'caja',
+        efectivo_queda:     '',
     });
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
@@ -79,6 +89,15 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
     [form.arqueo]);
 
     const diferencia = totalEfectivo - montoEsperado;
+
+    // Efectivo final del cajón: lo contado (arqueo) o, en modo rápido, el esperado.
+    const efectivoFinal = requiereArqueo ? totalEfectivo : montoEsperado;
+    const quedaParcial  = Math.min(parseFloat(form.efectivo_queda) || 0, Math.max(0, efectivoFinal));
+    const entregaCalculada = form.destino_efectivo === 'caja'
+        ? 0
+        : form.destino_efectivo === 'administracion'
+            ? Math.max(0, efectivoFinal)
+            : Math.max(0, efectivoFinal - quedaParcial);
 
     const metodosFiltrados = metodosPago.filter(m => m.tipo?.slug !== 'efectivo');
 
@@ -123,6 +142,13 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
             observacion_cierre: form.observacion_cierre,
             confirma_stock_negativo: confirmaStockNegativo,
         };
+
+        if (preguntaDestino) {
+            payload.destino_efectivo = form.destino_efectivo;
+            if (form.destino_efectivo === 'parcial') {
+                payload.efectivo_queda = quedaParcial;
+            }
+        }
 
         if (requiereArqueo) {
             payload.arqueo = form.arqueo;
@@ -292,7 +318,7 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
                         <div>
                             <p className="text-sm font-medium" style={{ color: 'var(--color-primary)' }}>Monto esperado en efectivo</p>
                             <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                Apertura + ventas efectivo − gastos
+                                Apertura + ventas efectivo − gastos{totalRetiros > 0 ? ' − retiros' : ''}
                             </p>
                         </div>
                         <span className="font-bold text-lg" style={{ color: 'var(--color-primary)' }}>
@@ -466,12 +492,75 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
                         style={{ border: '1px solid var(--color-border)' }}
                     >
                         <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                            {totalRetiros > 0 && (
+                                <FilaResumen label="Retiros de efectivo del turno (ya descontados)" valor={totalRetiros} />
+                            )}
                             <FilaResumen label="Total declarado (arqueo)" valor={totalEfectivo} />
                             <FilaResumen label="Total esperado (sistema)" valor={montoEsperado} />
                             <FilaDiferencia diferencia={diferencia} />
                         </div>
                     </div>
                     </>
+                    )}
+
+                    {/* Destino del efectivo final (config de empresa) */}
+                    {preguntaDestino && (
+                        <Section title="¿Qué pasa con el efectivo al cerrar?">
+                            <div className="space-y-2">
+                                {([
+                                    ['caja', 'Queda en caja', 'Será la apertura sugerida del siguiente turno de esta caja.'],
+                                    ['administracion', 'Se entrega a administración', 'Pasa a Caja Grande; el siguiente turno abre sin este efectivo.'],
+                                    ['parcial', 'Parcial', 'Una parte queda en caja y el resto se entrega a administración.'],
+                                ] as [DestinoEfectivo, string, string][]).map(([valor, titulo, hint]) => (
+                                    <label key={valor}
+                                        className="flex items-start gap-2.5 rounded-xl px-3 py-2.5 cursor-pointer transition-colors"
+                                        style={{
+                                            border: `1px solid ${form.destino_efectivo === valor ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                            backgroundColor: form.destino_efectivo === valor
+                                                ? 'color-mix(in srgb, var(--color-primary) 6%, transparent)'
+                                                : 'var(--color-surface)',
+                                        }}>
+                                        <input type="radio" name="destino_efectivo" className="mt-1"
+                                            checked={form.destino_efectivo === valor}
+                                            onChange={() => setForm(f => ({ ...f, destino_efectivo: valor }))}
+                                            disabled={saving} />
+                                        <span>
+                                            <span className="block text-sm font-medium" style={{ color: 'var(--color-text)' }}>{titulo}</span>
+                                            <span className="block text-xs" style={{ color: 'var(--color-text-muted)' }}>{hint}</span>
+                                        </span>
+                                    </label>
+                                ))}
+
+                                {form.destino_efectivo === 'parcial' && (
+                                    <div className="flex items-center gap-3 pl-1">
+                                        <label className="text-sm" style={{ color: 'var(--color-text)' }}>Queda en caja (S/)</label>
+                                        <input type="number" step="0.01" min="0"
+                                            value={form.efectivo_queda}
+                                            onChange={e => setForm(f => ({ ...f, efectivo_queda: e.target.value }))}
+                                            placeholder="0.00"
+                                            className="w-32 rounded-lg px-2 py-1.5 text-sm text-right"
+                                            style={{
+                                                border: '1px solid var(--color-border)',
+                                                backgroundColor: 'var(--color-surface)',
+                                                color: 'var(--color-text)',
+                                            }}
+                                            disabled={saving} />
+                                    </div>
+                                )}
+
+                                <div className="flex items-center justify-between rounded-lg px-3 py-2 text-sm"
+                                    style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy, #0F4C81) 7%, transparent)' }}>
+                                    <span style={{ color: 'var(--color-text)' }}>Se entregará a administración</span>
+                                    <span className="font-bold" style={{ color: 'var(--color-text)' }}>S/ {entregaCalculada.toFixed(2)}</span>
+                                </div>
+                                {errors.destino_efectivo && (
+                                    <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{errors.destino_efectivo}</p>
+                                )}
+                                {errors.efectivo_queda && (
+                                    <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{errors.efectivo_queda}</p>
+                                )}
+                            </div>
+                        </Section>
                     )}
 
                     {/* Advertencia */}

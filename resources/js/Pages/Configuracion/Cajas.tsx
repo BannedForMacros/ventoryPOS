@@ -44,6 +44,7 @@ export default function Cajas({ cajas, locales }: Props) {
             caja_chica_activa:         c.caja_chica_activa,
             caja_chica_monto_sugerido: c.caja_chica_monto_sugerido,
             caja_chica_en_arqueo:      c.caja_chica_en_arqueo,
+            fondo_fijo_monto:          Number(c.fondo_fijo_monto) || 0,
             activo:                    c.activo,
         });
         setErrors({}); setModal(true);

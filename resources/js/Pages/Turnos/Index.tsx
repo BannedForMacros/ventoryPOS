@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Clock, Plus, ShoppingCart, TrendingDown, Wallet, X } from 'lucide-react';
+import { Clock, HandCoins, Plus, ShoppingCart, TrendingDown, Wallet, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import ModalAbrirTurno from './Partials/ModalAbrirTurno';
-import type { Caja, Gasto, MetodoPago, PageProps, Turno, Venta } from '@/types';
+import ModalRetiro from './Partials/ModalRetiro';
+import type { Caja, Gasto, MetodoPago, PageProps, Turno, TurnoRetiro, Venta } from '@/types';
 
 interface CajaDisponible extends Caja {
     tiene_turno_abierto: boolean;
@@ -26,6 +27,13 @@ interface ConfigFondosLocal {
     fondos_iniciales_en_declaracion: boolean;
 }
 
+interface ConfigEfectivo {
+    modo_apertura_caja:         'libre' | 'arrastre' | 'fondo_fijo';
+    apertura_editable:          boolean;
+    usa_retiros_caja:           boolean;
+    retiro_requiere_aprobacion: boolean;
+}
+
 interface Props extends PageProps {
     turnos:           Paginado<Turno>;
     buscar?:          string;
@@ -33,11 +41,16 @@ interface Props extends PageProps {
     metodosPago:      MetodoPago[];
     turnoActivo:      Turno | null;
     configFondos:     Record<number, ConfigFondosLocal>;
+    configEfectivo:   ConfigEfectivo;
 }
 
-export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosPago, turnoActivo, configFondos }: Props) {
+export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosPago, turnoActivo, configFondos, configEfectivo }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalAbrir, setModalAbrir] = useState(false);
+    const [modalRetiro, setModalRetiro] = useState(false);
+
+    const retirosTurno = (turnoActivo?.retiros ?? []) as TurnoRetiro[];
+    const totalRetirosTurno = retirosTurno.reduce((s, r) => s + parseFloat(r.monto), 0);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -257,6 +270,56 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
                             searchPlaceholder="Buscar gasto..."
                         />
                     </div>
+
+                    {/* Retiros de efectivo (config de empresa) */}
+                    {configEfectivo.usa_retiros_caja && (
+                        <div>
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                                    Retiros de efectivo
+                                    {totalRetirosTurno > 0 && (
+                                        <span className="ml-2 font-normal text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                            total S/ {totalRetirosTurno.toFixed(2)}
+                                        </span>
+                                    )}
+                                </p>
+                                <Button variant="secondary" onClick={() => setModalRetiro(true)}>
+                                    <HandCoins size={15} className="mr-1" />Retiro de efectivo
+                                </Button>
+                            </div>
+                            {retirosTurno.length === 0 ? (
+                                <p className="text-sm rounded-xl px-4 py-3"
+                                    style={{ color: 'var(--color-text-muted)', border: '1px dashed var(--color-border)' }}>
+                                    Sin retiros en este turno. Usa "Retiro de efectivo" cuando entregues dinero a administración.
+                                </p>
+                            ) : (
+                                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                    {retirosTurno.map((r, i) => (
+                                        <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5"
+                                            style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined, backgroundColor: 'var(--color-surface)' }}>
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>{r.concepto}</p>
+                                                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {new Date(r.created_at).toLocaleString('es-PE')} · {r.user?.name ?? '—'}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                {r.estado === 'registrado' && (
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                                        style={{ color: '#b45309', backgroundColor: 'rgba(234,179,8,0.12)' }}>
+                                                        sin aprobar
+                                                    </span>
+                                                )}
+                                                <span className="font-bold text-sm" style={{ color: 'var(--color-danger)' }}>
+                                                    − S/ {parseFloat(r.monto).toFixed(2)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div
@@ -299,7 +362,16 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
                 onClose={() => setModalAbrir(false)}
                 cajasDisponibles={cajasDisponibles}
                 configFondos={configFondos}
+                configEfectivo={configEfectivo}
             />
+            {turnoActivo && (
+                <ModalRetiro
+                    isOpen={modalRetiro}
+                    onClose={() => setModalRetiro(false)}
+                    turnoId={turnoActivo.id}
+                    requiereAprobacion={configEfectivo.retiro_requiere_aprobacion}
+                />
+            )}
         </AppLayout>
     );
 }

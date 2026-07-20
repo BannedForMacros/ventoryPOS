@@ -7,8 +7,20 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import type { Caja } from '@/types';
 
+interface AperturaSugerida {
+    monto:   number;
+    origen:  'arrastre' | 'fondo_fijo';
+    detalle: string;
+}
+
 interface CajaDisponible extends Caja {
     tiene_turno_abierto: boolean;
+    apertura_sugerida?:  AperturaSugerida | null;
+}
+
+interface ConfigEfectivo {
+    modo_apertura_caja: 'libre' | 'arrastre' | 'fondo_fijo';
+    apertura_editable:  boolean;
 }
 
 interface AbrirForm {
@@ -35,9 +47,10 @@ interface Props {
     onClose:          () => void;
     cajasDisponibles: CajaDisponible[];
     configFondos?:    Record<number, ConfigFondosLocal>;
+    configEfectivo?:  ConfigEfectivo;
 }
 
-export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, configFondos = {} }: Props) {
+export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, configFondos = {}, configEfectivo }: Props) {
     const [form, setForm]     = useState<AbrirForm>(emptyForm());
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
@@ -52,11 +65,19 @@ export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, con
         .filter(c => !c.tiene_turno_abierto)
         .map(c => ({ value: c.id, label: `${c.nombre}${c.local ? ` — ${c.local.nombre}` : ''}` }));
 
+    // Apertura sugerida por la empresa (arrastre del cierre anterior / fondo fijo)
+    const sugerida = cajaSeleccionada?.apertura_sugerida ?? null;
+    const aperturaBloqueada = !!sugerida && !(configEfectivo?.apertura_editable ?? true);
+
     function handleCajaChange(id: number | string) {
         const caja = cajasDisponibles.find(c => c.id === Number(id)) ?? null;
         setForm(f => ({
             ...f,
             caja_id:          Number(id) || '',
+            // Precarga con la apertura sugerida (la cajera ya no digita de memoria)
+            monto_apertura:   caja?.apertura_sugerida
+                ? caja.apertura_sugerida.monto.toFixed(2)
+                : f.monto_apertura,
             monto_caja_chica: caja?.caja_chica_activa
                 ? String(caja.caja_chica_monto_sugerido)
                 : '',
@@ -104,18 +125,39 @@ export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, con
                     disabled={saving}
                 />
 
-                <Input
-                    label="Monto de apertura (S/)"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={form.monto_apertura}
-                    onChange={e => setForm(f => ({ ...f, monto_apertura: e.target.value }))}
-                    placeholder="0.00"
-                    error={errors.monto_apertura}
-                    disabled={saving}
-                />
+                <div className="space-y-2">
+                    <Input
+                        label="Monto de apertura (S/)"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        value={form.monto_apertura}
+                        onChange={e => setForm(f => ({ ...f, monto_apertura: e.target.value }))}
+                        placeholder="0.00"
+                        error={errors.monto_apertura}
+                        disabled={saving || aperturaBloqueada}
+                    />
+                    {sugerida && (
+                        <div
+                            className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+                            style={{
+                                backgroundColor: 'color-mix(in srgb, var(--color-success) 8%, transparent)',
+                                color: 'var(--color-text-muted)',
+                            }}
+                        >
+                            <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-success)' }} />
+                            <span>
+                                {sugerida.origen === 'arrastre'
+                                    ? <>Apertura sugerida por <strong>arrastre</strong>: {sugerida.detalle}.</>
+                                    : <>Apertura por <strong>fondo fijo</strong> de esta caja.</>}
+                                {aperturaBloqueada
+                                    ? ' El monto lo fija el sistema (configuración de la empresa).'
+                                    : ' Puedes ajustarlo; el cambio quedará auditado.'}
+                            </span>
+                        </div>
+                    )}
+                </div>
 
                 {usaCajaChica && (
                     <div className="space-y-2">

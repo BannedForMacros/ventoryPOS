@@ -18,6 +18,7 @@ interface Props extends PageProps {
 
 type ModoCierre = 'rapido' | 'con_declaraciones';
 type ModoInventario = 'por_venta' | 'declarado';
+type ModoApertura = 'libre' | 'arrastre' | 'fondo_fijo';
 
 type FormData = {
     razon_social: string;
@@ -39,6 +40,13 @@ type FormData = {
     dias_max_devolucion: number | '';
     requiere_aprobacion_devolucion: boolean;
     restock_default: boolean;
+    // Manejo de efectivo (opt-in por empresa)
+    modo_apertura_caja: ModoApertura;
+    apertura_editable: boolean;
+    usa_retiros_caja: boolean;
+    retiro_requiere_aprobacion: boolean;
+    cierre_pregunta_destino: boolean;
+    usa_caja_grande: boolean;
     activo: boolean;
     logo: File | null;
     // Plantilla del ticket impreso (se guarda como empresas.ticket_config).
@@ -68,6 +76,12 @@ const emptyForm: FormData = {
     dias_max_devolucion: 0,
     requiere_aprobacion_devolucion: false,
     restock_default: true,
+    modo_apertura_caja: 'libre',
+    apertura_editable: true,
+    usa_retiros_caja: false,
+    retiro_requiere_aprobacion: true,
+    cierre_pregunta_destino: false,
+    usa_caja_grande: false,
     activo: true,
     logo: null,
     ticket_cliente_celular: true,
@@ -112,6 +126,12 @@ export default function Empresas({ empresas }: Props) {
             dias_max_devolucion: emp.dias_max_devolucion ?? 0,
             requiere_aprobacion_devolucion: emp.requiere_aprobacion_devolucion ?? false,
             restock_default: emp.restock_default ?? true,
+            modo_apertura_caja: (emp.modo_apertura_caja as ModoApertura) ?? 'libre',
+            apertura_editable: emp.apertura_editable ?? true,
+            usa_retiros_caja: emp.usa_retiros_caja ?? false,
+            retiro_requiere_aprobacion: emp.retiro_requiere_aprobacion ?? true,
+            cierre_pregunta_destino: emp.cierre_pregunta_destino ?? false,
+            usa_caja_grande: emp.usa_caja_grande ?? false,
             activo: emp.activo,
             logo: null,
             ticket_cliente_celular: emp.ticket_config?.cliente_celular ?? true,
@@ -498,6 +518,108 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </label>
                         )}
+                    </div>
+
+                    {/* ── Sección: Manejo de efectivo ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Manejo de efectivo</p>
+
+                        <div>
+                            <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>Modo de apertura de caja</p>
+                            <div className="flex flex-col gap-2">
+                                {([
+                                    { value: 'libre' as const,      label: 'Libre',      hint: 'La cajera digita el monto con el que abre — comportamiento clásico.' },
+                                    { value: 'arrastre' as const,   label: 'Arrastre',   hint: 'Se precarga con el efectivo que quedó al cierre anterior de esa misma caja.' },
+                                    { value: 'fondo_fijo' as const, label: 'Fondo fijo', hint: 'Cada caja abre siempre con su fondo configurado (se define en Configuración → Cajas).' },
+                                ]).map(opt => (
+                                    <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="modo_apertura_caja"
+                                            checked={data.modo_apertura_caja === opt.value}
+                                            onChange={() => setData('modo_apertura_caja', opt.value)}
+                                            className="mt-0.5 accent-[var(--color-primary)]"
+                                        />
+                                        <span>
+                                            <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                            <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                            {errors.modo_apertura_caja && (
+                                <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_apertura_caja}</p>
+                            )}
+                        </div>
+
+                        {data.modo_apertura_caja !== 'libre' && (
+                            <label className="flex items-start gap-2 cursor-pointer pl-6">
+                                <Checkbox
+                                    checked={data.apertura_editable}
+                                    onChange={e => setData('apertura_editable', e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Apertura editable</span>
+                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        Si se desactiva, la cajera no puede cambiar el monto sugerido al abrir. Si está activo y lo cambia, la edición queda auditada.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.usa_retiros_caja}
+                                onChange={e => setData('usa_retiros_caja', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Retiros de caja</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Permite registrar "Entrega a administración" durante el turno. No son gastos: restan del efectivo esperado de la caja.
+                                </span>
+                            </span>
+                        </label>
+
+                        {data.usa_retiros_caja && (
+                            <label className="flex items-start gap-2 cursor-pointer pl-6">
+                                <Checkbox
+                                    checked={data.retiro_requiere_aprobacion}
+                                    onChange={e => setData('retiro_requiere_aprobacion', e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Retiro requiere aprobación de administrador</span>
+                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        Los retiros quedan marcados como pendientes hasta que un administrador los apruebe.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.cierre_pregunta_destino}
+                                onChange={e => setData('cierre_pregunta_destino', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Preguntar destino del efectivo al cerrar turno</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Al cerrar, la cajera indica si el efectivo queda en caja para el siguiente turno o se entrega a administración.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.usa_caja_grande}
+                                onChange={e => setData('usa_caja_grande', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Caja Grande</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Muestra en el Balance el desglose del efectivo: en cajas (puntos de venta) vs custodia de administración.
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     {/* ── Sección: Ticket de venta (plantilla de impresión) ── */}

@@ -15,6 +15,7 @@ class Turno extends Model
         'monto_cierre_declarado', 'monto_cierre_esperado', 'diferencia',
         'estado', 'fecha_apertura', 'fecha_cierre',
         'observacion_apertura', 'observacion_cierre',
+        'efectivo_arrastre', 'destino_efectivo',
     ];
 
     protected function casts(): array
@@ -27,6 +28,7 @@ class Turno extends Model
             'monto_cierre_declarado'  => 'decimal:2',
             'monto_cierre_esperado'   => 'decimal:2',
             'diferencia'              => 'decimal:2',
+            'efectivo_arrastre'       => 'decimal:2',
         ];
     }
 
@@ -41,6 +43,7 @@ class Turno extends Model
     public function consolidacion(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(TurnoConsolidacion::class); }
     public function gastos(): HasMany           { return $this->hasMany(Gasto::class); }
     public function ventas(): HasMany           { return $this->hasMany(\App\Models\Venta::class); }
+    public function retiros(): HasMany          { return $this->hasMany(TurnoRetiro::class); }
 
     public function scopeAbierto($q)        { return $q->where('estado', 'abierto'); }
     public function scopeCerrado($q)        { return $q->where('estado', 'cerrado'); }
@@ -106,6 +109,12 @@ class Turno extends Model
                         ->whereHas('cuenta', fn($c) => $c->where('es_efectivo', true)))
             )->sum('monto');
 
+        // Retiros de efectivo del turno (sangrías / entrega a administración):
+        // ese billete salió físicamente del cajón, el sistema no debe esperarlo.
+        // Los retiros con momento='cierre' se generan DESPUÉS de calcular el
+        // esperado (son la entrega del efectivo final), por eso no se restan.
+        $retirosEfectivo = (float) $this->retiros()->where('momento', 'turno')->sum('monto');
+
         $apertura     = (float) $this->monto_apertura;
         $fondos       = (float) $this->monto_caja_chica;
         $sumaFondos   = $this->fondosEntranEnDeclaracion();
@@ -117,7 +126,53 @@ class Turno extends Model
              - $gastosEfectivo
              - $reembolsosEfectivo
              - $comprasEfectivo
+             - $retirosEfectivo
              + ($sumaFondos ? $fondos : 0.0);
+    }
+
+    /**
+     * Apertura sugerida para un nuevo turno de una caja según la configuración
+     * de la empresa: arrastre del último cierre, fondo fijo, o null (modo libre
+     * o sin historial → digitación manual).
+     */
+    public static function aperturaSugeridaParaCaja(Caja $caja): ?array
+    {
+        $empresa = $caja->empresa ?? Empresa::find($caja->empresa_id);
+        $modo = $empresa?->modo_apertura_caja ?? 'libre';
+
+        if ($modo === 'fondo_fijo') {
+            return [
+                'monto'  => (float) $caja->fondo_fijo_monto,
+                'origen' => 'fondo_fijo',
+                'detalle' => 'Fondo fijo configurado para esta caja',
+            ];
+        }
+
+        if ($modo === 'arrastre') {
+            $ultimo = static::where('caja_id', $caja->id)
+                ->where('estado', 'cerrado')
+                ->orderByDesc('fecha_cierre')
+                ->first();
+            if (!$ultimo) return null; // primera apertura de la caja: manual
+
+            // Lo que quedó en el cajón: destino registrado al cierre; si el
+            // cierre es anterior a esta función, lo físico contado (declarado)
+            // o en su defecto el esperado.
+            $monto = $ultimo->efectivo_arrastre
+                ?? $ultimo->monto_cierre_declarado
+                ?? $ultimo->monto_cierre_esperado;
+            if ($monto === null) return null;
+
+            return [
+                'monto'   => (float) $monto,
+                'origen'  => 'arrastre',
+                'detalle' => 'Efectivo que quedó al cierre del ' .
+                    $ultimo->fecha_cierre?->format('d/m/Y H:i') . ' (' . ($ultimo->user?->name ?? '—') . ')',
+                'turno_anterior_id' => $ultimo->id,
+            ];
+        }
+
+        return null; // modo libre
     }
 
     /**

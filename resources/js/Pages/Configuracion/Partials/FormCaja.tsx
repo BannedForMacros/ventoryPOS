@@ -9,6 +9,7 @@ export interface CajaForm {
     caja_chica_activa:          boolean;
     caja_chica_monto_sugerido:  number;
     caja_chica_en_arqueo:       boolean;
+    fondo_fijo_monto:           number;
     activo:                     boolean;
 }
 
@@ -18,6 +19,7 @@ export const emptyCaja = (): CajaForm => ({
     caja_chica_activa:         false,
     caja_chica_monto_sugerido: 0,
     caja_chica_en_arqueo:      false,
+    fondo_fijo_monto:          0,
     activo:                    true,
 });
 
@@ -97,6 +99,22 @@ export default function FormCaja({ form, setForm, errors, locales, editando, dis
                         />
                     </>
                 )}
+            </div>
+
+            <div>
+                <Input
+                    label="Fondo fijo (S/)"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.fondo_fijo_monto}
+                    onChange={e => setForm(f => ({ ...f, fondo_fijo_monto: parseFloat(e.target.value) || 0 }))}
+                    error={errors.fondo_fijo_monto}
+                    disabled={disabled}
+                />
+                <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                    Solo aplica si la empresa usa modo Fondo fijo (Configuración → Empresas → Manejo de efectivo): la caja abrirá siempre con este monto.
+                </p>
             </div>
 
             {editando && (

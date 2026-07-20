@@ -41,6 +41,8 @@ class TurnoController extends Controller
 
         $turnos = $query->orderByDesc('fecha_apertura')->paginate(20)->withQueryString();
 
+        $empresa = \App\Models\Empresa::find($user->empresa_id);
+
         $cajasDisponibles = Caja::deEmpresa($user->empresa_id)
             ->activo()
             ->when($user->local_id, fn($q) => $q->where('local_id', $user->local_id))
@@ -49,6 +51,8 @@ class TurnoController extends Controller
             ->map(fn($c) => [
                 ...$c->toArray(),
                 'tiene_turno_abierto' => $c->tieneTurnoAbierto(),
+                // Apertura sugerida según config de empresa (arrastre / fondo fijo)
+                'apertura_sugerida'   => Turno::aperturaSugeridaParaCaja($c),
             ]);
 
         $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
@@ -59,6 +63,7 @@ class TurnoController extends Controller
 
         $turnoActivo = Turno::turnoActivoDelUsuario($user->id)
             ?->load(['caja', 'local', 'gastos.tipo', 'gastos.concepto',
+                     'retiros.user:id,name',
                      'ventas' => fn($q) => $q->where('estado', 'completada')->with('pagos.metodoPago')]);
 
         // Configuración de fondos iniciales para los locales visibles del usuario
@@ -81,6 +86,12 @@ class TurnoController extends Controller
             'metodosPago'      => $metodosPago,
             'turnoActivo'      => $turnoActivo,
             'configFondos'     => $configFondos,
+            'configEfectivo'   => [
+                'modo_apertura_caja'         => $empresa?->modo_apertura_caja ?? 'libre',
+                'apertura_editable'          => (bool) ($empresa?->apertura_editable ?? true),
+                'usa_retiros_caja'           => (bool) ($empresa?->usa_retiros_caja ?? false),
+                'retiro_requiere_aprobacion' => (bool) ($empresa?->retiro_requiere_aprobacion ?? true),
+            ],
         ]);
     }
 
@@ -103,6 +114,8 @@ class TurnoController extends Controller
             'gastos.tipo',
             'gastos.concepto',
             'gastos.user',
+            'retiros.user:id,name',
+            'retiros.aprobadoPor:id,name',
             'ventas' => fn($q) => $q->with(['cliente', 'pagos.metodoPago', 'items']),
         ]);
 
@@ -220,17 +233,41 @@ class TurnoController extends Controller
             ? (float) $request->input('monto_caja_chica', 0)
             : 0;
 
-        Turno::create([
+        // Apertura sugerida (arrastre / fondo fijo). El servidor manda: si la
+        // empresa bloqueó la edición, se usa el sugerido aunque el cliente
+        // envíe otro monto; si la edición está permitida y difiere, se audita.
+        $empresa        = \App\Models\Empresa::find($user->empresa_id);
+        $sugerida       = Turno::aperturaSugeridaParaCaja($caja);
+        $montoApertura  = (float) $request->input('monto_apertura');
+        $fueAjustada    = false;
+        if ($sugerida !== null) {
+            if (!($empresa?->apertura_editable ?? true)) {
+                $montoApertura = (float) $sugerida['monto'];
+            } elseif (abs($montoApertura - (float) $sugerida['monto']) >= 0.01) {
+                $fueAjustada = true;
+            }
+        }
+
+        $turno = Turno::create([
             'empresa_id'           => $user->empresa_id,
             'local_id'             => $caja->local_id,
             'caja_id'              => $caja->id,
             'user_id'              => $user->id,
-            'monto_apertura'       => $request->input('monto_apertura'),
+            'monto_apertura'       => $montoApertura,
             'monto_caja_chica'     => $montoCajaChica,
             'estado'               => 'abierto',
             'fecha_apertura'       => now(),
             'observacion_apertura' => $request->input('observacion_apertura'),
         ]);
+
+        if ($fueAjustada) {
+            \App\Services\AuditoriaService::log('turno.apertura_ajustada', $turno, [
+                'caja'      => $caja->nombre,
+                'sugerido'  => (float) $sugerida['monto'],
+                'ingresado' => $montoApertura,
+                'origen'    => $sugerida['origen'],
+            ], $user);
+        }
 
         return redirect()->back()->with('success', 'Turno abierto correctamente.');
     }
@@ -277,8 +314,13 @@ class TurnoController extends Controller
             ->orderByDesc('id')
             ->first();
 
+        $empresa = $turno->empresa;
+
         return Inertia::render('Turnos/Cerrar', [
             'turno'                        => $turno,
+            // Pregunta de destino del efectivo al cierre (config de empresa)
+            'preguntaDestino'              => (bool) ($empresa?->cierre_pregunta_destino ?? false),
+            'totalRetiros'                 => (float) $turno->retiros()->where('momento', 'turno')->sum('monto'),
             // Aviso: productos vendidos en el turno cuyo stock quedó negativo.
             // El frontend pide confirmación explícita antes de cerrar.
             'productosStockNegativo'       => $turno->productosVendidosConStockNegativo(),
@@ -374,6 +416,42 @@ class TurnoController extends Controller
                 'observacion_cierre'     => $request->input('observacion_cierre'),
             ]);
 
+            // Destino del efectivo final (config "cierre_pregunta_destino"):
+            // ¿queda en el cajón para el siguiente turno o se entrega a
+            // administración? La entrega genera un retiro momento='cierre'
+            // (traslado de custodia, no toca tesorería: el neto no cambia).
+            $empresaTurno = $turno->empresa;
+            if (($empresaTurno?->cierre_pregunta_destino ?? false) && $request->filled('destino_efectivo')) {
+                $efectivoFinal = (float) ($montoDeclarado ?? $montoEsperado);
+                $destino = $request->input('destino_efectivo');
+                $queda = match ($destino) {
+                    'caja'           => $efectivoFinal,
+                    'administracion' => 0.0,
+                    'parcial'        => min((float) $request->input('efectivo_queda', 0), $efectivoFinal),
+                    default          => $efectivoFinal,
+                };
+                $queda   = max(0.0, round($queda, 2));
+                $entrega = round($efectivoFinal - $queda, 2);
+
+                $turno->update([
+                    'efectivo_arrastre' => $queda,
+                    'destino_efectivo'  => $destino,
+                ]);
+
+                if ($entrega >= 0.01) {
+                    \App\Models\TurnoRetiro::create([
+                        'empresa_id'  => $turno->empresa_id,
+                        'turno_id'    => $turno->id,
+                        'user_id'     => $request->user()->id,
+                        'concepto'    => \App\Models\TurnoRetiro::CONCEPTO_ENTREGA_ADMIN,
+                        'monto'       => $entrega,
+                        'momento'     => 'cierre',
+                        'estado'      => 'aprobado',
+                        'observacion' => 'Entrega del efectivo final al cerrar el turno',
+                    ]);
+                }
+            }
+
             // Snapshot de productos vendidos en el turno (para reportes históricos)
             $turno->poblarSnapshotProductos();
 
@@ -402,12 +480,14 @@ class TurnoController extends Controller
         });
 
         $turno->refresh();
-        \App\Services\AuditoriaService::log('turno.cerrado', $turno, [
+        \App\Services\AuditoriaService::log('turno.cerrado', $turno, array_filter([
             'declarado'  => (float) $turno->monto_cierre_declarado,
             'esperado'   => (float) $turno->monto_cierre_esperado,
             'diferencia' => (float) $turno->diferencia,
             'modo_caja'  => $modoCaja,
-        ], $request->user());
+            'destino_efectivo'  => $turno->destino_efectivo,
+            'efectivo_arrastre' => $turno->efectivo_arrastre !== null ? (float) $turno->efectivo_arrastre : null,
+        ], fn ($v) => $v !== null), $request->user());
 
         return redirect()->route('turnos.index')->with('success', 'Turno cerrado correctamente.');
     }

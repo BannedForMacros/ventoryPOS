@@ -40,6 +40,13 @@ class Empresa extends Model
         'usa_agenda',
         'agenda_sujeto_label',
         'agenda_sujeto_requerido',
+        // Manejo de efectivo (todo opt-in; defaults = comportamiento clásico)
+        'modo_apertura_caja',
+        'apertura_editable',
+        'usa_retiros_caja',
+        'retiro_requiere_aprobacion',
+        'cierre_pregunta_destino',
+        'usa_caja_grande',
     ];
 
     protected function casts(): array
@@ -58,6 +65,11 @@ class Empresa extends Model
             'restock_default'                 => 'boolean',
             'usa_agenda'                      => 'boolean',
             'agenda_sujeto_requerido'         => 'boolean',
+            'apertura_editable'               => 'boolean',
+            'usa_retiros_caja'                => 'boolean',
+            'retiro_requiere_aprobacion'      => 'boolean',
+            'cierre_pregunta_destino'         => 'boolean',
+            'usa_caja_grande'                 => 'boolean',
         ];
     }
 

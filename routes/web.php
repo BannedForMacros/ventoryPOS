@@ -256,6 +256,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:turnos,editar')->get('/{turno}/cerrar', [TurnoController::class, 'cerrarPage'])->name('cerrar.page');
         Route::middleware('permiso:turnos,editar')->post('/{turno}/cerrar', [TurnoController::class, 'cerrar'])->name('cerrar');
         Route::middleware('permiso:turnos,editar')->post('/{turno}/reabrir', [TurnoController::class, 'reabrir'])->name('reabrir');
+        // Retiros de efectivo (sangría / entrega a administración)
+        Route::middleware('permiso:turnos,crear')->post('/{turno}/retiros', [\App\Http\Controllers\Turnos\TurnoRetiroController::class, 'store'])->name('retiros.store');
+        Route::middleware('permiso:turnos,editar')->post('/retiros/{retiro}/aprobar', [\App\Http\Controllers\Turnos\TurnoRetiroController::class, 'aprobar'])->name('retiros.aprobar');
     });
 
     // ── GASTOS ───────────────────────────────────────────────────────────

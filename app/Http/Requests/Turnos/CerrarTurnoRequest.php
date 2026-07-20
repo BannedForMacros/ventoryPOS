@@ -21,6 +21,9 @@ class CerrarTurnoRequest extends FormRequest
             // Confirmación explícita del cajero cuando el turno vendió
             // productos que quedaron con stock negativo (ver TurnoController).
             'confirma_stock_negativo' => ['nullable', 'boolean'],
+            // Destino del efectivo final (solo si la empresa activó la pregunta)
+            'destino_efectivo' => ['nullable', Rule::in(['caja', 'administracion', 'parcial'])],
+            'efectivo_queda'   => ['nullable', 'numeric', 'min:0', 'required_if:destino_efectivo,parcial'],
         ];
 
         if ($modoCaja === 'rapido') {

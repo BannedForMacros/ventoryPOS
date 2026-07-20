@@ -913,6 +913,59 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             </div>
                         )}
 
+                        {/* ¿Dónde está el efectivo? — custodia física (opt-in usa_caja_grande):
+                            cajones de las cajas vs Caja Grande (administración). */}
+                        {detalleData.cajaGrande && (
+                            <div className="rounded-xl px-3 py-2.5" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                                    ¿Dónde está el efectivo? (a la fecha del balance)
+                                </p>
+                                <div className="space-y-1">
+                                    {detalleData.cajaGrande.en_cajas.map((c: any, i: number) => (
+                                        <div key={i} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg"
+                                            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                                            <span className="flex items-center gap-1.5 font-medium" style={{ color: 'var(--color-text)' }}>
+                                                {c.caja}
+                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                                                    style={{
+                                                        color: c.estado === 'abierto' ? 'var(--color-success)' : 'var(--color-text-muted)',
+                                                        backgroundColor: c.estado === 'abierto'
+                                                            ? 'color-mix(in srgb, var(--color-success) 12%, transparent)'
+                                                            : 'color-mix(in srgb, var(--color-text-muted) 12%, transparent)',
+                                                    }}>
+                                                    {c.estado === 'abierto' ? 'turno abierto' : 'cerrada'}
+                                                </span>
+                                            </span>
+                                            <span className="font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>{money(c.monto)}</span>
+                                        </div>
+                                    ))}
+                                    <div className="flex items-center justify-between text-xs px-2 py-1" style={{ color: 'var(--color-text-muted)' }}>
+                                        <span className="font-semibold">En puntos de venta</span>
+                                        <span className="font-bold tabular-nums">{money(detalleData.cajaGrande.total_en_cajas)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg"
+                                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)' }}>
+                                        <span className="font-semibold" style={{ color: 'var(--color-primary)' }}>Caja Grande (administración)</span>
+                                        <span className="font-bold tabular-nums"
+                                            style={{ color: detalleData.cajaGrande.negativo ? 'var(--color-danger)' : 'var(--color-primary)' }}>
+                                            {money(detalleData.cajaGrande.caja_grande)}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs px-2 pt-1.5" style={{ borderTop: '1px dashed var(--color-border)' }}>
+                                        <span className="font-semibold" style={{ color: 'var(--color-text)' }}>Total efectivo</span>
+                                        <span className="font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
+                                            {money(detalleData.cajaGrande.saldo_efectivo)}
+                                        </span>
+                                    </div>
+                                    {detalleData.cajaGrande.negativo && (
+                                        <p className="text-[10px] px-2" style={{ color: 'var(--color-danger)' }}>
+                                            Caja Grande sale negativa: los cajones suman más que el saldo de Efectivo — revisar cierres y arrastres.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Jerarquía 2 (bancos) — Neto por CAJERO acumulado (quién movió el dinero).
                             Clic en un cajero filtra los movimientos a él. */}
                         {(detalleData.porCajero?.length ?? 0) > 0 && (

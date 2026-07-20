@@ -3,7 +3,7 @@ import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
     Wallet, Calendar, ChevronDown, ChevronUp, Landmark, Scale,
-    TrendingDown, TrendingUp, UserRound, Banknote, ClipboardList,
+    TrendingDown, TrendingUp, UserRound, Banknote, ClipboardList, HandCoins,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -27,6 +27,7 @@ interface Kpis {
     faltantes:       number;
     diferencia_neta: number;
     con_descuadre:   number;
+    retiros_total:   number;
 }
 
 interface SerieDia  { dia: string; ventas: number; gastos: number; diferencia: number; }
@@ -35,6 +36,16 @@ interface PorCajero { nombre: string; total: number; turnos: number; diferencia:
 
 interface ArqueoMetodo { id: number; nombre: string; monto_declarado: number; }
 interface GastoTurno   { id: number; concepto: string; monto: number; }
+
+interface RetiroTurno {
+    id:       number;
+    concepto: string;
+    monto:    number;
+    momento:  'turno' | 'cierre';
+    estado:   'registrado' | 'aprobado';
+    usuario:  string;
+    fecha:    string | null;
+}
 
 interface TurnoRow {
     id: number;
@@ -57,6 +68,10 @@ interface TurnoRow {
     observacion_cierre:   string | null;
     arqueo_metodos: ArqueoMetodo[];
     gastos:         GastoTurno[];
+    efectivo_arrastre: number | null;
+    destino_efectivo:  'caja' | 'administracion' | 'parcial' | null;
+    retiros_total:     number;
+    retiros:           RetiroTurno[];
 }
 
 interface Filters {
@@ -139,7 +154,7 @@ export default function ReportesCaja({
             </FiltrosReporte>
 
             {/* KPIs */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+            <div className={`grid grid-cols-2 gap-3 mb-5 ${kpis.retiros_total > 0 ? 'lg:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-5'}`}>
                 <Kpi icon={<ClipboardList size={18} />} label="Turnos" value={fmtInt(kpis.total_turnos)}
                     sub={`${kpis.turnos_abiertos} abiertos · ${kpis.turnos_cerrados} cerrados`}
                     color="var(--color-primary)" />
@@ -158,6 +173,12 @@ export default function ReportesCaja({
                     sub={kpis.con_descuadre > 0 ? `${kpis.con_descuadre} turnos con descuadre` : 'todo cuadrado'}
                     subColor={kpis.con_descuadre > 0 ? 'var(--color-warning)' : 'var(--color-success)'}
                     color={kpis.diferencia_neta >= 0 ? 'var(--color-success)' : 'var(--color-danger)'} />
+                {kpis.retiros_total > 0 && (
+                    <Kpi icon={<HandCoins size={18} />} label="Retiros a administración"
+                        value={fmtS(kpis.retiros_total)}
+                        sub="efectivo entregado desde cajas"
+                        color="var(--vp-navy)" />
+                )}
             </div>
 
             {/* Serie + por caja */}
@@ -317,6 +338,10 @@ export default function ReportesCaja({
                                         <p style={{ color: 'var(--color-text)' }}>Esperado: <b>{fmtS(t.monto_cierre_esperado)}</b> · Declarado: <b>{fmtS(t.monto_cierre_declarado ?? 0)}</b></p>
                                     )}
                                     {t.gastos_total > 0 && <p style={{ color: 'var(--color-danger)' }}>Gastos: {fmtS(t.gastos_total)}</p>}
+                                    {t.retiros_total > 0 && <p style={{ color: 'var(--vp-navy)' }}>Retiros a administración: <b>{fmtS(t.retiros_total)}</b></p>}
+                                    {t.destino_efectivo && (t.destino_efectivo === 'administracion'
+                                        ? <p style={{ color: 'var(--vp-navy)' }}>Efectivo entregado a administración al cierre</p>
+                                        : <p style={{ color: 'var(--color-success)' }}>Quedó en caja: <b>{fmtS(t.efectivo_arrastre ?? 0)}</b></p>)}
                                 </div>
                             )}
                         </div>
@@ -329,7 +354,35 @@ export default function ReportesCaja({
     );
 }
 
-/* ── Fila expandida: cierre, arqueo por método y gastos del turno ──────── */
+/* ── Destino del efectivo al cierre (quedó en caja / entregado a admin) ── */
+function DestinoEfectivo({ turno: t }: { turno: TurnoRow }) {
+    if (!t.destino_efectivo) return null;
+    const entregadoCierre = t.retiros.filter(r => r.momento === 'cierre').reduce((s, r) => s + r.monto, 0);
+    return (
+        <div className="mt-2 space-y-1 text-[11px]">
+            {(t.destino_efectivo === 'caja' || t.destino_efectivo === 'parcial') && (
+                <div className="flex items-center justify-between rounded-lg px-2.5 py-1.5"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-success) 9%, transparent)' }}>
+                    <span style={{ color: 'var(--color-text)' }}>Quedó en caja para el siguiente turno</span>
+                    <span className="font-bold" style={{ color: 'var(--color-success)' }}>
+                        {t.efectivo_arrastre !== null ? fmtS(t.efectivo_arrastre) : '—'}
+                    </span>
+                </div>
+            )}
+            {(t.destino_efectivo === 'administracion' || t.destino_efectivo === 'parcial') && (
+                <div className="flex items-center justify-between rounded-lg px-2.5 py-1.5"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 9%, transparent)' }}>
+                    <span style={{ color: 'var(--color-text)' }}>Entregado a administración</span>
+                    <span className="font-bold" style={{ color: 'var(--vp-navy)' }}>
+                        {entregadoCierre > 0 ? fmtS(entregadoCierre) : ''}
+                    </span>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* ── Fila expandida: cierre, arqueo por método, gastos y retiros ───────── */
 function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number }) {
     return (
         <tr>
@@ -338,7 +391,7 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
                     backgroundColor: 'color-mix(in srgb, var(--color-primary) 4%, var(--color-surface))',
                     borderTop: '1px dashed var(--color-border)',
                 }}>
-                <div className="grid md:grid-cols-3 gap-4">
+                <div className={`grid gap-4 ${t.retiros.length > 0 ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
                     {/* Apertura / cierre */}
                     <div>
                         <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--vp-navy)' }}>Turno</p>
@@ -367,6 +420,7 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
                                 )}
                             </div>
                         )}
+                        <DestinoEfectivo turno={t} />
                     </div>
 
                     {/* Arqueo por método */}
@@ -410,6 +464,47 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
                             </div>
                         )}
                     </div>
+
+                    {/* Retiros de efectivo (sangrías / entrega a administración) */}
+                    {t.retiros.length > 0 && (
+                        <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--vp-navy)' }}>
+                                Retiros de efectivo <span style={{ color: 'var(--vp-navy)' }}>({fmtS(t.retiros_total)})</span>
+                            </p>
+                            <div className="space-y-1">
+                                {t.retiros.map(r => (
+                                    <div key={r.id} className="text-[11px] rounded-lg px-2 py-1.5"
+                                        style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 7%, transparent)' }}>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="min-w-0 truncate" style={{ color: 'var(--color-text)' }}>{r.concepto}</span>
+                                            <span className="font-bold whitespace-nowrap" style={{ color: 'var(--vp-navy)' }}>{fmtS(r.monto)}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                            <span style={{ color: 'var(--color-text-muted)' }}>{r.usuario}</span>
+                                            {r.momento === 'cierre' && (
+                                                <span className="text-[9px] font-bold px-1.5 py-px rounded-full"
+                                                    style={{
+                                                        color: 'var(--color-primary)',
+                                                        backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
+                                                    }}>
+                                                    al cierre
+                                                </span>
+                                            )}
+                                            {r.estado === 'registrado' && (
+                                                <span className="text-[9px] font-bold px-1.5 py-px rounded-full"
+                                                    style={{
+                                                        color: 'var(--color-warning)',
+                                                        backgroundColor: 'color-mix(in srgb, var(--color-warning) 14%, transparent)',
+                                                    }}>
+                                                    sin aprobar
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </td>
         </tr>

@@ -32,6 +32,13 @@ export interface Empresa extends Record<string, unknown> {
     dias_max_devolucion: number;
     requiere_aprobacion_devolucion: boolean;
     restock_default: boolean;
+    /* ── Manejo de efectivo (opt-in por empresa) ── */
+    modo_apertura_caja: 'libre' | 'arrastre' | 'fondo_fijo';
+    apertura_editable: boolean;
+    usa_retiros_caja: boolean;
+    retiro_requiere_aprobacion: boolean;
+    cierre_pregunta_destino: boolean;
+    usa_caja_grande: boolean;
     activo: boolean;
     created_at: string;
     updated_at: string;
@@ -203,6 +210,7 @@ export interface Caja extends Record<string, unknown> {
     caja_chica_activa:           boolean;
     caja_chica_monto_sugerido:   number;
     caja_chica_en_arqueo:        boolean;
+    fondo_fijo_monto:            number | string;
     activo:                      boolean;
     token_impresora?:            string | null;
     local?:                      Local;
@@ -269,6 +277,23 @@ export interface TurnoArqueoMetodo extends Record<string, unknown> {
     metodo_pago?:     MetodoPago;
 }
 
+export interface TurnoRetiro extends Record<string, unknown> {
+    id:           number;
+    empresa_id:   number;
+    turno_id:     number;
+    user_id:      number;
+    aprobado_por: number | null;
+    concepto:     string;
+    monto:        string;
+    momento:      'turno' | 'cierre';
+    estado:       'registrado' | 'aprobado';
+    observacion:  string | null;
+    user?:        User;
+    aprobado_por_user?: User | null;
+    created_at:   string;
+    updated_at:   string;
+}
+
 export interface Turno extends Record<string, unknown> {
     id:                      number;
     empresa_id:              number;
@@ -281,6 +306,8 @@ export interface Turno extends Record<string, unknown> {
     monto_cierre_declarado:  string | null;
     monto_cierre_esperado:   string | null;
     diferencia:              string | null;
+    efectivo_arrastre:       string | null;
+    destino_efectivo:        'caja' | 'administracion' | 'parcial' | null;
     estado:                  'abierto' | 'cerrado';
     fecha_apertura:          string;
     fecha_cierre:            string | null;
@@ -292,6 +319,7 @@ export interface Turno extends Record<string, unknown> {
     user_cierre?:            User | null;
     gastos?:                 Gasto[];
     ventas?:                 Venta[];
+    retiros?:                TurnoRetiro[];
     arqueo?:                 TurnoArqueo[];
     arqueo_metodos?:         TurnoArqueoMetodo[];
     created_at:              string;

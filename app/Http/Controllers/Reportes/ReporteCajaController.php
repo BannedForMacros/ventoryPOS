@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Reportes;
 use App\Http\Controllers\Controller;
 use App\Models\Caja;
 use App\Models\Turno;
+use App\Models\TurnoRetiro;
 use App\Models\User;
 use App\Services\LocalScopeService;
 use Illuminate\Http\Request;
@@ -51,6 +52,8 @@ class ReporteCajaController extends Controller
             'faltantes'       => (float) $cerrados->sum(fn ($t) => max(0, -(float) $t->diferencia)),
             'diferencia_neta' => (float) $cerrados->sum(fn ($t) => (float) $t->diferencia),
             'con_descuadre'   => $cerrados->filter(fn ($t) => abs((float) $t->diferencia) > 0.009)->count(),
+            // Retiros de efectivo (sangrías / entregas a administración) de los turnos del rango
+            'retiros_total'   => (float) TurnoRetiro::whereIn('turno_id', (clone $base)->select('id'))->sum('monto'),
         ];
 
         // Serie diaria: vendido y diferencia de caja por día de apertura
@@ -96,6 +99,8 @@ class ReporteCajaController extends Controller
                     ->with('metodoPago:id,nombre'),
                 'gastos' => fn ($q) => $q->select('id', 'turno_id', 'gasto_concepto_id', 'monto', 'comentario')
                     ->with('concepto:id,nombre'),
+                'retiros' => fn ($q) => $q->select('id', 'turno_id', 'user_id', 'concepto', 'monto', 'momento', 'estado', 'created_at')
+                    ->with('user:id,name'),
             ])
             ->withCount(['ventas as ventas_count' => fn ($q) => $q->where('estado', 'completada')])
             ->withSum(['ventas as ventas_total' => fn ($q) => $q->where('estado', 'completada')], 'total')
@@ -131,6 +136,18 @@ class ReporteCajaController extends Controller
                     'id'       => $g->id,
                     'concepto' => $g->concepto?->nombre ?? '—',
                     'monto'    => (float) $g->monto,
+                ])->values(),
+                'efectivo_arrastre'      => $t->efectivo_arrastre !== null ? (float) $t->efectivo_arrastre : null,
+                'destino_efectivo'       => $t->destino_efectivo,
+                'retiros_total'          => (float) $t->retiros->sum('monto'),
+                'retiros'                => $t->retiros->map(fn ($r) => [
+                    'id'       => $r->id,
+                    'concepto' => $r->concepto,
+                    'monto'    => (float) $r->monto,
+                    'momento'  => $r->momento,
+                    'estado'   => $r->estado,
+                    'usuario'  => $r->user?->name ?? '—',
+                    'fecha'    => $r->created_at?->toIso8601String(),
                 ])->values(),
             ]);
 

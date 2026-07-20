@@ -54,6 +54,13 @@ class EmpresaRequest extends FormRequest
             'dias_max_devolucion'             => 'nullable|integer|min:0|max:365',
             'requiere_aprobacion_devolucion'  => 'boolean',
             'restock_default'                 => 'boolean',
+            // Manejo de efectivo (todo opt-in; defaults = comportamiento clásico)
+            'modo_apertura_caja'              => 'sometimes|in:libre,arrastre,fondo_fijo',
+            'apertura_editable'               => 'boolean',
+            'usa_retiros_caja'                => 'boolean',
+            'retiro_requiere_aprobacion'      => 'boolean',
+            'cierre_pregunta_destino'         => 'boolean',
+            'usa_caja_grande'                 => 'boolean',
         ];
     }
 }
