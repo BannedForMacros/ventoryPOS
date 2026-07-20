@@ -33,8 +33,14 @@ class PlanillaDescuentoController extends Controller
                     ->orWhereHas('trabajador', fn ($u) => $u->where('name', 'ilike', "%{$t}%")));
             });
 
-        if ($request->input('estado', 'pendientes') === 'pendientes') {
+        // Filtro de estado: 'pendientes' (default), 'aplicados', 'anulados' o 'todos'.
+        $estado = $request->input('estado', 'pendientes');
+        if ($estado === 'pendientes') {
             $query->pendiente();
+        } elseif ($estado === 'aplicados') {
+            $query->where('estado', 'aplicado');
+        } elseif ($estado === 'anulados') {
+            $query->where('estado', 'anulado');
         }
 
         $descuentos = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25)->withQueryString();

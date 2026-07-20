@@ -103,6 +103,18 @@ function buildStyles(variant: Variant, flat: boolean): React.CSSProperties {
         } as React.CSSProperties;
     }
 
+    // CTA principal con degradado de marca (sky → navy) y sombra sutil:
+    // le da presencia al botón sin salir de la paleta.
+    if (variant === 'primary') {
+        return {
+            background: 'linear-gradient(135deg, var(--vp-sky, #1A73C8) 0%, var(--vp-navy, #0F4C81) 100%)',
+            color: '#fff',
+            borderColor: 'transparent',
+            boxShadow: '0 2px 8px -2px rgba(15, 76, 129, 0.45)',
+            '--btn-ring': token.ring,
+        } as React.CSSProperties;
+    }
+
     return {
         backgroundColor: token.bg,
         color: token.text,

@@ -374,7 +374,9 @@ class VentaController extends Controller
         $q = trim((string) $request->input('q', ''));
 
         $ventas = Venta::deEmpresa($user->empresa_id)
-            ->with(['user', 'cliente', 'local', 'caja', 'turno'])
+            ->with(['user', 'cliente', 'local', 'caja', 'turno',
+                    'pagos:id,venta_id,metodo_pago_id,monto',
+                    'pagos.metodoPago:id,nombre'])
             ->when(!$esAdmin, fn($qq) => $qq->where('user_id', $user->id))
             ->when($request->estado, fn($qq, $v) => $qq->where('estado', $v))
             ->when($fechaDesde, fn($qq, $v) => $qq->where('fecha_venta', '>=', $v))

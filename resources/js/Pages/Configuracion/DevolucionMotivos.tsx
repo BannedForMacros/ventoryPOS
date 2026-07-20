@@ -95,7 +95,7 @@ export default function DevolucionMotivos({ motivos }: Props) {
           render: (m) => m.es_sistema ? <Badge variant="primary">Sistema</Badge> : <Badge variant="secondary">Personalizado</Badge> },
         { key: 'activo', label: 'Estado',
           render: (m) => <Badge variant={m.activo ? 'success' : 'secondary'}>{m.activo ? 'Activo' : 'Inactivo'}</Badge> },
-        { key: 'acciones', label: 'Acciones',
+        { key: 'acciones', label: 'Acciones', sortable: false,
           render: (m) => <TableActions onEdit={() => openEdit(m)} onDelete={m.es_sistema ? undefined : () => setConfirmId(m.id)} /> },
     ];
 

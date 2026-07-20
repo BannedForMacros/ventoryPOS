@@ -111,7 +111,7 @@ export default function SalidasTipos({ tipos }: Props) {
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (t) => (
                 <TableActions
                     onEdit={() => openEdit(t)}

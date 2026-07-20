@@ -6,6 +6,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Select from '@/Components/UI/Select';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
@@ -70,11 +71,11 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
             render: (s) => <span className="text-sm">{fmtFecha(s.fecha)}</span>,
         },
         {
-            key: 'tipo', label: 'Tipo', sortable: true,
+            key: 'tipo', label: 'Tipo', sortKey: 'tipo.nombre',
             render: (s) => <Badge variant="primary">{s.tipo?.nombre ?? '—'}</Badge>,
         },
         {
-            key: 'almacen', label: 'Almacén', sortable: true,
+            key: 'almacen', label: 'Almacén', sortKey: 'almacen.nombre',
             render: (s) => (
                 <span className="text-sm">
                     {s.almacen.nombre}
@@ -115,7 +116,7 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (s) => (
                 <div className="flex items-center gap-1">
                     {s.estado === 'borrador' && (
@@ -157,49 +158,42 @@ export default function SalidasIndex({ salidas, almacenes, tipos, mostrarSelecto
                 }
             />
 
-            <div className="mb-4 flex flex-wrap gap-3">
+            <FiltrosCard
+                cols={3}
+                tieneFiltros={!!(filtrAlmacen || filtrTipo || filtrEstado)}
+                onClear={() => { setFiltrAlmacen(''); setFiltrTipo(''); setFiltrEstado(''); }}
+            >
                 {mostrarSelector && (
-                    <div className="w-52">
-                        <Select
-                            placeholder="Todos los almacenes"
-                            value={filtrAlmacen}
-                            onChange={v => setFiltrAlmacen(String(v))}
-                            options={[
-                                { value: '', label: 'Todos los almacenes' },
-                                ...almacenes.map(a => ({ value: a.id, label: a.nombre })),
-                            ]}
-                        />
-                    </div>
-                )}
-                <div className="w-52">
                     <Select
-                        placeholder="Todos los tipos"
-                        value={filtrTipo}
-                        onChange={v => setFiltrTipo(String(v))}
+                        label="Almacén"
+                        value={filtrAlmacen}
+                        onChange={v => setFiltrAlmacen(String(v))}
                         options={[
-                            { value: '', label: 'Todos los tipos' },
-                            ...tipos.map(t => ({ value: t.id, label: t.nombre })),
+                            { value: '', label: 'Todos los almacenes' },
+                            ...almacenes.map(a => ({ value: a.id, label: a.nombre })),
                         ]}
                     />
-                </div>
-                <div className="w-44">
-                    <Select
-                        placeholder="Todos los estados"
-                        value={filtrEstado}
-                        onChange={v => setFiltrEstado(String(v))}
-                        options={[
-                            { value: '',           label: 'Todos los estados' },
-                            { value: 'borrador',   label: 'Borrador' },
-                            { value: 'confirmado', label: 'Confirmado' },
-                        ]}
-                    />
-                </div>
-                {(filtrAlmacen || filtrTipo || filtrEstado) && (
-                    <Button variant="ghost" onClick={() => { setFiltrAlmacen(''); setFiltrTipo(''); setFiltrEstado(''); }}>
-                        Limpiar filtros
-                    </Button>
                 )}
-            </div>
+                <Select
+                    label="Tipo"
+                    value={filtrTipo}
+                    onChange={v => setFiltrTipo(String(v))}
+                    options={[
+                        { value: '', label: 'Todos los tipos' },
+                        ...tipos.map(t => ({ value: t.id, label: t.nombre })),
+                    ]}
+                />
+                <Select
+                    label="Estado"
+                    value={filtrEstado}
+                    onChange={v => setFiltrEstado(String(v))}
+                    options={[
+                        { value: '',           label: 'Todos los estados' },
+                        { value: 'borrador',   label: 'Borrador' },
+                        { value: 'confirmado', label: 'Confirmado' },
+                    ]}
+                />
+            </FiltrosCard>
 
             <Table
                 data={filtered}

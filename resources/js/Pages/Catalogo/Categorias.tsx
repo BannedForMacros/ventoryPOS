@@ -93,7 +93,7 @@ export default function Categorias({ categorias }: Props) {
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (c) => (
                 <TableActions onEdit={() => openEdit(c)} onDelete={() => setConfirmId(c.id)} />
             ),

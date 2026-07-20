@@ -48,9 +48,12 @@ class CuentasPorCobrarController extends Controller
                 });
             });
 
-        // Por defecto solo pendientes; ?estado=todas muestra también saldadas.
-        if ($request->input('estado', 'pendientes') === 'pendientes') {
+        // Filtro de estado: 'pendientes' (default), 'saldadas' o 'todas'.
+        $estado = $request->input('estado', 'pendientes');
+        if ($estado === 'pendientes') {
             $query->where('saldo_pendiente', '>', 0);
+        } elseif ($estado === 'saldadas') {
+            $query->where('saldo_pendiente', '<=', 0);
         }
 
         $ventas = $query->orderByDesc('fecha_venta')->paginate(25)->withQueryString();

@@ -189,6 +189,7 @@ export default function Empresas({ empresas }: Props) {
         {
             key: 'acciones',
             label: 'Acciones',
+            sortable: false,
             render: (emp) => (
                 <TableActions
                     onEdit={() => openEdit(emp)}

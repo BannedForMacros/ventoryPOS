@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { HandCoins, Eye, Receipt, ChevronDown, ChevronRight, Search, Pencil, Trash2 } from 'lucide-react';
+import { HandCoins, Eye, Receipt, ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -10,7 +10,6 @@ import Select from '@/Components/UI/Select';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
-import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
@@ -165,31 +164,13 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, busqu
         } as any);
     }
 
-    // Búsqueda del lado del SERVIDOR (con debounce): busca en TODO el histórico,
-    // no solo en la página cargada. Así una cuenta ya saldada (venta antigua)
-    // aparece al buscarla por número o cliente aunque esté en otra página.
-    const [busq, setBusq] = useState(busqueda ?? '');
-    useEffect(() => {
-        const t = setTimeout(() => {
-            if ((busq ?? '') !== (busqueda ?? '')) {
-                router.get(route('finanzas.cxc.index'),
-                    { estado, busqueda: busq || undefined },
-                    { preserveState: true, replace: true, preserveScroll: true });
-            }
-        }, 400);
-        return () => clearTimeout(t);
-    }, [busq]);
+    // La búsqueda server-side y la paginación las maneja el componente Table
+    // (debounce 500 ms + loading interno + botones de páginas del servidor).
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
-
-    function irAPagina(page: number) {
-        router.get(route('finanzas.cxc.index'),
-            { estado, busqueda: busq || undefined, page },
-            { preserveState: true, replace: true, preserveScroll: true });
-    }
 
     /** Cuentas válidas para el método elegido (vinculadas; efectivo → caja Efectivo). */
     function cuentasDeMetodo(mid: string) {
@@ -230,7 +211,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, busqu
             render: (v) => <span className="text-sm">{new Date(v.fecha_venta).toLocaleDateString('es-PE')}</span>,
         },
         { key: 'numero', label: 'N°', render: (v) => <span className="font-mono text-sm">{v.numero ?? '—'}</span> },
-        { key: 'cliente', label: 'Cliente', render: (v) => <span className="font-medium">{nombreCliente(v)}</span> },
+        { key: 'cliente', label: 'Cliente', sortKey: 'cliente.nombres', render: (v) => <span className="font-medium">{nombreCliente(v)}</span> },
         { key: 'total', label: 'Total', align: 'right', render: (v) => <span>{money(v.total)}</span> },
         { key: 'monto_pagado', label: 'Pagado', align: 'right', render: (v) => <span style={{ color: 'var(--color-success, #16a34a)' }}>{money(v.monto_pagado)}</span> },
         {
@@ -253,7 +234,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, busqu
             },
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (v) => (
                 <div className="flex items-center gap-2">
                     <button
@@ -297,72 +278,27 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, estado, busqu
             </div>
 
             <div className="mb-4">
-                <Tabs
-                    tabs={[
-                        { value: 'pendientes', label: 'Con saldo pendiente' },
-                        { value: 'todas',      label: 'Todas las ventas a crédito' },
-                    ]}
-                    value={estado}
-                    onChange={(v) => router.get(route('finanzas.cxc.index'), { estado: v, busqueda: busq || undefined }, { preserveState: true, replace: true })}
-                />
-            </div>
-
-            {/* Buscador (servidor): encuentra la venta en todo el histórico */}
-            <div className="relative mb-4 max-w-md">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
-                <input
-                    type="search"
-                    value={busq}
-                    onChange={e => setBusq(e.target.value)}
-                    placeholder="Buscar por número de venta o cliente..."
-                    className="w-full pl-9 pr-3 py-2.5 text-sm border rounded-xl focus:outline-none focus:ring-2"
-                    style={{
-                        borderColor: 'var(--color-border)',
-                        backgroundColor: 'var(--color-bg)',
-                        color: 'var(--color-text)',
-                        '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
-                    } as React.CSSProperties}
-                />
+                <div className="w-56">
+                    <Select label="Estado" value={estado}
+                        onChange={(v) => router.get(route('finanzas.cxc.index'), { estado: v, busqueda: busqueda || undefined }, { preserveState: true, replace: true })}
+                        options={[
+                            { value: 'pendientes', label: 'Con saldo pendiente' },
+                            { value: 'saldadas',   label: 'Saldadas' },
+                            { value: 'todas',      label: 'Todas las ventas a crédito' },
+                        ]} />
+                </div>
             </div>
 
             <Table
-                data={ventas.data}
+                data={ventas}
                 columns={columns}
-                searchable={false}
-                pagination={false}
-                emptyMessage={busq ? `No se encontraron cuentas para «${busq}»` : 'No hay ventas a crédito'}
+                searchPlaceholder="Buscar por número de venta o cliente..."
+                emptyMessage="No hay ventas a crédito"
+                initialSearch={busqueda}
+                onServerSearch={(t) => router.get(route('finanzas.cxc.index'),
+                    { estado, busqueda: t || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })}
             />
-
-            {/* Paginación del servidor (recorre TODO el histórico, no solo 25) */}
-            {ventas.last_page > 1 && (
-                <div className="flex items-center justify-between gap-2 mt-4 flex-wrap">
-                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        Página {ventas.current_page} de {ventas.last_page} · {ventas.total} cuenta(s)
-                    </span>
-                    <div className="flex items-center gap-1">
-                        {Array.from({ length: ventas.last_page }, (_, i) => i + 1)
-                            .filter(p => p === 1 || p === ventas.last_page || Math.abs(p - ventas.current_page) <= 2)
-                            .map((p, idx, arr) => (
-                                <span key={p} className="flex items-center gap-1">
-                                    {idx > 0 && arr[idx - 1] !== p - 1 && (
-                                        <span className="px-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>…</span>
-                                    )}
-                                    <button
-                                        onClick={() => irAPagina(p)}
-                                        className="min-w-8 h-8 px-2 rounded-lg text-xs font-medium transition-colors"
-                                        style={{
-                                            backgroundColor: p === ventas.current_page ? 'var(--color-primary)' : 'transparent',
-                                            color: p === ventas.current_page ? '#fff' : 'var(--color-text-muted)',
-                                            border: `1px solid ${p === ventas.current_page ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                        }}
-                                    >
-                                        {p}
-                                    </button>
-                                </span>
-                            ))}
-                    </div>
-                </div>
-            )}
 
             {/* Modal abonar */}
             <Modal

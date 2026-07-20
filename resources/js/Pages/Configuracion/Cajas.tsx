@@ -89,7 +89,7 @@ export default function Cajas({ cajas, locales }: Props) {
             render: (c) => <span className="font-medium">{c.nombre}</span>,
         },
         {
-            key: 'local', label: 'Local',
+            key: 'local', label: 'Local', sortKey: 'local.nombre',
             render: (c) => <span>{c.local?.nombre ?? '—'}</span>,
         },
         {
@@ -155,7 +155,7 @@ export default function Cajas({ cajas, locales }: Props) {
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (c) => (
                 <TableActions
                     onEdit={() => openEdit(c)}

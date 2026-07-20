@@ -10,7 +10,6 @@ import Select from '@/Components/UI/Select';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
-import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
 import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
@@ -204,7 +203,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         { key: 'tipo', label: 'Tipo', render: (d) => <span className="text-sm">{TIPO_LABEL[d.tipo] ?? d.tipo}</span> },
         {
             // Método(s) de pago usados en los movimientos de esta deuda/préstamo.
-            key: 'metodo', label: 'Método de pago',
+            key: 'metodo', label: 'Método de pago', sortable: false,
             render: (d) => {
                 const metodos = [...new Set((d.pagos ?? []).map(p => p.metodo_pago?.nombre).filter(Boolean))];
                 return metodos.length > 0
@@ -230,7 +229,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (d) => (
                 <div className="flex items-center gap-1.5">
                     <button onClick={() => setDetalle(d)} className="p-1.5 rounded-lg hover:bg-black/5" title="Ver movimientos"
@@ -304,14 +303,16 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             </div>
 
             <div className="mb-5">
-                <Tabs
-                    tabs={[
-                        { value: 'activas', label: 'Activas' },
-                        { value: 'todas',   label: 'Todas' },
-                    ]}
-                    value={estado}
-                    onChange={(v) => router.get(route('finanzas.deudas.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                />
+                <div className="w-56">
+                    <Select label="Estado" value={estado}
+                        onChange={(v) => router.get(route('finanzas.deudas.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                        options={[
+                            { value: 'activas',  label: 'Activas' },
+                            { value: 'pagadas',  label: 'Pagadas' },
+                            { value: 'anuladas', label: 'Anuladas' },
+                            { value: 'todas',    label: 'Todas' },
+                        ]} />
+                </div>
             </div>
 
             <Table data={deudas} columns={columns}

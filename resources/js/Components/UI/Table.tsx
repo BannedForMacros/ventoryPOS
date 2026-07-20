@@ -11,11 +11,14 @@ import { cn } from '@/lib/utils';
 export interface Column<T extends Record<string, unknown>> {
     key: string;
     label: string;
+    /** Ordenable por clic en la cabecera. Default TRUE — pasar false para desactivar. */
     sortable?: boolean;
     searchKey?: string;
     /** Alineación de la celda. Montos SIEMPRE 'right'. */
     align?: 'left' | 'right' | 'center';
     render?: (row: T) => React.ReactNode;
+    /** Campo alterno para ordenar (p. ej. 'cliente.nombres' o un número crudo). */
+    sortKey?: string;
 }
 
 interface TableProps<T extends Record<string, unknown>> {
@@ -85,13 +88,28 @@ export default function Table<T extends Record<string, unknown>>({
 }: TableProps<T>) {
     const [search, setSearch] = useState(initialSearch ?? '');
 
-    // Búsqueda server-side debounced: notifica el término para que la página
+    // Loading INTERNO de la tabla: cualquier visita Inertia hacia la MISMA ruta
+    // (buscar, paginar, cambiar filtros con preserveState) muestra un velo con
+    // spinner sobre las filas, al instante. El splash global de la app solo se
+    // reserva para cambios de página reales (ver RouterLoadingOverlay).
+    const [cargando, setCargando] = useState(false);
+    useEffect(() => {
+        const offStart = router.on('start', (event) => {
+            const visitUrl = (event as CustomEvent).detail?.visit?.url as URL | undefined;
+            if (visitUrl && visitUrl.pathname === window.location.pathname) setCargando(true);
+        });
+        const offFinish = router.on('finish', () => setCargando(false));
+        return () => { offStart(); offFinish(); };
+    }, []);
+
+    // Búsqueda server-side debounced (500 ms: cómodo para escribir sin que la
+    // tabla "salte" con cada tecla): notifica el término para que la página
     // consulte al backend. Se salta el primer render (ya viene filtrado).
     const primeraBusqueda = useRef(true);
     useEffect(() => {
         if (!onServerSearch) return;
         if (primeraBusqueda.current) { primeraBusqueda.current = false; return; }
-        const t = setTimeout(() => onServerSearch(search.trim()), 350);
+        const t = setTimeout(() => onServerSearch(search.trim()), 500);
         return () => clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [search]);
@@ -142,22 +160,38 @@ export default function Table<T extends Record<string, unknown>>({
         return items.filter(row => stringify(row).includes(searchLower));
     }, [items, search]);
 
-    // 2. Ordenar
+    // 2. Ordenar — numérico-consciente ("9" < "10", montos como "1,250.00")
+    //    y con soporte de rutas anidadas via sortKey ('cliente.nombres').
+    const sortKeyDe = (col: string) => columns.find(c => c.key === col)?.sortKey ?? col;
+    const valorDe = (row: T, path: string): unknown =>
+        path.split('.').reduce<unknown>((acc, k) => (acc as Record<string, unknown> | null | undefined)?.[k], row);
+
     const sortedData = useMemo(() => {
         if (!sortColumn || !filteredData) return filteredData;
+        const path = sortKeyDe(sortColumn);
+        const aNum = (v: unknown): number | null => {
+            if (typeof v === 'number') return v;
+            if (typeof v === 'string') {
+                const n = parseFloat(v.replace(/[^\d.-]/g, ''));
+                return v.trim() !== '' && !isNaN(n) && /^[\s\d.,\-S/]+$/.test(v) ? n : null;
+            }
+            return null;
+        };
         return [...filteredData].sort((a, b) => {
-            const rawA: unknown = a[sortColumn];
-            const rawB: unknown = b[sortColumn];
-            const aVal = typeof rawA === 'object' && rawA !== null
-                ? Object.values(rawA).join(' ')
-                : String(rawA ?? '');
-            const bVal = typeof rawB === 'object' && rawB !== null
-                ? Object.values(rawB).join(' ')
-                : String(rawB ?? '');
-            const aStr = aVal.toLowerCase();
-            const bStr = bVal.toLowerCase();
-            return sortDirection === 'asc' ? (aStr > bStr ? 1 : -1) : (aStr < bStr ? 1 : -1);
+            const rawA = valorDe(a, path);
+            const rawB = valorDe(b, path);
+            const numA = aNum(rawA), numB = aNum(rawB);
+            let cmp: number;
+            if (numA !== null && numB !== null) {
+                cmp = numA - numB;
+            } else {
+                const aVal = typeof rawA === 'object' && rawA !== null ? Object.values(rawA).join(' ') : String(rawA ?? '');
+                const bVal = typeof rawB === 'object' && rawB !== null ? Object.values(rawB).join(' ') : String(rawB ?? '');
+                cmp = aVal.toLowerCase().localeCompare(bVal.toLowerCase(), 'es');
+            }
+            return sortDirection === 'asc' ? cmp : -cmp;
         });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filteredData, sortColumn, sortDirection]);
 
     // 3. Paginar — con paginador de servidor NO se corta localmente: las filas
@@ -173,8 +207,11 @@ export default function Table<T extends Record<string, unknown>>({
 
     useMemo(() => { if (pagination && !serverPag) setCurrentPage(1); }, [search, pagination, serverPag]);
 
+    // Ordenable por DEFAULT: solo se desactiva con sortable: false en la columna.
+    const esOrdenable = (column: Column<T>) => sortable && column.sortable !== false;
+
     const handleSort = (column: Column<T>) => {
-        if (!sortable || !column.sortable) return;
+        if (!esOrdenable(column)) return;
         if (sortColumn === column.key) setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
         else { setSortColumn(column.key); setSortDirection('asc'); }
     };
@@ -223,7 +260,15 @@ export default function Table<T extends Record<string, unknown>>({
                             onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-primary)')}
                             onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
                         />
-                        {search && (
+                        {cargando && onServerSearch ? (
+                            <span
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full animate-spin"
+                                style={{
+                                    border: '2px solid color-mix(in srgb, var(--color-primary) 25%, transparent)',
+                                    borderTopColor: 'var(--color-primary)',
+                                }}
+                            />
+                        ) : search && (
                             <button
                                 onClick={() => setSearch('')}
                                 className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 transition-colors"
@@ -245,13 +290,29 @@ export default function Table<T extends Record<string, unknown>>({
 
             {/* ── Tabla ──────────────────────────────────────────────── */}
             <div
-                className="overflow-hidden rounded-2xl border"
+                className="relative overflow-hidden rounded-2xl border"
                 style={{
                     borderColor: 'var(--color-border)',
                     backgroundColor: 'var(--color-surface)',
                     boxShadow: '0 1px 4px 0 rgb(0 0 0 / 0.04)',
                 }}
             >
+                {/* Velo de carga INMEDIATO al buscar/paginar/filtrar (mantiene
+                    visibles las filas actuales debajo, sin tapar la app). */}
+                {cargando && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center"
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-surface) 62%, transparent)', backdropFilter: 'blur(1px)' }}>
+                        <div className="flex items-center gap-2.5 rounded-full px-4 py-2 shadow-md"
+                            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                            <span className="h-4 w-4 rounded-full animate-spin"
+                                style={{
+                                    border: '2px solid color-mix(in srgb, var(--color-primary) 25%, transparent)',
+                                    borderTopColor: 'var(--color-primary)',
+                                }} />
+                            <span className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>Cargando…</span>
+                        </div>
+                    </div>
+                )}
                 <div className="overflow-x-auto">
                     <table className="w-full whitespace-nowrap">
 
@@ -266,11 +327,11 @@ export default function Table<T extends Record<string, unknown>>({
                                         className={cn(
                                             'px-5 py-3 text-xs font-semibold uppercase tracking-wider',
                                             column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left',
-                                            column.sortable && sortable && 'cursor-pointer select-none'
+                                            esOrdenable(column) && 'cursor-pointer select-none'
                                         )}
                                         style={{ color: 'var(--color-text-muted)' }}
-                                        onMouseEnter={e => { if (column.sortable && sortable) e.currentTarget.style.color = 'var(--color-text)'; }}
-                                        onMouseLeave={e => { if (column.sortable && sortable) e.currentTarget.style.color = 'var(--color-text-muted)'; }}
+                                        onMouseEnter={e => { if (esOrdenable(column)) e.currentTarget.style.color = 'var(--color-text)'; }}
+                                        onMouseLeave={e => { if (esOrdenable(column)) e.currentTarget.style.color = 'var(--color-text-muted)'; }}
                                     >
                                         <div className={cn(
                                             'flex items-center gap-1.5',
@@ -278,7 +339,7 @@ export default function Table<T extends Record<string, unknown>>({
                                             column.align === 'center' && 'justify-center'
                                         )}>
                                             <span>{column.label}</span>
-                                            {column.sortable && sortable && (
+                                            {esOrdenable(column) && (
                                                 <span className="flex flex-col" style={{ lineHeight: 0 }}>
                                                     {sortColumn === column.key ? (
                                                         sortDirection === 'asc'

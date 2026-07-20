@@ -84,6 +84,7 @@ export default function DescuentoConceptos({ conceptos, flash }: Props) {
         {
             key: 'id',
             label: '',
+            sortable: false,
             render: c => (
                 <TableActions
                     onEdit={() => openEdit(c)}

@@ -9,12 +9,14 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import TableActions from '@/Components/UI/TableActions';
 import Tabs from '@/Components/UI/Tabs';
+import Select from '@/Components/UI/Select';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Modal from '@/Components/UI/Modal';
 import ModalGasto from './Partials/ModalGasto';
 import type { Gasto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
 
 type Scope = 'turno' | 'administrativo';
-type Mostrar = 'activos' | 'eliminados';
+type Mostrar = 'activos' | 'eliminados' | 'todos';
 
 interface Paginado<T> {
     data:  T[];
@@ -38,9 +40,10 @@ const ALL_TABS = [
     { value: 'administrativo' as Scope, label: 'Gastos administrativos' },
 ];
 
-const MOSTRAR_TABS = [
-    { value: 'activos' as Mostrar,    label: 'Activos' },
-    { value: 'eliminados' as Mostrar, label: 'Eliminados' },
+const MOSTRAR_OPCIONES = [
+    { value: 'activos',    label: 'Activos' },
+    { value: 'eliminados', label: 'Eliminados' },
+    { value: 'todos',      label: 'Todos' },
 ];
 
 export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, locales, turnosAbiertos, esAdmin, metodosPago }: Props) {
@@ -95,19 +98,24 @@ export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, loc
 
     const columns: Column<Gasto>[] = [
         {
-            key: 'fecha', label: 'Fecha', sortable: true,
-            render: (g) => <span className="text-sm">{new Date(g.fecha).toLocaleDateString('es-PE')}</span>,
+            key: 'fecha', label: 'Fecha',
+            render: (g) => (
+                <span className="inline-flex items-center gap-1.5 text-sm">
+                    {new Date(g.fecha).toLocaleDateString('es-PE')}
+                    {!!g.deleted_at && <Badge variant="danger">Eliminado</Badge>}
+                </span>
+            ),
         },
         {
-            key: 'tipo', label: 'Tipo',
+            key: 'tipo', label: 'Tipo', sortKey: 'tipo.nombre',
             render: (g) => <span>{g.tipo?.nombre ?? '—'}</span>,
         },
         {
-            key: 'concepto', label: 'Concepto',
+            key: 'concepto', label: 'Concepto', sortKey: 'concepto.nombre',
             render: (g) => <span>{g.concepto?.nombre ?? '—'}</span>,
         },
         ...(tab === 'turno' ? [] : [{
-            key: 'local', label: 'Local',
+            key: 'local', label: 'Local', sortKey: 'local.nombre',
             render: (g: Gasto) => <span>{g.local?.nombre ?? '—'}</span>,
         } as Column<Gasto>]),
         {
@@ -117,7 +125,7 @@ export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, loc
             ),
         },
         {
-            key: 'user', label: 'Registrado por',
+            key: 'user', label: 'Registrado por', sortKey: 'user.name',
             render: (g) => (
                 <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
                     {g.user?.name ?? '—'}
@@ -131,8 +139,9 @@ export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, loc
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
         {
-            key: 'acciones', label: 'Acciones',
-            render: (g) => mostrar === 'eliminados' ? (
+            key: 'acciones', label: 'Acciones', sortable: false,
+            // Por FILA (no por vista): en "Todos" conviven activos y eliminados.
+            render: (g) => g.deleted_at ? (
                 <TableActions extra={[{
                     variant: 'custom',
                     icon: RotateCcw,
@@ -175,16 +184,30 @@ export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, loc
                 }
             />
 
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="mb-4">
                 <Tabs tabs={TABS} value={tab} onChange={handleTabChange} />
-                <Tabs tabs={MOSTRAR_TABS} value={mostrar} onChange={handleMostrarChange} />
             </div>
+
+            {/* Filtro de estado (antes tabs): permite Activos, Eliminados y Todos. */}
+            <FiltrosCard
+                cols={3}
+                tieneFiltros={mostrar !== 'activos'}
+                onClear={() => handleMostrarChange('activos')}
+            >
+                <Select
+                    label="Estado"
+                    value={mostrar}
+                    onChange={(v) => handleMostrarChange(v as Mostrar)}
+                    options={MOSTRAR_OPCIONES}
+                />
+            </FiltrosCard>
 
             <Table
                 data={gastos}
                 columns={columns}
                 searchPlaceholder="Buscar gasto..."
                 initialSearch={buscar}
+                rowClassName={(g) => (g.deleted_at ? 'opacity-60' : '')}
                 onServerSearch={(t) => router.get(route('gastos.index'),
                     { scope: tab, mostrar, buscar: t || undefined },
                     { preserveState: true, preserveScroll: true, replace: true })}

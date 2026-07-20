@@ -138,11 +138,13 @@ export default function Usuarios({ usuarios, empresas, locales, roles }: Props) 
         {
             key: 'rol',
             label: 'Rol',
+            sortKey: 'rol.nombre',
             render: (u) => u.rol ? u.rol.nombre : '—',
         },
         {
             key: 'local',
             label: 'Local',
+            sortKey: 'local.nombre',
             render: (u) => u.local ? u.local.nombre : '—',
         },
         {
@@ -158,6 +160,7 @@ export default function Usuarios({ usuarios, empresas, locales, roles }: Props) 
         {
             key: 'acciones',
             label: 'Acciones',
+            sortable: false,
             render: (u) => (
                 <TableActions
                     onEdit={() => openEdit(u)}

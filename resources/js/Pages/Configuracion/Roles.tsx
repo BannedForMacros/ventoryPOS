@@ -151,6 +151,7 @@ export default function Roles({ roles, empresas }: Props) {
         {
             key: 'acciones',
             label: 'Acciones',
+            sortable: false,
             render: (rol) => (
                 <TableActions
                     onEdit={() => openEdit(rol)}

@@ -1,16 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { router } from '@inertiajs/react';
 
-// Solo muestra el overlay si la navegación/request tarda más de este tiempo (ms).
+// Solo muestra el overlay si la navegación tarda más de este tiempo (ms).
 // Evita que flashee en navegaciones rápidas.
-const SHOW_DELAY_MS = 150;
+const SHOW_DELAY_MS = 300;
 
+/**
+ * Splash de navegación SOLO para cambios de página reales (otro pathname).
+ * Las recargas de datos de la misma página (buscar, paginar, filtrar con
+ * preserveState) NO lo disparan: de eso se encarga el loading propio de la
+ * tabla/los componentes, que aparece al instante y no tapa la aplicación.
+ */
 export default function RouterLoadingOverlay() {
     const [visible, setVisible] = useState(false);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
-        const removeStart = router.on('start', () => {
+        const removeStart = router.on('start', (event) => {
+            const visitUrl = (event as CustomEvent).detail?.visit?.url as URL | undefined;
+            // Misma ruta => recarga de datos (búsqueda/paginación/filtros): sin splash.
+            if (visitUrl && visitUrl.pathname === window.location.pathname) return;
             timer.current = setTimeout(() => setVisible(true), SHOW_DELAY_MS);
         });
 

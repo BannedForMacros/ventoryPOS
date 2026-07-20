@@ -39,8 +39,14 @@ class DeudaController extends Controller
                     ->orWhere('observacion', 'ilike', "%{$t}%"));
             });
 
-        if ($request->input('estado', 'activas') === 'activas') {
+        // Filtro de estado: 'activas' (default), 'pagadas', 'anuladas' o 'todas'.
+        $estado = $request->input('estado', 'activas');
+        if ($estado === 'activas') {
             $query->activa();
+        } elseif ($estado === 'pagadas') {
+            $query->where('estado', 'pagada');
+        } elseif ($estado === 'anuladas') {
+            $query->where('estado', 'anulada');
         }
 
         $deudas = $query->orderBy('direccion')->orderBy('tipo')->orderBy('nombre')->paginate(25)->withQueryString();

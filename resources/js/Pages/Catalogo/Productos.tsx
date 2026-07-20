@@ -8,6 +8,7 @@ import Button from '@/Components/UI/Button';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Select from '@/Components/UI/Select';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
 import type { PageProps } from '@/types';
@@ -57,9 +58,10 @@ function ProductoThumbnail({ url, alt }: { url: string | null; alt: string }) {
 
 export default function Productos({ productos, categorias }: Props) {
     const { flash } = usePage<Props>().props;
-    const [filtrTipo, setFiltrTipo] = useState<string>('');
-    const [filtrCat, setFiltrCat]   = useState<string>('');
-    const [confirmId, setConfirmId] = useState<number | null>(null);
+    const [filtrTipo, setFiltrTipo]     = useState<string>('');
+    const [filtrCat, setFiltrCat]       = useState<string>('');
+    const [filtrEstado, setFiltrEstado] = useState<string>('');
+    const [confirmId, setConfirmId]     = useState<number | null>(null);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success);
@@ -69,6 +71,8 @@ export default function Productos({ productos, categorias }: Props) {
     const filtered = productos.filter(p => {
         if (filtrTipo && p.tipo !== filtrTipo) return false;
         if (filtrCat  && p.categoria?.id !== Number(filtrCat)) return false;
+        if (filtrEstado === 'activos'   && !p.activo) return false;
+        if (filtrEstado === 'inactivos' &&  p.activo) return false;
         return true;
     });
 
@@ -94,7 +98,7 @@ export default function Productos({ productos, categorias }: Props) {
             ),
         },
         {
-            key: 'categoria', label: 'Categoría', sortable: true,
+            key: 'categoria', label: 'Categoría', sortKey: 'categoria.nombre',
             render: (p) => p.categoria
                 ? <span>{p.categoria.nombre}</span>
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
@@ -136,7 +140,7 @@ export default function Productos({ productos, categorias }: Props) {
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (p) => (
                 <TableActions
                     onEdit={() => router.visit(route('catalogo.productos.edit', p.id))}
@@ -158,37 +162,41 @@ export default function Productos({ productos, categorias }: Props) {
                 }
             />
 
-            {/* Filtros */}
-            <div className="mb-4 flex flex-wrap gap-3">
-                <div className="w-44">
-                    <Select
-                        placeholder="Todos los tipos"
-                        value={filtrTipo}
-                        onChange={v => setFiltrTipo(String(v))}
-                        options={[
-                            { value: '', label: 'Todos los tipos' },
-                            { value: 'producto', label: 'Productos' },
-                            { value: 'servicio', label: 'Servicios' },
-                        ]}
-                    />
-                </div>
-                <div className="w-52">
-                    <Select
-                        placeholder="Todas las categorías"
-                        value={filtrCat}
-                        onChange={v => setFiltrCat(String(v))}
-                        options={[
-                            { value: '', label: 'Todas las categorías' },
-                            ...categorias.map(c => ({ value: c.id, label: c.nombre })),
-                        ]}
-                    />
-                </div>
-                {(filtrTipo || filtrCat) && (
-                    <Button variant="ghost" onClick={() => { setFiltrTipo(''); setFiltrCat(''); }}>
-                        Limpiar filtros
-                    </Button>
-                )}
-            </div>
+            <FiltrosCard
+                cols={3}
+                tieneFiltros={!!(filtrTipo || filtrCat || filtrEstado)}
+                onClear={() => { setFiltrTipo(''); setFiltrCat(''); setFiltrEstado(''); }}
+            >
+                <Select
+                    label="Tipo"
+                    value={filtrTipo}
+                    onChange={v => setFiltrTipo(String(v))}
+                    options={[
+                        { value: '', label: 'Todos los tipos' },
+                        { value: 'producto', label: 'Productos' },
+                        { value: 'servicio', label: 'Servicios' },
+                    ]}
+                />
+                <Select
+                    label="Categoría"
+                    value={filtrCat}
+                    onChange={v => setFiltrCat(String(v))}
+                    options={[
+                        { value: '', label: 'Todas las categorías' },
+                        ...categorias.map(c => ({ value: c.id, label: c.nombre })),
+                    ]}
+                />
+                <Select
+                    label="Estado"
+                    value={filtrEstado}
+                    onChange={v => setFiltrEstado(String(v))}
+                    options={[
+                        { value: '', label: 'Todos los estados' },
+                        { value: 'activos', label: 'Activos' },
+                        { value: 'inactivos', label: 'Inactivos' },
+                    ]}
+                />
+            </FiltrosCard>
 
             <Table
                 data={filtered}

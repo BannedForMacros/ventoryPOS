@@ -132,7 +132,7 @@ export default function GastosTipos({ tipos }: Props) {
             ),
         },
         {
-            key: 'conceptos', label: 'Conceptos',
+            key: 'conceptos', label: 'Conceptos', sortable: false,
             render: (t) => (
                 <span style={{ color: 'var(--color-text-muted)' }}>
                     {(t.conceptos ?? []).filter((c: GastoConcepto) => c.activo).length} activos
@@ -148,7 +148,7 @@ export default function GastosTipos({ tipos }: Props) {
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (t) => (
                 <TableActions
                     onEdit={() => openEdit(t)}

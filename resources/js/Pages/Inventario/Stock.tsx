@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
     RefreshCw, AlertTriangle, Eye, Search, Boxes, PackageX, TriangleAlert,
-    CircleDollarSign, ChevronLeft, ChevronRight,
+    CircleDollarSign,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Select from '@/Components/UI/Select';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Input from '@/Components/UI/Input';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
@@ -87,9 +88,20 @@ export default function Stock({
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
+    // Búsqueda auto-aplicada con debounce (500 ms, igual que el resto de la
+    // app). Enter sigue aplicando al instante.
+    const primeraBusqueda = useRef(true);
+    useEffect(() => {
+        if (primeraBusqueda.current) { primeraBusqueda.current = false; return; }
+        if (busqueda.trim() === (filters.busqueda ?? '')) return;
+        const t = setTimeout(() => navegar({ busqueda: busqueda.trim() || undefined }), 500);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [busqueda]);
+
     // Navega mergeando los filtros actuales + la búsqueda local + un patch.
-    // Los selects aplican al instante (son una acción deliberada); la búsqueda
-    // de texto solo aplica con Enter o el botón (no filtra mientras escribes).
+    // Los selects aplican al instante; la búsqueda de texto se auto-aplica
+    // debounced (500 ms) o al instante con Enter.
     function navegar(patch: Partial<Filters & { page?: number }>) {
         const params: Record<string, string | number | undefined> = {
             almacen_id:   filters.almacen_id || undefined,
@@ -280,103 +292,72 @@ export default function Stock({
             )}
 
             {/* ── Filtros ──────────────────────────────────────────────── */}
-            <div className="mb-4 rounded-xl p-3 sm:p-4"
-                style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-                <div className="relative mb-3">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
-                    <Input
-                        className="pl-9"
-                        placeholder="Buscar por nombre o código..."
-                        value={busqueda}
-                        onChange={e => setBusqueda(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && navegar({ busqueda: busqueda || undefined })}
-                    />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-                    {mostrarSelector && (
-                        <Select
-                            placeholder="Todos los almacenes"
-                            value={filters.almacen_id ?? ''}
-                            onChange={v => navegar({ almacen_id: String(v) || undefined })}
-                            options={[
-                                { value: '', label: 'Todos los almacenes' },
-                                ...almacenes.map(a => ({ value: a.id, label: a.nombre })),
-                            ]}
+            <FiltrosCard cols={4} tieneFiltros={hayFiltros} onClear={limpiar}>
+                <div className="col-span-2">
+                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
+                    <div className="relative">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 z-10" style={{ color: 'var(--color-text-muted)' }} />
+                        <Input
+                            className="pl-9"
+                            placeholder="Nombre o código… (Enter)"
+                            value={busqueda}
+                            onChange={e => setBusqueda(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && navegar({ busqueda: busqueda || undefined })}
                         />
-                    )}
-                    <Select
-                        placeholder="Todas las categorías"
-                        value={filters.categoria_id ?? ''}
-                        onChange={v => navegar({ categoria_id: String(v) || undefined })}
-                        options={[
-                            { value: '', label: 'Todas las categorías' },
-                            ...categorias.map(c => ({ value: c.id, label: c.nombre })),
-                        ]}
-                    />
-                    <Select
-                        placeholder="Estado"
-                        value={filters.estado ?? ''}
-                        onChange={v => navegar({ estado: String(v) || undefined })}
-                        options={[
-                            { value: '', label: 'Todo el stock' },
-                            { value: 'con_stock', label: 'Con stock' },
-                            { value: 'bajo', label: 'Stock bajo' },
-                            { value: 'agotado', label: 'Agotados' },
-                            { value: 'negativo', label: 'Negativos' },
-                        ]}
-                    />
-                    <Select
-                        placeholder="Ordenar por"
-                        value={ordenActual}
-                        onChange={v => {
-                            const [sort, dir] = String(v).split(':');
-                            navegar({ sort, dir });
-                        }}
-                        options={Object.entries(ORDENES).map(([value, label]) => ({ value, label }))}
-                    />
-                </div>
-
-                {hayFiltros && (
-                    <div className="mt-3">
-                        <Button variant="ghost" onClick={limpiar}>Limpiar filtros</Button>
                     </div>
+                </div>
+                {mostrarSelector && (
+                    <Select
+                        label="Almacén"
+                        value={filters.almacen_id ?? ''}
+                        onChange={v => navegar({ almacen_id: String(v) || undefined })}
+                        options={[
+                            { value: '', label: 'Todos los almacenes' },
+                            ...almacenes.map(a => ({ value: a.id, label: a.nombre })),
+                        ]}
+                    />
                 )}
-            </div>
+                <Select
+                    label="Categoría"
+                    value={filters.categoria_id ?? ''}
+                    onChange={v => navegar({ categoria_id: String(v) || undefined })}
+                    options={[
+                        { value: '', label: 'Todas las categorías' },
+                        ...categorias.map(c => ({ value: c.id, label: c.nombre })),
+                    ]}
+                />
+                <Select
+                    label="Estado"
+                    value={filters.estado ?? ''}
+                    onChange={v => navegar({ estado: String(v) || undefined })}
+                    options={[
+                        { value: '', label: 'Todo el stock' },
+                        { value: 'con_stock', label: 'Con stock' },
+                        { value: 'bajo', label: 'Stock bajo' },
+                        { value: 'agotado', label: 'Agotados' },
+                        { value: 'negativo', label: 'Negativos' },
+                    ]}
+                />
+                <Select
+                    label="Ordenar por"
+                    value={ordenActual}
+                    onChange={v => {
+                        const [sort, dir] = String(v).split(':');
+                        navegar({ sort, dir });
+                    }}
+                    options={Object.entries(ORDENES).map(([value, label]) => ({ value, label }))}
+                />
+            </FiltrosCard>
 
+            {/* Paginación server-side normalizada: la maneja el propio Table
+                (recibe el paginador de Laravel y navega conservando la query). */}
             <Table
-                data={stocks.data}
+                data={stocks}
                 columns={columns}
                 searchable={false}
                 sortable={false}
-                pagination={false}
                 emptyMessage="No hay stock para este filtro"
             />
-
-            {/* ── Paginación server-side ───────────────────────────────── */}
-            {stocks.last_page > 1 && (
-                <div className="flex items-center justify-center gap-3 mt-4 text-sm">
-                    <button
-                        onClick={() => navegar({ page: stocks.current_page - 1 })}
-                        disabled={stocks.current_page <= 1}
-                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 disabled:opacity-40"
-                        style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)' }}
-                    >
-                        <ChevronLeft size={15} /> Anterior
-                    </button>
-                    <span style={{ color: 'var(--color-text-muted)' }}>
-                        Página {stocks.current_page} de {stocks.last_page} · {stocks.total} productos
-                    </span>
-                    <button
-                        onClick={() => navegar({ page: stocks.current_page + 1 })}
-                        disabled={stocks.current_page >= stocks.last_page}
-                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 disabled:opacity-40"
-                        style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)' }}
-                    >
-                        Siguiente <ChevronRight size={15} />
-                    </button>
-                </div>
-            )}
         </AppLayout>
     );
 }

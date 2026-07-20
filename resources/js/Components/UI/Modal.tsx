@@ -66,11 +66,12 @@ export default function Modal({ isOpen, onClose, title, size = 'md', children, f
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Overlay (Fondo oscuro) */}
+            {/* Overlay (fondo oscuro con blur sutil) */}
             <div
                 className="absolute inset-0 transition-opacity duration-200 ease-out"
                 style={{
-                    backgroundColor: 'rgba(0,0,0,0.4)',
+                    backgroundColor: 'rgba(15, 25, 35, 0.45)',
+                    backdropFilter: 'blur(2px)',
                     opacity: visible ? 1 : 0,
                 }}
                 onClick={onClose}
@@ -78,30 +79,36 @@ export default function Modal({ isOpen, onClose, title, size = 'md', children, f
 
             {/* Panel del Modal */}
             <div
-                className={`relative w-full ${sizeClasses[size]} rounded-lg shadow-xl transition-all duration-200 ease-out flex flex-col`}
+                className={`relative w-full ${sizeClasses[size]} rounded-2xl transition-all duration-200 ease-out flex flex-col overflow-hidden`}
                 style={{
-                    backgroundColor: 'var(--color-surface, #ffffff)', // Fallback a blanco si no hay variable CSS
+                    backgroundColor: 'var(--color-surface, #ffffff)',
                     border: '1px solid var(--color-border, #e5e7eb)',
+                    boxShadow: '0 24px 48px -12px rgba(15, 76, 129, 0.25)',
                     opacity: visible ? 1 : 0,
-                    transform: visible ? 'scale(1)' : 'scale(0.95)',
+                    transform: visible ? 'scale(1) translateY(0)' : 'scale(0.96) translateY(8px)',
                     maxHeight: '90vh',
                 }}
             >
-                {/* Header */}
+                {/* Header con acento de marca */}
                 <div
-                    className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0"
-                    style={{ borderColor: 'var(--color-border, #e5e7eb)' }}
+                    className="flex items-center justify-between pl-5 pr-4 py-3.5 flex-shrink-0"
+                    style={{
+                        background: 'linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 8%, var(--color-surface)) 0%, var(--color-surface) 70%)',
+                        borderBottom: '1px solid var(--color-border, #e5e7eb)',
+                    }}
                 >
-                    <h3 className="text-base font-semibold" style={{ color: 'var(--color-text, #111827)' }}>
+                    <h3 className="flex items-center gap-2.5 text-base font-bold" style={{ color: 'var(--color-text, #111827)' }}>
+                        <span className="h-5 w-1 rounded-full flex-shrink-0"
+                            style={{ background: 'linear-gradient(180deg, var(--vp-sky, #1A73C8), var(--vp-mint, #00C48C))' }} />
                         {title}
                     </h3>
                     <button
                         onClick={onClose}
-                        className="rounded p-1 transition-colors duration-150 hover:bg-black/5 dark:hover:bg-white/10"
+                        className="rounded-lg p-1.5 transition-colors duration-150 hover:bg-black/5"
                         style={{ color: 'var(--color-text-muted, #6b7280)' }}
                         aria-label="Cerrar modal"
                     >
-                        <X size={18} />
+                        <X size={17} />
                     </button>
                 </div>
 
@@ -113,8 +120,11 @@ export default function Modal({ isOpen, onClose, title, size = 'md', children, f
                 {/* Footer */}
                 {footer && (
                     <div
-                        className="flex items-center justify-end gap-2 px-5 py-4 border-t flex-shrink-0"
-                        style={{ borderColor: 'var(--color-border, #e5e7eb)' }}
+                        className="flex items-center justify-end gap-2 px-5 py-3.5 flex-shrink-0"
+                        style={{
+                            borderTop: '1px solid var(--color-border, #e5e7eb)',
+                            backgroundColor: 'color-mix(in srgb, var(--color-bg, #F4F6FA) 60%, var(--color-surface, #fff))',
+                        }}
                     >
                         {footer}
                     </div>

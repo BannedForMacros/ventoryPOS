@@ -11,7 +11,6 @@ import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
-import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
@@ -163,7 +162,7 @@ export default function Adelantos({ adelantos, totalActivo, estado, buscar, prov
             key: 'fecha', label: 'Fecha', sortable: true,
             render: (a) => <span className="text-sm">{new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</span>,
         },
-        { key: 'proveedor', label: 'Proveedor', render: (a) => <span className="font-medium">{nombreProveedor(a.proveedor)}</span> },
+        { key: 'proveedor', label: 'Proveedor', sortKey: 'proveedor.razon_social', render: (a) => <span className="font-medium">{nombreProveedor(a.proveedor)}</span> },
         { key: 'monto', label: 'Entregado', align: 'right', render: (a) => <span>{money(a.monto)}</span> },
         {
             key: 'saldo', label: 'Saldo a favor', align: 'right',
@@ -186,7 +185,7 @@ export default function Adelantos({ adelantos, totalActivo, estado, buscar, prov
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (a) => (
                 <div className="flex items-center gap-1.5">
                     <button onClick={() => setDetalle(a)} className="p-1.5 rounded-lg hover:bg-black/5" title="Ver aplicaciones"
@@ -242,14 +241,17 @@ export default function Adelantos({ adelantos, totalActivo, estado, buscar, prov
             </div>
 
             <div className="mb-5">
-                <Tabs
-                    tabs={[
-                        { value: 'activos', label: 'Activos' },
-                        { value: 'todos',   label: 'Todos' },
-                    ]}
-                    value={estado}
-                    onChange={(v) => router.get(route('finanzas.adelantos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                />
+                <div className="w-56">
+                    <Select label="Estado" value={estado}
+                        onChange={(v) => router.get(route('finanzas.adelantos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                        options={[
+                            { value: 'activos',  label: 'Activos' },
+                            { value: 'aplicado', label: 'Aplicados' },
+                            { value: 'devuelto', label: 'Devueltos' },
+                            { value: 'anulado',  label: 'Anulados' },
+                            { value: 'todos',    label: 'Todos' },
+                        ]} />
+                </div>
             </div>
 
             <Table data={adelantos} columns={columns}

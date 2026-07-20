@@ -45,9 +45,10 @@ class ConsolidacionController extends Controller
                     ->orWhereHas('user', fn ($u) => $u->where('name', 'ilike', "%{$t}%")));
             });
 
+        // 'pendientes' (default) | 'consolidados' | 'todos'
         if ($estado === 'pendientes') {
             $query->whereDoesntHave('consolidacion');
-        } else {
+        } elseif ($estado === 'consolidados') {
             $query->whereHas('consolidacion');
         }
 

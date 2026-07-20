@@ -171,8 +171,11 @@ interface DonutChartProps {
 
 const truncar = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
-export function DonutChart({ data, size = 250, money = true, centro, vertical = false }: DonutChartProps) {
+export function DonutChart({ data, size, money = true, centro, vertical = false }: DonutChartProps) {
     const [hover, setHover] = useState<number | null>(null);
+    // En layout vertical (dona arriba, leyenda debajo) la dona es la protagonista
+    // de la card: crece bastante más antes de toparse con el límite.
+    const maxDona = size ?? (vertical ? 360 : 250);
     const total = data.reduce((s, d) => s + Math.max(0, d.valor), 0);
     const R = 50, STROKE = 17, C = 2 * Math.PI * R;
 
@@ -199,7 +202,7 @@ export function DonutChart({ data, size = 250, money = true, centro, vertical = 
         <div className={vertical
             ? 'flex flex-col items-center gap-4'
             : 'flex flex-wrap items-center justify-center gap-x-6 gap-y-3'}>
-            <div className="relative w-full flex-1 mx-auto" style={{ minWidth: 150, maxWidth: size }}>
+            <div className="relative w-full flex-1 mx-auto" style={{ minWidth: 150, maxWidth: maxDona }}>
                 <svg viewBox="0 0 120 120" className="w-full h-auto block">
                     <g transform="rotate(-90 60 60)">
                         {segs.map((s, i) => (

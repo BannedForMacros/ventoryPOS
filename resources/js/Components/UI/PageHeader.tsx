@@ -14,8 +14,11 @@ interface PageHeaderProps {
 export default function PageHeader({ title, subtitle, actions, backHref, icon }: PageHeaderProps) {
     return (
         <div
-            className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b"
-            style={{ borderColor: 'var(--color-border)' }}
+            className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5"
+            style={{
+                borderBottom: '1px solid transparent',
+                borderImage: 'linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 45%, transparent) 0%, var(--color-border) 35%, var(--color-border) 100%) 1',
+            }}
         >
             <div className="flex items-center gap-3.5 min-w-0">
                 {backHref && (
@@ -49,7 +52,7 @@ export default function PageHeader({ title, subtitle, actions, backHref, icon }:
                     </span>
                 )}
                 <div className="min-w-0">
-                    <h1 className="text-2xl font-bold tracking-tight truncate" style={{ color: 'var(--color-text)' }}>
+                    <h1 className="text-2xl font-extrabold tracking-tight truncate" style={{ color: 'var(--vp-navy, var(--color-text))' }}>
                         {title}
                     </h1>
                     {subtitle && (

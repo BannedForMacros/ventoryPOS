@@ -10,7 +10,6 @@ import Select from '@/Components/UI/Select';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
-import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
 import type { PageProps } from '@/types';
@@ -224,7 +223,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (e) => (
                 <div className="flex items-center gap-2">
                     <button
@@ -268,14 +267,16 @@ export default function CuentasPorPagar({ entradas, totalPendiente, esAdmin, est
             </div>
 
             <div className="mb-5">
-                <Tabs
-                    tabs={[
-                        { value: 'pendientes', label: 'Con saldo pendiente' },
-                        { value: 'todas',      label: 'Todas las entradas' },
-                    ]}
-                    value={estado}
-                    onChange={(v) => router.get(route('finanzas.cxp.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                />
+                <div className="w-56">
+                    <Select label="Estado" value={estado}
+                        onChange={(v) => router.get(route('finanzas.cxp.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                        options={[
+                            { value: 'pendientes', label: 'Con saldo pendiente' },
+                            { value: 'parciales',  label: 'Pago parcial' },
+                            { value: 'pagadas',    label: 'Pagadas' },
+                            { value: 'todas',      label: 'Todas las entradas' },
+                        ]} />
+                </div>
             </div>
 
             <Table

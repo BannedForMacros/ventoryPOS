@@ -9,6 +9,8 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
+import Select from '@/Components/UI/Select';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import type { PageProps } from '@/types';
 import FormCliente, { ClienteForm, emptyCliente } from './Partials/FormCliente';
 
@@ -33,9 +35,10 @@ interface Paginated { data: Cliente[]; }
 interface Props extends PageProps {
     clientes: Paginated;
     busqueda: string;
+    estado?: string | null;
 }
 
-export default function ClientesIndex({ clientes, busqueda }: Props) {
+export default function ClientesIndex({ clientes, busqueda, estado }: Props) {
     const { flash } = usePage<Props>().props;
     const [modal, setModal]           = useState(false);
     const [editing, setEditing]       = useState<Cliente | null>(null);
@@ -133,7 +136,7 @@ export default function ClientesIndex({ clientes, busqueda }: Props) {
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (c) => c.es_cliente_general ? (
                 <span className="text-xs px-2" style={{ color: 'var(--color-text-muted)' }}>—</span>
             ) : (
@@ -157,6 +160,27 @@ export default function ClientesIndex({ clientes, busqueda }: Props) {
                 }
             />
 
+            <FiltrosCard
+                cols={3}
+                tieneFiltros={!!estado}
+                onClear={() => router.get(route('clientes.index'),
+                    { busqueda: busqueda || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })}
+            >
+                <Select
+                    label="Estado"
+                    value={estado ?? ''}
+                    onChange={v => router.get(route('clientes.index'),
+                        { busqueda: busqueda || undefined, estado: String(v) || undefined },
+                        { preserveState: true, preserveScroll: true, replace: true })}
+                    options={[
+                        { value: '', label: 'Todos los estados' },
+                        { value: 'activos', label: 'Activos' },
+                        { value: 'inactivos', label: 'Inactivos' },
+                    ]}
+                />
+            </FiltrosCard>
+
             <Table
                 data={clientes}
                 columns={columns}
@@ -164,7 +188,7 @@ export default function ClientesIndex({ clientes, busqueda }: Props) {
                 emptyMessage="No hay clientes registrados"
                 initialSearch={busqueda}
                 onServerSearch={(t) => router.get(route('clientes.index'),
-                    { busqueda: t || undefined },
+                    { busqueda: t || undefined, estado: estado || undefined },
                     { preserveState: true, preserveScroll: true, replace: true })}
             />
 

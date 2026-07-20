@@ -209,6 +209,7 @@ export default function Locales({ locales, empresas }: Props) {
         {
             key: 'acciones',
             label: 'Acciones',
+            sortable: false,
             render: (local) => (
                 <TableActions
                     onEdit={() => openEdit(local)}

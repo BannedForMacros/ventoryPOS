@@ -3,7 +3,7 @@ import { router, usePage, Link } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
-    Eye, ShoppingCart, Filter, Calendar, Receipt, Pencil, Trash2, KeyRound,
+    Eye, ShoppingCart, Calendar, Receipt, Pencil, Trash2, KeyRound,
     AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins, ListChecks, PackageMinus,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
@@ -11,6 +11,7 @@ import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import type { Local, PageProps, Venta } from '@/types';
 
@@ -202,6 +203,12 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
     const saldo = (v: Venta) => Number((v as any).saldo_pendiente ?? 0);
     const esCredito = (v: Venta) => Boolean((v as any).es_credito) && saldo(v) > 0;
 
+    // Con qué pagó: nombres únicos de los métodos de los pagos de la venta.
+    function metodosDePago(v: Venta): string[] {
+        const pagos = ((v.pagos ?? []) as { metodo_pago?: { nombre?: string } | null }[]);
+        return [...new Set(pagos.map(p => p.metodo_pago?.nombre).filter((n): n is string => !!n))];
+    }
+
     function turnoLabel(t: TurnoLite): string {
         const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
         const partes = [`#${t.id}`, f, t.user?.name, t.caja?.nombre].filter(Boolean);
@@ -235,88 +242,72 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 <ResumenCards resumen={resumen} />
             )}
 
-            {/* ── Filtros ──────────────────────────────────────────────── */}
-            <div
-                className="rounded-xl p-3 sm:p-4 mb-4"
-                style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-            >
-                <div className="flex items-center gap-2 mb-3">
-                    <Filter size={14} style={{ color: 'var(--color-text-muted)' }} />
-                    <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                        Filtros
-                    </span>
-                    {tienesFiltros && (
-                        <button
-                            onClick={limpiar}
-                            className="ml-auto text-xs font-medium hover:underline"
-                            style={{ color: 'var(--color-primary)' }}
-                        >
-                            Limpiar filtros
-                        </button>
-                    )}
-                </div>
-
-                {/* Búsqueda: aplica con Enter o con el botón. No filtra al tipear. */}
-                <div className="relative mb-3">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
-                    <input
-                        value={local.q ?? ''}
-                        onChange={e => set('q', e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') aplicar(); }}
-                        placeholder="Buscar por N° de venta, cliente, documento o monto..."
-                        className="w-full text-sm border rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2"
-                        style={inputStyle}
-                    />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-                    <div>
-                        <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Estado</label>
-                        <select value={local.estado ?? ''} onChange={e => set('estado', e.target.value)} className={inputCls} style={inputStyle}>
-                            <option value="">Todos</option>
-                            <option value="completada">Completadas</option>
-                            <option value="anulada">Anuladas</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Desde</label>
-                        <input type="date" value={local.fecha_desde ?? ''} onChange={e => set('fecha_desde', e.target.value)} className={inputCls} style={inputStyle} />
-                    </div>
-
-                    <div>
-                        <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Hasta</label>
-                        <input type="date" value={local.fecha_hasta ?? ''} onChange={e => set('fecha_hasta', e.target.value)} className={inputCls} style={inputStyle} />
-                    </div>
-
-                    {/* Filtro por turno: clave para el admin (ya no ve todo mezclado). */}
-                    {esAdmin && turnos.length > 0 && (
-                        <div>
-                            <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Turno</label>
-                            <select value={local.turno_id ?? ''} onChange={e => set('turno_id', e.target.value)} className={inputCls} style={inputStyle}>
-                                <option value="">Todos los turnos</option>
-                                {turnos.map(t => <option key={t.id} value={t.id}>{turnoLabel(t)}</option>)}
-                            </select>
-                        </div>
-                    )}
-
-                    {esAdmin && locales.length > 1 && (
-                        <div>
-                            <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Local</label>
-                            <select value={local.local_id ?? ''} onChange={e => set('local_id', e.target.value)} className={inputCls} style={inputStyle}>
-                                <option value="">Todos los locales</option>
-                                {locales.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                            </select>
-                        </div>
-                    )}
-                </div>
-
-                <div className="flex items-center gap-2 mt-3">
-                    <Button variant="primary" onClick={aplicar} startContent={<Search size={15} />}>
+            {/* ── Filtros (aplican con el botón o Enter, no al tipear) ── */}
+            <FiltrosCard
+                cols={4}
+                tieneFiltros={tienesFiltros}
+                onClear={limpiar}
+                actions={
+                    <Button variant="primary" size="sm" onClick={aplicar} startContent={<Search size={13} />}>
                         Aplicar filtros
                     </Button>
+                }
+            >
+                <div className="col-span-2">
+                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
+                    <div className="relative">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
+                        <input
+                            value={local.q ?? ''}
+                            onChange={e => set('q', e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') aplicar(); }}
+                            placeholder="N° de venta, cliente, documento o monto..."
+                            className="w-full text-sm border rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2"
+                            style={inputStyle}
+                        />
+                    </div>
                 </div>
-            </div>
+
+                <div>
+                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Estado</label>
+                    <select value={local.estado ?? ''} onChange={e => set('estado', e.target.value)} className={inputCls} style={inputStyle}>
+                        <option value="">Todos</option>
+                        <option value="completada">Completadas</option>
+                        <option value="anulada">Anuladas</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Desde</label>
+                    <input type="date" value={local.fecha_desde ?? ''} onChange={e => set('fecha_desde', e.target.value)} className={inputCls} style={inputStyle} />
+                </div>
+
+                <div>
+                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Hasta</label>
+                    <input type="date" value={local.fecha_hasta ?? ''} onChange={e => set('fecha_hasta', e.target.value)} className={inputCls} style={inputStyle} />
+                </div>
+
+                {/* Filtro por turno: clave para el admin (ya no ve todo mezclado). */}
+                {esAdmin && turnos.length > 0 && (
+                    <div>
+                        <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Turno</label>
+                        <select value={local.turno_id ?? ''} onChange={e => set('turno_id', e.target.value)} className={inputCls} style={inputStyle}>
+                            <option value="">Todos los turnos</option>
+                            {turnos.map(t => <option key={t.id} value={t.id}>{turnoLabel(t)}</option>)}
+                        </select>
+                    </div>
+                )}
+
+                {esAdmin && locales.length > 1 && (
+                    <div>
+                        <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Local</label>
+                        <select value={local.local_id ?? ''} onChange={e => set('local_id', e.target.value)} className={inputCls} style={inputStyle}>
+                            <option value="">Todos los locales</option>
+                            {locales.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                        </select>
+                    </div>
+                )}
+            </FiltrosCard>
 
             {/* ── Tabla desktop ─────────────────────────────────────── */}
             <div
@@ -326,7 +317,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 <table className="w-full text-sm" style={{ backgroundColor: 'var(--color-surface)' }}>
                     <thead>
                         <tr style={{ backgroundColor: 'var(--color-bg)', borderBottom: '2px solid var(--color-border)' }}>
-                            {['N°', 'Fecha', 'Cliente', 'Comprobante', 'Estado', 'Total', ''].map(h => (
+                            {['N°', 'Fecha', 'Cliente', 'Comprobante', 'Pago', 'Estado', 'Total', ''].map(h => (
                                 <th key={h} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
                                     {h}
                                 </th>
@@ -363,6 +354,9 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     <span className="capitalize text-xs" style={{ color: 'var(--color-text-muted)' }}>
                                         {v.tipo_comprobante}
                                     </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                    <ChipsPago metodos={metodosDePago(v)} esCredito={Boolean(v.es_credito)} debe={saldo(v)} />
                                 </td>
                                 <td className="px-4 py-3">
                                     <Badge variant={v.estado === 'completada' ? 'success' : 'danger'}>
@@ -428,7 +422,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                         ))}
                         {ventas.data.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="text-center py-12" style={{ color: 'var(--color-text-muted)' }}>
+                                <td colSpan={8} className="text-center py-12" style={{ color: 'var(--color-text-muted)' }}>
                                     <Receipt size={40} className="mx-auto mb-3 opacity-20" />
                                     <p className="text-sm">No se encontraron ventas</p>
                                 </td>
@@ -470,6 +464,9 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                         {new Date(v.fecha_venta).toLocaleDateString('es-PE')}
                                     </span>
                                     <span className="capitalize">{v.tipo_comprobante}</span>
+                                </div>
+                                <div className="mt-1.5">
+                                    <ChipsPago metodos={metodosDePago(v)} esCredito={Boolean(v.es_credito)} debe={saldo(v)} />
                                 </div>
                             </div>
                             <div className="text-right flex-shrink-0">
@@ -535,22 +532,28 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 )}
             </div>
 
-            {/* ── Paginación ───────────────────────────────────────── */}
+            {/* ── Paginación (con elipsis: no revienta con muchas páginas) ── */}
             {ventas.last_page > 1 && (
                 <div className="flex items-center justify-center gap-1 mt-4">
-                    {Array.from({ length: ventas.last_page }, (_, i) => i + 1).map(page => (
-                        <button
-                            key={page}
-                            onClick={() => router.get(route('ventas.index'), { ...filters, page }, { preserveState: true })}
-                            className="w-8 h-8 rounded-lg text-xs font-medium transition-colors"
-                            style={{
-                                backgroundColor: page === ventas.current_page ? 'var(--color-primary)' : 'transparent',
-                                color: page === ventas.current_page ? '#fff' : 'var(--color-text-muted)',
-                            }}
-                        >
-                            {page}
-                        </button>
-                    ))}
+                    {paginasVisibles(ventas.current_page, ventas.last_page).map((page, i) =>
+                        page === '…' ? (
+                            <span key={`e-${i}`} className="px-1.5 text-xs" style={{ color: 'var(--color-text-muted)' }}>…</span>
+                        ) : (
+                            <button
+                                key={page}
+                                onClick={() => router.get(route('ventas.index'), { ...filters, page }, { preserveState: true, preserveScroll: true })}
+                                className="min-w-8 h-8 px-1.5 rounded-lg text-xs font-semibold transition-colors"
+                                style={{
+                                    backgroundColor: page === ventas.current_page
+                                        ? 'var(--color-primary)'
+                                        : 'color-mix(in srgb, var(--color-primary) 6%, transparent)',
+                                    color: page === ventas.current_page ? '#fff' : 'var(--color-text-muted)',
+                                }}
+                            >
+                                {page}
+                            </button>
+                        )
+                    )}
                 </div>
             )}
 
@@ -621,6 +624,49 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 )}
             </Modal>
         </AppLayout>
+    );
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Páginas a mostrar con elipsis: 1 … (actual−1, actual, actual+1) … última. */
+function paginasVisibles(actual: number, ultima: number): (number | '…')[] {
+    const pages: (number | '…')[] = [];
+    for (let p = 1; p <= ultima; p++) {
+        if (p === 1 || p === ultima || Math.abs(p - actual) <= 1) pages.push(p);
+        else if (pages[pages.length - 1] !== '…') pages.push('…');
+    }
+    return pages;
+}
+
+/** Chips "con qué pagó": métodos de pago + crédito (con deuda si queda saldo). */
+function ChipsPago({ metodos, esCredito, debe }: { metodos: string[]; esCredito: boolean; debe: number }) {
+    if (metodos.length === 0 && !esCredito) {
+        return <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>—</span>;
+    }
+    return (
+        <div className="flex flex-wrap items-center gap-1">
+            {metodos.map(m => (
+                <span key={m}
+                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                    style={{
+                        color: 'var(--color-primary)',
+                        backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
+                    }}>
+                    {m}
+                </span>
+            ))}
+            {esCredito && (
+                <span
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                    style={{
+                        color: '#b45309',
+                        backgroundColor: 'rgba(234,179,8,0.14)',
+                    }}>
+                    Crédito{debe > 0 ? ` · debe ${money(debe)}` : ''}
+                </span>
+            )}
+        </div>
     );
 }
 

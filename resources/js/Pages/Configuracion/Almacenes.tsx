@@ -100,7 +100,7 @@ export default function Almacenes({ almacenes, locales, modo_almacen }: Props) {
             ),
         },
         {
-            key: 'local', label: 'Local asociado', sortable: true,
+            key: 'local', label: 'Local asociado', sortKey: 'local.nombre',
             render: (a) => a.local
                 ? <span>{a.local.nombre}</span>
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
@@ -114,7 +114,7 @@ export default function Almacenes({ almacenes, locales, modo_almacen }: Props) {
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (a) => (
                 <TableActions
                     onEdit={() => openEdit(a)}

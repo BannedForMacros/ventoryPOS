@@ -7,6 +7,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Select from '@/Components/UI/Select';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
@@ -109,7 +110,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                 },
                 { preserveState: true, preserveScroll: true, replace: true },
             );
-        }, 350);
+        }, 500);
         return () => clearTimeout(t);
     }, [search, filtrAlmacen, filtrEstado]);
 
@@ -210,7 +211,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
             render: (e) => <Badge variant="primary">{TIPOS[e.tipo] ?? e.tipo}</Badge>,
         },
         {
-            key: 'almacen', label: 'Almacén', sortable: true,
+            key: 'almacen', label: 'Almacén', sortKey: 'almacen.nombre',
             render: (e) => (
                 <span className="text-sm">
                     {e.almacen.nombre}
@@ -262,7 +263,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (e) => (
                 <div className="flex items-center gap-1">
                     {e.estado === 'borrador' && (
@@ -317,70 +318,66 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
             />
 
             {/* Búsqueda + filtros (compartidos entre mobile y desktop) */}
-            <div className="mb-4 space-y-3">
-                <div className="relative w-full sm:max-w-md">
-                    <Search
-                        size={15}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                        style={{ color: 'var(--color-text-muted)' }}
-                    />
-                    <input
-                        type="text"
-                        placeholder="Buscar por documento o proveedor (toda la base)..."
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        className="w-full rounded-xl border py-2 pl-9 pr-9 text-sm outline-none transition-all"
-                        style={{
-                            borderColor: 'var(--color-border)',
-                            backgroundColor: 'var(--color-surface)',
-                            color: 'var(--color-text)',
-                        }}
-                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-primary)')}
-                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-                    />
-                    {search && (
-                        <button
-                            onClick={() => setSearch('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5"
+            <FiltrosCard
+                cols={4}
+                tieneFiltros={!!(filtrAlmacen || filtrEstado || search)}
+                onClear={() => { setFiltrAlmacen(''); setFiltrEstado(''); setSearch(''); }}
+            >
+                <div className="col-span-2">
+                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
+                    <div className="relative">
+                        <Search
+                            size={15}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
                             style={{ color: 'var(--color-text-muted)' }}
-                        >
-                            ✕
-                        </button>
-                    )}
-                </div>
-                <div className="flex flex-wrap gap-3">
-                    {mostrarSelector && (
-                        <div className="w-full sm:w-52">
-                            <Select
-                                placeholder="Todos los almacenes"
-                                value={filtrAlmacen}
-                                onChange={v => setFiltrAlmacen(String(v))}
-                                options={[
-                                    { value: '', label: 'Todos los almacenes' },
-                                    ...almacenes.map(a => ({ value: a.id, label: a.nombre })),
-                                ]}
-                            />
-                        </div>
-                    )}
-                    <div className="w-full sm:w-44">
-                        <Select
-                            placeholder="Todos los estados"
-                            value={filtrEstado}
-                            onChange={v => setFiltrEstado(String(v))}
-                            options={[
-                                { value: '',           label: 'Todos los estados' },
-                                { value: 'borrador',   label: 'Borrador' },
-                                { value: 'confirmado', label: 'Confirmado' },
-                            ]}
                         />
+                        <input
+                            type="text"
+                            placeholder="Documento o proveedor (toda la base)..."
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            className="w-full rounded-lg border py-2 pl-9 pr-9 text-sm outline-none transition-all"
+                            style={{
+                                borderColor: 'var(--color-border)',
+                                backgroundColor: 'var(--color-surface)',
+                                color: 'var(--color-text)',
+                            }}
+                            onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-primary)')}
+                            onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                        />
+                        {search && (
+                            <button
+                                onClick={() => setSearch('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5"
+                                style={{ color: 'var(--color-text-muted)' }}
+                            >
+                                ✕
+                            </button>
+                        )}
                     </div>
-                    {(filtrAlmacen || filtrEstado || search) && (
-                        <Button variant="ghost" onClick={() => { setFiltrAlmacen(''); setFiltrEstado(''); setSearch(''); }}>
-                            Limpiar filtros
-                        </Button>
-                    )}
                 </div>
-            </div>
+                {mostrarSelector && (
+                    <Select
+                        label="Almacén"
+                        value={filtrAlmacen}
+                        onChange={v => setFiltrAlmacen(String(v))}
+                        options={[
+                            { value: '', label: 'Todos los almacenes' },
+                            ...almacenes.map(a => ({ value: a.id, label: a.nombre })),
+                        ]}
+                    />
+                )}
+                <Select
+                    label="Estado"
+                    value={filtrEstado}
+                    onChange={v => setFiltrEstado(String(v))}
+                    options={[
+                        { value: '',           label: 'Todos los estados' },
+                        { value: 'borrador',   label: 'Borrador' },
+                        { value: 'confirmado', label: 'Confirmado' },
+                    ]}
+                />
+            </FiltrosCard>
 
             {/* Mobile: cards */}
             <div className="sm:hidden space-y-2.5">

@@ -14,10 +14,10 @@ import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
-import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
 import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
@@ -372,7 +372,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
             ),
         },
         {
-            key: 'cliente', label: 'Cliente',
+            key: 'cliente', label: 'Cliente', sortKey: 'cliente.nombres',
             render: (c) => (
                 <div className="leading-tight">
                     <span className="font-medium">{nombreCliente(c.cliente)}</span>
@@ -442,7 +442,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (c) => {
                 const editable    = c.estado === 'vigente' || c.estado === 'vencida';
                 const seguible    = ['vigente', 'vencida', 'aceptada'].includes(c.estado);
@@ -521,17 +521,39 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                 ]} />
             </div>
 
-            <div className="mb-5 flex flex-wrap items-center gap-3">
-                <Tabs
-                    tabs={[
-                        { value: 'vigentes', label: 'Vigentes' },
-                        { value: 'alerta',   label: 'Por vencer y vencidas' },
-                        { value: 'todas',    label: 'Todas' },
-                    ]}
+            {/* Filtro de estado: permite ver TAMBIÉN estados individuales
+                (rechazadas, convertidas, anuladas…) que con las tabs no eran
+                alcanzables. La búsqueda aplica con Enter o con el botón. */}
+            <FiltrosCard
+                cols={3}
+                tieneFiltros={estado !== 'vigentes' || !!busqueda}
+                onClear={() => { setBusqueda(''); router.get(route('cotizaciones.index'), {}, { preserveState: true, preserveScroll: true, replace: true }); }}
+                actions={
+                    <Button variant="primary" size="sm" onClick={buscar} startContent={<Search size={13} />}>
+                        Buscar
+                    </Button>
+                }
+            >
+                <Select
+                    label="Estado"
                     value={estado}
-                    onChange={(v) => router.get(route('cotizaciones.index'), { estado: v, q: busqueda || undefined }, { preserveState: true, replace: true })}
+                    onChange={(v) => router.get(route('cotizaciones.index'),
+                        { estado: v, q: busqueda || undefined },
+                        { preserveState: true, preserveScroll: true, replace: true })}
+                    options={[
+                        { value: 'vigentes',   label: 'Vigentes y aceptadas' },
+                        { value: 'alerta',     label: 'Por vencer y vencidas' },
+                        { value: 'todas',      label: 'Todas' },
+                        { value: 'vigente',    label: 'Solo vigentes' },
+                        { value: 'aceptada',   label: 'Aceptadas' },
+                        { value: 'rechazada',  label: 'Rechazadas' },
+                        { value: 'vencida',    label: 'Vencidas' },
+                        { value: 'convertida', label: 'Convertidas en venta' },
+                        { value: 'anulada',    label: 'Anuladas' },
+                    ]}
                 />
-                <div className="flex items-center gap-2 ml-auto">
+                <div className="col-span-2">
+                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
                     <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
                         <input
@@ -539,13 +561,12 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                             onChange={e => setBusqueda(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') buscar(); }}
                             placeholder="N°, cliente o referencia..."
-                            className="pl-9 pr-3 py-2 text-sm rounded-lg border outline-none w-56"
+                            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border outline-none"
                             style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
                         />
                     </div>
-                    <Button variant="ghost" onClick={buscar}>Buscar</Button>
                 </div>
-            </div>
+            </FiltrosCard>
 
             <Table data={cotizaciones} columns={columns} searchable={false}
                 emptyMessage="No hay cotizaciones en este filtro" />

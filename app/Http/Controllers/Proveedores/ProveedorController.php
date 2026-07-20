@@ -24,6 +24,8 @@ class ProveedorController extends Controller
                       ->orWhere('contacto', 'ilike', "%{$busqueda}%");
                 });
             })
+            ->when($request->estado === 'activos', fn ($q) => $q->where('activo', true))
+            ->when($request->estado === 'inactivos', fn ($q) => $q->where('activo', false))
             ->orderBy('razon_social')
             ->paginate(50)
             ->withQueryString();
@@ -31,6 +33,7 @@ class ProveedorController extends Controller
         return Inertia::render('Proveedores/Index', [
             'proveedores' => $proveedores,
             'busqueda'    => $busqueda,
+            'estado'      => $request->estado,
         ]);
     }
 

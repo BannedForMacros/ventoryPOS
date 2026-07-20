@@ -53,8 +53,15 @@ class CuentasPorPagarController extends Controller
                         ->orWhere('nombre_comercial', 'ilike', "%{$t}%")));
             });
 
-        if ($request->input('estado', 'pendientes') === 'pendientes') {
+        // Filtro de estado de pago: 'pendientes' (default), 'parciales',
+        // 'pagadas' o 'todas'.
+        $estado = $request->input('estado', 'pendientes');
+        if ($estado === 'pendientes') {
             $query->where('estado_pago', '!=', 'pagado')->whereRaw('total - monto_pagado > 0.01');
+        } elseif ($estado === 'parciales') {
+            $query->where('estado_pago', 'parcial');
+        } elseif ($estado === 'pagadas') {
+            $query->where('estado_pago', 'pagado');
         }
 
         $entradas = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25)->withQueryString();

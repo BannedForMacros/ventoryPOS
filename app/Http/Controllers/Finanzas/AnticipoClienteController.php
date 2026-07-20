@@ -70,8 +70,13 @@ class AnticipoClienteController extends Controller
                     ->orWhereHas('producto', fn ($p) => $p->where('nombre', 'ilike', "%{$t}%")));
             });
 
-        if ($request->input('estado', 'activos') === 'activos') {
+        // Filtro de estado: 'activos' (default), un estado puntual
+        // (aplicado/anulado/devuelto) o 'todos'.
+        $estado = $request->input('estado', 'activos');
+        if ($estado === 'activos') {
             $query->activo();
+        } elseif (in_array($estado, ['aplicado', 'anulado', 'devuelto'], true)) {
+            $query->where('estado', $estado);
         }
 
         $anticipos = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25)->withQueryString()

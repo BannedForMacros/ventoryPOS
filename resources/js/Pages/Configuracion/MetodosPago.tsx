@@ -138,7 +138,7 @@ export default function MetodosPago({ metodos, cuentas, tiposMetodoPago }: Props
             render: (m) => <span className="font-medium">{m.nombre}</span>,
         },
         {
-            key: 'tipo', label: 'Tipo', sortable: true,
+            key: 'tipo', label: 'Tipo', sortKey: 'tipo.nombre',
             render: (m) => (
                 <Badge variant="primary">
                     <span className="flex items-center gap-1">
@@ -173,7 +173,7 @@ export default function MetodosPago({ metodos, cuentas, tiposMetodoPago }: Props
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (m) => (
                 <TableActions onEdit={() => openEdit(m)} onDelete={() => setConfirmId(m.id)} />
             ),

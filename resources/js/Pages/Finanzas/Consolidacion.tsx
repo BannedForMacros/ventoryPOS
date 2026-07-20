@@ -9,7 +9,7 @@ import Input from '@/Components/UI/Input';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
-import Tabs from '@/Components/UI/Tabs';
+import Select from '@/Components/UI/Select';
 import Callout from '@/Components/UI/Callout';
 import type { PageProps } from '@/types';
 
@@ -166,7 +166,7 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
                 : <Badge variant="secondary">Cierre rápido</Badge>,
         },
         {
-            key: 'metodos', label: 'Otros métodos',
+            key: 'metodos', label: 'Otros métodos', sortable: false,
             render: (t) => t.arqueo_metodos.length > 0
                 ? (
                     <div className="text-xs space-y-0.5">
@@ -178,7 +178,7 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
                 : <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
         {
-            key: 'estado_consolidacion', label: 'Consolidación',
+            key: 'estado_consolidacion', label: 'Consolidación', sortable: false,
             render: (t) => t.consolidacion
                 ? (
                     <button onClick={() => setVerDetalle(t)} className="text-left hover:opacity-75">
@@ -191,7 +191,7 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
                 : <Badge variant="warning">Pendiente</Badge>,
         },
         {
-            key: 'acciones', label: '',
+            key: 'acciones', label: '', sortable: false,
             render: (t) => !t.consolidacion && (
                 <button
                     onClick={() => abrir(t)}
@@ -225,14 +225,15 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
             )}
 
             <div className="mb-5">
-                <Tabs
-                    tabs={[
-                        { value: 'pendientes',   label: 'Pendientes de consolidar' },
-                        { value: 'consolidados', label: 'Consolidados' },
-                    ]}
-                    value={estado}
-                    onChange={(v) => router.get(route('finanzas.consolidacion.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                />
+                <div className="w-56">
+                    <Select label="Estado" value={estado}
+                        onChange={(v) => router.get(route('finanzas.consolidacion.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                        options={[
+                            { value: 'pendientes',   label: 'Pendientes de consolidar' },
+                            { value: 'consolidados', label: 'Consolidados' },
+                            { value: 'todos',        label: 'Todos' },
+                        ]} />
+                </div>
             </div>
 
             <Table data={turnos} columns={columns}

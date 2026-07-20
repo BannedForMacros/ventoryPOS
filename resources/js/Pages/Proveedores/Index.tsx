@@ -9,6 +9,8 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
+import Select from '@/Components/UI/Select';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import type { PageProps } from '@/types';
 import FormProveedor, { ProveedorForm, emptyProveedor } from './Partials/FormProveedor';
 
@@ -31,9 +33,10 @@ interface Paginated { data: Proveedor[]; }
 interface Props extends PageProps {
     proveedores: Paginated;
     busqueda:    string;
+    estado?:     string | null;
 }
 
-export default function ProveedoresIndex({ proveedores, busqueda }: Props) {
+export default function ProveedoresIndex({ proveedores, busqueda, estado }: Props) {
     const { flash } = usePage<Props>().props;
     const [modal, setModal]         = useState(false);
     const [editing, setEditing]     = useState<Proveedor | null>(null);
@@ -131,7 +134,7 @@ export default function ProveedoresIndex({ proveedores, busqueda }: Props) {
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (p) => (
                 <TableActions
                     onEdit={() => openEdit(p)}
@@ -153,6 +156,27 @@ export default function ProveedoresIndex({ proveedores, busqueda }: Props) {
                 }
             />
 
+            <FiltrosCard
+                cols={3}
+                tieneFiltros={!!estado}
+                onClear={() => router.get(route('proveedores.index'),
+                    { busqueda: busqueda || undefined },
+                    { preserveState: true, preserveScroll: true, replace: true })}
+            >
+                <Select
+                    label="Estado"
+                    value={estado ?? ''}
+                    onChange={v => router.get(route('proveedores.index'),
+                        { busqueda: busqueda || undefined, estado: String(v) || undefined },
+                        { preserveState: true, preserveScroll: true, replace: true })}
+                    options={[
+                        { value: '', label: 'Todos los estados' },
+                        { value: 'activos', label: 'Activos' },
+                        { value: 'inactivos', label: 'Inactivos' },
+                    ]}
+                />
+            </FiltrosCard>
+
             <Table
                 data={proveedores}
                 columns={columns}
@@ -160,7 +184,7 @@ export default function ProveedoresIndex({ proveedores, busqueda }: Props) {
                 emptyMessage="No hay proveedores registrados"
                 initialSearch={busqueda}
                 onServerSearch={(t) => router.get(route('proveedores.index'),
-                    { busqueda: t || undefined },
+                    { busqueda: t || undefined, estado: estado || undefined },
                     { preserveState: true, preserveScroll: true, replace: true })}
             />
 

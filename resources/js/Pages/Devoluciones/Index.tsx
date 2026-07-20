@@ -6,6 +6,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Select from '@/Components/UI/Select';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import type { PageProps } from '@/types';
@@ -160,27 +161,32 @@ export default function DevolucionesIndex({ devoluciones, filters, buscar }: Pro
                 }
             />
 
-            <div className="mb-4 flex flex-wrap gap-3">
-                <div className="w-52">
-                    <Select
-                        placeholder="Todos los estados"
-                        value={filtrEstado}
-                        onChange={v => {
-                            const val = String(v);
-                            setFiltrEstado(val);
-                            router.get(route('devoluciones.index'), { estado: val || undefined, buscar: buscar || undefined }, { preserveState: true, replace: true });
-                        }}
-                        options={[
-                            { value: '',           label: 'Todos los estados' },
-                            { value: 'pendiente',  label: 'Pendiente' },
-                            { value: 'aprobada',   label: 'Aprobada' },
-                            { value: 'completada', label: 'Completada' },
-                            { value: 'rechazada',  label: 'Rechazada' },
-                            { value: 'anulada',    label: 'Anulada' },
-                        ]}
-                    />
-                </div>
-            </div>
+            <FiltrosCard
+                cols={3}
+                tieneFiltros={!!filtrEstado}
+                onClear={() => {
+                    setFiltrEstado('');
+                    router.get(route('devoluciones.index'), { buscar: buscar || undefined }, { preserveState: true, replace: true });
+                }}
+            >
+                <Select
+                    label="Estado"
+                    value={filtrEstado}
+                    onChange={v => {
+                        const val = String(v);
+                        setFiltrEstado(val);
+                        router.get(route('devoluciones.index'), { estado: val || undefined, buscar: buscar || undefined }, { preserveState: true, replace: true });
+                    }}
+                    options={[
+                        { value: '',           label: 'Todos los estados' },
+                        { value: 'pendiente',  label: 'Pendiente' },
+                        { value: 'aprobada',   label: 'Aprobada' },
+                        { value: 'completada', label: 'Completada' },
+                        { value: 'rechazada',  label: 'Rechazada' },
+                        { value: 'anulada',    label: 'Anulada' },
+                    ]}
+                />
+            </FiltrosCard>
 
             <Table data={devoluciones.data} columns={columns} emptyMessage="No hay devoluciones registradas"
                 initialSearch={buscar}

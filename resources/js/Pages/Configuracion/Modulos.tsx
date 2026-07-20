@@ -149,6 +149,7 @@ export default function Modulos({ modulos }: Props) {
         {
             key: 'acciones',
             label: 'Acciones',
+            sortable: false,
             render: (mod) => (
                 <TableActions
                     onEdit={() => openEdit(mod)}

@@ -24,6 +24,8 @@ class ClienteController extends Controller
                       ->orWhere('numero_documento', 'ilike', "%{$busqueda}%");
                 });
             })
+            ->when($request->estado === 'activos', fn ($q) => $q->where('activo', true))
+            ->when($request->estado === 'inactivos', fn ($q) => $q->where('activo', false))
             ->orderByRaw("CASE WHEN numero_documento IS NULL THEN 0 ELSE 1 END")
             ->orderBy('nombres')
             ->orderBy('razon_social')
@@ -33,6 +35,7 @@ class ClienteController extends Controller
         return Inertia::render('Clientes/Index', [
             'clientes' => $clientes,
             'busqueda' => $busqueda,
+            'estado'   => $request->estado,
         ]);
     }
 

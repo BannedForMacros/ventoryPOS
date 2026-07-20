@@ -10,7 +10,6 @@ import Select from '@/Components/UI/Select';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
-import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
 import type { PageProps } from '@/types';
 
@@ -154,7 +153,7 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (d) => (
                 <div className="flex items-center gap-1.5">
                     {d.estado === 'pendiente' && (
@@ -227,14 +226,16 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
             )}
 
             <div className="mb-5">
-                <Tabs
-                    tabs={[
-                        { value: 'pendientes', label: 'Pendientes' },
-                        { value: 'todos',      label: 'Todos' },
-                    ]}
-                    value={estado}
-                    onChange={(v) => router.get(route('finanzas.planilla-descuentos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                />
+                <div className="w-56">
+                    <Select label="Estado" value={estado}
+                        onChange={(v) => router.get(route('finanzas.planilla-descuentos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                        options={[
+                            { value: 'pendientes', label: 'Pendientes' },
+                            { value: 'aplicados',  label: 'Aplicados' },
+                            { value: 'anulados',   label: 'Anulados' },
+                            { value: 'todos',      label: 'Todos' },
+                        ]} />
+                </div>
             </div>
 
             <Table data={descuentos} columns={columns}

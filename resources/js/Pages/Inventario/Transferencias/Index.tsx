@@ -6,6 +6,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Select from '@/Components/UI/Select';
+import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
@@ -74,7 +75,7 @@ export default function TransferenciasIndex({ transferencias, filters, buscar }:
             render: (t) => <span className="text-sm">{t.fecha}</span>,
         },
         {
-            key: 'almacen_origen', label: 'Origen', sortable: true,
+            key: 'almacen_origen', label: 'Origen', sortKey: 'almacen_origen.nombre',
             render: (t) => (
                 <span className="text-sm">
                     {t.almacen_origen.nombre}
@@ -82,7 +83,7 @@ export default function TransferenciasIndex({ transferencias, filters, buscar }:
             ),
         },
         {
-            key: 'almacen_destino', label: 'Destino', sortable: true,
+            key: 'almacen_destino', label: 'Destino', sortKey: 'almacen_destino.nombre',
             render: (t) => (
                 <span className="text-sm">
                     {t.almacen_destino.nombre}
@@ -107,7 +108,7 @@ export default function TransferenciasIndex({ transferencias, filters, buscar }:
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (t) => (
                 <div className="flex items-center gap-1">
                     <button type="button" onClick={() => router.visit(route('inventario.transferencias.show', t.id))}
@@ -179,25 +180,20 @@ export default function TransferenciasIndex({ transferencias, filters, buscar }:
                 }
             />
 
-            <div className="mb-4 flex flex-wrap gap-3">
-                <div className="w-56">
-                    <Select
-                        placeholder="Todos los estados"
-                        value={filtrEstado}
-                        onChange={v => setFiltrEstado(String(v))}
-                        options={[
-                            { value: '',         label: 'Todos los estados' },
-                            { value: 'borrador', label: 'Borrador' },
-                            { value: 'enviada',  label: 'Enviada (en tránsito)' },
-                            { value: 'recibida', label: 'Recibida' },
-                            { value: 'anulada',  label: 'Anulada' },
-                        ]}
-                    />
-                </div>
-                {filtrEstado && (
-                    <Button variant="ghost" onClick={() => setFiltrEstado('')}>Limpiar</Button>
-                )}
-            </div>
+            <FiltrosCard cols={3} tieneFiltros={!!filtrEstado} onClear={() => setFiltrEstado('')}>
+                <Select
+                    label="Estado"
+                    value={filtrEstado}
+                    onChange={v => setFiltrEstado(String(v))}
+                    options={[
+                        { value: '',         label: 'Todos los estados' },
+                        { value: 'borrador', label: 'Borrador' },
+                        { value: 'enviada',  label: 'Enviada (en tránsito)' },
+                        { value: 'recibida', label: 'Recibida' },
+                        { value: 'anulada',  label: 'Anulada' },
+                    ]}
+                />
+            </FiltrosCard>
 
             <Table data={filtered} columns={columns} emptyMessage="No hay transferencias registradas"
                 initialSearch={buscar}

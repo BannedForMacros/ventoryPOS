@@ -28,12 +28,14 @@ class GastoController extends Controller
     {
         $user    = $request->user();
         $scope   = $request->input('scope', 'turno');       // 'turno' | 'administrativo'
-        $mostrar = $request->input('mostrar', 'activos');   // 'activos' | 'eliminados'
+        $mostrar = $request->input('mostrar', 'activos');   // 'activos' | 'eliminados' | 'todos'
 
         $query = Gasto::deEmpresa($user->empresa_id)
-            // 'eliminados' muestra SOLO los borrados (soft delete); por defecto
-            // el scope global de SoftDeletes ya oculta los eliminados.
+            // 'eliminados' muestra SOLO los borrados (soft delete); 'todos'
+            // incluye activos + eliminados; por defecto el scope global de
+            // SoftDeletes ya oculta los eliminados.
             ->when($mostrar === 'eliminados', fn ($q) => $q->onlyTrashed())
+            ->when($mostrar === 'todos', fn ($q) => $q->withTrashed())
             ->with(['tipo', 'concepto', 'user', 'local', 'turno'])
             ->when($request->input('tipo_id'), fn($q, $v) => $q->where('gasto_tipo_id', $v))
             ->when($request->input('concepto_id'), fn($q, $v) => $q->where('gasto_concepto_id', $v))

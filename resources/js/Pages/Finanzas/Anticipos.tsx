@@ -13,7 +13,6 @@ import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
-import Tabs from '@/Components/UI/Tabs';
 import Callout from '@/Components/UI/Callout';
 import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
@@ -307,7 +306,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
             key: 'fecha', label: 'Fecha', sortable: true,
             render: (a) => <span className="text-sm">{new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</span>,
         },
-        { key: 'cliente', label: 'Cliente', render: (a) => <span className="font-medium">{nombreCliente(a.cliente)}</span> },
+        { key: 'cliente', label: 'Cliente', sortKey: 'cliente.nombres', render: (a) => <span className="font-medium">{nombreCliente(a.cliente)}</span> },
         {
             key: 'tipo_valorizacion', label: 'Modalidad',
             render: (a) => {
@@ -329,7 +328,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
         },
         { key: 'monto', label: 'Recibido', align: 'right', render: (a) => <span>{money(a.monto)}</span> },
         {
-            key: 'pendiente', label: 'Pendiente', align: 'right',
+            key: 'pendiente', label: 'Pendiente', sortable: false, align: 'right',
             render: (a) => esMultiItem(a)
                 ? (
                     <div className="text-sm leading-tight">
@@ -346,7 +345,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
                     : <span className="text-sm">{money(a.saldo)}</span>,
         },
         {
-            key: 'valor_hoy', label: 'Pasivo a hoy', align: 'right',
+            key: 'valor_hoy', label: 'Pasivo a hoy', sortKey: 'valor_pasivo_hoy', align: 'right',
             render: (a) => a.estado === 'activo'
                 ? <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(valorHoy(a))}</span>
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
@@ -360,7 +359,7 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
             ),
         },
         {
-            key: 'acciones', label: 'Acciones',
+            key: 'acciones', label: 'Acciones', sortable: false,
             render: (a) => (
                 <div className="flex items-center gap-1.5">
                     <button onClick={() => setDetalle(a)} className="p-1.5 rounded-lg hover:bg-black/5" title="Ver aplicaciones"
@@ -422,15 +421,18 @@ export default function Anticipos({ anticipos, totalPasivo, estado, buscar, clie
                 ]} />
             </div>
 
-            <div className="mb-5">
-                <Tabs
-                    tabs={[
-                        { value: 'activos', label: 'Activos' },
-                        { value: 'todos',   label: 'Todos' },
-                    ]}
-                    value={estado}
-                    onChange={(v) => router.get(route('finanzas.anticipos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
-                />
+            <div className="mb-5 flex flex-wrap items-end gap-3">
+                <div className="w-56">
+                    <Select label="Estado" value={estado}
+                        onChange={(v) => router.get(route('finanzas.anticipos.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                        options={[
+                            { value: 'activos',  label: 'Activos' },
+                            { value: 'aplicado', label: 'Aplicados' },
+                            { value: 'devuelto', label: 'Devueltos' },
+                            { value: 'anulado',  label: 'Anulados' },
+                            { value: 'todos',    label: 'Todos' },
+                        ]} />
+                </div>
             </div>
 
             <Table data={anticipos} columns={columns}

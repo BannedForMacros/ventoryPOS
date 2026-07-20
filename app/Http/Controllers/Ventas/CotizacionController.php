@@ -53,6 +53,12 @@ class CotizacionController extends Controller
                       ->where(fn ($c) => $c->whereNull('ultimo_contacto')
                           ->orWhereColumn('ultimo_contacto', '<', 'fecha_vencimiento')));
             }))
+            // Filtro por estado individual (el select permite ver también
+            // rechazadas/convertidas/anuladas, que antes no tenían tab).
+            ->when(in_array($estado, [
+                Cotizacion::ESTADO_VIGENTE, Cotizacion::ESTADO_ACEPTADA, Cotizacion::ESTADO_RECHAZADA,
+                Cotizacion::ESTADO_VENCIDA, Cotizacion::ESTADO_CONVERTIDA, Cotizacion::ESTADO_ANULADA,
+            ], true), fn ($qq) => $qq->where('estado', $estado))
             ->when($q !== '', fn ($qq) => $qq->where(function ($w) use ($q) {
                 $w->where('numero', 'ilike', "%{$q}%")
                   ->orWhere('referencia', 'ilike', "%{$q}%")
