@@ -63,7 +63,7 @@ interface Anticipo extends Record<string, unknown> {
     observacion: string | null;
     turno_id?: number | null;
     fecha_entrega_estimada?: string | null;
-    valor_pasivo_hoy?: number;
+    valor_pasivo?: number;
     cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string; es_cliente_general?: boolean } | null;
     producto?: { id: number; nombre: string; precio_venta: string } | null;
     venta?: { id: number; numero: string } | null;
@@ -115,7 +115,7 @@ const pendienteTotal = (a: Anticipo) =>
 
 /** Pasivo actual del anticipo: el backend lo calcula (multi-item o clásico). */
 const valorHoy = (a: Anticipo) => {
-    if (a.valor_pasivo_hoy !== undefined && a.valor_pasivo_hoy !== null) return Number(a.valor_pasivo_hoy);
+    if (a.valor_pasivo !== undefined && a.valor_pasivo !== null) return Number(a.valor_pasivo);
     // Pendiente del POS: se debe lo PAGADO no entregado (precio congelado de
     // la venta), no la revalorización a precio del día.
     if (esMultiItem(a)) return Number(a.saldo);
@@ -347,7 +347,7 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                     : <span className="text-sm">{money(a.saldo)}</span>,
         },
         {
-            key: 'valor_hoy', label: 'Pasivo a hoy', sortKey: 'valor_pasivo_hoy', align: 'right',
+            key: 'valor_hoy', label: 'Pasivo', sortKey: 'valor_pasivo', align: 'right',
             render: (a) => a.estado === 'activo'
                 ? <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(valorHoy(a))}</span>
                 : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,

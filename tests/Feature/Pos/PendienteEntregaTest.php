@@ -83,7 +83,7 @@ it('crea el anticipo material multi-producto y solo descuenta el stock que se ll
     expect((float) $anticipo->items->first()->cantidad_pendiente)->toBe(7.0);
 
     // Pasivo a hoy: 7 × precio del día (20) = 140.
-    expect($anticipo->valorPasivoHoy())->toBe(140.0);
+    expect($anticipo->valorPasivo())->toBe(140.0);
 });
 
 it('entrega parcial con fecha: baja el pendiente, descuenta stock y deja el resto para después', function () {

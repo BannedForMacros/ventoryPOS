@@ -42,6 +42,8 @@ interface TableProps<T extends Record<string, unknown>> {
     onServerSearch?: (texto: string) => void;
     /** Término inicial (para persistir el buscar de la URL al recargar). */
     initialSearch?: string;
+    /** Clic en cualquier parte de la fila (para tablas que llevan a un detalle). */
+    onRowClick?: (row: T) => void;
 }
 
 interface PaginationBtnProps {
@@ -85,6 +87,7 @@ export default function Table<T extends Record<string, unknown>>({
     pagination = true,
     onServerSearch,
     initialSearch,
+    onRowClick,
 }: TableProps<T>) {
     const [search, setSearch] = useState(initialSearch ?? '');
 
@@ -371,6 +374,7 @@ export default function Table<T extends Record<string, unknown>>({
                                             <tr
                                                 className={cn('transition-colors duration-150', customRowClass)}
                                                 style={{ borderTop: index !== 0 ? '1px solid var(--color-border)' : undefined }}
+                                                onClick={onRowClick ? () => onRowClick(row) : undefined}
                                                 onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.backgroundColor = 'var(--color-bg)'; }}
                                                 onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.backgroundColor = ''; }}
                                             >

@@ -83,21 +83,21 @@ class AnticipoClienteController extends Controller
             // El pasivo a hoy se calcula en el backend (multi-item o clásico)
             // para que el frontend no tenga que replicar la valorización.
             ->through(function (ClienteAnticipo $a) {
-                $a->setAttribute('valor_pasivo_hoy', $a->estado === 'activo' ? $a->valorPasivoHoy() : 0.0);
+                $a->setAttribute('valor_pasivo', $a->estado === 'activo' ? $a->valorPasivo() : 0.0);
                 return $a;
             });
 
         // Total del pasivo a precio del día (lo que mostrará el balance).
         $activosCol = ClienteAnticipo::deEmpresa($user->empresa_id)->activo()
             ->with(['producto', 'items.unidad'])->get();
-        $totalPasivo = $activosCol->sum(fn (ClienteAnticipo $a) => $a->valorPasivoHoy());
+        $totalPasivo = $activosCol->sum(fn (ClienteAnticipo $a) => $a->valorPasivo());
 
         // KPIs de cabecera (sobre los anticipos ACTIVOS, independiente del filtro)
         $kpis = [
             'activos'  => $activosCol->count(),
             'clientes' => $activosCol->pluck('cliente_id')->unique()->count(),
             'material' => round((float) $activosCol->where('tipo_valorizacion', 'material')
-                ->sum(fn (ClienteAnticipo $a) => $a->valorPasivoHoy()), 2),
+                ->sum(fn (ClienteAnticipo $a) => $a->valorPasivo()), 2),
             'dinero'   => round((float) $activosCol->where('tipo_valorizacion', 'monto')->sum('saldo'), 2),
         ];
 

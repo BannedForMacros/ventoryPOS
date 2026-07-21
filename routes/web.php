@@ -41,6 +41,7 @@ use App\Http\Controllers\Finanzas\BalanceDiarioController;
 use App\Http\Controllers\Finanzas\CuentasPorCobrarController;
 use App\Http\Controllers\Finanzas\CuentasPorPagarController;
 use App\Http\Controllers\Finanzas\DeudaController;
+use App\Http\Controllers\Finanzas\EstadoCuentaController;
 use App\Http\Controllers\Finanzas\ConsolidacionController;
 use App\Http\Controllers\Finanzas\PlanillaDescuentoController;
 use App\Http\Controllers\Finanzas\TesoreriaController;
@@ -335,6 +336,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Módulo financiero del balance diario: cuentas por cobrar/pagar,
     // anticipos de clientes, adelantos a proveedores, deudas y el balance.
     Route::prefix('finanzas')->name('finanzas.')->group(function () {
+        // Estado de cuenta unificado por tercero (solo consulta): junta en una
+        // sola fila lo que un cliente/proveedor debe y lo que se le debe.
+        Route::middleware('permiso:finanzas.estado-cuenta,ver')->get('estado-cuenta', [EstadoCuentaController::class, 'index'])->name('estado-cuenta.index');
+        Route::middleware('permiso:finanzas.estado-cuenta,ver')->get('estado-cuenta/{clave}', [EstadoCuentaController::class, 'show'])->where('clave', '.*')->name('estado-cuenta.show');
+
         // Cuentas por cobrar (ventas a crédito)
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,ver')->get('cuentas-por-cobrar', [CuentasPorCobrarController::class, 'index'])->name('cxc.index');
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,crear')->post('cuentas-por-cobrar/{venta}/abonar', [CuentasPorCobrarController::class, 'abonar'])->name('cxc.abonar');

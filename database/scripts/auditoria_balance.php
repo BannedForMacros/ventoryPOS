@@ -60,7 +60,7 @@ foreach ($balance->items->where('es_manual', false) as $it) {
             $check($nombre, (float) $it->monto, round($real, 2)); break;
         case $it->categoria === 'anticipo_cliente':
             $real = App\Models\ClienteAnticipo::deEmpresa($EMPRESA)->activo()->with('producto')->get()
-                ->sum(fn ($a) => $a->valorPasivoHoy());
+                ->sum(fn ($a) => $a->valorPasivo());
             $check($nombre, (float) $it->monto, round((float) $real, 2)); break;
         case in_array($it->categoria, ['deuda', 'personal', 'prestamo_otorgado']):
             $real = (float) DB::table('deudas')->where('id', $it->ref_id)->value('saldo');

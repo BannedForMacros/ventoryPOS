@@ -51,16 +51,16 @@ class ClienteAnticipo extends Model
      * Pasivo que representa el anticipo HOY.
      *
      * - 'monto': lo que queda por aplicar en soles.
-     * - 'material': cantidad aún no entregada × precio de venta ACTUAL del
-     *   producto (precio del día). Si el ladrillo subió, la deuda en
-     *   mercadería vale más — exactamente como lo calcula el cliente en su
-     *   Excel. Fallback al saldo en soles si el producto ya no existe.
+     * - 'material' clásico (un solo producto): cantidad aún no entregada al
+     *   precio CONGELADO que el cliente pagó (monto/cantidad). No se
+     *   revaloriza al precio del día: el cliente pagó un precio concreto y ese
+     *   se le respeta, suba o baje el producto después.
      * - 'material' multi-producto (pendiente por entregar del POS): el cliente
      *   YA PAGÓ esos productos a un precio concreto; se le debe exactamente lo
      *   pagado y no entregado (el saldo, congelado al precio de la venta). NO
      *   se revaloriza a precio del día: la deuda es de esa venta, de ese día.
      */
-    public function valorPasivoHoy(): float
+    public function valorPasivo(): float
     {
         if ($this->tipo_valorizacion === 'material') {
             // Multi-producto (venta POS con pendiente por entregar): pasivo =
@@ -69,8 +69,14 @@ class ClienteAnticipo extends Model
                 return (float) $this->saldo;
             }
 
-            if ($this->producto && $this->cantidad_pendiente !== null) {
-                return round((float) $this->cantidad_pendiente * (float) $this->producto->precio_venta, 2);
+            // Precio congelado por unidad = lo que el cliente pagó de verdad.
+            // Ojo: si el saldo quedó desincronizado de la cantidad pendiente
+            // (aplicaciones de versiones viejas), manda la cantidad pendiente:
+            // se le debe la mercadería, no lo que diga el saldo.
+            if ($this->producto && $this->cantidad_pendiente !== null && (float) $this->cantidad > 0) {
+                $precioCongelado = (float) $this->monto / (float) $this->cantidad;
+
+                return round((float) $this->cantidad_pendiente * $precioCongelado, 2);
             }
         }
 

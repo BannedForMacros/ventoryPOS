@@ -35,14 +35,14 @@ class ClienteAnticipoItem extends Model
     public function unidad(): BelongsTo    { return $this->belongsTo(ProductoUnidad::class, 'producto_unidad_id'); }
 
     /**
-     * Pasivo de este ítem HOY: pendiente × precio de venta ACTUAL de la
-     * presentación vendida (precio del día). Fallback al precio congelado
-     * de la venta si la presentación ya no existe.
+     * Pasivo de este ítem: pendiente × precio CONGELADO de la venta.
+     *
+     * El cliente pagó estos productos a un precio concreto y ese es el que se
+     * le respeta: si el producto sube o baja después, la deuda con él no
+     * cambia. NO se revaloriza al precio del día.
      */
-    public function valorPasivoHoy(): float
+    public function valorPasivo(): float
     {
-        $precioDia = $this->unidad?->precio_venta ?? $this->precio_unitario;
-
-        return round((float) $this->cantidad_pendiente * (float) $precioDia, 2);
+        return round((float) $this->cantidad_pendiente * (float) $this->precio_unitario, 2);
     }
 }

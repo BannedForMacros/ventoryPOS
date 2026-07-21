@@ -315,10 +315,13 @@ class BalanceDiarioService
                     return round((float) $a->saldo + (float) ($post->monto ?? 0), 2);
                 }
 
-                // Material clásico: cantidad pendiente al corte × precio del día.
-                if ($a->tipo_valorizacion === 'material' && $a->producto && $a->cantidad_pendiente !== null) {
+                // Material clásico: cantidad pendiente al corte × precio
+                // CONGELADO que el cliente pagó (monto/cantidad). No se
+                // revaloriza al precio del día: se le debe lo que pagó.
+                if ($a->tipo_valorizacion === 'material' && $a->producto
+                    && $a->cantidad_pendiente !== null && (float) $a->cantidad > 0) {
                     $cant = (float) $a->cantidad_pendiente + (float) ($post->cantidad ?? 0);
-                    return round($cant * (float) $a->producto->precio_venta, 2);
+                    return round($cant * ((float) $a->monto / (float) $a->cantidad), 2);
                 }
 
                 // Dinero: saldo al corte.
@@ -327,7 +330,7 @@ class BalanceDiarioService
 
         $items[] = [
             'seccion' => 'contra', 'categoria' => 'anticipo_cliente',
-            'descripcion' => 'Clientes anticipos (a precio del día)',
+            'descripcion' => 'Clientes anticipos (al precio pagado)',
             'monto' => round((float) $anticipos, 2), 'orden' => ++$orden,
         ];
 

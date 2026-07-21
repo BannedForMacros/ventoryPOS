@@ -174,7 +174,7 @@ class DashboardController extends Controller
             ->with(['producto', 'items.unidad'])->get();
         $pendEntrega = [
             'cant'  => $pendientesEntrega->count(),
-            'valor' => round($pendientesEntrega->sum(fn ($a) => $a->valorPasivoHoy()), 2),
+            'valor' => round($pendientesEntrega->sum(fn ($a) => $a->valorPasivo()), 2),
         ];
 
         // ── Cotizaciones: seguimiento comercial ─────────────────────────
