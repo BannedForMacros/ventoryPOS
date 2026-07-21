@@ -161,6 +161,11 @@ class ReconstruirKardex extends Command
             $pendientePorVenta = DB::table('cliente_anticipo_items as ci')
                 ->join('cliente_anticipos as an', 'an.id', '=', 'ci.cliente_anticipo_id')
                 ->whereNotNull('an.venta_id')
+                // Excluir anticipos ANULADOS: al editar/anular una venta, el
+                // anticipo viejo queda 'anulado' pero sus items conservan la
+                // cantidad. Contarlos aquí subestimaría "salió al vender" y
+                // dejaría stock fantasma (mismo criterio que Stock::reconstruir).
+                ->where('an.estado', '<>', 'anulado')
                 ->where('ci.producto_id', $productoId)
                 ->selectRaw('an.venta_id, SUM(ci.cantidad * ci.factor_conversion) as t')
                 ->groupBy('an.venta_id')
@@ -190,6 +195,7 @@ class ReconstruirKardex extends Command
                 ->join('ventas as v', 'v.id', '=', 'an.venta_id')
                 ->where('v.local_id', $almacen->local_id)
                 ->where('v.empresa_id', $almacen->empresa_id)
+                ->where('an.estado', '<>', 'anulado')
                 ->where('ci.producto_id', $productoId), 'ca.fecha')
                 ->get([
                     'cai.cantidad', 'ci.factor_conversion', 'ca.id as aplicacion_id',

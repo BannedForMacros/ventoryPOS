@@ -473,8 +473,11 @@ class VentaService
             }
 
             // El anticipo anterior se anula; aplicarItemsPagos creará el nuevo
-            // según el pendiente indicado en la edición (si lo hay).
+            // según el pendiente indicado en la edición (si lo hay). Al anular se
+            // deja su pendiente en 0: si no, esos items quedan "vivos" y el
+            // recálculo de stock/kardex los revive como mercadería fantasma.
             foreach ($anticiposPendientes as $ant) {
+                $ant->items()->update(['cantidad_pendiente' => 0]);
                 $ant->update(['estado' => 'anulado']);
                 \App\Services\AuditoriaService::log('anticipo_cliente.anulado', $ant, [
                     'motivo' => "Edición de la venta {$venta->numero}: el pendiente se reemplaza por el detalle nuevo",
@@ -573,10 +576,13 @@ class VentaService
                 }
             }
 
-            // El pendiente muere con la venta: se anula el anticipo vinculado.
+            // El pendiente muere con la venta: se anula el anticipo vinculado y
+            // se deja su pendiente en 0 (si no, esos items quedan "vivos" y el
+            // recálculo de stock/kardex los revive como mercadería fantasma).
             // Sin movimiento de tesorería propio (el dinero se revierte con los
             // pagos de la venta, abajo).
             foreach ($anticiposPendientes as $ant) {
+                $ant->items()->update(['cantidad_pendiente' => 0]);
                 $ant->update(['estado' => 'anulado']);
                 \App\Services\AuditoriaService::log('anticipo_cliente.anulado', $ant, [
                     'motivo' => "Anulación de la venta {$venta->numero}",

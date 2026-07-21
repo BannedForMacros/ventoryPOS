@@ -343,6 +343,10 @@ class Stock extends Model
             })
             ->where('a.id', $almacenId)
             ->where('v.estado', 'completada')
+            // Un anticipo ANULADO (venta editada/anulada) deja sus items con
+            // cantidad_pendiente intacta: si se sumaran, revivirían como stock
+            // fantasma en cada recálculo. Solo cuentan los anticipos vigentes.
+            ->where('an.estado', '<>', 'anulado')
             ->where('ci.producto_id', $productoId), 'v.fecha_venta')
             ->selectRaw('COALESCE(SUM(ci.cantidad_pendiente * ci.factor_conversion), 0) as t')
             ->value('t');
@@ -366,6 +370,7 @@ class Stock extends Model
                 })
                 ->where('a.id', $almacenId)
                 ->where('ci.producto_id', $productoId)
+                ->where('an.estado', '<>', 'anulado')
                 ->where('ca.fecha', '>', $corte)
                 ->where('v.fecha_venta', '<=', $corte)
                 ->selectRaw('COALESCE(SUM(cai.cantidad * ci.factor_conversion), 0) as t')
