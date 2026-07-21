@@ -423,6 +423,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:reportes.devoluciones,ver')->get('devoluciones', [ReporteDevolucionController::class, 'index'])->name('devoluciones');
         Route::middleware('permiso:reportes.auditoria,ver')->get('auditoria',     [ReporteAuditoriaController::class,    'index'])->name('auditoria');
         Route::middleware('permiso:reportes.kardex,ver')->get('kardex',           [\App\Http\Controllers\Reportes\ReporteKardexController::class, 'index'])->name('kardex');
+        Route::middleware('permiso:reportes.kardex,ver')->get('kardex/historial-diario', [\App\Http\Controllers\Reportes\ReporteKardexController::class, 'historialDiario'])->name('kardex.historial-diario');
     });
 
     // ── WHATSAPP ─────────────────────────────────────────────────────────

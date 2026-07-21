@@ -153,4 +153,99 @@ class ReporteKardexController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Historial DIARIO de un producto (JSON, para el modal del kardex).
+     *
+     * Devuelve, por cada día con movimiento en el rango, cuánto entró, cuánto
+     * salió y el SALDO al cierre del día (cuánta cantidad quedó ese día). Si se
+     * pasa `fecha`, agrega `punto`: el stock que el producto tenía al cierre de
+     * ESA fecha exacta (aunque ese día no haya tenido movimiento), respondiendo
+     * "¿cuánto tenía el día tal?".
+     *
+     * El saldo al cierre se toma del último movimiento de cada almacén con
+     * fecha <= fin del día (DISTINCT ON) y se suma entre almacenes: así arrastra
+     * bien el stock en los días sin movimiento y cubre productos multi-almacén.
+     */
+    public function historialDiario(Request $request)
+    {
+        $user       = $request->user();
+        $almacenes  = $this->scope->almacenesVisibles($user);
+        $almacenIds = $almacenes->pluck('id')->toArray();
+
+        $productoId = (int) $request->producto_id;
+        abort_unless($productoId, 422, 'Selecciona un producto para ver su historial diario.');
+
+        $desde = $request->fecha_desde ?: now()->startOfMonth()->toDateString();
+        $hasta = $request->fecha_hasta ?: now()->toDateString();
+
+        // Alcance de almacenes: respeta el filtro opcional; si no, todos los visibles.
+        $almIds = $request->almacen_id ? [(int) $request->almacen_id] : $almacenIds;
+        if (empty($almIds)) {
+            return response()->json(['dias' => [], 'punto' => null]);
+        }
+        $ph = implode(',', array_fill(0, count($almIds), '?'));
+
+        // Saldo (cantidad y valorizado) al cierre de un instante: último
+        // movimiento por almacén con fecha <= corte, sumado entre almacenes.
+        $saldoAlCierre = "
+            (SELECT COALESCE(SUM(s.saldo), 0) FROM (
+                SELECT DISTINCT ON (m.almacen_id) m.saldo_cantidad AS saldo
+                FROM movimientos_inventario m
+                WHERE m.empresa_id = ? AND m.producto_id = ? AND m.almacen_id IN ($ph)
+                  AND m.fecha <= %s
+                ORDER BY m.almacen_id, m.fecha DESC, m.id DESC
+            ) s)";
+        $valorAlCierre = str_replace('m.saldo_cantidad AS saldo', 'm.saldo_valorizado AS saldo', $saldoAlCierre);
+
+        $finDia = "(d.dia + INTERVAL '1 day' - INTERVAL '1 second')";
+
+        $sql = "
+            WITH dias AS (
+                SELECT fecha::date AS dia,
+                       COALESCE(SUM(CASE WHEN cantidad > 0 THEN cantidad ELSE 0 END), 0) AS entra,
+                       COALESCE(SUM(CASE WHEN cantidad < 0 THEN -cantidad ELSE 0 END), 0) AS sale
+                FROM movimientos_inventario
+                WHERE empresa_id = ? AND producto_id = ? AND almacen_id IN ($ph)
+                  AND fecha::date BETWEEN ? AND ?
+                GROUP BY fecha::date
+            )
+            SELECT d.dia, d.entra, d.sale,
+                   " . sprintf($saldoAlCierre, $finDia) . " AS saldo_cierre,
+                   " . sprintf($valorAlCierre, $finDia) . " AS valor_cierre
+            FROM dias d
+            ORDER BY d.dia DESC";
+
+        $bind = array_merge(
+            [$user->empresa_id, $productoId], $almIds, [$desde, $hasta],   // CTE dias
+            [$user->empresa_id, $productoId], $almIds,                     // saldo_cierre
+            [$user->empresa_id, $productoId], $almIds,                     // valor_cierre
+        );
+
+        $dias = collect(DB::select($sql, $bind))->map(fn ($r) => [
+            'dia'          => $r->dia,
+            'entra'        => (float) $r->entra,
+            'sale'         => (float) $r->sale,
+            'saldo_cierre' => (float) $r->saldo_cierre,
+            'valor_cierre' => (float) $r->valor_cierre,
+        ]);
+
+        // Punto exacto: stock al cierre de la fecha consultada (cualquier día).
+        $punto = null;
+        if ($request->fecha) {
+            $sqlP = 'SELECT ' . sprintf($saldoAlCierre, '?') . ' AS saldo, '
+                              . sprintf($valorAlCierre, '?') . ' AS valor';
+            $row  = DB::selectOne($sqlP, array_merge(
+                [$user->empresa_id, $productoId], $almIds, [$request->fecha . ' 23:59:59'],
+                [$user->empresa_id, $productoId], $almIds, [$request->fecha . ' 23:59:59'],
+            ));
+            $punto = [
+                'fecha' => $request->fecha,
+                'saldo' => (float) $row->saldo,
+                'valor' => (float) $row->valor,
+            ];
+        }
+
+        return response()->json(['dias' => $dias, 'punto' => $punto]);
+    }
 }

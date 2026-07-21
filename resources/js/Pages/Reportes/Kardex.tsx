@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { Filter, X, Search, ScrollText, ArrowDownCircle, ArrowUpCircle, Package, Wallet, Loader2, ShoppingCart } from 'lucide-react';
+import { Filter, X, Search, ScrollText, ArrowDownCircle, ArrowUpCircle, Package, Wallet, Loader2, ShoppingCart, CalendarClock } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Modal from '@/Components/UI/Modal';
@@ -68,6 +68,10 @@ interface VentaTicket {
     pago:      { metodo: string | null; recibido: number | null; vuelto: number | null };
 }
 
+// ── Historial diario (modal por producto) ─────────────────────────────────
+interface DiaRow { dia: string; entra: number; sale: number; saldo_cierre: number; valor_cierre: number; }
+interface PuntoStock { fecha: string; saldo: number; valor: number; }
+
 interface Kpis { movimientos: number; total_entra: number; total_sale: number; stock_actual: number; }
 interface Almacen { id: number; nombre: string; }
 interface TipoOpt { value: string; label: string; }
@@ -132,6 +136,44 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
         setDetalleTipo(null);
     }
 
+    // ── Historial diario del producto seleccionado ────────────────────────
+    const [histOpen, setHistOpen]       = useState(false);
+    const [histLoading, setHistLoading] = useState(false);
+    const [histDias, setHistDias]       = useState<DiaRow[]>([]);
+    const [histFecha, setHistFecha]     = useState<string>(filters.fecha_hasta);
+    const [histPunto, setHistPunto]     = useState<PuntoStock | null>(null);
+    const [puntoLoading, setPuntoLoading] = useState(false);
+
+    function abrirHistorial() {
+        if (!filters.producto_id) return;
+        setHistOpen(true);
+        setHistLoading(true);
+        setHistPunto(null);
+        axios.get(route('reportes.kardex.historial-diario'), {
+            params: {
+                producto_id: filters.producto_id,
+                almacen_id:  filters.almacen_id,
+                fecha_desde: filters.fecha_desde,
+                fecha_hasta: filters.fecha_hasta,
+            },
+        })
+            .then(res => setHistDias(res.data.dias ?? []))
+            .catch(() => toast.error('No se pudo cargar el historial diario.'))
+            .finally(() => setHistLoading(false));
+    }
+
+    function consultarFecha(fecha: string) {
+        setHistFecha(fecha);
+        if (!fecha || !filters.producto_id) { setHistPunto(null); return; }
+        setPuntoLoading(true);
+        axios.get(route('reportes.kardex.historial-diario'), {
+            params: { producto_id: filters.producto_id, almacen_id: filters.almacen_id, fecha },
+        })
+            .then(res => setHistPunto(res.data.punto ?? null))
+            .catch(() => toast.error('No se pudo consultar esa fecha.'))
+            .finally(() => setPuntoLoading(false));
+    }
+
     function filtrar(patch: Partial<Filters>) {
         router.get(route('reportes.kardex'), { ...filters, ...patch }, { preserveState: true, replace: true });
     }
@@ -172,7 +214,12 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
                      style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', color: 'var(--color-text)' }}>
                     <Package size={14} style={{ color: 'var(--color-primary)' }} />
                     <span>Viendo el kardex de <strong>{productoSel.nombre}</strong>{productoSel.codigo ? ` · ${productoSel.codigo}` : ''}</span>
-                    <button onClick={quitarProducto} className="ml-auto inline-flex items-center gap-1 text-xs font-medium hover:underline" style={{ color: 'var(--color-primary)' }}>
+                    <button onClick={abrirHistorial}
+                            className="ml-auto inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold text-white"
+                            style={{ backgroundColor: 'var(--color-primary)' }}>
+                        <CalendarClock size={13} /> Historial diario
+                    </button>
+                    <button onClick={quitarProducto} className="inline-flex items-center gap-1 text-xs font-medium hover:underline" style={{ color: 'var(--color-primary)' }}>
                         <X size={12} /> Ver todos
                     </button>
                 </div>
@@ -321,6 +368,79 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
                 ) : detalleTipo === 'venta' && ventaDet ? (
                     <DetalleVenta v={ventaDet} />
                 ) : null}
+            </Modal>
+
+            {/* Modal: HISTORIAL DIARIO del producto — saldo al cierre por día y
+                consulta de stock a una fecha exacta. */}
+            <Modal
+                isOpen={histOpen}
+                onClose={() => setHistOpen(false)}
+                title={productoSel ? `Historial diario · ${productoSel.nombre}` : 'Historial diario'}
+                size="lg"
+            >
+                {/* Consulta "¿cuánto tenía el día...?" */}
+                <div className="rounded-lg p-3 mb-4" style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 7%, transparent)', border: '1px solid var(--color-border)' }}>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <CalendarClock size={15} style={{ color: 'var(--color-primary)' }} />
+                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>¿Cuánto tenía el</span>
+                        <input type="date" value={histFecha} max={filters.fecha_hasta}
+                               onChange={e => consultarFecha(e.target.value)}
+                               className="text-sm border rounded-lg px-2 py-1 focus:outline-none focus:ring-2" style={ringStyle} />
+                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>?</span>
+                        <div className="ml-auto text-right">
+                            {puntoLoading ? (
+                                <Loader2 size={16} className="animate-spin" style={{ color: 'var(--color-text-muted)' }} />
+                            ) : histPunto ? (
+                                <>
+                                    <div className="text-lg font-bold" style={{ color: 'var(--color-primary)', fontVariantNumeric: 'tabular-nums' }}>{num(histPunto.saldo)}</div>
+                                    <div className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{sol(histPunto.valor)} valorizado</div>
+                                </>
+                            ) : (
+                                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Elige una fecha</span>
+                            )}
+                        </div>
+                    </div>
+                    <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                        Es el stock al cierre de ese día — funciona aunque ese día no haya tenido movimiento.
+                    </p>
+                </div>
+
+                {/* Tabla: saldo al cierre por día */}
+                {histLoading ? (
+                    <div className="flex items-center justify-center py-10 gap-2" style={{ color: 'var(--color-text-muted)' }}>
+                        <Loader2 size={18} className="animate-spin" />
+                        <span className="text-sm">Cargando historial...</span>
+                    </div>
+                ) : histDias.length === 0 ? (
+                    <div className="text-center py-10" style={{ color: 'var(--color-text-muted)' }}>
+                        <CalendarClock size={32} className="mx-auto mb-2 opacity-20" />
+                        <p className="text-sm">Sin movimientos en el rango {filters.fecha_desde} → {filters.fecha_hasta}.</p>
+                    </div>
+                ) : (
+                    <div className="rounded-lg overflow-x-auto" style={{ border: '1px solid var(--color-border)' }}>
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr style={{ backgroundColor: 'var(--color-bg)', borderBottom: '2px solid var(--color-border)' }}>
+                                    {['Día', 'Entró', 'Salió', 'Stock al cierre', 'Valorizado'].map((h, i) => (
+                                        <th key={h} className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${i === 0 ? 'text-left' : 'text-right'}`}
+                                            style={{ color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {histDias.map(d => (
+                                    <tr key={d.dia} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                        <td className="px-3 py-2 text-xs font-medium whitespace-nowrap" style={{ color: 'var(--color-text)' }}>{d.dia}</td>
+                                        <td className="px-3 py-2 text-xs text-right font-medium" style={{ color: 'var(--color-success)', fontVariantNumeric: 'tabular-nums' }}>{d.entra ? num(d.entra) : ''}</td>
+                                        <td className="px-3 py-2 text-xs text-right font-medium" style={{ color: 'var(--color-danger)', fontVariantNumeric: 'tabular-nums' }}>{d.sale ? num(d.sale) : ''}</td>
+                                        <td className="px-3 py-2 text-xs text-right font-bold" style={{ color: d.saldo_cierre < 0 ? 'var(--color-danger)' : 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}>{num(d.saldo_cierre)}</td>
+                                        <td className="px-3 py-2 text-xs text-right font-mono" style={{ color: 'var(--color-text-muted)' }}>{sol(d.valor_cierre)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </Modal>
 
             {/* Hover para filas clicables — indica que hay detalle disponible. */}
