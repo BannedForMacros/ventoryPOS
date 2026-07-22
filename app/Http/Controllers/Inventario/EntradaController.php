@@ -954,4 +954,82 @@ class EntradaController extends Controller
 
         return redirect()->back()->with('success', 'Entrada eliminada correctamente.');
     }
+
+    /**
+     * Anula una entrada CONFIRMADA: revierte su efecto en TODO lo correlacionado.
+     *  - Stock: reversa cada detalle (kardex 'entrada_reverso') y reconstruye el
+     *    CPP de los productos tocados (el reverso no recalcula CPP por sí solo).
+     *  - Cuenta por pagar / balance / estado de cuenta: al quedar estado='anulada'
+     *    sale de todos esos cálculos (todos filtran estado='confirmado').
+     *  - Pagos: revierte cada pago y su egreso de tesorería.
+     * Respeta el corte de apertura (una entrada absorbida por el inicial nunca
+     * aportó stock en vivo, no hay nada que revertir).
+     */
+    public function anular(Request $request, Entrada $entrada)
+    {
+        $user = $request->user();
+        abort_unless($this->scope->puedeAccederAlmacen($user, $entrada->almacen), 403);
+        abort_if($entrada->estado !== 'confirmado', 422,
+            'Solo se pueden anular entradas confirmadas. Las de borrador se eliminan.');
+
+        $data = $request->validate(['motivo' => ['required', 'string', 'min:3', 'max:255']]);
+
+        $entrada->loadMissing('detalles.producto');
+        $snapshot = [
+            'almacen_id'  => $entrada->almacen_id,
+            'fecha'       => $entrada->fecha?->toDateString(),
+            'total'       => (float) $entrada->total,
+            'monto_pagado'=> (float) $entrada->monto_pagado,
+            'detalles'    => $entrada->detalles->map(fn ($d) => [
+                'producto_id'     => $d->producto_id,
+                'producto_nombre' => $d->producto?->nombre,
+                'cantidad_base'   => (float) $d->cantidad_base,
+            ])->all(),
+        ];
+
+        DB::transaction(function () use ($entrada, $user) {
+            // 1) Revertir el stock que aportó cada detalle (respeta apertura).
+            $productos = collect();
+            foreach ($entrada->detalles as $d) {
+                $productos->push($d->producto_id);
+                if (Stock::absorbidoPorApertura($entrada->almacen_id, $d->producto_id, $entrada->fecha)) {
+                    continue;
+                }
+                Stock::ajustar(
+                    almacenId:        $entrada->almacen_id,
+                    productoId:       $d->producto_id,
+                    cantidadBase:     -1 * (float) $d->cantidad_base,
+                    permitirNegativo: true,
+                    contexto: [
+                        'tipo'            => 'entrada_reverso',
+                        'referencia_tipo' => 'entrada',
+                        'referencia_id'   => $entrada->id,
+                        'documento'       => $entrada->numero_documento,
+                        'fecha'           => $entrada->fecha,
+                        'user_id'         => $user->id,
+                        'empresa_id'      => $entrada->empresa_id,
+                    ],
+                );
+            }
+
+            // 2) Revertir pagos y sus egresos de tesorería.
+            foreach ($entrada->pagosParciales()->get() as $p) {
+                $this->tesoreria->revertir('entrada_pago', $p->id);
+                $p->delete();
+            }
+
+            // 3) Marcarla anulada ANTES de reconstruir: así el recálculo del CPP ya
+            //    no la cuenta (sale de stock/kardex/CxP/balance/estado de cuenta).
+            $entrada->update(['estado' => 'anulada', 'estado_pago' => 'pendiente', 'monto_pagado' => 0]);
+
+            // 4) Reconstruir el CPP de los productos afectados (el reverso no lo hace).
+            foreach ($productos->unique() as $pid) {
+                Stock::reconstruir($entrada->almacen_id, (int) $pid);
+            }
+        });
+
+        AuditoriaService::log('entrada.anulada', $entrada, $snapshot + ['motivo' => $data['motivo']], $user);
+
+        return redirect()->back()->with('success', 'Entrada anulada: stock, kardex y cuenta por pagar revertidos.');
+    }
 }

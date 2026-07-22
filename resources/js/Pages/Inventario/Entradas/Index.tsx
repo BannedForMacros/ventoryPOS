@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet, Eye, Loader2 } from 'lucide-react';
+import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet, Eye, Loader2, Ban } from 'lucide-react';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -47,7 +47,7 @@ interface Entrada extends Record<string, unknown> {
     almacen: Almacen;
     user: UserItem;
     total: string;
-    estado: 'borrador' | 'confirmado';
+    estado: 'borrador' | 'confirmado' | 'anulada';
     estado_pago: 'pendiente' | 'parcial' | 'pagado';
     monto_pagado: string;
     metodo_pago_id: number | null;
@@ -87,6 +87,10 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
     const { flash } = usePage<Props>().props;
     const [confirmId, setConfirmId]   = useState<number | null>(null);
     const [deleteId, setDeleteId]     = useState<number | null>(null);
+    const [anular, setAnular]         = useState<Entrada | null>(null);
+    const [motivoAnular, setMotivoAnular] = useState('');
+    const [anulErr, setAnulErr]       = useState<Record<string, string>>({});
+    const [anulSaving, setAnulSaving] = useState(false);
     const [filtrAlmacen, setFiltrAlmacen] = useState(filters.almacen_id ?? '');
     const [filtrEstado, setFiltrEstado]   = useState(filters.estado ?? '');
     // Search vive a nivel de página para compartirse entre la vista de cards (mobile)
@@ -195,6 +199,16 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
         router.delete(route('inventario.entradas.destroy', id));
     }
 
+    function confirmarAnular() {
+        if (!anular) return;
+        setAnulSaving(true);
+        router.post(route('inventario.entradas.anular', anular.id), { motivo: motivoAnular }, {
+            preserveScroll: true,
+            onSuccess: () => { setAnular(null); setMotivoAnular(''); setAnulSaving(false); },
+            onError:   (e) => { setAnulErr(e as Record<string, string>); setAnulSaving(false); },
+        });
+    }
+
     const columns: Column<Entrada>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
@@ -257,8 +271,8 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
         {
             key: 'estado', label: 'Estado', sortable: true,
             render: (e) => (
-                <Badge variant={e.estado === 'confirmado' ? 'success' : 'warning'}>
-                    {e.estado === 'confirmado' ? 'Confirmado' : 'Borrador'}
+                <Badge variant={e.estado === 'confirmado' ? 'success' : e.estado === 'anulada' ? 'danger' : 'warning'}>
+                    {e.estado === 'confirmado' ? 'Confirmado' : e.estado === 'anulada' ? 'Anulada' : 'Borrador'}
                 </Badge>
             ),
         },
@@ -280,7 +294,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     {/* Pagar: solo si AÚN debe algo. Una entrada ya pagada no muestra el
                         botón (no hay nada que cobrar). Para corregir un pago ya hecho se usa
                         Editar o Finanzas → Cuentas por pagar. */}
-                    {e.estado_pago !== 'pagado' && (
+                    {e.estado === 'confirmado' && e.estado_pago !== 'pagado' && (
                         <button
                             type="button"
                             onClick={() => abrirPagoModal(e)}
@@ -291,9 +305,20 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                             <Wallet size={13} />Pagar
                         </button>
                     )}
+                    {e.estado === 'confirmado' && (
+                        <button
+                            type="button"
+                            onClick={() => { setAnulErr({}); setMotivoAnular(''); setAnular(e); }}
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors"
+                            style={{ color: 'var(--color-danger)', backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, transparent)' }}
+                            title="Anular entrada (revierte stock, kardex y cuenta por pagar)"
+                        >
+                            <Ban size={13} />Anular
+                        </button>
+                    )}
                     <TableActions
                         onView={() => abrirVerDetalle(e.id)}
-                        onEdit={() => router.visit(route('inventario.entradas.edit', e.id))}
+                        onEdit={e.estado !== 'anulada' ? () => router.visit(route('inventario.entradas.edit', e.id)) : undefined}
                         onDelete={e.estado === 'borrador' ? () => setDeleteId(e.id) : undefined}
                     />
                 </div>
@@ -589,6 +614,37 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                 <p className="text-sm" style={{ color: 'var(--color-text)' }}>
                     Se eliminará la entrada en borrador. Esta acción no se puede deshacer.
                 </p>
+            </Modal>
+
+            {/* Modal anular (entrada confirmada) */}
+            <Modal
+                isOpen={anular !== null}
+                onClose={() => setAnular(null)}
+                title={anular ? `Anular entrada ${anular.correlativo ?? anular.numero_documento ?? ''}` : ''}
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setAnular(null)}>Cancelar</Button>
+                        <Button variant="danger" loading={anulSaving} onClick={confirmarAnular}>Anular entrada</Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                        Se revierte el <strong>stock</strong> de esta entrada, su rastro en el <strong>kardex</strong>,
+                        la <strong>cuenta por pagar</strong> y los <strong>pagos</strong> registrados. Queda auditado.
+                    </p>
+                    <label className="text-xs font-medium uppercase block" style={{ color: 'var(--color-text-muted)' }}>Motivo</label>
+                    <input
+                        type="text"
+                        value={motivoAnular}
+                        onChange={(e) => setMotivoAnular(e.target.value)}
+                        placeholder="Ej. se registró como entrada por error"
+                        className="w-full rounded-lg border py-2 px-3 text-sm outline-none"
+                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                    />
+                    {anulErr.motivo && <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{anulErr.motivo}</p>}
+                </div>
             </Modal>
 
             {/* Modal quick-pago: para actualizar el estado de pago sin entrar al form completo.
