@@ -37,6 +37,10 @@ interface Aplicacion {
     venta?: { numero: string | null } | null;
     user?: { name: string } | null;
     items?: AplicacionItem[];
+    metodo_pago_id?: number | null;
+    cuenta_id?: number | null;
+    metodo_pago?: { nombre: string } | null;
+    cuenta?: { nombre: string } | null;
 }
 
 /** Ítem de un anticipo multi-producto (pendiente por entregar del POS). */
@@ -150,7 +154,7 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     const [saving, setSaving]           = useState(false);
     const [errors, setErrors]           = useState<Record<string, string>>({});
     const [form, setForm]               = useState(emptyForm());
-    const [formAplicar, setFormAplicar] = useState({ fecha: hoy(), monto: '', cantidad: '', observacion: '' });
+    const [formAplicar, setFormAplicar] = useState({ fecha: hoy(), monto: '', cantidad: '', observacion: '', metodo_pago_id: '', cuenta_id: '' });
     // Entregas por ítem (anticipos multi-producto del POS): item.id → cantidad a entregar.
     const [entregas, setEntregas]       = useState<Record<number, string>>({});
     const [excesoACxc, setExcesoACxc]   = useState(false);
@@ -158,7 +162,7 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     // Editar / anular una ENTREGA de dinero ya registrada.
     const [editandoEntrega, setEditandoEntrega] = useState<Aplicacion | null>(null);
     const [anulandoEntrega, setAnulandoEntrega] = useState<Aplicacion | null>(null);
-    const [formEntrega, setFormEntrega]         = useState({ monto: '', fecha: hoy(), observacion: '' });
+    const [formEntrega, setFormEntrega]         = useState({ monto: '', fecha: hoy(), observacion: '', metodo_pago_id: '', cuenta_id: '' });
     const [motivoEntrega, setMotivoEntrega]     = useState('');
 
     // Cliente general ("Clientes varios"): para anticipos/depósitos sin dueño identificado.
@@ -294,6 +298,9 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
             // En material el monto lo calcula el backend (prorrata del anticipo).
             monto:        aplicando.tipo_valorizacion === 'material' ? null : formAplicar.monto,
             cantidad:     aplicando.tipo_valorizacion === 'material' ? (formAplicar.cantidad || null) : null,
+            // Método/cuenta solo en dinero (de dónde sale el egreso de caja).
+            metodo_pago_id: aplicando.tipo_valorizacion === 'material' ? null : (formAplicar.metodo_pago_id || null),
+            cuenta_id:      aplicando.tipo_valorizacion === 'material' ? null : (formAplicar.cuenta_id || null),
             exceso_a_cxc: excesoACxc,
         } as any, {
             onSuccess: () => { setAplicando(null); setSaving(false); },
@@ -313,7 +320,11 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     /** Abre el modal de edición de una entrega de dinero. */
     function abrirEditarEntrega(ap: Aplicacion) {
         setErrors({});
-        setFormEntrega({ monto: String(ap.monto), fecha: ap.fecha, observacion: ap.observacion ?? '' });
+        setFormEntrega({
+            monto: String(ap.monto), fecha: ap.fecha, observacion: ap.observacion ?? '',
+            metodo_pago_id: ap.metodo_pago_id ? String(ap.metodo_pago_id) : '',
+            cuenta_id:      ap.cuenta_id ? String(ap.cuenta_id) : '',
+        });
         setEditandoEntrega(ap);
     }
 
@@ -411,7 +422,7 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         <>
                             <button onClick={() => {
                                 setErrors({}); setExcesoACxc(false);
-                                setFormAplicar({ fecha: hoy(), monto: a.tipo_valorizacion === 'material' ? '' : String(a.saldo), cantidad: '', observacion: '' });
+                                setFormAplicar({ fecha: hoy(), monto: a.tipo_valorizacion === 'material' ? '' : String(a.saldo), cantidad: '', observacion: '', metodo_pago_id: a.metodo_pago_id ? String(a.metodo_pago_id) : '', cuenta_id: a.cuenta_id ? String(a.cuenta_id) : '' });
                                 // Multi-producto: por defecto se entrega TODO lo pendiente;
                                 // el usuario puede bajar cantidades ("solo te doy tanto").
                                 setEntregas(Object.fromEntries((a.items ?? []).map(i => [i.id, String(Number(i.cantidad_pendiente))])));
@@ -756,8 +767,24 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                     onChange={e => setFormAplicar(f => ({ ...f, cantidad: e.target.value }))} error={errors.cantidad}
                                     hint="El monto del anticipo se descuenta solo, a prorrata de lo anticipado." />
                             ) : (
-                                <Input label="Valor de la entrega (S/)" required type="number" min="0.01" step="0.01" value={formAplicar.monto}
-                                    onChange={e => setFormAplicar(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                                <>
+                                    <Input label="Valor de la entrega (S/)" required type="number" min="0.01" step="0.01" value={formAplicar.monto}
+                                        onChange={e => setFormAplicar(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                                    <Select label="Método de pago (por dónde sale el dinero)"
+                                        options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
+                                        value={formAplicar.metodo_pago_id}
+                                        onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormAplicar(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
+                                        error={errors.metodo_pago_id}
+                                    />
+                                    {cuentasDeMetodo(formAplicar.metodo_pago_id).length > 0 && (
+                                        <Select label="Cuenta"
+                                            options={cuentasDeMetodo(formAplicar.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                                            value={formAplicar.cuenta_id}
+                                            onChange={v => setFormAplicar(f => ({ ...f, cuenta_id: String(v) }))}
+                                            error={errors.cuenta_id}
+                                        />
+                                    )}
+                                </>
                             )}
 
                             {/* Excedente: se pregunta, nunca pasa a ciegas */}
@@ -951,10 +978,24 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
             >
                 <div className="space-y-4">
                     <Callout variant="info">
-                        Al cambiar el monto se recalcula el saldo del anticipo. No mueve caja: aplicar un anticipo en dinero no movió tesorería.
+                        Al cambiar el monto se recalcula el saldo del anticipo y se reasienta el egreso de caja por el método/cuenta que elijas.
                     </Callout>
                     <Input type="number" step="0.01" label="Monto entregado" required value={formEntrega.monto}
                         onChange={e => setFormEntrega(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                    <Select label="Método de pago (por dónde sale el dinero)"
+                        options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
+                        value={formEntrega.metodo_pago_id}
+                        onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormEntrega(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
+                        error={errors.metodo_pago_id}
+                    />
+                    {cuentasDeMetodo(formEntrega.metodo_pago_id).length > 0 && (
+                        <Select label="Cuenta"
+                            options={cuentasDeMetodo(formEntrega.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                            value={formEntrega.cuenta_id}
+                            onChange={v => setFormEntrega(f => ({ ...f, cuenta_id: String(v) }))}
+                            error={errors.cuenta_id}
+                        />
+                    )}
                     <Input type="date" label="Fecha" required value={formEntrega.fecha}
                         onChange={e => setFormEntrega(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
                     <Input label="Observación" value={formEntrega.observacion}

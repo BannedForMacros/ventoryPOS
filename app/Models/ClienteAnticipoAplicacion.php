@@ -13,7 +13,7 @@ class ClienteAnticipoAplicacion extends Model
 
     protected $fillable = [
         'cliente_anticipo_id', 'empresa_id', 'numero', 'venta_id', 'user_id',
-        'fecha', 'monto', 'cantidad', 'observacion',
+        'fecha', 'monto', 'cantidad', 'observacion', 'metodo_pago_id', 'cuenta_id',
     ];
 
     /**
@@ -41,8 +41,10 @@ class ClienteAnticipoAplicacion extends Model
         ];
     }
 
-    public function anticipo(): BelongsTo { return $this->belongsTo(ClienteAnticipo::class, 'cliente_anticipo_id'); }
-    public function venta(): BelongsTo    { return $this->belongsTo(Venta::class); }
-    public function user(): BelongsTo     { return $this->belongsTo(User::class); }
+    public function anticipo(): BelongsTo   { return $this->belongsTo(ClienteAnticipo::class, 'cliente_anticipo_id'); }
+    public function venta(): BelongsTo      { return $this->belongsTo(Venta::class); }
+    public function user(): BelongsTo       { return $this->belongsTo(User::class); }
+    public function metodoPago(): BelongsTo { return $this->belongsTo(MetodoPago::class, 'metodo_pago_id'); }
+    public function cuenta(): BelongsTo     { return $this->belongsTo(Cuenta::class, 'cuenta_id'); }
     public function items(): HasMany      { return $this->hasMany(ClienteAnticipoAplicacionItem::class, 'cliente_anticipo_aplicacion_id'); }
 }

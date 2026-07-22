@@ -55,6 +55,7 @@ class AnticipoClienteController extends Controller
                 'cliente', 'producto', 'metodoPago', 'cuenta', 'venta:id,numero',
                 'items.producto:id,nombre,precio_venta', 'items.unidad:id,precio_venta',
                 'aplicaciones.venta', 'aplicaciones.user', 'aplicaciones.items.item:id,producto_nombre,unidad_nombre',
+                'aplicaciones.metodoPago:id,nombre', 'aplicaciones.cuenta:id,nombre',
             ])
             ->when($request->input('cliente_id'), fn ($q, $v) => $q->where('cliente_id', $v))
             // Búsqueda server-side sobre TODA la base (no solo la página visible).
@@ -326,6 +327,10 @@ class AnticipoClienteController extends Controller
             'venta_id'     => ['nullable', 'integer', Rule::exists('ventas', 'id')->where('empresa_id', $user->empresa_id)],
             'observacion'  => ['nullable', 'string', 'max:500'],
             'exceso_a_cxc' => ['nullable', 'boolean'],
+            // Entrega EN DINERO: por dónde sale la plata (egreso de caja). En
+            // material no aplica (sale mercadería, no dinero).
+            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
         // ── Calcular cobertura y excedente ──────────────────────────────
@@ -370,16 +375,37 @@ class AnticipoClienteController extends Controller
                     . 'S/ ' . number_format($excesoMonto, 2));
             }
 
-            $anticipo->aplicaciones()->create([
-                'empresa_id'  => $anticipo->empresa_id,
-                'numero'      => \App\Models\ClienteAnticipoAplicacion::generarNumero($anticipo->empresa_id),
-                'user_id'     => $user->id,
-                'fecha'       => $data['fecha'],
-                'monto'       => $montoAplicado,
-                'cantidad'    => $cantCubierta,
-                'venta_id'    => $data['venta_id'] ?? null,
-                'observacion' => $obs,
+            $aplicacion = $anticipo->aplicaciones()->create([
+                'empresa_id'     => $anticipo->empresa_id,
+                'numero'         => \App\Models\ClienteAnticipoAplicacion::generarNumero($anticipo->empresa_id),
+                'user_id'        => $user->id,
+                'fecha'          => $data['fecha'],
+                'monto'          => $montoAplicado,
+                'cantidad'       => $cantCubierta,
+                'venta_id'       => $data['venta_id'] ?? null,
+                'observacion'    => $obs,
+                // Solo en dinero: por dónde salió la plata.
+                'metodo_pago_id' => $esMaterial ? null : ($data['metodo_pago_id'] ?? null),
+                'cuenta_id'      => $esMaterial ? null : ($data['cuenta_id'] ?? null),
             ]);
+
+            // Entrega en DINERO → egreso de caja por lo entregado (el material no
+            // mueve tesorería: sale mercadería). Reasentable/reversible por su ref.
+            if (!$esMaterial && $montoAplicado > 0.009) {
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $data['cuenta_id']
+                        ?? ($data['metodo_pago_id'] ? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id']) : null)
+                        ?? $anticipo->cuenta_id,
+                    $user,
+                    $data['fecha'],
+                    'egreso',
+                    (float) $montoAplicado,
+                    "Entrega de anticipo #{$anticipo->id} ({$aplicacion->numero})",
+                    'cliente_anticipo_entrega',
+                    $aplicacion->id,
+                );
+            }
 
             $nuevoSaldo    = round((float) $anticipo->saldo - $montoAplicado, 2);
             $nuevaCantidad = $anticipo->cantidad_pendiente !== null && $cantCubierta !== null
@@ -650,9 +676,11 @@ class AnticipoClienteController extends Controller
         $this->soloEntregaDinero($anticipo, $entrega);
 
         $data = $request->validate([
-            'monto'       => ['required', 'numeric', 'min:0.01'],
-            'fecha'       => ['required', 'date'],
-            'observacion' => ['nullable', 'string', 'max:500'],
+            'monto'          => ['required', 'numeric', 'min:0.01'],
+            'fecha'          => ['required', 'date'],
+            'observacion'    => ['nullable', 'string', 'max:500'],
+            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
         // La suma de entregas no puede superar el monto del anticipo.
@@ -666,13 +694,32 @@ class AnticipoClienteController extends Controller
 
         $antes = ['monto' => (float) $entrega->monto, 'fecha' => (string) $entrega->fecha->toDateString()];
 
-        DB::transaction(function () use ($entrega, $anticipo, $data, $otras) {
+        DB::transaction(function () use ($entrega, $anticipo, $data, $otras, $user) {
             $entrega->update([
-                'monto'       => $data['monto'],
-                'fecha'       => $data['fecha'],
-                'observacion' => $data['observacion'] ?? $entrega->observacion,
+                'monto'          => $data['monto'],
+                'fecha'          => $data['fecha'],
+                'observacion'    => $data['observacion'] ?? $entrega->observacion,
+                'metodo_pago_id' => $data['metodo_pago_id'] ?? null,
+                'cuenta_id'      => $data['cuenta_id'] ?? null,
             ]);
             $this->recomputarSaldoDinero($anticipo, $otras + (float) $data['monto']);
+
+            // Reasienta el egreso de caja con los datos nuevos (mismo patrón que
+            // editar abono/anticipo): revierte el anterior y registra el actual.
+            $this->tesoreria->revertir('cliente_anticipo_entrega', $entrega->id);
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $data['cuenta_id']
+                    ?? ($data['metodo_pago_id'] ? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id']) : null)
+                    ?? $anticipo->cuenta_id,
+                $user,
+                $data['fecha'],
+                'egreso',
+                (float) $data['monto'],
+                "Entrega de anticipo #{$anticipo->id} ({$entrega->numero}) [editada]",
+                'cliente_anticipo_entrega',
+                $entrega->id,
+            );
         });
 
         AuditoriaService::log('anticipo_cliente.entrega_editada', $anticipo, [
@@ -708,6 +755,8 @@ class AnticipoClienteController extends Controller
         ];
 
         DB::transaction(function () use ($entrega, $anticipo) {
+            // Revierte el egreso de caja de esta entrega antes de borrarla.
+            $this->tesoreria->revertir('cliente_anticipo_entrega', $entrega->id);
             $entrega->delete();
             $otras = (float) $anticipo->aplicaciones()->sum('monto');
             $this->recomputarSaldoDinero($anticipo, $otras);
