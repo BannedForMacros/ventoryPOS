@@ -60,6 +60,8 @@ class AjusteInventarioController extends Controller
         return Inertia::render('Inventario/Ajustes/Index', [
             'ajustes'         => $ajustes,
             'almacenes'       => $almacenes->map(fn ($a) => ['id' => $a->id, 'nombre' => $a->nombre]),
+            'productos'       => Producto::where('empresa_id', $user->empresa_id)->where('activo', true)
+                                    ->orderBy('nombre')->get(['id', 'nombre', 'codigo']),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
             'puede'           => ['editar' => $user->tienePermiso('inventario.ajustes', 'editar')],
             'filters'         => $request->only(['almacen_id', 'tipo', 'estado', 'fecha_desde', 'fecha_hasta', 'buscar']),

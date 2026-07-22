@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { SlidersHorizontal, Ban, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Ban, ArrowDownCircle, ArrowUpCircle, Plus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Select from '@/Components/UI/Select';
+import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Input from '@/Components/UI/Input';
 import Modal from '@/Components/UI/Modal';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import FiltrosCard from '@/Components/UI/FiltrosCard';
-import { fmtFecha } from '@/lib/fechas';
+import { fmtFecha, hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 
 interface AjusteRow extends Record<string, unknown> {
@@ -31,9 +32,12 @@ interface AjusteRow extends Record<string, unknown> {
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 interface Filters { almacen_id?: string; tipo?: string; estado?: string; fecha_desde?: string; fecha_hasta?: string; buscar?: string; }
 
+interface ProductoLite { id: number; nombre: string; codigo: string | null; }
+
 interface Props extends PageProps {
     ajustes: Paginado<AjusteRow>;
     almacenes: { id: number; nombre: string }[];
+    productos: ProductoLite[];
     mostrarSelector: boolean;
     puede?: { editar: boolean };
     filters: Filters;
@@ -41,7 +45,7 @@ interface Props extends PageProps {
 
 const num = (n: number) => Number(n ?? 0).toLocaleString('es-PE', { maximumFractionDigits: 4 });
 
-export default function AjustesIndex({ ajustes, almacenes, mostrarSelector, puede, filters }: Props) {
+export default function AjustesIndex({ ajustes, almacenes, productos, mostrarSelector, puede, filters }: Props) {
     const { flash } = usePage<Props>().props;
     const puedeEditar = puede?.editar ?? false;
 
@@ -54,6 +58,27 @@ export default function AjustesIndex({ ajustes, almacenes, mostrarSelector, pued
     const [motivo, setMotivo]     = useState('');
     const [errors, setErrors]     = useState<Record<string, string>>({});
     const [saving, setSaving]     = useState(false);
+
+    // ── Crear nuevo ajuste ─────────────────────────────────────────────────
+    const emptyCrear = () => ({
+        almacen_id: almacenes.length === 1 ? String(almacenes[0].id) : '',
+        producto_id: '', tipo: 'ingreso', cantidad: '', fecha: hoyLocal(), motivo: '',
+    });
+    const [crear, setCrear]       = useState(false);
+    const [formC, setFormC]       = useState(emptyCrear());
+    const [errC, setErrC]         = useState<Record<string, string>>({});
+    const [savingC, setSavingC]   = useState(false);
+
+    function abrirCrear() { setErrC({}); setFormC(emptyCrear()); setCrear(true); }
+
+    function submitCrear() {
+        setSavingC(true);
+        router.post(route('inventario.ajustes.store'), formC, {
+            preserveScroll: true,
+            onSuccess: () => { setCrear(false); setSavingC(false); },
+            onError:   (e) => { setErrC(e as Record<string, string>); setSavingC(false); },
+        });
+    }
 
     function filtrar(patch: Partial<Filters>) {
         router.get(route('inventario.ajustes.index'), { ...filters, ...patch }, { preserveState: true, replace: true });
@@ -118,6 +143,9 @@ export default function AjustesIndex({ ajustes, almacenes, mostrarSelector, pued
             <PageHeader
                 title="Ajustes de inventario"
                 subtitle="Ingresos y salidas de stock por ajuste — sin dinero, con trazabilidad en el kardex"
+                actions={puedeEditar && (
+                    <Button onClick={abrirCrear}><Plus size={16} className="mr-1" />Nuevo ajuste</Button>
+                )}
             />
 
             <FiltrosCard>
@@ -142,6 +170,49 @@ export default function AjustesIndex({ ajustes, almacenes, mostrarSelector, pued
                 sortable={false}
                 emptyMessage="No hay ajustes registrados. Puedes crear uno desde la lista de Stock (botón Ajustar)."
             />
+
+            {/* Modal: Nuevo ajuste */}
+            <Modal isOpen={crear} onClose={() => setCrear(false)} title="Nuevo ajuste de inventario" size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setCrear(false)}>Cancelar</Button>
+                        <Button loading={savingC} onClick={submitCrear}>Guardar ajuste</Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    {mostrarSelector && (
+                        <Select label="Almacén" required value={formC.almacen_id}
+                            onChange={(v) => setFormC((f) => ({ ...f, almacen_id: String(v) }))}
+                            options={almacenes.map((a) => ({ value: String(a.id), label: a.nombre }))}
+                            placeholder="Elige un almacén" />
+                    )}
+                    <SearchableSelect label="Producto" required value={formC.producto_id}
+                        onChange={(v) => setFormC((f) => ({ ...f, producto_id: String(v) }))}
+                        options={productos.map((p) => ({ value: String(p.id), label: p.codigo ? `${p.nombre} · ${p.codigo}` : p.nombre }))}
+                        searchPlaceholder="Buscar producto..." />
+                    {errC.producto_id && <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{errC.producto_id}</p>}
+
+                    <Select label="Tipo de ajuste" required
+                        options={[
+                            { value: 'ingreso', label: 'Ingreso (+) — subir stock' },
+                            { value: 'salida',  label: 'Salida (−) — bajar stock' },
+                        ]}
+                        value={formC.tipo}
+                        onChange={(v) => setFormC((f) => ({ ...f, tipo: String(v) }))} />
+                    <Input label="Cantidad" required type="number" min="0" step="any" inputMode="decimal"
+                        value={formC.cantidad} onChange={(e) => setFormC((f) => ({ ...f, cantidad: e.target.value }))} error={errC.cantidad} />
+                    <Input label="Fecha" required type="date" value={formC.fecha}
+                        onChange={(e) => setFormC((f) => ({ ...f, fecha: e.target.value }))} error={errC.fecha}
+                        hint="Puedes fecharlo a un día anterior; el kardex y el saldo se recalculan a esa fecha." />
+                    <Input label="Motivo" required value={formC.motivo}
+                        onChange={(e) => setFormC((f) => ({ ...f, motivo: e.target.value }))} error={errC.motivo}
+                        placeholder="Ej. conteo físico, merma, regularización" />
+                    <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                        No mueve dinero ni caja. Sale en el kardex como “Ajuste (+/−)” y sobrevive al Recalcular.
+                    </p>
+                </div>
+            </Modal>
 
             <Modal isOpen={anulando !== null} onClose={() => setAnulando(null)}
                 title={anulando ? `Anular ajuste ${anulando.numero ?? ''}` : ''} size="sm"
