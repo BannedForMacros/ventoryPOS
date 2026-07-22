@@ -144,7 +144,7 @@ class EstadoCuentaController extends Controller
                 ->where('cliente_id', $t['cliente_id'])
                 ->where('estado', 'activo')
                 ->where('saldo', '>', 0)
-                ->get(['id', 'fecha', 'monto', 'saldo', 'tipo_valorizacion']);
+                ->get(['id', 'fecha', 'monto', 'saldo', 'tipo_valorizacion', 'venta_id']);
 
             foreach ($anticipos as $a) {
                 $esMaterial = $a->tipo_valorizacion === 'material';
@@ -158,6 +158,9 @@ class EstadoCuentaController extends Controller
                         : 'Dinero a favor del cliente',
                     'monto'     => -round((float) $a->saldo, 2),
                     'variant'   => 'warning',
+                    // Si nació de una venta POS/migrada, el clic abre esa venta.
+                    'ref_tipo'  => $a->venta_id ? 'venta' : null,
+                    'ref_id'    => $a->venta_id ? (int) $a->venta_id : null,
                 ];
             }
         }
