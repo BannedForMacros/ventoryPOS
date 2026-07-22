@@ -107,6 +107,12 @@ class AjusteInventarioController extends Controller
             return $ajuste;
         });
 
+        // Retrofechable: reconstruir el kardex del producto para que la fila del
+        // ajuste caiga en SU fecha (no pegada al final con el saldo de hoy). Fuera
+        // de la transacción: así el trazo afterCommit de Stock::ajustar ya existe y
+        // esta reconstrucción lo reemplaza por la versión cronológica correcta.
+        $this->reconstruirKardexProducto($ajuste->almacen_id, $ajuste->producto_id);
+
         AuditoriaService::log('ajuste_inventario.creado', $ajuste, [
             'numero'   => $ajuste->numero,
             'tipo'     => $ajuste->tipo,
@@ -132,8 +138,21 @@ class AjusteInventarioController extends Controller
 
         $ajuste->anular($user->id);
 
+        // Kardex limpio: al anular, la fila del ajuste (y su reverso en vivo)
+        // desaparecen y la cadena queda cronológica y cuadrada.
+        $this->reconstruirKardexProducto($ajuste->almacen_id, $ajuste->producto_id);
+
         AuditoriaService::log('ajuste_inventario.anulado', $ajuste, $info + ['motivo' => $data['motivo']], $user);
 
         return back()->with('success', "Ajuste {$ajuste->numero} anulado: stock revertido.");
+    }
+
+    /** Reconstruye el kardex de un (almacén, producto) — deja la cadena cronológica. */
+    private function reconstruirKardexProducto(int $almacenId, int $productoId): void
+    {
+        $almacen = Almacen::find($almacenId);
+        if ($almacen) {
+            app(\App\Console\Commands\ReconstruirKardex::class)->reconstruirPar($almacen, $productoId);
+        }
     }
 }
