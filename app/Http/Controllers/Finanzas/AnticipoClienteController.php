@@ -127,6 +127,12 @@ class AnticipoClienteController extends Controller
             // Turno sugerido por defecto: el propio abierto del usuario, o el único
             // abierto en su ámbito (misma auto-resolución que usa store()).
             'turnoActivoId' => $this->turnoSugerido($user),
+            // Permiso de edición (finanzas.anticipos → editar). Habilita editar/
+            // anular entregas de dinero desde la UI; el backend lo re-verifica por
+            // middleware. Configurable por rol, no hardcodeado.
+            'puede' => [
+                'editar' => $user->tienePermiso('finanzas.anticipos', 'editar'),
+            ],
         ]);
     }
 
@@ -573,6 +579,11 @@ class AnticipoClienteController extends Controller
         $data = $request->validate([
             'accion' => ['required', Rule::in(['devuelto', 'anulado'])],
             'motivo' => ['required', 'string', 'min:5', 'max:500'],
+            // Devolución: por dónde y cuándo sale el dinero. Opcionales; si no se
+            // eligen, cae en la cuenta original del anticipo y la fecha de hoy.
+            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'fecha'          => ['nullable', 'date'],
         ]);
 
         // Un pendiente nacido de una venta POS no se "anula" aquí: su dinero
@@ -593,11 +604,18 @@ class AnticipoClienteController extends Controller
             // F7 — Tesorería: si se devuelve el dinero, egreso por el saldo
             // restante; si fue un registro erróneo, se revierte el ingreso.
             if ($data['accion'] === 'devuelto') {
+                // El dinero sale por la cuenta elegida (o la resuelta del método);
+                // si no se indicó nada, por la cuenta original del anticipo.
+                $cuentaSalida = $data['cuenta_id']
+                    ?? ($data['metodo_pago_id']
+                        ? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'])
+                        : null)
+                    ?? $anticipo->cuenta_id;
                 $this->tesoreria->registrar(
                     $user->empresa_id,
-                    $anticipo->cuenta_id,
+                    $cuentaSalida,
                     $user,
-                    now()->toDateString(),
+                    $data['fecha'] ?? now()->toDateString(),
                     'egreso',
                     (float) $anticipo->saldo,
                     "Devolución de anticipo #{$anticipo->id}: {$data['motivo']}",
@@ -615,6 +633,120 @@ class AnticipoClienteController extends Controller
         ], $user);
 
         return back()->with('success', $data['accion'] === 'devuelto' ? 'Anticipo marcado como devuelto.' : 'Anticipo anulado.');
+    }
+
+    /**
+     * Edita una ENTREGA (aplicación) de un anticipo EN DINERO: corrige monto,
+     * fecha u observación. El saldo del anticipo se recalcula (monto − suma de
+     * entregas) y su estado se reajusta. NO mueve tesorería: aplicar un anticipo
+     * en dinero nunca movió caja (el dinero entró al crear el anticipo).
+     */
+    public function editarEntrega(Request $request, ClienteAnticipoAplicacion $entrega)
+    {
+        $user = $request->user();
+        abort_if($entrega->empresa_id !== $user->empresa_id, 403);
+
+        $anticipo = $entrega->anticipo;
+        $this->soloEntregaDinero($anticipo, $entrega);
+
+        $data = $request->validate([
+            'monto'       => ['required', 'numeric', 'min:0.01'],
+            'fecha'       => ['required', 'date'],
+            'observacion' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        // La suma de entregas no puede superar el monto del anticipo.
+        $otras = (float) $anticipo->aplicaciones()->where('id', '<>', $entrega->id)->sum('monto');
+        if ($otras + (float) $data['monto'] > (float) $anticipo->monto + 0.01) {
+            throw ValidationException::withMessages([
+                'monto' => 'La suma de las entregas (S/ ' . number_format($otras + (float) $data['monto'], 2)
+                    . ') superaría el monto del anticipo (S/ ' . number_format((float) $anticipo->monto, 2) . ').',
+            ]);
+        }
+
+        $antes = ['monto' => (float) $entrega->monto, 'fecha' => (string) $entrega->fecha->toDateString()];
+
+        DB::transaction(function () use ($entrega, $anticipo, $data, $otras) {
+            $entrega->update([
+                'monto'       => $data['monto'],
+                'fecha'       => $data['fecha'],
+                'observacion' => $data['observacion'] ?? $entrega->observacion,
+            ]);
+            $this->recomputarSaldoDinero($anticipo, $otras + (float) $data['monto']);
+        });
+
+        AuditoriaService::log('anticipo_cliente.entrega_editada', $anticipo, [
+            'entrega' => $entrega->numero,
+            'antes'   => $antes,
+            'despues' => ['monto' => (float) $data['monto'], 'fecha' => $data['fecha']],
+            'saldo'   => (float) $anticipo->fresh()->saldo,
+        ], $user);
+
+        return back()->with('success', 'Entrega actualizada: el saldo del anticipo se recalculó.');
+    }
+
+    /**
+     * Anula (deshace) una ENTREGA de dinero: la elimina y devuelve el anticipo a
+     * 'activo' con su saldo restituido (monto − entregas restantes). No es una
+     * "devolución" al cliente: es como si esa entrega nunca se hubiera hecho, con
+     * toda la trazabilidad en auditoría.
+     */
+    public function anularEntrega(Request $request, ClienteAnticipoAplicacion $entrega)
+    {
+        $user = $request->user();
+        abort_if($entrega->empresa_id !== $user->empresa_id, 403);
+
+        $anticipo = $entrega->anticipo;
+        $this->soloEntregaDinero($anticipo, $entrega);
+
+        $data = $request->validate(['motivo' => ['required', 'string', 'min:5', 'max:500']]);
+
+        $info = [
+            'entrega' => $entrega->numero,
+            'monto'   => (float) $entrega->monto,
+            'fecha'   => (string) $entrega->fecha->toDateString(),
+        ];
+
+        DB::transaction(function () use ($entrega, $anticipo) {
+            $entrega->delete();
+            $otras = (float) $anticipo->aplicaciones()->sum('monto');
+            $this->recomputarSaldoDinero($anticipo, $otras);
+        });
+
+        AuditoriaService::log('anticipo_cliente.entrega_anulada', $anticipo, $info + [
+            'motivo' => $data['motivo'],
+            'saldo'  => (float) $anticipo->fresh()->saldo,
+        ], $user);
+
+        return back()->with('success', 'Entrega anulada: el anticipo volvió a estar disponible por ese monto.');
+    }
+
+    /** Reglas comunes para editar/anular una entrega: solo anticipos EN DINERO. */
+    private function soloEntregaDinero(?ClienteAnticipo $anticipo, ClienteAnticipoAplicacion $entrega): void
+    {
+        abort_if($anticipo === null, 404);
+        if ($anticipo->tipo_valorizacion !== 'monto' || $anticipo->venta_id || $anticipo->items()->exists()) {
+            throw ValidationException::withMessages([
+                'entrega' => 'Solo se editan/anulan entregas de anticipos EN DINERO. Las de material o las de una venta del POS se corrigen anulando la venta.',
+            ]);
+        }
+        abort_unless(in_array($anticipo->estado, ['activo', 'aplicado'], true), 422,
+            'El anticipo no admite editar sus entregas en su estado actual.');
+        if ($entrega->observacion && str_contains($entrega->observacion, 'Excedente a CxC')) {
+            throw ValidationException::withMessages([
+                'entrega' => 'Esta entrega generó una cuenta por cobrar por excedente. Revísala y ajústala manualmente en Cuentas por cobrar.',
+            ]);
+        }
+    }
+
+    /** Reasienta saldo/estado de un anticipo en dinero: saldo = monto − entregas. */
+    private function recomputarSaldoDinero(ClienteAnticipo $anticipo, float $sumaEntregas): void
+    {
+        $saldo = round((float) $anticipo->monto - $sumaEntregas, 2);
+        $anticipo->update([
+            'saldo'  => max(0, $saldo),
+            'estado' => $saldo <= 0.01 ? 'aplicado' : 'activo',
+        ]);
     }
 
     /**

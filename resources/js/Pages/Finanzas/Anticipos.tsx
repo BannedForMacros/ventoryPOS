@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus, Pencil, Users, Package, Coins } from 'lucide-react';
+import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus, Pencil, Users, Package, Coins, Trash2 } from 'lucide-react';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -96,6 +96,7 @@ interface Props extends PageProps {
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
     turnos: TurnoLite[];
     turnoActivoId: number | null;
+    puede?: { editar: boolean };
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -130,7 +131,8 @@ const emptyForm = () => ({
     turno_id: '',
 });
 
-export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar, clientes, productos, metodosPago, cuentas, turnos, turnoActivoId }: Props) {
+export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar, clientes, productos, metodosPago, cuentas, turnos, turnoActivoId, puede }: Props) {
+    const puedeEditarEntregas = puede?.editar ?? false;
     const { flash } = usePage<Props>().props;
     // "Afecta caja a:" — texto del turno (#id · fecha hora · usuario · caja · abierto).
     const turnoLabel = (t: TurnoLite) => {
@@ -152,7 +154,12 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     // Entregas por ítem (anticipos multi-producto del POS): item.id → cantidad a entregar.
     const [entregas, setEntregas]       = useState<Record<number, string>>({});
     const [excesoACxc, setExcesoACxc]   = useState(false);
-    const [formAnular, setFormAnular]   = useState({ accion: 'devuelto', motivo: '' });
+    const [formAnular, setFormAnular]   = useState({ accion: 'devuelto', motivo: '', metodo_pago_id: '', cuenta_id: '', fecha: hoy() });
+    // Editar / anular una ENTREGA de dinero ya registrada.
+    const [editandoEntrega, setEditandoEntrega] = useState<Aplicacion | null>(null);
+    const [anulandoEntrega, setAnulandoEntrega] = useState<Aplicacion | null>(null);
+    const [formEntrega, setFormEntrega]         = useState({ monto: '', fecha: hoy(), observacion: '' });
+    const [motivoEntrega, setMotivoEntrega]     = useState('');
 
     // Cliente general ("Clientes varios"): para anticipos/depósitos sin dueño identificado.
     const clienteGeneral = useMemo(
@@ -303,6 +310,31 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
         });
     }
 
+    /** Abre el modal de edición de una entrega de dinero. */
+    function abrirEditarEntrega(ap: Aplicacion) {
+        setErrors({});
+        setFormEntrega({ monto: String(ap.monto), fecha: ap.fecha, observacion: ap.observacion ?? '' });
+        setEditandoEntrega(ap);
+    }
+
+    function submitEditarEntrega() {
+        if (!editandoEntrega) return;
+        setSaving(true);
+        router.put(route('finanzas.anticipos.entrega.editar', editandoEntrega.id), formEntrega as any, {
+            onSuccess: () => { setEditandoEntrega(null); setDetalle(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    function submitAnularEntrega() {
+        if (!anulandoEntrega) return;
+        setSaving(true);
+        router.post(route('finanzas.anticipos.entrega.anular', anulandoEntrega.id), { motivo: motivoEntrega } as any, {
+            onSuccess: () => { setAnulandoEntrega(null); setDetalle(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
     const columns: Column<Anticipo>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
@@ -389,7 +421,7 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                 style={{ color: 'var(--color-primary)' }}>
                                 <PackageCheck size={15} />
                             </button>
-                            <button onClick={() => { setErrors({}); setFormAnular({ accion: 'devuelto', motivo: '' }); setAnulando(a); }}
+                            <button onClick={() => { setErrors({}); setFormAnular({ accion: 'devuelto', motivo: '', metodo_pago_id: a.metodo_pago_id ? String(a.metodo_pago_id) : '', cuenta_id: a.cuenta_id ? String(a.cuenta_id) : '', fecha: hoy() }); setAnulando(a); }}
                                 className="p-1.5 rounded-lg hover:bg-black/5" title="Devolver / anular"
                                 style={{ color: 'var(--color-danger)' }}>
                                 <Ban size={15} />
@@ -779,6 +811,36 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         </Callout>
                     )}
                     {errors.accion && <Callout variant="danger">{errors.accion}</Callout>}
+
+                    {/* Devolución de dinero: monto a devolver + por dónde y cuándo sale. */}
+                    {anulando && formAnular.accion === 'devuelto' && (
+                        <>
+                            <div className="rounded-lg px-3 py-2 flex items-center justify-between"
+                                 style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 8%, transparent)' }}>
+                                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Monto a devolver</span>
+                                <span className="text-lg font-bold" style={{ color: 'var(--color-danger)', fontVariantNumeric: 'tabular-nums' }}>
+                                    S/ {Number(anulando.saldo).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                            <Select label="Método de pago (por dónde sale el dinero)"
+                                options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
+                                value={formAnular.metodo_pago_id}
+                                onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormAnular(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
+                                error={errors.metodo_pago_id}
+                            />
+                            {cuentasDeMetodo(formAnular.metodo_pago_id).length > 0 && (
+                                <Select label="Cuenta"
+                                    options={cuentasDeMetodo(formAnular.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                                    value={formAnular.cuenta_id}
+                                    onChange={v => setFormAnular(f => ({ ...f, cuenta_id: String(v) }))}
+                                    error={errors.cuenta_id}
+                                />
+                            )}
+                            <Input type="date" label="Fecha de la devolución" value={formAnular.fecha}
+                                onChange={e => setFormAnular(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                        </>
+                    )}
+
                     <Input label="Motivo" required value={formAnular.motivo}
                         onChange={e => setFormAnular(f => ({ ...f, motivo: e.target.value }))} error={errors.motivo} />
                 </div>
@@ -851,6 +913,21 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                                 style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>
                                                 <FileDown size={13} /> PDF A4
                                             </button>
+                                            {/* Editar / anular la entrega: solo anticipos EN DINERO y con permiso. */}
+                                            {puedeEditarEntregas && detalle.tipo_valorizacion === 'monto' && !esMultiItem(detalle) && !detalle.venta && (
+                                                <>
+                                                    <button onClick={() => abrirEditarEntrega(ap)} title="Editar esta entrega (monto/fecha)"
+                                                        className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors hover:bg-black/5"
+                                                        style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
+                                                        <Pencil size={13} /> Editar
+                                                    </button>
+                                                    <button onClick={() => { setErrors({}); setMotivoEntrega(''); setAnulandoEntrega(ap); }} title="Anular esta entrega (el anticipo vuelve a estar disponible)"
+                                                        className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors hover:bg-black/5"
+                                                        style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)' }}>
+                                                        <Trash2 size={13} /> Anular
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     ),
                                     user: ap.user?.name,
@@ -860,6 +937,58 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         />
                     </div>
                 )}
+            </Modal>
+
+            {/* Modal EDITAR entrega de dinero */}
+            <Modal isOpen={editandoEntrega !== null} onClose={() => setEditandoEntrega(null)}
+                title={editandoEntrega ? `Editar entrega ${editandoEntrega.numero ?? ''}` : ''} size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEditandoEntrega(null)}>Cancelar</Button>
+                        <Button onClick={submitEditarEntrega} disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <Callout variant="info">
+                        Al cambiar el monto se recalcula el saldo del anticipo. No mueve caja: aplicar un anticipo en dinero no movió tesorería.
+                    </Callout>
+                    <Input type="number" step="0.01" label="Monto entregado" required value={formEntrega.monto}
+                        onChange={e => setFormEntrega(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                    <Input type="date" label="Fecha" required value={formEntrega.fecha}
+                        onChange={e => setFormEntrega(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                    <Input label="Observación" value={formEntrega.observacion}
+                        onChange={e => setFormEntrega(f => ({ ...f, observacion: e.target.value }))} error={errors.observacion} />
+                    {errors.entrega && <Callout variant="danger">{errors.entrega}</Callout>}
+                </div>
+            </Modal>
+
+            {/* Modal ANULAR entrega de dinero */}
+            <Modal isOpen={anulandoEntrega !== null} onClose={() => setAnulandoEntrega(null)}
+                title={anulandoEntrega ? `Anular entrega ${anulandoEntrega.numero ?? ''}` : ''} size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setAnulandoEntrega(null)}>Cancelar</Button>
+                        <Button variant="danger" onClick={submitAnularEntrega} disabled={saving}>{saving ? 'Anulando...' : 'Anular entrega'}</Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    {anulandoEntrega && (
+                        <div className="rounded-lg px-3 py-2 flex items-center justify-between"
+                             style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 8%, transparent)' }}>
+                            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Se restituye al anticipo</span>
+                            <span className="text-lg font-bold" style={{ color: 'var(--color-danger)', fontVariantNumeric: 'tabular-nums' }}>
+                                S/ {Number(anulandoEntrega.monto).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                        </div>
+                    )}
+                    <Callout variant="warning">
+                        La entrega se elimina y el anticipo vuelve a estar disponible por ese monto (no es una devolución al cliente). Queda registrado en auditoría.
+                    </Callout>
+                    <Input label="Motivo" required value={motivoEntrega}
+                        onChange={e => setMotivoEntrega(e.target.value)} error={errors.motivo || errors.entrega} />
+                </div>
             </Modal>
 
             {/* Alta de cliente sin salir del anticipo (reutiliza el modal del POS).
