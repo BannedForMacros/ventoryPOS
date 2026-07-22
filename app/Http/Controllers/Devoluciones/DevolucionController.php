@@ -62,8 +62,28 @@ class DevolucionController extends Controller
 
         return Inertia::render('Devoluciones/Create', [
             'motivos'     => DevolucionMotivo::deEmpresa($user->empresa_id)->activo()->orderBy('orden')->get(),
-            'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->with('tipo:id,slug,nombre,icono')->orderBy('nombre')->get(['id','nombre','tipo_id']),
+            // Métodos CON sus cuentas: el reembolso elige a qué cuenta sale la
+            // plata (pivot.id = cuenta_metodo_pago_id, igual que el POS).
+            'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()
+                ->with(['tipo:id,slug,nombre,icono', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])
+                ->orderBy('nombre')->get()
+                ->map(fn ($m) => [
+                    'id' => $m->id, 'nombre' => $m->nombre, 'tipo_id' => $m->tipo_id,
+                    'tipo_slug' => $m->tipo?->slug,
+                    'cuentas'   => $m->cuentas->map(fn ($c) => [
+                        'cuenta_metodo_pago_id' => $c->pivot->id,
+                        'nombre'                => $c->nombre,
+                    ])->values(),
+                ]),
             'turnoActivo' => $turno?->load('caja'),
+            // "Afecta caja a:" — para admin (o cuando no hay turno propio), poder
+            // elegir a qué caja/turno se imputa la devolución. Turnos abiertos.
+            'turnos'      => Turno::deEmpresa($user->empresa_id)
+                ->with(['user:id,name', 'caja:id,nombre'])
+                ->where('estado', 'abierto')
+                ->orderByDesc('fecha_apertura')->limit(40)
+                ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
+            'esAdmin'     => (bool) $user->rol->es_admin,
         ]);
     }
 
@@ -181,13 +201,28 @@ class DevolucionController extends Controller
             'items.*.observacion'     => 'nullable|string',
             'pagos'                   => 'nullable|array',
             'pagos.*.metodo_pago_id'  => 'required_with:pagos|exists:metodos_pago,id',
-            'pagos.*.cuenta_metodo_pago_id' => 'nullable',
+            'pagos.*.cuenta_metodo_pago_id' => 'nullable|integer',
             'pagos.*.monto'           => 'required_with:pagos|numeric|min:0',
             'pagos.*.referencia'      => 'nullable|string|max:100',
+            // "Afecta caja a:" — turno al que se imputa la devolución (opcional).
+            'turno_id'                => 'nullable|integer|exists:turnos,id',
         ]);
 
         $user  = $request->user();
-        $turno = Turno::turnoActivoDelUsuario($user->id);
+
+        // Turno destino: el que elige el admin en "Afecta caja a:" (debe estar
+        // abierto y ser de la empresa); si no, el turno activo propio del usuario.
+        $turno = null;
+        if (!empty($data['turno_id'])) {
+            $turno = Turno::where('id', $data['turno_id'])
+                ->where('empresa_id', $user->empresa_id)
+                ->where('estado', 'abierto')
+                ->first();
+            if (!$turno) {
+                return back()->withErrors(['turno_id' => 'El turno indicado no está abierto.'])->withInput();
+            }
+        }
+        $turno ??= Turno::turnoActivoDelUsuario($user->id);
 
         try {
             $devolucion = $this->service->crear($data, $user, $turno);

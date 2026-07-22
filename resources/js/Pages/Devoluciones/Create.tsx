@@ -45,10 +45,16 @@ interface ConfigDev {
     dentro_del_plazo: boolean;
 }
 
+interface CuentaMetodo { cuenta_metodo_pago_id: number; nombre: string; }
+interface MetodoPagoDev { id: number; nombre: string; tipo_id: number; tipo_slug: string | null; cuentas: CuentaMetodo[]; }
+interface TurnoLite { id: number; caja_id: number; fecha_apertura: string; user?: { id: number; name: string } | null; caja?: { id: number; nombre: string } | null; }
+
 interface Props extends PageProps {
     motivos: Motivo[];
-    metodosPago: MetodoPago[];
+    metodosPago: MetodoPagoDev[];
     turnoActivo: { id: number; caja_id: number; caja: { nombre: string } } | null;
+    turnos: TurnoLite[];
+    esAdmin: boolean;
 }
 
 interface ItemSeleccionado {
@@ -62,11 +68,13 @@ interface ItemSeleccionado {
 
 interface PagoRow {
     metodo_pago_id: number | '';
+    cuenta_metodo_pago_id: number | '';
     monto: string;
     referencia: string;
 }
 
-export default function DevolucionCreate({ motivos, metodosPago, turnoActivo }: Props) {
+export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, turnos, esAdmin }: Props) {
+    const [turnoAfecta, setTurnoAfecta] = useState<number | ''>(turnoActivo?.id ?? (turnos.length === 1 ? turnos[0].id : ''));
     const [busqueda, setBusqueda] = useState('');
     const [buscando, setBuscando] = useState(false);
     const [venta, setVenta] = useState<VentaResultado | null>(null);
@@ -76,7 +84,7 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo }: 
     const [formaReembolso, setFormaReembolso] = useState<string>('efectivo');
     const [observacion, setObservacion] = useState('');
     const [items, setItems] = useState<Record<number, ItemSeleccionado>>({});
-    const [pagos, setPagos] = useState<PagoRow[]>([{ metodo_pago_id: '', monto: '', referencia: '' }]);
+    const [pagos, setPagos] = useState<PagoRow[]>([{ metodo_pago_id: '', cuenta_metodo_pago_id: '', monto: '', referencia: '' }]);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [processing, setProcessing] = useState(false);
 
@@ -134,7 +142,9 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo }: 
 
     const totalReembolso = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
 
-    function addPago()    { setPagos(p => [...p, { metodo_pago_id: '', monto: '', referencia: '' }]); }
+    function addPago()    { setPagos(p => [...p, { metodo_pago_id: '', cuenta_metodo_pago_id: '', monto: '', referencia: '' }]); }
+    // Cuentas del método elegido (para el selector de cuenta del reembolso).
+    const cuentasDe = (mid: number | '') => (metodosPago.find(m => m.id === mid)?.cuentas ?? []);
     function removePago(i: number) { setPagos(p => p.filter((_, idx) => idx !== i)); }
 
     function submit() {
@@ -161,12 +171,14 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo }: 
                 motivo_id:       i.motivo_id || null,
                 observacion:     i.observacion,
             })),
+            turno_id: turnoAfecta || null,
             pagos: formaReembolso === 'sin_reembolso' || formaReembolso === 'vale_credito'
                 ? []
                 : pagos.filter(p => p.metodo_pago_id && parseFloat(p.monto) > 0).map(p => ({
-                    metodo_pago_id: p.metodo_pago_id,
-                    monto:          parseFloat(p.monto),
-                    referencia:     p.referencia || null,
+                    metodo_pago_id:        p.metodo_pago_id,
+                    cuenta_metodo_pago_id: p.cuenta_metodo_pago_id || null,
+                    monto:                 parseFloat(p.monto),
+                    referencia:            p.referencia || null,
                 })),
         }, {
             onSuccess: () => setProcessing(false),
@@ -185,11 +197,32 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo }: 
             />
 
             <div className="space-y-6 max-w-6xl">
-                {!turnoActivo && (
+                {/* Afecta caja a: el turno cuya caja recibe el reembolso. El admin
+                    (sin turno propio) elige a qué caja imputarlo. */}
+                {(esAdmin || !turnoActivo) && turnos.length > 0 ? (
+                    <div className="rounded-xl px-4 py-3" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                        <Select
+                            label="Afecta caja a"
+                            value={turnoAfecta}
+                            onChange={v => setTurnoAfecta(v === '' ? '' : Number(v))}
+                            options={[
+                                { value: '', label: 'Sin turno (no afecta ninguna caja)' },
+                                ...turnos.map(t => ({
+                                    value: t.id,
+                                    label: `${t.caja?.nombre ?? 'Caja'} · ${t.user?.name ?? ''}${turnoActivo?.id === t.id ? ' (tu turno)' : ''}`,
+                                })),
+                            ]}
+                        />
+                        <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                            El reembolso en efectivo saldrá de la caja de este turno. Si eliges "Sin turno", queda registrado pero no afecta ninguna caja.
+                        </p>
+                        {errors.turno_id && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.turno_id}</p>}
+                    </div>
+                ) : !turnoActivo && (
                     <div className="flex items-start gap-2 rounded-xl px-4 py-3 text-sm"
                         style={{ backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}>
                         <AlertTriangle size={16} className="mt-0.5" style={{ color: '#b45309' }} />
-                        <span>No tienes un turno abierto. La devolución se registrará sin asociar a un turno.</span>
+                        <span>No hay turnos abiertos. La devolución se registrará sin asociar a una caja.</span>
                     </div>
                 )}
 
@@ -365,25 +398,43 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo }: 
                                         <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Métodos del reembolso</p>
                                         <Button type="button" variant="ghost" onClick={addPago}>+ Agregar</Button>
                                     </div>
-                                    {pagos.map((p, i) => (
+                                    {pagos.map((p, i) => {
+                                        const cuentas = cuentasDe(p.metodo_pago_id);
+                                        return (
                                         <div key={i} className="grid grid-cols-12 gap-2 mb-2">
-                                            <div className="col-span-5">
+                                            <div className="col-span-4">
                                                 <Select
                                                     placeholder="Método"
                                                     value={p.metodo_pago_id}
-                                                    onChange={v => setPagos(prev => prev.map((row, idx) => idx === i ? { ...row, metodo_pago_id: v === '' ? '' : Number(v) } : row))}
+                                                    onChange={v => {
+                                                        const mid = v === '' ? '' : Number(v);
+                                                        const cts = cuentasDe(mid);
+                                                        setPagos(prev => prev.map((row, idx) => idx === i ? { ...row, metodo_pago_id: mid, cuenta_metodo_pago_id: cts.length === 1 ? cts[0].cuenta_metodo_pago_id : '' } : row));
+                                                    }}
                                                     options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
                                                 />
                                             </div>
                                             <div className="col-span-3">
+                                                {cuentas.length > 0 ? (
+                                                    <Select
+                                                        placeholder="Cuenta"
+                                                        value={p.cuenta_metodo_pago_id}
+                                                        onChange={v => setPagos(prev => prev.map((row, idx) => idx === i ? { ...row, cuenta_metodo_pago_id: v === '' ? '' : Number(v) } : row))}
+                                                        options={cuentas.map(c => ({ value: c.cuenta_metodo_pago_id, label: c.nombre }))}
+                                                    />
+                                                ) : (
+                                                    <div className="text-xs px-1 py-2" style={{ color: 'var(--color-text-muted)' }}>Cuenta automática</div>
+                                                )}
+                                            </div>
+                                            <div className="col-span-2">
                                                 <input type="number" step="0.01" min="0" placeholder="Monto"
                                                     value={p.monto}
                                                     onChange={e => setPagos(prev => prev.map((row, idx) => idx === i ? { ...row, monto: e.target.value } : row))}
                                                     className="w-full rounded-xl border px-3 py-2 text-sm text-right"
                                                     style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} />
                                             </div>
-                                            <div className="col-span-3">
-                                                <input type="text" placeholder="Referencia (opcional)"
+                                            <div className="col-span-2">
+                                                <input type="text" placeholder="Ref. (opc.)"
                                                     value={p.referencia}
                                                     onChange={e => setPagos(prev => prev.map((row, idx) => idx === i ? { ...row, referencia: e.target.value } : row))}
                                                     className="w-full rounded-xl border px-3 py-2 text-sm"
@@ -396,7 +447,8 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo }: 
                                                 )}
                                             </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </section>
