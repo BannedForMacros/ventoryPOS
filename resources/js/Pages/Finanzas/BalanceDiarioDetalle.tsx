@@ -82,7 +82,7 @@ interface Props extends PageProps {
     gastos: Gasto[];
     salidasDia: { label: string; monto: number }[];
     movimientosDia: GrupoMovimientosDia[];
-    saldosCuentas: { id: number; nombre: string; banco: string | null; es_efectivo: boolean; saldo: number }[];
+    saldosCuentas: { id: number; nombre: string; banco: string | null; es_efectivo: boolean; saldo: number; declarado: number | null; diferencia: number | null; ajustado: boolean }[];
     saldosEntidad: { entidad: string; es_efectivo: boolean; saldo: number }[];
     variaciones: Variacion[];
     balanceAnteriorFecha: string | null;
@@ -243,6 +243,39 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
     // Reconstruye kardex + stock de la empresa: arregla el valor de inventario
     // del balance cuando quedó viejo (entradas registradas tarde/editadas).
     const [recalcStock, setRecalcStock] = useState(false);
+
+    // ── Arqueo de cuentas: conteo declarado por cuenta ─────────────────────
+    const [arqueoAbierto, setArqueoAbierto] = useState(false);
+    const [declarados, setDeclarados] = useState<Record<number, string>>(
+        () => Object.fromEntries(saldosCuentas.map(c => [c.id, c.declarado != null ? String(c.declarado) : ''])),
+    );
+    const [arqueoSaving, setArqueoSaving] = useState(false);
+    const difArqueo = (c: Props['saldosCuentas'][number]) => {
+        const v = declarados[c.id];
+        if (v == null || v === '') return null;
+        const d = parseFloat(v);
+        return isNaN(d) ? null : +(d - c.saldo).toFixed(2);
+    };
+    const hayDifs = saldosCuentas.some(c => { const d = difArqueo(c); return d != null && d !== 0; });
+
+    function guardarArqueo() {
+        const cuentas = saldosCuentas
+            .filter(c => declarados[c.id] != null && declarados[c.id] !== '')
+            .map(c => ({ cuenta_id: c.id, declarado: parseFloat(declarados[c.id]) }));
+        if (cuentas.length === 0) { toast.error('Ingresa al menos un monto.'); return; }
+        setArqueoSaving(true);
+        router.post(route('finanzas.balance.arqueo', balance.fecha), { cuentas } as any, {
+            preserveScroll: true, onFinish: () => setArqueoSaving(false),
+        });
+    }
+
+    function ajustarArqueo() {
+        if (!confirm('Se generarán movimientos de caja por las diferencias, dejando el saldo real igual a lo declarado. ¿Continuar?')) return;
+        setArqueoSaving(true);
+        router.post(route('finanzas.balance.arqueo.ajustar', balance.fecha), {}, {
+            preserveScroll: true, onFinish: () => setArqueoSaving(false),
+        });
+    }
     function reconstruirStock() {
         setRecalcStock(true);
         router.post(route('finanzas.balance.recalcular-stock', { fecha: balance.fecha.slice(0, 10) }), {}, {
@@ -551,6 +584,79 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             {money(saldosEntidad.reduce((a, e) => a + e.saldo, 0))}
                         </span>
                     </span>
+                    <button onClick={() => setArqueoAbierto(v => !v)}
+                        className="ml-auto inline-flex items-center gap-1 text-xs font-semibold"
+                        style={{ color: 'var(--color-primary)' }}>
+                        <Coins size={13} /> {arqueoAbierto ? 'Ocultar arqueo' : 'Arquear cuentas (contar caja)'}
+                    </button>
+                </div>
+            )}
+
+            {/* ── Arqueo de cuentas: cuento lo que tengo vs lo que dice el sistema ── */}
+            {arqueoAbierto && (
+                <div className="mb-5 rounded-2xl border p-4" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                    <div className="flex items-center justify-between mb-3">
+                        <div>
+                            <h3 className="text-sm font-bold" style={{ color: 'var(--color-text)' }}>Arqueo de cuentas</h3>
+                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                Escribe cuánto tienes físicamente en cada cuenta. Guardar solo registra el conteo (no mueve caja).
+                            </p>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead style={{ color: 'var(--color-text-muted)' }}>
+                                <tr className="border-b" style={{ borderColor: 'var(--color-border)' }}>
+                                    <th className="text-left py-2 px-2 font-medium">Cuenta</th>
+                                    <th className="text-right py-2 px-2 font-medium">Sistema</th>
+                                    <th className="text-right py-2 px-2 font-medium">Tú tienes</th>
+                                    <th className="text-right py-2 px-2 font-medium">Diferencia</th>
+                                    <th className="text-center py-2 px-2 font-medium">Ajuste</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {saldosCuentas.map(c => {
+                                    const d = difArqueo(c);
+                                    return (
+                                        <tr key={c.id} className="border-b" style={{ borderColor: 'var(--color-border)' }}>
+                                            <td className="py-2 px-2">
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    {c.es_efectivo ? <Coins size={13} /> : <Landmark size={13} />}
+                                                    <span className="font-medium" style={{ color: 'var(--color-text)' }}>{c.nombre}</span>
+                                                </span>
+                                            </td>
+                                            <td className="py-2 px-2 text-right tabular-nums" style={{ color: 'var(--color-text-muted)' }}>{money(c.saldo)}</td>
+                                            <td className="py-2 px-2 w-36">
+                                                <input type="number" step="0.01" value={declarados[c.id] ?? ''}
+                                                    onChange={e => setDeclarados(prev => ({ ...prev, [c.id]: e.target.value }))}
+                                                    placeholder="—"
+                                                    className="w-full rounded-lg border px-2 py-1 text-sm text-right"
+                                                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} />
+                                            </td>
+                                            <td className="py-2 px-2 text-right tabular-nums">
+                                                {d == null ? <span style={{ color: 'var(--color-text-muted)' }}>—</span>
+                                                    : d === 0 ? <span style={{ color: 'var(--color-success)' }}>0</span>
+                                                    : <span style={{ color: d < 0 ? 'var(--color-danger)' : 'var(--color-warning)' }}>{d > 0 ? '+' : ''}{money(d)}</span>}
+                                            </td>
+                                            <td className="py-2 px-2 text-center">
+                                                {c.ajustado ? <Badge variant="success">Ajustado</Badge> : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-3 items-center">
+                        <Button loading={arqueoSaving} onClick={guardarArqueo}>Guardar conteo</Button>
+                        <Button variant="ghost" loading={arqueoSaving} disabled={!hayDifs} onClick={ajustarArqueo}
+                            title={hayDifs ? 'Asienta las diferencias como movimiento de caja' : 'No hay diferencias por ajustar'}>
+                            Generar ajustes de caja (opcional)
+                        </Button>
+                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            Guardar = solo anota el conteo. Generar ajustes = mueve caja para que el saldo quede igual a lo declarado (y mañana arranca de ahí).
+                        </p>
+                    </div>
                 </div>
             )}
 

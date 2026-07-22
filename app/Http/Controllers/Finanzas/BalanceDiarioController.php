@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
+use App\Models\BalanceCuentaArqueo;
 use App\Models\BalanceDiario;
 use App\Models\BalanceDiarioItem;
 use App\Models\ClienteAnticipo;
@@ -264,6 +265,19 @@ class BalanceDiarioController extends Controller
                 'utilidad'   => $b->utilidad_dia !== null ? (float) $b->utilidad_dia : null,
             ]);
 
+        // ── Arqueo de cuentas: conteo declarado guardado (si hay) ──────────
+        // Se adjunta a cada cuenta: lo declarado, la diferencia y si ya se generó
+        // el ajuste de caja. Sin arqueo guardado, van null (aún no contado).
+        $arqueos = BalanceCuentaArqueo::where('balance_diario_id', $balance->id)
+            ->get()->keyBy('cuenta_id');
+        $saldosCuentas = $saldosCuentas->map(function ($c) use ($arqueos) {
+            $a = $arqueos->get($c['id']);
+            $c['declarado']  = $a ? (float) $a->monto_declarado : null;
+            $c['diferencia'] = $a ? round((float) $a->monto_declarado - (float) $c['saldo'], 2) : null;
+            $c['ajustado']   = $a ? (bool) $a->ajustado : false;
+            return $c;
+        });
+
         return Inertia::render('Finanzas/BalanceDiarioDetalle', [
             'balance'        => $balance,
             'gastos'         => $gastos,
@@ -290,6 +304,88 @@ class BalanceDiarioController extends Controller
                 'utilidad'   => $anterior->utilidad_dia !== null ? (float) $anterior->utilidad_dia : null,
             ] : null,
         ]);
+    }
+
+    /**
+     * Guarda el ARQUEO de cuentas del día: por cada cuenta, cuánto declara el
+     * usuario que tiene físicamente. Solo registra el conteo y la diferencia
+     * (snapshot del saldo del sistema). NO mueve tesorería — generar el ajuste
+     * es opcional y aparte (generarAjustesArqueo).
+     */
+    public function guardarArqueo(Request $request, string $fecha)
+    {
+        $user = $request->user();
+        abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha), 404);
+
+        $data = $request->validate([
+            'cuentas'                => ['required', 'array', 'min:1'],
+            'cuentas.*.cuenta_id'    => ['required', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuentas.*.declarado'    => ['required', 'numeric'],
+        ]);
+
+        $balance   = $this->service->generar($user, $fecha); // asegura la fila del día
+        $tesoreria = app(TesoreriaService::class);
+
+        foreach ($data['cuentas'] as $c) {
+            $sistema = round((float) $tesoreria->saldo((int) $c['cuenta_id'], $fecha), 2);
+            $declarado = round((float) $c['declarado'], 2);
+            BalanceCuentaArqueo::updateOrCreate(
+                ['balance_diario_id' => $balance->id, 'cuenta_id' => (int) $c['cuenta_id']],
+                [
+                    'saldo_sistema'   => $sistema,
+                    'monto_declarado' => $declarado,
+                    'diferencia'      => round($declarado - $sistema, 2),
+                    // Cambiar el conteo re-abre el ajuste (si difiere de nuevo).
+                    'ajustado'        => false,
+                ],
+            );
+        }
+
+        \App\Services\AuditoriaService::log('balance.arqueo_guardado', $balance, [
+            'fecha' => $fecha, 'cuentas' => count($data['cuentas']),
+        ], $user);
+
+        return back()->with('success', 'Conteo de cuentas guardado. Las diferencias quedaron registradas.');
+    }
+
+    /**
+     * OPCIONAL: asienta la diferencia de cada cuenta arqueada como movimiento de
+     * tesorería (ajuste), dejando el saldo real = lo declarado. Recién con esto
+     * el balance de mañana arranca desde el monto contado. Si no se usa, el
+     * conteo queda solo informativo y nada se mueve.
+     */
+    public function generarAjustesArqueo(Request $request, string $fecha)
+    {
+        $user = $request->user();
+        abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha), 404);
+
+        $balance   = $this->service->generar($user, $fecha);
+        $tesoreria = app(TesoreriaService::class);
+        $arqueos   = BalanceCuentaArqueo::where('balance_diario_id', $balance->id)->where('ajustado', false)->get();
+
+        $n = 0;
+        DB::transaction(function () use ($arqueos, $tesoreria, $user, $fecha, &$n) {
+            foreach ($arqueos as $a) {
+                $sistema = round((float) $tesoreria->saldo($a->cuenta_id, $fecha), 2);
+                $dif = round((float) $a->monto_declarado - $sistema, 2);
+                if (abs($dif) < 0.01) { $a->update(['ajustado' => true, 'saldo_sistema' => $sistema, 'diferencia' => 0]); continue; }
+
+                $mov = $tesoreria->registrar(
+                    $user->empresa_id, $a->cuenta_id, $user, $fecha,
+                    $dif > 0 ? 'ingreso' : 'egreso', abs($dif),
+                    'Ajuste por arqueo del balance ' . $fecha,
+                    'ajuste', null,
+                );
+                $a->update(['ajustado' => true, 'saldo_sistema' => $sistema, 'diferencia' => $dif, 'ajuste_mov_id' => $mov->id]);
+                $n++;
+            }
+        });
+
+        \App\Services\AuditoriaService::log('balance.arqueo_ajustado', $balance, ['fecha' => $fecha, 'ajustes' => $n], $user);
+
+        return back()->with('success', $n > 0
+            ? "Se generaron {$n} ajuste(s) de caja: el saldo real quedó igual a lo declarado."
+            : 'No hay diferencias por ajustar (todo cuadra).');
     }
 
     /**

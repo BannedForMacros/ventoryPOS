@@ -422,6 +422,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.balance,editar')->post('balance/{balance}/items', [BalanceDiarioController::class, 'agregarItem'])->name('balance.items.store');
         Route::middleware('permiso:finanzas.balance,editar')->delete('balance/items/{item}', [BalanceDiarioController::class, 'eliminarItem'])->name('balance.items.destroy');
         Route::middleware('permiso:finanzas.balance,editar')->post('balance/{fecha}/recalcular-stock', [BalanceDiarioController::class, 'recalcularStock'])->name('balance.recalcular-stock');
+        Route::middleware('permiso:finanzas.balance,editar')->post('balance/{fecha}/arqueo', [BalanceDiarioController::class, 'guardarArqueo'])->name('balance.arqueo');
+        Route::middleware('permiso:finanzas.balance,editar')->post('balance/{fecha}/arqueo/ajustar', [BalanceDiarioController::class, 'generarAjustesArqueo'])->name('balance.arqueo.ajustar');
         Route::middleware('permiso:finanzas.balance,editar')->post('balance/{balance}/confirmar', [BalanceDiarioController::class, 'confirmar'])->name('balance.confirmar');
         Route::middleware('permiso:finanzas.balance,editar')->post('balance/{balance}/reabrir', [BalanceDiarioController::class, 'reabrir'])->name('balance.reabrir');
     });
