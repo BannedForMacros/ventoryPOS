@@ -99,6 +99,9 @@ class EstadoCuentaController extends Controller
                     'detalle'     => 'Venta al crédito por ' . number_format((float) $v->total, 2),
                     'monto'       => round((float) $v->total, 2),
                     'variant'     => 'primary',
+                    // Referencia para abrir el detalle del documento al hacer clic.
+                    'ref_tipo'    => 'venta',
+                    'ref_id'      => (int) $v->id,
                 ];
 
                 // Pago inicial en el POS (parte del total que ya entró en caja).
@@ -111,6 +114,8 @@ class EstadoCuentaController extends Controller
                         'detalle'   => 'Pagado en caja al momento de la venta' . ($p->referencia ? " · Ref. {$p->referencia}" : ''),
                         'monto'     => -round((float) $p->monto, 2),
                         'variant'   => 'success',
+                        'ref_tipo'  => 'venta',
+                        'ref_id'    => (int) $v->id,
                     ];
                 }
             }
@@ -127,6 +132,8 @@ class EstadoCuentaController extends Controller
                         'detalle'   => 'Cobro a cuenta' . ($a->referencia ? " · Ref. {$a->referencia}" : ''),
                         'monto'     => -round((float) $a->monto, 2),
                         'variant'   => 'success',
+                        'ref_tipo'  => 'venta',
+                        'ref_id'    => (int) $a->venta_id,
                     ];
                 }
             }
@@ -184,6 +191,8 @@ class EstadoCuentaController extends Controller
                         . ($e->numero_documento ? " · Doc. {$e->numero_documento}" : ''),
                     'monto'     => -round((float) $e->total, 2),
                     'variant'   => 'danger',
+                    'ref_tipo'  => 'entrada',
+                    'ref_id'    => (int) $e->id,
                 ];
             }
 
@@ -198,6 +207,8 @@ class EstadoCuentaController extends Controller
                         'detalle'   => 'Pago a cuenta' . ($p->referencia ? " · Ref. {$p->referencia}" : ''),
                         'monto'     => round((float) $p->monto, 2),
                         'variant'   => 'success',
+                        'ref_tipo'  => 'entrada',
+                        'ref_id'    => (int) $p->entrada_id,
                     ];
                 }
             }

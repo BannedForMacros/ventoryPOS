@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Users, Printer, Scale } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -6,6 +6,7 @@ import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
+import DocumentoDetalleModal, { DocumentoRef } from '@/Components/Detalles/DocumentoDetalleModal';
 import { ReportCard, Th, theadStyle, zebra, Empty, fmtS } from '@/Components/Reportes/ReportUI';
 
 interface Movimiento {
@@ -17,6 +18,9 @@ interface Movimiento {
     monto: number;
     saldo: number;
     variant: 'primary' | 'success' | 'danger' | 'warning';
+    // Referencia opcional al documento fuente: ventas y compras abren su detalle.
+    ref_tipo?: 'venta' | 'entrada' | null;
+    ref_id?: number | null;
 }
 
 interface Tercero {
@@ -48,6 +52,12 @@ export default function EstadoCuentaDetalle({ tercero, movimientos }: Props) {
         () => Math.round((saldoFinal - tercero.neto) * 100) / 100,
         [saldoFinal, tercero.neto],
     );
+
+    // Detalle del documento al hacer clic (ventas y compras; anticipos no tienen doc).
+    const [doc, setDoc] = useState<DocumentoRef | null>(null);
+    const abrirDoc = (m: Movimiento) => {
+        if (m.ref_tipo && m.ref_id) setDoc({ tipo: m.ref_tipo, id: m.ref_id });
+    };
 
     return (
         <AppLayout>
@@ -111,13 +121,23 @@ export default function EstadoCuentaDetalle({ tercero, movimientos }: Props) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {movimientos.map((m, i) => (
-                                        <tr key={`${m.tipo}-${m.documento}-${i}`} style={zebra(i)}>
+                                    {movimientos.map((m, i) => {
+                                        const clicable = !!(m.ref_tipo && m.ref_id);
+                                        return (
+                                        <tr key={`${m.tipo}-${m.documento}-${i}`}
+                                            onClick={clicable ? () => abrirDoc(m) : undefined}
+                                            className={clicable ? 'ec-row-clicable' : ''}
+                                            style={{ ...zebra(i), cursor: clicable ? 'pointer' : 'default' }}
+                                            title={clicable ? 'Ver detalle del documento' : undefined}>
                                             <td className="px-3 py-2.5 whitespace-nowrap">{fecha(m.fecha)}</td>
                                             <td className="px-3 py-2.5">
                                                 <Badge variant={m.variant}>{m.etiqueta}</Badge>
                                             </td>
-                                            <td className="px-3 py-2.5 font-medium whitespace-nowrap">{m.documento || '—'}</td>
+                                            <td className="px-3 py-2.5 font-medium whitespace-nowrap">
+                                                {m.documento
+                                                    ? <span style={clicable ? { color: 'var(--color-primary)', textDecoration: 'underline', textUnderlineOffset: 3 } : undefined}>{m.documento}</span>
+                                                    : '—'}
+                                            </td>
                                             <td className="px-3 py-2.5" style={{ color: 'var(--color-text-muted)' }}>
                                                 {m.detalle}
                                             </td>
@@ -137,7 +157,8 @@ export default function EstadoCuentaDetalle({ tercero, movimientos }: Props) {
                                                 {fmtS(m.saldo)}
                                             </td>
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -147,9 +168,18 @@ export default function EstadoCuentaDetalle({ tercero, movimientos }: Props) {
                 <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                     Importe positivo = a nuestro favor · negativo = en nuestra contra. Los anticipos de mercadería se
                     valorizan al precio congelado de la venta, no al precio del día. Para cobrar o pagar, usa Cuentas
-                    por cobrar / Cuentas por pagar.
+                    por cobrar / Cuentas por pagar. Haz clic en una venta o compra para ver su detalle.
                 </p>
             </div>
+
+            {/* Detalle del documento clicado (venta / compra) */}
+            <DocumentoDetalleModal doc={doc} onClose={() => setDoc(null)} />
+
+            <style>{`
+                .ec-row-clicable:hover {
+                    background-color: color-mix(in srgb, var(--color-primary) 6%, transparent) !important;
+                }
+            `}</style>
         </AppLayout>
     );
 }
