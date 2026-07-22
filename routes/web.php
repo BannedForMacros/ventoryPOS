@@ -146,6 +146,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:inventario.cierres,ver')->get('cierres/crear', [CierreInventarioController::class, 'create'])->name('cierres.create');
         Route::middleware('permiso:inventario.cierres,ver')->get('cierres/productos-para-declarar', [CierreInventarioController::class, 'productosParaDeclarar'])->name('cierres.productos');
         Route::middleware('permiso:inventario.cierres,editar')->post('cierres/{cierre}/confirmar', [CierreInventarioController::class, 'confirmar'])->name('cierres.confirmar');
+        Route::middleware('permiso:inventario.cierres,editar')->get('cierres/{cierre}/editar', [CierreInventarioController::class, 'edit'])->name('cierres.edit');
+        Route::middleware('permiso:inventario.cierres,editar')->put('cierres/{cierre}', [CierreInventarioController::class, 'update'])->name('cierres.update');
+        Route::middleware('permiso:inventario.cierres,editar')->post('cierres/{cierre}/anular', [CierreInventarioController::class, 'anular'])->name('cierres.anular');
         Route::middleware('permiso:inventario.cierres')->group(function () {
             Route::apiResource('cierres', CierreInventarioController::class)
                 ->parameters(['cierres' => 'cierre'])

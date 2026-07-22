@@ -45,6 +45,7 @@ class EmpresaRequest extends FormRequest
             'permite_stock_negativo'          => 'boolean',
             'modo_cierre_caja'                => 'required|in:rapido,con_declaraciones',
             'modo_cierre_inventario'          => 'required|in:por_venta,declarado',
+            'cierre_precarga_stock'           => 'boolean',
             'usa_fondos_iniciales'            => 'boolean',
             'fondos_iniciales_en_declaracion' => 'boolean',
             // F8 — Si está activo, el balance diario toma el conteo del

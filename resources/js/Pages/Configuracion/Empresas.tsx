@@ -33,6 +33,7 @@ type FormData = {
     tasa_igv: number | '';
     modo_cierre_caja: ModoCierre;
     modo_cierre_inventario: ModoInventario;
+    cierre_precarga_stock: boolean;
     usa_fondos_iniciales: boolean;
     fondos_iniciales_en_declaracion: boolean;
     requiere_consolidacion_caja: boolean;
@@ -69,6 +70,7 @@ const emptyForm: FormData = {
     tasa_igv: 18,
     modo_cierre_caja: 'con_declaraciones',
     modo_cierre_inventario: 'por_venta',
+    cierre_precarga_stock: false,
     usa_fondos_iniciales: true,
     fondos_iniciales_en_declaracion: false,
     requiere_consolidacion_caja: false,
@@ -119,6 +121,7 @@ export default function Empresas({ empresas }: Props) {
             tasa_igv: emp.tasa_igv != null ? Number(emp.tasa_igv) : 18,
             modo_cierre_caja: (emp.modo_cierre_caja as ModoCierre) ?? 'con_declaraciones',
             modo_cierre_inventario: (emp.modo_cierre_inventario as ModoInventario) ?? 'por_venta',
+            cierre_precarga_stock: emp.cierre_precarga_stock ?? false,
             usa_fondos_iniciales: emp.usa_fondos_iniciales ?? true,
             fondos_iniciales_en_declaracion: emp.fondos_iniciales_en_declaracion ?? false,
             requiere_consolidacion_caja: emp.requiere_consolidacion_caja ?? false,
@@ -434,6 +437,18 @@ export default function Empresas({ empresas }: Props) {
                         {errors.modo_cierre_inventario && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_cierre_inventario}</p>
                         )}
+
+                        {/* Modo de carga del formulario de cierre */}
+                        <label className="flex items-start gap-2 cursor-pointer mt-4">
+                            <Checkbox checked={data.cierre_precarga_stock} onChange={e => setData('cierre_precarga_stock', e.target.checked)} />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cierre lógico (precargar stock del sistema)</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Activado: al cerrar inventario cada producto viene cargado con el stock del sistema; corriges solo los que difieren (parcial).
+                                    Desactivado: todos salen vacíos y debes declarar la cantidad de todos los productos (conteo total).
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     {/* ── Sección: Devoluciones ── */}

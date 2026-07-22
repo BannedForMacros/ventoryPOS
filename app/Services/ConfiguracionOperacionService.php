@@ -65,6 +65,16 @@ class ConfiguracionOperacionService
     }
 
     /**
+     * true si el cierre de inventario precarga el stock del sistema (modo lógico:
+     * editas solo lo que difiere). false = en blanco (declarar todos los productos).
+     */
+    public function cierrePrecargaStock(int $empresaId): bool
+    {
+        $empresa = Empresa::findOrFail($empresaId);
+        return (bool) ($empresa->cierre_precarga_stock ?? false);
+    }
+
+    /**
      * Resuelve el modo de cierre de caja efectivo para un local.
      * Retorna 'rapido' | 'con_declaraciones'.
      */

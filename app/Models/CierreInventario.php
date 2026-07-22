@@ -46,8 +46,11 @@ class CierreInventario extends Model
     public function esConfirmado(): bool { return $this->estado === 'confirmado'; }
 
     /**
-     * Confirma el cierre: ajusta el stock de cada producto al valor declarado.
-     * Las diferencias quedan registradas en los items.
+     * Marca el cierre como confirmado y guarda los totales. El AJUSTE de stock NO
+     * se aplica aquí: al quedar 'confirmado', Stock::reconstruir aplica la
+     * diferencia de cada item (los cierres confirmados son fuente del recálculo).
+     * El controlador reconstruye stock y kardex por producto tras confirmar, así
+     * el saldo es canónico, sobrevive a "Recalcular" y el kardex queda cronológico.
      */
     public function confirmar(): void
     {
@@ -55,34 +58,11 @@ class CierreInventario extends Model
             throw new LogicException('Solo se puede confirmar un cierre en estado borrador.');
         }
 
-        DB::transaction(function () {
-            $items = $this->items()->get();
-            $totalDiferencias = 0;
-
-            foreach ($items as $item) {
-                if ((float) $item->diferencia !== 0.0) {
-                    Stock::ajustar(
-                        $this->almacen_id,
-                        $item->producto_id,
-                        (float) $item->diferencia,
-                        contexto: [
-                            'tipo'            => 'cierre',
-                            'referencia_tipo' => 'cierre',
-                            'referencia_id'   => $this->id,
-                            'fecha'           => $this->fecha,
-                            'user_id'         => $this->user_id,
-                            'empresa_id'      => $this->empresa_id,
-                        ],
-                    );
-                    $totalDiferencias++;
-                }
-            }
-
-            $this->update([
-                'estado'            => 'confirmado',
-                'total_items'       => $items->count(),
-                'total_diferencias' => $totalDiferencias,
-            ]);
-        });
+        $items = $this->items()->get();
+        $this->update([
+            'estado'            => 'confirmado',
+            'total_items'       => $items->count(),
+            'total_diferencias' => $items->filter(fn ($i) => abs((float) $i->diferencia) > 0.00009)->count(),
+        ]);
     }
 }

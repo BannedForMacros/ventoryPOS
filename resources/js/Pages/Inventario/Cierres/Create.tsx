@@ -20,6 +20,7 @@ interface ProductoFila {
     categoria: string | null;
     categoria_id: number | null;
     stock_sistema: number;
+    costo: number;
 }
 
 interface ItemDeclarado {
@@ -34,9 +35,10 @@ interface Props extends PageProps {
     mostrarSelector: boolean;
     turnoId: number | null;
     almacenSugerido: number | null;
+    precarga: boolean;
 }
 
-export default function CierreCreate({ almacenes, mostrarSelector, turnoId, almacenSugerido }: Props) {
+export default function CierreCreate({ almacenes, mostrarSelector, turnoId, almacenSugerido, precarga }: Props) {
     const { flash } = usePage<Props>().props;
     const [almacenId, setAlmacenId]     = useState<number | ''>(
         almacenSugerido ?? (almacenes.length === 1 ? almacenes[0].id : '')
@@ -67,14 +69,16 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
         setCargando(true);
         axios.get(route('inventario.cierres.productos'), { params: { almacen_id: almacenId } })
             .then(r => {
-                setProductos(r.data);
-                // Pre-llenar items con stock_sistema y stock_declarado vacío
+                const prods: ProductoFila[] = r.data.productos ?? r.data;
+                setProductos(prods);
+                // Modo lógico (precarga): declarado arranca = stock del sistema (editas
+                // solo lo que difiere). Modo en blanco: declarado vacío (declaras todo).
                 const initial: Record<number, ItemDeclarado> = {};
-                r.data.forEach((p: ProductoFila) => {
+                prods.forEach((p: ProductoFila) => {
                     initial[p.id] = {
                         producto_id: p.id,
                         stock_sistema: p.stock_sistema,
-                        stock_declarado: '',
+                        stock_declarado: precarga ? String(p.stock_sistema) : '',
                         observacion: '',
                     };
                 });
@@ -127,6 +131,12 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
             return;
         }
 
+        // Modo en blanco (total): exige declarar TODOS los productos.
+        if (!precarga && itemsArr.length < productos.length) {
+            toast.error(`Faltan ${productos.length - itemsArr.length} productos por declarar (modo conteo total).`);
+            return;
+        }
+
         // Inertia useForm.post() no acepta `data` en sus options. Para inyectar
         // campos que no viven en el form-state (almacen_id, turno_id, items
         // calculados en cada submit) usamos transform(): se ejecuta justo
@@ -153,7 +163,9 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
         <AppLayout title="Nuevo cierre de inventario">
             <PageHeader
                 title="Nuevo cierre de inventario"
-                subtitle="Declara el stock real contado por producto"
+                subtitle={precarga
+                    ? 'Modo lógico: viene cargado el stock del sistema; corrige solo lo que difiera'
+                    : 'Modo conteo total: declara la cantidad real de TODOS los productos'}
                 backHref={route('inventario.cierres.index')}
             />
 
@@ -220,7 +232,21 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
                                     {totalConDiferencia} con diferencia
                                 </Badge>
                             )}
+                            {precarga && (
+                                <Button variant="ghost" onClick={() => setItems(prev => {
+                                    const next = { ...prev };
+                                    productos.forEach(p => { next[p.id] = { ...next[p.id], stock_declarado: String(p.stock_sistema) }; });
+                                    return next;
+                                })}>
+                                    Reponer todo al sistema
+                                </Button>
+                            )}
                         </div>
+                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            {precarga
+                                ? 'Cada producto trae el stock del sistema. Cambia solo los que contaste distinto; los demás quedan sin diferencia.'
+                                : 'Debes ingresar la cantidad real de todos los productos antes de confirmar.'}
+                        </p>
 
                         {cargando && <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Cargando productos...</p>}
 

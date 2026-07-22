@@ -25,6 +25,7 @@ export interface Empresa extends Record<string, unknown> {
     permite_stock_negativo: boolean;
     modo_cierre_caja: ModoCierreCaja;
     modo_cierre_inventario: ModoCierreInventario;
+    cierre_precarga_stock: boolean;
     usa_fondos_iniciales: boolean;
     fondos_iniciales_en_declaracion: boolean;
     requiere_consolidacion_caja: boolean;
