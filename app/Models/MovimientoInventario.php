@@ -82,6 +82,8 @@ class MovimientoInventario extends Model
             'transferencia_reaplicacion' => 'Transferencia (reaplicación)',
             'cierre'                     => 'Cierre de inventario',
             'entrega_pendiente'          => 'Entrega de pendiente',
+            'ajuste_ingreso'             => 'Ajuste (+)',
+            'ajuste_salida'              => 'Ajuste (−)',
             default                      => 'Ajuste',
         };
     }

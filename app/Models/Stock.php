@@ -281,6 +281,24 @@ class Stock extends Model
             ->where('sd.producto_id', $productoId), 's.fecha')
             ->sum('sd.cantidad_base');
 
+        // Ajustes de inventario confirmados (+/-): ingreso suma, salida resta.
+        // Sin costo: no recalculan CPP (entran/salen al costo vigente), por eso
+        // NO aparecen en el bloque de $ingresos más abajo. Respetan el corte de
+        // apertura vía $post(): un ajuste con fecha <= corte ya vive en el inicial.
+        $cantidad += (float) $post(\DB::table('ajustes_inventario as ai')
+            ->where('ai.almacen_id', $almacenId)
+            ->where('ai.estado', 'confirmado')
+            ->where('ai.tipo', 'ingreso')
+            ->where('ai.producto_id', $productoId), 'ai.fecha')
+            ->sum('ai.cantidad_base');
+
+        $cantidad -= (float) $post(\DB::table('ajustes_inventario as ai')
+            ->where('ai.almacen_id', $almacenId)
+            ->where('ai.estado', 'confirmado')
+            ->where('ai.tipo', 'salida')
+            ->where('ai.producto_id', $productoId), 'ai.fecha')
+            ->sum('ai.cantidad_base');
+
         // Transferencias salientes (-): cuando ya se envió, el stock origen bajó
         $cantidad -= (float) $post(\DB::table('transferencias_detalle as td')
             ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
@@ -507,6 +525,12 @@ class Stock extends Model
             ->join('salidas as s', 's.id', '=', 'sd.salida_id')
             ->whereIn('s.almacen_id', $almacenIds)
             ->select('s.almacen_id', 'sd.producto_id')
+            ->distinct()->get());
+
+        // Ajustes de inventario
+        $pares = $pares->merge(\DB::table('ajustes_inventario as ai')
+            ->whereIn('ai.almacen_id', $almacenIds)
+            ->select('ai.almacen_id', 'ai.producto_id')
             ->distinct()->get());
 
         // Transferencias (origen y destino)

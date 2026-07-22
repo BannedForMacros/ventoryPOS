@@ -45,6 +45,7 @@ use App\Http\Controllers\Finanzas\EstadoCuentaController;
 use App\Http\Controllers\Finanzas\ConsolidacionController;
 use App\Http\Controllers\Finanzas\PlanillaDescuentoController;
 use App\Http\Controllers\Finanzas\TesoreriaController;
+use App\Http\Controllers\Inventario\AjusteInventarioController;
 use App\Http\Controllers\Inventario\CierreInventarioController;
 use App\Http\Controllers\Inventario\EntradaController;
 use App\Http\Controllers\Inventario\SalidaController;
@@ -148,6 +149,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 ->parameters(['cierres' => 'cierre'])
                 ->except(['edit', 'update']);
         });
+
+        // Ajustes de inventario (ingreso/salida por ajuste, sin dinero)
+        Route::middleware('permiso:inventario.ajustes,ver')->get('ajustes', [AjusteInventarioController::class, 'index'])->name('ajustes.index');
+        Route::middleware('permiso:inventario.ajustes,editar')->post('ajustes', [AjusteInventarioController::class, 'store'])->name('ajustes.store');
+        Route::middleware('permiso:inventario.ajustes,editar')->post('ajustes/{ajuste}/anular', [AjusteInventarioController::class, 'anular'])->name('ajustes.anular');
 
         // Salidas
         Route::middleware('permiso:inventario.salidas,ver')->get('salidas/crear', [SalidaController::class, 'create'])->name('salidas.create');

@@ -3,7 +3,7 @@ import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
     RefreshCw, AlertTriangle, Eye, Search, Boxes, PackageX, TriangleAlert,
-    CircleDollarSign,
+    CircleDollarSign, SlidersHorizontal,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -11,8 +11,10 @@ import Button from '@/Components/UI/Button';
 import Select from '@/Components/UI/Select';
 import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Input from '@/Components/UI/Input';
+import Modal from '@/Components/UI/Modal';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
+import { hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
@@ -64,6 +66,7 @@ interface Props extends PageProps {
     filters: Filters;
     stocksNegativosCount: number;
     stocksNegativos: StockNegativo[];
+    puede?: { ajustar: boolean };
 }
 
 const money = (v: number) => `S/ ${Number(v ?? 0).toFixed(2)}`;
@@ -78,10 +81,48 @@ const ORDENES: Record<string, string> = {
 
 export default function Stock({
     stocks, almacenes, categorias, kpis, umbralBajo,
-    mostrarSelector, filters, stocksNegativosCount, stocksNegativos,
+    mostrarSelector, filters, stocksNegativosCount, stocksNegativos, puede,
 }: Props) {
     const { flash } = usePage<Props>().props;
     const [busqueda, setBusqueda] = useState(filters.busqueda ?? '');
+    const puedeAjustar = puede?.ajustar ?? false;
+
+    // ── Modal "Ajustar stock" (ingreso/salida por ajuste, sin dinero) ──────
+    const [ajuste, setAjuste]       = useState<StockRow | null>(null);
+    const [ajDireccion, setAjDir]   = useState<'ingreso' | 'salida'>('ingreso');
+    const [ajCantidad, setAjCant]   = useState('');
+    const [ajFecha, setAjFecha]     = useState(hoyLocal());
+    const [ajMotivo, setAjMotivo]   = useState('');
+    const [ajErrors, setAjErrors]   = useState<Record<string, string>>({});
+    const [ajSaving, setAjSaving]   = useState(false);
+
+    function abrirAjuste(s: StockRow) {
+        setAjErrors({});
+        setAjDir('ingreso'); setAjCant(''); setAjFecha(hoyLocal()); setAjMotivo('');
+        setAjuste(s);
+    }
+
+    // Stock que quedaría tras el ajuste (previsualización).
+    const ajResultado = ajuste
+        ? Number(ajuste.cantidad) + (ajDireccion === 'ingreso' ? 1 : -1) * (parseFloat(ajCantidad) || 0)
+        : 0;
+
+    function guardarAjuste() {
+        if (!ajuste) return;
+        setAjSaving(true);
+        router.post(route('inventario.ajustes.store'), {
+            almacen_id:  ajuste.almacen_id,
+            producto_id: ajuste.producto_id,
+            tipo:        ajDireccion,
+            cantidad:    ajCantidad,
+            fecha:       ajFecha,
+            motivo:      ajMotivo,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => { setAjuste(null); setAjSaving(false); },
+            onError:   (e) => { setAjErrors(e as Record<string, string>); setAjSaving(false); },
+        });
+    }
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -201,16 +242,28 @@ export default function Stock({
         {
             key: 'acciones', label: '', sortable: false,
             render: (s) => (
-                <button
-                    onClick={() => router.get(route('reportes.kardex'), {
-                        producto_id: s.producto_id, almacen_id: s.almacen_id,
-                    })}
-                    title="Ver movimientos (kardex)"
-                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]"
-                    style={{ color: 'var(--color-text-muted)' }}
-                >
-                    <Eye size={16} />
-                </button>
+                <div className="flex items-center gap-1">
+                    {puedeAjustar && (
+                        <button
+                            onClick={() => abrirAjuste(s)}
+                            title="Ajustar stock (ingreso / salida por ajuste)"
+                            className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]"
+                            style={{ color: 'var(--color-text-muted)' }}
+                        >
+                            <SlidersHorizontal size={16} />
+                        </button>
+                    )}
+                    <button
+                        onClick={() => router.get(route('reportes.kardex'), {
+                            producto_id: s.producto_id, almacen_id: s.almacen_id,
+                        })}
+                        title="Ver movimientos (kardex)"
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]"
+                        style={{ color: 'var(--color-text-muted)' }}
+                    >
+                        <Eye size={16} />
+                    </button>
+                </div>
             ),
         },
     ];
@@ -358,6 +411,60 @@ export default function Stock({
                 sortable={false}
                 emptyMessage="No hay stock para este filtro"
             />
+
+            {/* Modal: Ajustar stock — ingreso/salida por ajuste, sin dinero, con fecha propia */}
+            <Modal
+                isOpen={ajuste !== null}
+                onClose={() => setAjuste(null)}
+                title={ajuste ? `Ajustar stock — ${ajuste.producto.nombre}` : ''}
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setAjuste(null)}>Cancelar</Button>
+                        <Button loading={ajSaving} onClick={guardarAjuste}>Guardar ajuste</Button>
+                    </>
+                }
+            >
+                {ajuste && (
+                    <div className="space-y-4">
+                        <div className="rounded-lg px-3 py-2 flex items-center justify-between text-sm"
+                             style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                            <span style={{ color: 'var(--color-text-muted)' }}>Stock en el sistema</span>
+                            <span className="font-bold" style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(ajuste.cantidad).toLocaleString('es-PE')}</span>
+                        </div>
+
+                        <Select label="Tipo de ajuste" required
+                            options={[
+                                { value: 'ingreso', label: 'Ingreso (+) — subir stock' },
+                                { value: 'salida',  label: 'Salida (−) — bajar stock' },
+                            ]}
+                            value={ajDireccion}
+                            onChange={(v) => setAjDir(v as 'ingreso' | 'salida')}
+                        />
+                        <Input label="Cantidad" required type="number" min="0" step="any" inputMode="decimal"
+                            value={ajCantidad} onChange={(e) => setAjCant(e.target.value)} error={ajErrors.cantidad} />
+                        <Input label="Fecha" required type="date" value={ajFecha}
+                            onChange={(e) => setAjFecha(e.target.value)} error={ajErrors.fecha}
+                            hint="Puedes fecharlo a un día anterior; el kardex y el saldo se recalculan a esa fecha." />
+                        <Input label="Motivo" required value={ajMotivo}
+                            onChange={(e) => setAjMotivo(e.target.value)} error={ajErrors.motivo}
+                            placeholder="Ej. conteo físico, merma, regularización" />
+
+                        {parseFloat(ajCantidad) > 0 && (
+                            <div className="rounded-lg px-3 py-2 flex items-center justify-between text-sm"
+                                 style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)' }}>
+                                <span style={{ color: 'var(--color-text-muted)' }}>Stock resultante</span>
+                                <span className="font-bold" style={{ color: ajResultado < 0 ? 'var(--color-danger)' : 'var(--color-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                                    {ajResultado.toLocaleString('es-PE')}
+                                </span>
+                            </div>
+                        )}
+                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                            No mueve dinero ni caja. Sale en el kardex como “Ajuste (+/−)” y sobrevive al Recalcular.
+                        </p>
+                    </div>
+                )}
+            </Modal>
         </AppLayout>
     );
 }

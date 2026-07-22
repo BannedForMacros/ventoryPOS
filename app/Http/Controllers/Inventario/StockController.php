@@ -119,6 +119,8 @@ class StockController extends Controller
             'filters'              => $request->only(['almacen_id', 'busqueda', 'categoria_id', 'estado', 'sort', 'dir']),
             'stocksNegativosCount' => $stocksNegativos->count(),
             'stocksNegativos'      => $stocksNegativos,
+            // Habilita el botón "Ajustar" por fila (permiso inventario.ajustes → editar).
+            'puede'                => ['ajustar' => $user->tienePermiso('inventario.ajustes', 'editar')],
         ]);
     }
 

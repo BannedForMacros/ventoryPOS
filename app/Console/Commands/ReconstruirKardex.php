@@ -123,6 +123,23 @@ class ReconstruirKardex extends Command
                 -1 * (float) $r->cantidad_base, 0, false, $r->numero_documento, $r->user_id);
         }
 
+        // (±) Ajustes de inventario confirmados — sin costo: no recalculan CPP,
+        // entran/salen al costo vigente (recalc=false). Ingreso = +, salida = -.
+        foreach ($post(DB::table('ajustes_inventario as ai')
+            ->where('ai.almacen_id', $almacenId)
+            ->where('ai.estado', 'confirmado')
+            ->where('ai.producto_id', $productoId), 'ai.fecha')
+            ->get(['ai.id', 'ai.fecha', 'ai.tipo', 'ai.cantidad_base', 'ai.numero', 'ai.user_id']) as $r) {
+            $esIngreso = $r->tipo === 'ingreso';
+            $movs[] = $this->mov(
+                $r->fecha, (int) $r->id,
+                $esIngreso ? 'ajuste_ingreso' : 'ajuste_salida',
+                'ajuste', (int) $r->id,
+                ($esIngreso ? 1 : -1) * (float) $r->cantidad_base,
+                0, false, $r->numero, $r->user_id,
+            );
+        }
+
         // (-) Transferencias salientes (enviada/recibida)
         foreach ($post(DB::table('transferencias_detalle as td')
             ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')

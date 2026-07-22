@@ -59,8 +59,12 @@ class ReporteKardexController extends Controller
                 $j->on('entradas.id', '=', 'movimientos_inventario.referencia_id')
                   ->where('movimientos_inventario.referencia_tipo', '=', 'entrada');
             })
+            ->leftJoin('ajustes_inventario', function ($j) {
+                $j->on('ajustes_inventario.id', '=', 'movimientos_inventario.referencia_id')
+                  ->whereIn('movimientos_inventario.referencia_tipo', ['ajuste', 'ajuste_anulacion']);
+            })
             ->select('movimientos_inventario.*')
-            ->selectRaw('COALESCE(ventas.numero, entradas.correlativo, movimientos_inventario.documento) as documento_resuelto')
+            ->selectRaw('COALESCE(ventas.numero, entradas.correlativo, ajustes_inventario.numero, movimientos_inventario.documento) as documento_resuelto')
             ->with([
                 'producto:id,nombre,codigo',
                 'almacen:id,nombre',
@@ -141,6 +145,8 @@ class ReporteKardexController extends Controller
                 ['value' => 'transferencia_reaplicacion', 'label' => 'Transferencia (reaplicación)'],
                 ['value' => 'cierre',                     'label' => 'Cierre de inventario'],
                 ['value' => 'entrega_pendiente',          'label' => 'Entrega de pendiente'],
+                ['value' => 'ajuste_ingreso',             'label' => 'Ajuste (+)'],
+                ['value' => 'ajuste_salida',              'label' => 'Ajuste (−)'],
                 ['value' => 'ajuste',                     'label' => 'Ajuste'],
             ],
             'filters' => [
