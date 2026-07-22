@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet, Eye, Loader2, Ban } from 'lucide-react';
+import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet, Eye, Loader2, Ban, RotateCcw } from 'lucide-react';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -209,6 +209,10 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
         });
     }
 
+    function reactivar(id: number) {
+        router.post(route('inventario.entradas.reactivar', id), {}, { preserveScroll: true });
+    }
+
     const columns: Column<Entrada>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
@@ -255,9 +259,9 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                 <div className="leading-tight">
                     <span className="font-mono text-sm">S/ {Number(e.total).toFixed(2)}</span>
                     {/* "Pendiente" inline en la misma columna del total — sin agregar otra
-                        columna. El tint amarillo en la fila ya hace de visual primario;
-                        este texto es la etiqueta clara para el usuario. */}
-                    {e.estado_pago !== 'pagado' && (
+                        columna. Solo para entradas CONFIRMADAS: una anulada no es ni
+                        pendiente ni pagada, no debe mostrar estado de pago. */}
+                    {e.estado === 'confirmado' && e.estado_pago !== 'pagado' && (
                         <p className="text-[10px] font-medium mt-0.5 flex items-center gap-1" style={{ color: '#ca8a04' }}>
                             <Wallet size={10} />
                             {e.estado_pago === 'parcial'
@@ -314,6 +318,17 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                             title="Anular entrada (revierte stock, kardex y cuenta por pagar)"
                         >
                             <Ban size={13} />Anular
+                        </button>
+                    )}
+                    {e.estado === 'anulada' && (
+                        <button
+                            type="button"
+                            onClick={() => reactivar(e.id)}
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors"
+                            style={{ color: 'var(--color-success)', backgroundColor: 'color-mix(in srgb, var(--color-success) 10%, transparent)' }}
+                            title="Reactivar entrada (vuelve a confirmada y re-aplica stock/kardex)"
+                        >
+                            <RotateCcw size={13} />Reactivar
                         </button>
                     )}
                     <TableActions

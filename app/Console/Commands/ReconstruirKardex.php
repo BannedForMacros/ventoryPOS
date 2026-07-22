@@ -78,6 +78,31 @@ class ReconstruirKardex extends Command
     }
 
     /**
+     * Reconstruye el kardex de UN (almacén, producto): borra sus movimientos y
+     * los regenera desde los documentos canónicos, en orden cronológico y con el
+     * CPP correcto. Reutilizable desde controladores (p.ej. anular/reactivar una
+     * entrada) para dejar el ledger limpio sin rebuildear toda la empresa.
+     */
+    public function reconstruirPar(object $almacen, int $productoId): int
+    {
+        DB::table('movimientos_inventario')
+            ->where('almacen_id', $almacen->id)
+            ->where('producto_id', $productoId)
+            ->delete();
+
+        $movs = $this->recolectarMovimientos($almacen, $productoId);
+        if (empty($movs)) return 0;
+
+        usort($movs, function ($a, $b) {
+            $fa = $a['fecha'] ?? '0000-00-00';
+            $fb = $b['fecha'] ?? '0000-00-00';
+            return $fa <=> $fb ?: (($a['orden'] ?? 0) <=> ($b['orden'] ?? 0));
+        });
+
+        return $this->reproducir($almacen, $productoId, $movs);
+    }
+
+    /**
      * Reúne todos los movimientos de un (almacén, producto) desde todas las fuentes.
      * Cada movimiento: fecha, tipo, referencia, cantidad (±base), costo (para los
      * que recalculan CPP), recalc (bool), documento, user_id.

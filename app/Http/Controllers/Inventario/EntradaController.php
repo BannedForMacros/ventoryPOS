@@ -988,48 +988,73 @@ class EntradaController extends Controller
         ];
 
         DB::transaction(function () use ($entrada, $user) {
-            // 1) Revertir el stock que aportó cada detalle (respeta apertura).
-            $productos = collect();
-            foreach ($entrada->detalles as $d) {
-                $productos->push($d->producto_id);
-                if (Stock::absorbidoPorApertura($entrada->almacen_id, $d->producto_id, $entrada->fecha)) {
-                    continue;
-                }
-                Stock::ajustar(
-                    almacenId:        $entrada->almacen_id,
-                    productoId:       $d->producto_id,
-                    cantidadBase:     -1 * (float) $d->cantidad_base,
-                    permitirNegativo: true,
-                    contexto: [
-                        'tipo'            => 'entrada_reverso',
-                        'referencia_tipo' => 'entrada',
-                        'referencia_id'   => $entrada->id,
-                        'documento'       => $entrada->numero_documento,
-                        'fecha'           => $entrada->fecha,
-                        'user_id'         => $user->id,
-                        'empresa_id'      => $entrada->empresa_id,
-                    ],
-                );
-            }
+            $productos = $entrada->detalles->pluck('producto_id')->unique();
 
-            // 2) Revertir pagos y sus egresos de tesorería.
+            // 1) Revertir pagos y sus egresos de tesorería.
             foreach ($entrada->pagosParciales()->get() as $p) {
                 $this->tesoreria->revertir('entrada_pago', $p->id);
                 $p->delete();
             }
 
-            // 3) Marcarla anulada ANTES de reconstruir: así el recálculo del CPP ya
-            //    no la cuenta (sale de stock/kardex/CxP/balance/estado de cuenta).
+            // 2) Marcarla anulada ANTES de reconstruir: así stock y kardex ya no la
+            //    cuentan (sale de CxP/balance/estado de cuenta, que filtran confirmado).
+            //    'estado_pago' pierde sentido en una anulada → queda neutro, y la UI
+            //    no muestra ni "pendiente" ni "pagado".
             $entrada->update(['estado' => 'anulada', 'estado_pago' => 'pendiente', 'monto_pagado' => 0]);
 
-            // 4) Reconstruir el CPP de los productos afectados (el reverso no lo hace).
-            foreach ($productos->unique() as $pid) {
-                Stock::reconstruir($entrada->almacen_id, (int) $pid);
-            }
+            // 3) Reconstruir stock Y kardex de cada producto afectado desde los
+            //    documentos canónicos (sin la entrada anulada). Así el CPP vuelve a
+            //    su valor real y el kardex no queda con filas entrada/reverso ni el
+            //    promedio inflado — clave cuando el stock estaba negativo.
+            $this->reconstruirStockYKardex($entrada->almacen, $productos);
         });
 
         AuditoriaService::log('entrada.anulada', $entrada, $snapshot + ['motivo' => $data['motivo']], $user);
 
         return redirect()->back()->with('success', 'Entrada anulada: stock, kardex y cuenta por pagar revertidos.');
+    }
+
+    /**
+     * Reactiva (revierte la anulación de) una entrada anulada: vuelve a
+     * 'confirmado' y re-aplica su efecto en stock y kardex. Los pagos que tenía
+     * se perdieron al anular, así que regresa como CONFIRMADA pero por pagar
+     * (monto_pagado=0); si había pagado, se re-registra desde Cuentas por pagar.
+     */
+    public function reactivar(Request $request, Entrada $entrada)
+    {
+        $user = $request->user();
+        abort_unless($this->scope->puedeAccederAlmacen($user, $entrada->almacen), 403);
+        abort_if($entrada->estado !== 'anulada', 422, 'Solo se pueden reactivar entradas anuladas.');
+
+        DB::transaction(function () use ($entrada) {
+            $productos = $entrada->detalles->pluck('producto_id')->unique();
+
+            // Vuelve a confirmada (por pagar) ANTES de reconstruir, para que el
+            // recálculo la vuelva a contar en stock/kardex/CxP.
+            $entrada->update(['estado' => 'confirmado', 'estado_pago' => 'pendiente', 'monto_pagado' => 0]);
+
+            $this->reconstruirStockYKardex($entrada->almacen, $productos);
+        });
+
+        AuditoriaService::log('entrada.reactivada', $entrada, [
+            'numero_documento' => $entrada->numero_documento,
+            'correlativo'      => $entrada->correlativo,
+        ], $user);
+
+        return redirect()->back()->with('success', 'Entrada reactivada: quedó confirmada y por pagar; stock y kardex re-aplicados.');
+    }
+
+    /**
+     * Reconstruye stock y kardex de los productos indicados en un almacén, desde
+     * los documentos canónicos. Deja el CPP correcto y el kardex sin filas de
+     * reverso/edición residuales — el mismo motor que "Recalcular", por producto.
+     */
+    private function reconstruirStockYKardex(\App\Models\Almacen $almacen, \Illuminate\Support\Collection $productoIds): void
+    {
+        $kardex = app(\App\Console\Commands\ReconstruirKardex::class);
+        foreach ($productoIds->unique() as $pid) {
+            Stock::reconstruir($almacen->id, (int) $pid);
+            $kardex->reconstruirPar($almacen, (int) $pid);
+        }
     }
 }
