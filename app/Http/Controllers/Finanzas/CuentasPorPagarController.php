@@ -252,8 +252,10 @@ class CuentasPorPagarController extends Controller
                 'referencia'     => $data['referencia'] ?? null,
                 'observacion'    => $data['observacion'] ?? null,
                 // Solo tocar turno_id si el request lo envió (así otros llamadores
-                // que no lo mandan no lo borran sin querer).
-                'turno_id'       => $request->has('turno_id') ? ($data['turno_id'] ?? null) : $pago->turno_id,
+                // que no lo mandan no lo borran sin querer). Gateado por config.
+                'turno_id'       => $request->has('turno_id')
+                    ? AfectaCaja::resolverTurno($user, 'cxp', $data['turno_id'] ?? null, 'libre')
+                    : $pago->turno_id,
             ]);
 
             // F7 — Rehacer el egreso de tesorería (solo pagos con dinero).

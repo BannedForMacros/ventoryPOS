@@ -10,6 +10,7 @@ use App\Models\Venta;
 use App\Models\VentaAbono;
 use App\Services\AuditoriaService;
 use App\Services\TesoreriaService;
+use App\Support\AfectaCaja;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -138,10 +139,11 @@ class CuentasPorCobrarController extends Controller
         ]);
 
         // Turno al que se imputa el abono (y si es efectivo, suma a esa caja):
-        // si el front manda 'turno_id' (aunque sea null = "Sin turno"), se respeta.
-        // Si NO lo manda (llamadores viejos), se auto-resuelve como antes.
+        // si el front manda 'turno_id' (aunque sea null = "Sin turno"), se respeta
+        // (gateado por config, módulo 'cxc', modo libre). Si NO lo manda
+        // (llamadores viejos), se auto-resuelve como antes.
         $turnoId = $request->has('turno_id')
-            ? ($data['turno_id'] ?? null)
+            ? AfectaCaja::resolverTurno($user, 'cxc', $data['turno_id'] ?? null, 'libre')
             : $this->turnoSugerido($user);
 
         DB::transaction(function () use ($venta, $user, $data, $turnoId) {

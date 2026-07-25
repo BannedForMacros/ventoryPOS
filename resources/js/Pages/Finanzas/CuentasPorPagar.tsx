@@ -13,6 +13,7 @@ import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
+import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 
 interface Pago {
@@ -90,13 +91,6 @@ const saldoDe = (e: EntradaCxp) => Math.max(0, Number(e.total) - Number(e.monto_
 
 export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmin, estado, buscar, metodosPago, cuentas, adelantos, turnos }: Props) {
     const { flash } = usePage<Props>().props;
-    // "Afecta caja a:" — texto del turno (#id · fecha hora · usuario · caja · abierto).
-    const turnoLabel = (t: TurnoLite) => {
-        const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
-        const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-        return [`#${t.id}`, `${f} ${hora}`, t.user?.name, t.caja?.nombre].filter(Boolean).join(' · ')
-            + (t.estado === 'abierto' ? ' · abierto' : '');
-    };
     const [abonando, setAbonando] = useState<EntradaCxp | null>(null);
     const [detalle, setDetalle]   = useState<EntradaCxp | null>(null);
     const [saving, setSaving]     = useState(false);
@@ -416,19 +410,18 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                             onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
                         />
 
-                        {/* "Afecta caja a:" — de qué caja/turno sale el efectivo. Default
-                            "Sin turno" = no afecta ninguna caja. */}
-                        {turnos.length > 0 && (
-                            <Select label="Afecta caja a (turno)"
-                                options={[
-                                    { value: '', label: 'Sin turno (no afecta caja)' },
-                                    ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) })),
-                                ]}
-                                value={form.turno_id}
-                                onChange={v => setForm(f => ({ ...f, turno_id: String(v) }))}
-                                hint="Elige de qué caja salió el efectivo, para que la consolidación de ese turno lo reste."
-                            />
-                        )}
+                        {/* "Afecta caja a:" — de qué caja/turno sale el efectivo (opt-in,
+                            modo libre). Se auto-oculta si la empresa apaga el módulo 'cxp'. */}
+                        <AfectaCajaSelect
+                            modulo="cxp" modo="libre" formato="largo"
+                            label="Afecta caja a (turno)"
+                            sinTurnoLabel="Sin turno (no afecta caja)"
+                            turnos={turnos}
+                            value={form.turno_id === '' ? '' : Number(form.turno_id)}
+                            onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                            error={errors.turno_id}
+                            hint="Elige de qué caja salió el efectivo, para que la consolidación de ese turno lo reste."
+                        />
                     </div>
                 )}
             </Modal>
@@ -613,17 +606,15 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
                         {/* "Afecta caja a:" — preseleccionado con el turno actual del pago
                             para no re-imputar sin querer al guardar. */}
-                        {turnos.length > 0 && (
-                            <Select label="Afecta caja a (turno)"
-                                options={[
-                                    { value: '', label: 'Sin turno (no afecta caja)' },
-                                    ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) })),
-                                ]}
-                                value={formPago.turno_id}
-                                onChange={v => setFormPago(f => ({ ...f, turno_id: String(v) }))}
-                                hint="De qué caja salió el efectivo. Al guardar, la consolidación de ese turno lo reflejará."
-                            />
-                        )}
+                        <AfectaCajaSelect
+                            modulo="cxp" modo="libre" formato="largo"
+                            label="Afecta caja a (turno)"
+                            sinTurnoLabel="Sin turno (no afecta caja)"
+                            turnos={turnos}
+                            value={formPago.turno_id === '' ? '' : Number(formPago.turno_id)}
+                            onChange={v => setFormPago(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                            hint="De qué caja salió el efectivo. Al guardar, la consolidación de ese turno lo reflejará."
+                        />
                     </div>
                 )}
             </Modal>
