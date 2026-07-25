@@ -40,7 +40,7 @@ class AfectaCaja
      * vive dentro de un turno), no es opt-in.
      */
     public const MODULOS = [
-        'deuda'        => ['label' => 'Préstamos y pagos de deuda', 'default' => true,  'disponible' => true],
+        'deuda'        => ['label' => 'Préstamos y pagos de deuda', 'default' => false, 'disponible' => true],
         'entradas'     => ['label' => 'Entradas (compras)',          'default' => false, 'disponible' => false],
         'cxp'          => ['label' => 'Cuentas por pagar (abonos)',   'default' => true,  'disponible' => false],
         'cxc'          => ['label' => 'Cuentas por cobrar (abonos)',  'default' => true,  'disponible' => false],

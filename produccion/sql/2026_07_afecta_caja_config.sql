@@ -35,38 +35,7 @@ ALTER TABLE deuda_pagos
 CREATE INDEX IF NOT EXISTS deudas_turno_id_index      ON deudas(turno_id);
 CREATE INDEX IF NOT EXISTS deuda_pagos_turno_id_index ON deuda_pagos(turno_id);
 
--- Backfill de registros antiguos: cada desembolso/cuota → turno del MISMO
--- usuario que estaba ABIERTO en el instante del registro (created_at, no fecha,
--- que puede venir retrofechada). Seguro para turnos cerrados: su arqueo muestra
--- el valor GUARDADO, solo cambia el resumen de caja en vivo.
-UPDATE deudas d
-SET turno_id = (
-    SELECT t.id FROM turnos t
-    WHERE t.user_id = d.user_id
-      AND d.created_at >= t.fecha_apertura
-      AND d.created_at <= COALESCE(t.fecha_cierre, now())
-    ORDER BY t.fecha_apertura DESC LIMIT 1
-)
-WHERE d.turno_id IS NULL
-  AND EXISTS (
-    SELECT 1 FROM turnos t
-    WHERE t.user_id = d.user_id
-      AND d.created_at >= t.fecha_apertura
-      AND d.created_at <= COALESCE(t.fecha_cierre, now())
-  );
-
-UPDATE deuda_pagos p
-SET turno_id = (
-    SELECT t.id FROM turnos t
-    WHERE t.user_id = p.user_id
-      AND p.created_at >= t.fecha_apertura
-      AND p.created_at <= COALESCE(t.fecha_cierre, now())
-    ORDER BY t.fecha_apertura DESC LIMIT 1
-)
-WHERE p.turno_id IS NULL
-  AND EXISTS (
-    SELECT 1 FROM turnos t
-    WHERE t.user_id = p.user_id
-      AND p.created_at >= t.fecha_apertura
-      AND p.created_at <= COALESCE(t.fecha_cierre, now())
-  );
+-- SIN backfill a propósito: "Afecta caja" en deuda es opt-in nuevo (default OFF
+-- en App\Support\AfectaCaja). Rellenar turno_id en registros históricos podría
+-- alterar el efectivo esperado de un turno ABIERTO de una empresa que nunca lo
+-- activó. Los movimientos nuevos llevan turno solo cuando la empresa opta.
