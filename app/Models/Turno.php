@@ -115,6 +115,31 @@ class Turno extends Model
         // esperado (son la entrega del efectivo final), por eso no se restan.
         $retirosEfectivo = (float) $this->retiros()->where('momento', 'turno')->sum('monto');
 
+        // Deuda / préstamos (módulo "Afecta caja"): desembolsos iniciales y
+        // cuotas/incrementos pagados en EFECTIVO desde esta caja. A diferencia
+        // de los demás módulos, la "efectividad" y el signo se leen del
+        // movimiento de tesorería (ref_tipo deuda/deuda_pago sobre cuenta
+        // es_efectivo): ingreso entra al cajón (+), egreso sale (−). El turno se
+        // toma del turno_id de la deuda / del pago (imputado vía AfectaCaja).
+        // Solo cuentan los que aún tienen movimiento vivo: eliminar una deuda
+        // revierte tesorería (desaparece de aquí); anular solo la oculta y NO
+        // revierte caja, así que su efectivo sigue contando (correcto: el
+        // billete ya entró/salió del cajón).
+        $deudaEfectivo = function (string $tipoMov) {
+            return (float) \App\Models\CuentaMovimiento::where('empresa_id', $this->empresa_id)
+                ->where('tipo', $tipoMov)
+                ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
+                ->where(function ($q) {
+                    $q->where(fn ($s) => $s->where('ref_tipo', 'deuda')
+                            ->whereIn('ref_id', \App\Models\Deuda::where('turno_id', $this->id)->select('id')))
+                      ->orWhere(fn ($s) => $s->where('ref_tipo', 'deuda_pago')
+                            ->whereIn('ref_id', \App\Models\DeudaPago::where('turno_id', $this->id)->select('id')));
+                })
+                ->sum('monto');
+        };
+        $deudaIngreso = $deudaEfectivo('ingreso');
+        $deudaEgreso  = $deudaEfectivo('egreso');
+
         $apertura     = (float) $this->monto_apertura;
         $fondos       = (float) $this->monto_caja_chica;
         $sumaFondos   = $this->fondosEntranEnDeclaracion();
@@ -123,10 +148,12 @@ class Turno extends Model
              + $ventasEfectivo
              + $abonosEfectivo
              + $anticiposEfectivo
+             + $deudaIngreso
              - $gastosEfectivo
              - $reembolsosEfectivo
              - $comprasEfectivo
              - $retirosEfectivo
+             - $deudaEgreso
              + ($sumaFondos ? $fondos : 0.0);
     }
 

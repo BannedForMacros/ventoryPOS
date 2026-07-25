@@ -17,6 +17,8 @@ class Deuda extends Model
         'monto_original', 'saldo', 'fecha_inicio', 'fecha_vencimiento',
         'estado', 'observacion',
         'moneda', 'tipo_cambio', 'monto_moneda',
+        // "Afecta caja": turno cuya caja recibió/entregó el desembolso inicial.
+        'turno_id',
     ];
 
     protected function casts(): array

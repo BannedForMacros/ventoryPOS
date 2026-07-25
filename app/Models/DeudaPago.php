@@ -10,6 +10,8 @@ class DeudaPago extends Model
     protected $fillable = [
         'deuda_id', 'user_id', 'metodo_pago_id', 'cuenta_id',
         'fecha', 'tipo', 'monto', 'observacion',
+        // "Afecta caja": turno cuya caja movió el efectivo de esta cuota.
+        'turno_id',
     ];
 
     protected function casts(): array
