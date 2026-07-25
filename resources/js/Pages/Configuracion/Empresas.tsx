@@ -48,6 +48,8 @@ type FormData = {
     retiro_requiere_aprobacion: boolean;
     cierre_pregunta_destino: boolean;
     usa_caja_grande: boolean;
+    // "Afecta caja" por módulo: solo se persiste el flag activo.
+    afecta_caja_config: Record<string, { activo: boolean }>;
     activo: boolean;
     logo: File | null;
     // Plantilla del ticket impreso (se guarda como empresas.ticket_config).
@@ -84,6 +86,7 @@ const emptyForm: FormData = {
     retiro_requiere_aprobacion: true,
     cierre_pregunta_destino: false,
     usa_caja_grande: false,
+    afecta_caja_config: {},
     activo: true,
     logo: null,
     ticket_cliente_celular: true,
@@ -135,6 +138,10 @@ export default function Empresas({ empresas }: Props) {
             retiro_requiere_aprobacion: emp.retiro_requiere_aprobacion ?? true,
             cierre_pregunta_destino: emp.cierre_pregunta_destino ?? false,
             usa_caja_grande: emp.usa_caja_grande ?? false,
+            // Del mapa resuelto (label/disponible/activo) tomamos solo `activo`.
+            afecta_caja_config: Object.fromEntries(
+                Object.entries(emp.afecta_caja ?? {}).map(([k, v]) => [k, { activo: v.activo }]),
+            ),
             activo: emp.activo,
             logo: null,
             ticket_cliente_celular: emp.ticket_config?.cliente_celular ?? true,
@@ -636,6 +643,41 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </span>
                         </label>
+                    </div>
+
+                    {/* ── Sección: "Afecta caja" por módulo (opt-in) ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Afecta caja por módulo</p>
+                        <p className="text-xs -mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                            Controla en qué módulos aparece el selector "Afecta caja a (turno)". Si lo apagas, ese
+                            módulo deja de descontar/sumar al efectivo esperado de la caja y el selector desaparece.
+                        </p>
+
+                        {Object.entries(editing?.afecta_caja ?? {}).map(([key, meta]) => (
+                            <label key={key} className={`flex items-start gap-2 ${meta.disponible ? 'cursor-pointer' : 'opacity-60'}`}>
+                                <Checkbox
+                                    checked={data.afecta_caja_config[key]?.activo ?? meta.activo}
+                                    disabled={!meta.disponible}
+                                    onChange={e => setData('afecta_caja_config', {
+                                        ...data.afecta_caja_config,
+                                        [key]: { activo: e.target.checked },
+                                    })}
+                                />
+                                <span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                                        {meta.label}
+                                        {!meta.disponible && (
+                                            <Badge className="ml-2" variant="primary">Próximamente</Badge>
+                                        )}
+                                    </span>
+                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        {meta.disponible
+                                            ? 'El movimiento en efectivo de este módulo puede afectar la caja de un turno.'
+                                            : 'Aún usa su selector propio; pronto se controlará desde aquí.'}
+                                    </span>
+                                </span>
+                            </label>
+                        ))}
                     </div>
 
                     {/* ── Sección: Ticket de venta (plantilla de impresión) ── */}

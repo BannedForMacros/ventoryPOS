@@ -485,6 +485,14 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                 que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
                             </Callout>
                         )}
+                        <AfectaCajaSelect
+                            modulo="deuda"
+                            turnos={turnos}
+                            value={formPago.turno_afecta}
+                            onChange={v => setFormPago(f => ({ ...f, turno_afecta: v }))}
+                            error={errors.turno_id}
+                            hint='La cuota en efectivo entra/sale de la caja de este turno. "Sin turno" solo la registra.'
+                        />
                         <Input label="Observación" value={formPago.observacion}
                             onChange={e => setFormPago(f => ({ ...f, observacion: e.target.value }))} />
                     </div>
