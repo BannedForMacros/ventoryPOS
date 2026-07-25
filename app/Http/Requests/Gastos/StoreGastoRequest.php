@@ -73,8 +73,11 @@ class StoreGastoRequest extends FormRequest
                 if (!$this->user()->rol->es_admin && $turno->user_id !== $this->user()->id) {
                     $validator->errors()->add('turno_id', 'El turno no pertenece a tu usuario.');
                 }
-            } elseif (!$this->user()->rol->es_admin) {
-                // Non-admin requiere turno_id
+            } elseif (!$this->user()->rol->es_admin
+                && \App\Support\AfectaCaja::activo($this->user()->empresa, 'gastos')) {
+                // Non-admin requiere turno_id — solo si el módulo 'gastos' afecta
+                // caja para la empresa. Si está apagado, el cajero puede registrar
+                // gastos sin turno (no descuentan de ninguna caja).
                 $validator->errors()->add('turno_id', 'Debes tener un turno abierto para registrar gastos.');
             }
         });

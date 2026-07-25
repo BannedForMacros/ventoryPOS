@@ -107,14 +107,22 @@ class GastoController extends Controller
     {
         $user = $request->user();
 
-        // Solo admins pueden crear gastos administrativos
-        if (!$request->input('turno_id') && !$user->rol->es_admin) {
+        // Solo admins pueden crear gastos administrativos (sin turno) — pero solo
+        // cuando el módulo 'gastos' afecta caja. Si la empresa lo apagó, cualquiera
+        // puede registrar gastos sin turno (no descuentan de ninguna caja).
+        if (!$request->input('turno_id') && !$user->rol->es_admin
+            && \App\Support\AfectaCaja::activo($user->empresa, 'gastos')) {
             abort(403, 'Solo administradores pueden registrar gastos administrativos.');
         }
 
-        // Derivar local_id del turno seleccionado (admin puede elegir turno ajeno)
+        // Turno gateado por config (módulo 'gastos', modo forzado: el cajero se
+        // imputa a su turno; el admin usa el elegido; apagado → null = no afecta caja).
         $localId = $user->local_id ?? $request->input('local_id');
-        $turnoId = $request->input('turno_id');
+        $turnoId = \App\Support\AfectaCaja::resolverTurno(
+            $user, 'gastos',
+            $request->input('turno_id') ? (int) $request->input('turno_id') : null,
+            'forzado',
+        );
 
         if ($turnoId) {
             $turno = Turno::find($turnoId);

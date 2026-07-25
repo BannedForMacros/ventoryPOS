@@ -86,12 +86,6 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
     // (turnoActivoId queda disponible como atajo "usar mi caja", pero no es default.)
     const [turnoIdCaja, setTurnoIdCaja] = useState<number | ''>('');
     void turnoActivoId;
-    const turnoLabel = (t: TurnoLite) => {
-        const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
-        const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-        return [`#${t.id}`, `${f} ${hora}`, t.user?.name, t.caja?.nombre].filter(Boolean).join(' · ')
-            + (t.estado === 'abierto' ? ' · abierto' : '');
-    };
     const [almacenId, setAlmacenId]     = useState<number | ''>(almacenes.length === 1 ? almacenes[0].id : '');
     // Lista local de proveedores (para poder agregar uno nuevo sin recargar la página).
     const [listaProveedores, setListaProveedores] = useState<Proveedor[]>(proveedores);

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { Receipt } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
-import type { Gasto, GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, Turno } from '@/types';
+import type { Gasto, GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
 
 export interface GastoForm {
@@ -49,11 +49,16 @@ interface Props {
 
 export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos, metodosPago = [], gastoEditar = null }: Props) {
     const editando = !!gastoEditar;
+    // Config: si la empresa apagó el módulo 'gastos', los gastos NO afectan caja
+    // (ningún gasto lleva turno; el backend lo fuerza a null). Ocultamos los
+    // controles de turno y no preseleccionamos el turno del cajero.
+    const afectaCajaGastos = usePage<PageProps>().props.auth.user.empresa?.afecta_caja?.gastos?.activo ?? false;
+    const turnoInicial = afectaCajaGastos ? (turnoActivo?.id ?? null) : null;
     // Método por defecto: efectivo si existe, si no el primero disponible.
     const metodoPorDefecto = (): number | '' =>
         (metodosPago.find(m => m.tipo?.slug === 'efectivo') ?? metodosPago[0])?.id ?? '';
 
-    const [form, setForm]     = useState<GastoForm>(emptyGasto(turnoActivo?.id ?? null, metodoPorDefecto()));
+    const [form, setForm]     = useState<GastoForm>(emptyGasto(turnoInicial, metodoPorDefecto()));
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
 
@@ -75,16 +80,17 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                 cuenta_metodo_pago_id: '',
             });
         } else {
-            setForm(emptyGasto(turnoActivo?.id ?? null, metodoPorDefecto()));
+            setForm(emptyGasto(turnoInicial, metodoPorDefecto()));
         }
         setErrors({});
     }, [isOpen, gastoEditar?.id]);
 
-    // Cuando cambia el turno activo, sincronizar turno_id (solo al crear).
+    // Cuando cambia el turno activo, sincronizar turno_id (solo al crear, y solo
+    // si el módulo afecta caja; si está apagado, el gasto no lleva turno).
     useEffect(() => {
         if (editando) return;
-        setForm(f => ({ ...f, turno_id: turnoActivo?.id ?? null }));
-    }, [turnoActivo?.id]);
+        setForm(f => ({ ...f, turno_id: turnoInicial }));
+    }, [turnoActivo?.id, afectaCajaGastos]);
 
     // Si los métodos llegan después del montaje y aún no hay uno elegido, fijar
     // el default (solo al crear; al editar '' significa "mantener cuenta").
@@ -174,8 +180,9 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     </div>
                 )}
 
-                {/* Admin: selector de turno abierto (no se cambia al editar) */}
-                {!editando && esTurnogasto && esAdmin && turnosAbiertos.length > 0 && (
+                {/* Admin: selector de turno abierto (no se cambia al editar).
+                    Oculto si la empresa apagó el módulo 'gastos' (no afecta caja). */}
+                {afectaCajaGastos && !editando && esTurnogasto && esAdmin && turnosAbiertos.length > 0 && (
                     <Select
                         label="Turno"
                         required

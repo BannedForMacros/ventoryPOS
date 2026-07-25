@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import { Plus, Trash2, AlertCircle, AlertTriangle, Wallet, UserPlus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
@@ -11,6 +11,7 @@ import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import Badge from '@/Components/UI/Badge';
 import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
+import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
 
@@ -121,6 +122,9 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
         pagoTurnoId && turnos.some(t => t.id === pagoTurnoId) ? pagoTurnoId : '',
     );
     const [turnoTocado, setTurnoTocado] = useState(false);
+    // Config de empresa: si el módulo 'entradas' está apagado, se ocultan los
+    // selectores por-línea (el de pagos nuevos se auto-oculta vía el componente).
+    const afectaCajaEntradas = usePage<PageProps>().props.auth.user.empresa?.afecta_caja?.entradas?.activo ?? false;
     const turnoLabel = (t: TurnoLite) => {
         const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
         const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
@@ -837,7 +841,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                         value={r.monto} disabled={disabled}
                                                         onChange={e => setEditPago(r.id, { monto: e.target.value })} />
                                                 </div>
-                                                {turnos.length > 0 && (
+                                                {afectaCajaEntradas && turnos.length > 0 && (
                                                     <Select label="Afecta caja a (turno)"
                                                         placeholder="Sin turno / no sale de caja"
                                                         value={r.turno_id} disabled={r.eliminar}
@@ -858,17 +862,15 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                     {/* "Afecta caja a:" — de qué caja/turno sale el efectivo de los pagos
                         NUEVOS que registres abajo. Los pagos ya registrados llevan su
                         propia caja por fila (arriba). */}
-                    {turnos.length > 0 && (montoPagado > 0 || pagosNuevos.length > 0) && (
+                    {(montoPagado > 0 || pagosNuevos.length > 0) && (
                         <div className="mb-3 sm:max-w-md">
-                            <Select
+                            <AfectaCajaSelect
+                                modulo="entradas" modo="libre" formato="largo"
                                 label="Afecta caja a (turno)"
-                                placeholder="Sin turno / no salió de caja"
+                                sinTurnoLabel="Sin turno / no salió de caja"
+                                turnos={turnos}
                                 value={turnoIdCaja}
-                                onChange={v => { setTurnoIdCaja(v === '' ? '' : Number(v)); setTurnoTocado(true); }}
-                                options={[
-                                    { value: '', label: 'Sin turno / no salió de caja' },
-                                    ...turnos.map(t => ({ value: t.id, label: turnoLabel(t) })),
-                                ]}
+                                onChange={v => { setTurnoIdCaja(v); setTurnoTocado(true); }}
                                 hint="Solo turnos abiertos. Al cambiarlo, se re-imputa la caja de los pagos ya registrados de esta compra."
                             />
                         </div>
