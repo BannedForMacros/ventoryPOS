@@ -12,6 +12,7 @@ import Switch from '@/Components/UI/Switch';
 import Tabs from '@/Components/UI/Tabs';
 import Modal from '@/Components/UI/Modal';
 import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
+import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
 
@@ -655,23 +656,19 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                         </p>
                     ) : (
                         <div className="space-y-3">
-                            {/* "Afecta caja a:" — de qué caja sale el efectivo. Por
-                                defecto la caja del propio cajero (su turno activo). */}
-                            {turnos.length > 0 && (
-                                <div className="sm:max-w-md">
-                                    <Select
-                                        label="Afecta caja a (turno)"
-                                        placeholder="Sin turno / no sale de caja"
-                                        value={turnoIdCaja}
-                                        onChange={v => setTurnoIdCaja(v === '' ? '' : Number(v))}
-                                        options={[
-                                            { value: '', label: 'Sin turno / no sale de caja' },
-                                            ...turnos.map(t => ({ value: t.id, label: turnoLabel(t) })),
-                                        ]}
-                                        hint="Por defecto NO sale de ninguna caja. Solo si pagaste en efectivo desde tu caja, elige tu turno para que la consolidación lo descuente."
-                                    />
-                                </div>
-                            )}
+                            {/* "Afecta caja a:" — de qué caja sale el efectivo (opt-in,
+                                modo libre). Se auto-oculta si la empresa apaga 'entradas'. */}
+                            <div className="sm:max-w-md">
+                                <AfectaCajaSelect
+                                    modulo="entradas" modo="libre" formato="largo"
+                                    label="Afecta caja a (turno)"
+                                    sinTurnoLabel="Sin turno / no sale de caja"
+                                    turnos={turnos}
+                                    value={turnoIdCaja}
+                                    onChange={setTurnoIdCaja}
+                                    hint="Por defecto NO sale de ninguna caja. Solo si pagaste en efectivo desde tu caja, elige tu turno para que la consolidación lo descuente."
+                                />
+                            </div>
                             {pagos.map((p, idx) => {
                                 const cuentas = cuentasDeLinea(p);
                                 return (

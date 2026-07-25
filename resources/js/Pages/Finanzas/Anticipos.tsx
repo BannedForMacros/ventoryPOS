@@ -17,6 +17,7 @@ import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
+import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import Timeline from '@/Components/UI/Timeline';
 import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import type { PageProps, Cliente } from '@/types';
@@ -138,13 +139,6 @@ const emptyForm = () => ({
 export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar, clientes, productos, metodosPago, cuentas, turnos, turnoActivoId, puede }: Props) {
     const puedeEditarEntregas = puede?.editar ?? false;
     const { flash } = usePage<Props>().props;
-    // "Afecta caja a:" — texto del turno (#id · fecha hora · usuario · caja · abierto).
-    const turnoLabel = (t: TurnoLite) => {
-        const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
-        const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-        return [`#${t.id}`, `${f} ${hora}`, t.user?.name, t.caja?.nombre].filter(Boolean).join(' · ')
-            + (t.estado === 'abierto' ? ' · abierto' : '');
-    };
     const [modalNuevo, setModalNuevo]   = useState(false);
     const [editando, setEditando]       = useState<Anticipo | null>(null);
     const [modalCrearCliente, setModalCrearCliente] = useState(false);
@@ -564,17 +558,15 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                     {/* "Afecta caja a:" — a qué caja/turno entra el dinero del anticipo.
                         Por defecto el turno activo del cajero; se puede elegir "Sin turno"
                         u otro. Solo el efectivo con turno suma al esperado de esa caja. */}
-                    {turnos.length > 0 && (
-                        <Select label="Afecta caja a (turno)"
-                            options={[
-                                { value: '', label: 'Sin turno (no afecta caja)' },
-                                ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) })),
-                            ]}
-                            value={form.turno_id}
-                            onChange={v => setForm(f => ({ ...f, turno_id: String(v) }))}
-                            hint="Si el anticipo es en efectivo, entra a la caja de este turno y suma a su efectivo esperado. «Sin turno» no afecta ninguna caja."
-                        />
-                    )}
+                    <AfectaCajaSelect
+                        modulo="anticipos" modo="libre" formato="largo"
+                        label="Afecta caja a (turno)"
+                        sinTurnoLabel="Sin turno (no afecta caja)"
+                        turnos={turnos}
+                        value={form.turno_id === '' ? '' : Number(form.turno_id)}
+                        onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                        hint="Si el anticipo es en efectivo, entra a la caja de este turno y suma a su efectivo esperado. «Sin turno» no afecta ninguna caja."
+                    />
                     <Select label="Modalidad" required
                         options={[
                             { value: 'monto',    label: 'Dinero (el pasivo es el saldo en soles)' },
@@ -644,17 +636,15 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                             placeholder="— Seleccionar —"
                         />
                     )}
-                    {turnos.length > 0 && (
-                        <Select label="Afecta caja a (turno)"
-                            options={[
-                                { value: '', label: 'Sin turno (no afecta caja)' },
-                                ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) })),
-                            ]}
-                            value={form.turno_id}
-                            onChange={v => setForm(f => ({ ...f, turno_id: String(v) }))}
-                            hint="Si el anticipo es en efectivo, entra a la caja de este turno y suma a su efectivo esperado. «Sin turno» no afecta ninguna caja."
-                        />
-                    )}
+                    <AfectaCajaSelect
+                        modulo="anticipos" modo="libre" formato="largo"
+                        label="Afecta caja a (turno)"
+                        sinTurnoLabel="Sin turno (no afecta caja)"
+                        turnos={turnos}
+                        value={form.turno_id === '' ? '' : Number(form.turno_id)}
+                        onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                        hint="Si el anticipo es en efectivo, entra a la caja de este turno y suma a su efectivo esperado. «Sin turno» no afecta ninguna caja."
+                    />
                     <Input label="Observación" value={form.observacion}
                         onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} />
                     {errors.anticipo && <Callout variant="danger">{errors.anticipo}</Callout>}

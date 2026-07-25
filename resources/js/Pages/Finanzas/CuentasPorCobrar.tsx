@@ -13,6 +13,7 @@ import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
+import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
@@ -98,13 +99,6 @@ const nombreCliente = (v: VentaCxc) =>
 
 export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado, busqueda, metodosPago, cuentas, puede, turnos, turnoActivoId }: Props) {
     const { flash } = usePage<Props>().props;
-    // "Afecta caja a:" — texto del turno (#id · fecha hora · usuario · caja · abierto).
-    const turnoLabel = (t: TurnoLite) => {
-        const f = new Date(t.fecha_apertura).toLocaleDateString('es-PE');
-        const hora = new Date(t.fecha_apertura).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-        return [`#${t.id}`, `${f} ${hora}`, t.user?.name, t.caja?.nombre].filter(Boolean).join(' · ')
-            + (t.estado === 'abierto' ? ' · abierto' : '');
-    };
     const [abonando, setAbonando] = useState<VentaCxc | null>(null);
     const [detalle, setDetalle]   = useState<VentaCxc | null>(null);
     // Colapsable de la venta relacionada dentro del modal de detalle.
@@ -401,19 +395,19 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                             onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
                         />
 
-                        {/* "Afecta caja a:" — a qué caja/turno entra el cobro. Por defecto
-                            el turno activo del cajero; se puede elegir "Sin turno" u otro. */}
-                        {turnos.length > 0 && (
-                            <Select label="Afecta caja a (turno)"
-                                options={[
-                                    { value: '', label: 'Sin turno (no afecta caja)' },
-                                    ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) })),
-                                ]}
-                                value={form.turno_id}
-                                onChange={v => setForm(f => ({ ...f, turno_id: String(v) }))}
-                                hint="A qué caja entra el efectivo, para que la consolidación de ese turno lo sume."
-                            />
-                        )}
+                        {/* "Afecta caja a:" — a qué caja/turno entra el cobro (opt-in, modo
+                            libre). Preseleccionado con el turno activo; se auto-oculta si la
+                            empresa apaga el módulo 'cxc'. */}
+                        <AfectaCajaSelect
+                            modulo="cxc" modo="libre" formato="largo"
+                            label="Afecta caja a (turno)"
+                            sinTurnoLabel="Sin turno (no afecta caja)"
+                            turnos={turnos}
+                            value={form.turno_id === '' ? '' : Number(form.turno_id)}
+                            onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                            error={errors.turno_id}
+                            hint="A qué caja entra el efectivo, para que la consolidación de ese turno lo sume."
+                        />
                     </div>
                 )}
             </Modal>

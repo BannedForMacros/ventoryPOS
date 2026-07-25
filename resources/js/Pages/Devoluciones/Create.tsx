@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { router } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Search, AlertTriangle } from 'lucide-react';
+import { Search } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
+import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import Badge from '@/Components/UI/Badge';
 import type { MetodoPago, PageProps } from '@/types';
 
@@ -73,7 +74,7 @@ interface PagoRow {
     referencia: string;
 }
 
-export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, turnos, esAdmin }: Props) {
+export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, turnos }: Props) {
     const [turnoAfecta, setTurnoAfecta] = useState<number | ''>(turnoActivo?.id ?? (turnos.length === 1 ? turnos[0].id : ''));
     const [busqueda, setBusqueda] = useState('');
     const [buscando, setBuscando] = useState(false);
@@ -197,34 +198,17 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
             />
 
             <div className="space-y-6 max-w-6xl">
-                {/* Afecta caja a: el turno cuya caja recibe el reembolso. El admin
-                    (sin turno propio) elige a qué caja imputarlo. */}
-                {(esAdmin || !turnoActivo) && turnos.length > 0 ? (
-                    <div className="rounded-xl px-4 py-3" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-                        <Select
-                            label="Afecta caja a"
-                            value={turnoAfecta}
-                            onChange={v => setTurnoAfecta(v === '' ? '' : Number(v))}
-                            options={[
-                                { value: '', label: 'Sin turno (no afecta ninguna caja)' },
-                                ...turnos.map(t => ({
-                                    value: t.id,
-                                    label: `${t.caja?.nombre ?? 'Caja'} · ${t.user?.name ?? ''}${turnoActivo?.id === t.id ? ' (tu turno)' : ''}`,
-                                })),
-                            ]}
-                        />
-                        <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                            El reembolso en efectivo saldrá de la caja de este turno. Si eliges "Sin turno", queda registrado pero no afecta ninguna caja.
-                        </p>
-                        {errors.turno_id && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.turno_id}</p>}
-                    </div>
-                ) : !turnoActivo && (
-                    <div className="flex items-start gap-2 rounded-xl px-4 py-3 text-sm"
-                        style={{ backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}>
-                        <AlertTriangle size={16} className="mt-0.5" style={{ color: '#b45309' }} />
-                        <span>No hay turnos abiertos. La devolución se registrará sin asociar a una caja.</span>
-                    </div>
-                )}
+                {/* Afecta caja a: el turno cuya caja recibe el reembolso (modo forzado:
+                    el cajero se imputa a su turno; el admin elige). Se auto-oculta si la
+                    empresa apaga el módulo 'devoluciones'. */}
+                <AfectaCajaSelect
+                    modulo="devoluciones" modo="forzado" formato="corto"
+                    turnos={turnos}
+                    value={turnoAfecta}
+                    onChange={setTurnoAfecta}
+                    error={errors.turno_id}
+                    hint='El reembolso en efectivo saldrá de la caja de este turno. Si eliges "Sin turno", queda registrado pero no afecta ninguna caja.'
+                />
 
                 {/* Buscador */}
                 <section className="rounded-2xl border p-5"

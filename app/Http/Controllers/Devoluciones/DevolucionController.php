@@ -210,19 +210,24 @@ class DevolucionController extends Controller
 
         $user  = $request->user();
 
-        // Turno destino: el que elige el admin en "Afecta caja a:" (debe estar
-        // abierto y ser de la empresa); si no, el turno activo propio del usuario.
+        // Turno destino, gateado por config (módulo 'devoluciones', modo forzado:
+        // el admin elige; el cajero se imputa a su turno activo). Si la empresa
+        // apaga el módulo, resolverTurno devuelve null → no afecta ninguna caja.
+        $turnoId = \App\Support\AfectaCaja::resolverTurno(
+            $user, 'devoluciones',
+            !empty($data['turno_id']) ? (int) $data['turno_id'] : null,
+            'forzado',
+        );
         $turno = null;
-        if (!empty($data['turno_id'])) {
-            $turno = Turno::where('id', $data['turno_id'])
+        if ($turnoId) {
+            $turno = Turno::where('id', $turnoId)
                 ->where('empresa_id', $user->empresa_id)
                 ->where('estado', 'abierto')
                 ->first();
-            if (!$turno) {
+            if (!$turno && !empty($data['turno_id'])) {
                 return back()->withErrors(['turno_id' => 'El turno indicado no está abierto.'])->withInput();
             }
         }
-        $turno ??= Turno::turnoActivoDelUsuario($user->id);
 
         try {
             $devolucion = $this->service->crear($data, $user, $turno);

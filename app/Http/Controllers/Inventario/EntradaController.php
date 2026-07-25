@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\Cuenta;
 use App\Models\Entrada;
+use App\Support\AfectaCaja;
 use App\Models\EntradaPago;
 use App\Models\MetodoPago;
 use App\Models\Producto;
@@ -54,6 +55,14 @@ class EntradaController extends Controller
                 $abiertos = \App\Models\Turno::deEmpresa($entrada->empresa_id)->where('estado', 'abierto')->pluck('id');
                 $turnoId = $abiertos->count() === 1 ? $abiertos->first() : null;
             }
+        }
+
+        // Gate por config: si la empresa apagó el módulo 'entradas', ningún pago
+        // de entrada afecta caja (turno_id = null), sin importar lo que pida el
+        // llamador ni la resolución 'auto'.
+        $empresa = $entrada->empresa ?? \App\Models\Empresa::find($entrada->empresa_id);
+        if ($empresa && ! \App\Support\AfectaCaja::activo($empresa, 'entradas')) {
+            $turnoId = null;
         }
 
         foreach ($lineas as $linea) {
@@ -681,7 +690,9 @@ class EntradaController extends Controller
                         'monto'          => $montoNuevo,
                         'metodo_pago_id' => $esAdelanto ? $pago->metodo_pago_id : ($ed['metodo_pago_id'] ?? null),
                         'cuenta_id'      => $esAdelanto ? $pago->cuenta_id : ($ed['cuenta_id'] ?? null),
-                        'turno_id'       => array_key_exists('turno_id', $ed) ? ($ed['turno_id'] ?: null) : $pago->turno_id,
+                        'turno_id'       => ! AfectaCaja::activo($user->empresa, 'entradas')
+                            ? null
+                            : (array_key_exists('turno_id', $ed) ? ($ed['turno_id'] ?: null) : $pago->turno_id),
                     ]);
 
                     if (!$esAdelanto) {
@@ -713,7 +724,11 @@ class EntradaController extends Controller
                 ]);
 
                 // "Afecta caja a:" para los pagos NUEVOS (null = no afecta caja).
+                // Gate por config: módulo 'entradas' apagado → nunca afecta caja.
                 $turnoArg = array_key_exists('turno_id', $data) ? ($data['turno_id'] ?: null) : null;
+                if (! AfectaCaja::activo($user->empresa, 'entradas')) {
+                    $turnoArg = null;
+                }
 
                 // Si el usuario TOCÓ el selector, re-imputar el turno de los pagos
                 // YA registrados (los que no fueron editados/anulados uno por uno).

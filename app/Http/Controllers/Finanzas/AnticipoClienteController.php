@@ -17,6 +17,7 @@ use App\Services\AuditoriaService;
 use App\Services\ConfiguracionOperacionService;
 use App\Services\LocalScopeService;
 use App\Services\TesoreriaService;
+use App\Support\AfectaCaja;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -174,9 +175,12 @@ class AnticipoClienteController extends Controller
         ]);
 
         // Turno al que se imputa el anticipo (si es efectivo, suma a esa caja):
-        // si el front manda 'turno_id' (aunque sea null = "Sin turno"), se respeta;
-        // si NO lo manda (llamadores viejos), se auto-resuelve.
-        $turnoId = $request->has('turno_id') ? ($data['turno_id'] ?? null) : $this->turnoSugerido($user);
+        // si el front manda 'turno_id' (aunque sea null = "Sin turno"), se respeta
+        // (gateado por config, módulo 'anticipos', modo libre); si NO lo manda
+        // (llamadores viejos), se auto-resuelve.
+        $turnoId = $request->has('turno_id')
+            ? AfectaCaja::resolverTurno($user, 'anticipos', $data['turno_id'] ?? null, 'libre')
+            : $this->turnoSugerido($user);
 
         $anticipo = DB::transaction(function () use ($data, $user, $turnoId) {
             $anticipo = ClienteAnticipo::create($data + [
@@ -255,7 +259,9 @@ class AnticipoClienteController extends Controller
             'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
-        $turnoId = $request->has('turno_id') ? ($data['turno_id'] ?? null) : $anticipo->turno_id;
+        $turnoId = $request->has('turno_id')
+            ? AfectaCaja::resolverTurno($user, 'anticipos', $data['turno_id'] ?? null, 'libre')
+            : $anticipo->turno_id;
 
         $antes = [
             'monto' => (float) $anticipo->monto,
