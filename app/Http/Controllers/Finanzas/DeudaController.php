@@ -9,6 +9,7 @@ use App\Models\Deuda;
 use App\Models\MetodoPago;
 use App\Services\AuditoriaService;
 use App\Services\TesoreriaService;
+use App\Support\AfectaCaja;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -75,6 +76,16 @@ class DeudaController extends Controller
             ],
             'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
             'cuentas'     => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
+            // "Afecta caja a:" — turnos abiertos para que el admin (o quien no
+            // tenga turno propio) elija a qué caja se imputa el desembolso/pago.
+            // El componente <AfectaCajaSelect> decide si mostrarse según la
+            // config de la empresa (módulo 'deuda'). turno_activo y es_admin
+            // llegan por props compartidas.
+            'turnos'      => \App\Models\Turno::deEmpresa($user->empresa_id)
+                ->with(['user:id,name', 'caja:id,nombre'])
+                ->where('estado', 'abierto')
+                ->orderByDesc('fecha_apertura')->limit(40)
+                ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
         ]);
     }
 
@@ -96,11 +107,20 @@ class DeudaController extends Controller
             'registrar_caja'    => ['boolean'],
             'metodo_pago_id'    => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'         => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            // "Afecta caja a:" — turno cuya caja recibe/entrega el desembolso.
+            'turno_id'          => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
         $registrarCaja = $request->boolean('registrar_caja', true);
 
-        $deuda = DB::transaction(function () use ($data, $user, $registrarCaja) {
+        // Solo tiene sentido imputar turno si el desembolso mueve caja. La regla
+        // única (módulo apagado → null; cajero → su turno; admin → el elegido)
+        // vive en AfectaCaja::resolverTurno.
+        $turnoId = $registrarCaja
+            ? AfectaCaja::resolverTurno($user, 'deuda', $data['turno_id'] ?? null)
+            : null;
+
+        $deuda = DB::transaction(function () use ($data, $user, $registrarCaja, $turnoId) {
             $deuda = Deuda::create([
                 'empresa_id'        => $user->empresa_id,
                 'user_id'           => $user->id,
@@ -113,6 +133,7 @@ class DeudaController extends Controller
                 'observacion'       => $data['observacion'] ?? null,
                 'saldo'             => $data['monto_original'],
                 'estado'            => 'activa',
+                'turno_id'          => $turnoId,
             ]);
 
             // Desembolso inicial. NO es una amortización: no toca el saldo (que
@@ -166,6 +187,8 @@ class DeudaController extends Controller
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
             'observacion'    => ['nullable', 'string', 'max:500'],
+            // "Afecta caja a:" — turno cuya caja mueve el efectivo de esta cuota.
+            'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ];
 
         if ($request->input('tipo') === 'amortizacion') {
@@ -173,6 +196,7 @@ class DeudaController extends Controller
         }
 
         $data = $request->validate($rules);
+        $data['turno_id'] = AfectaCaja::resolverTurno($user, 'deuda', $data['turno_id'] ?? null);
 
         DB::transaction(function () use ($deuda, $user, $data) {
             $pago = $deuda->pagos()->create($data + ['user_id' => $user->id]);

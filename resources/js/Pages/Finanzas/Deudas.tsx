@@ -15,6 +15,7 @@ import Callout from '@/Components/UI/Callout';
 import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
+import AfectaCajaSelect, { TurnoLite } from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 
 interface Pago {
@@ -51,6 +52,7 @@ interface Props extends PageProps {
     buscar?: string;
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
+    turnos: TurnoLite[];
     puede: { editar: boolean; eliminar: boolean };
 }
 
@@ -68,9 +70,11 @@ const emptyForm = () => ({
     monto_original: '', fecha_inicio: hoy(), fecha_vencimiento: '', observacion: '',
     // Desembolso: por defecto SÍ mueve el dinero en caja al crear la deuda.
     registrar_caja: true, metodo_pago_id: '', cuenta_id: '',
+    // "Afecta caja a:" turno (solo lo usa el admin; el cajero se imputa solo).
+    turno_afecta: '' as number | '',
 });
 
-export default function Deudas({ deudas, totales, estado, buscar, metodosPago, cuentas, puede }: Props) {
+export default function Deudas({ deudas, totales, estado, buscar, metodosPago, cuentas, turnos, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo] = useState(false);
     const [pagando, setPagando]       = useState<Deuda | null>(null);
@@ -79,7 +83,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     const [saving, setSaving]         = useState(false);
     const [errors, setErrors]         = useState<Record<string, string>>({});
     const [form, setForm]             = useState(emptyForm());
-    const [formPago, setFormPago]     = useState({ tipo: 'amortizacion', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', observacion: '' });
+    const [formPago, setFormPago]     = useState({ tipo: 'amortizacion', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', observacion: '', turno_afecta: '' as number | '' });
     const [motivoAnular, setMotivoAnular] = useState('');
     // Edición / eliminación / reactivación (según permisos).
     const [editando, setEditando]         = useState<Deuda | null>(null);
@@ -165,6 +169,8 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             fecha_vencimiento: form.fecha_vencimiento || null,
             metodo_pago_id: form.registrar_caja ? (form.metodo_pago_id || null) : null,
             cuenta_id:      form.registrar_caja ? (form.cuenta_id || null) : null,
+            // Solo se imputa turno si el desembolso mueve caja.
+            turno_id:       form.registrar_caja ? (form.turno_afecta || null) : null,
         } as any, {
             onSuccess: () => { setModalNuevo(false); setForm(emptyForm()); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -178,6 +184,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             ...formPago,
             metodo_pago_id: formPago.metodo_pago_id || null,
             cuenta_id:      formPago.cuenta_id || null,
+            turno_id:       formPago.turno_afecta || null,
         } as any, {
             onSuccess: () => { setPagando(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -239,7 +246,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                     </button>
                     {d.estado === 'activa' && (
                         <>
-                            <button onClick={() => { setErrors({}); setFormPago({ tipo: 'amortizacion', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', observacion: '' }); setPagando(d); }}
+                            <button onClick={() => { setErrors({}); setFormPago({ tipo: 'amortizacion', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', observacion: '', turno_afecta: '' }); setPagando(d); }}
                                 className="p-1.5 rounded-lg hover:bg-black/5" title="Registrar movimiento"
                                 style={{ color: 'var(--color-primary)' }}>
                                 <Coins size={15} />
@@ -416,6 +423,14 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                         Sin método: el desembolso irá a la caja <strong>Efectivo</strong>.
                                     </Callout>
                                 )}
+                                <AfectaCajaSelect
+                                    modulo="deuda"
+                                    turnos={turnos}
+                                    value={form.turno_afecta}
+                                    onChange={v => setForm(f => ({ ...f, turno_afecta: v }))}
+                                    error={errors.turno_id}
+                                    hint='El desembolso en efectivo entra/sale de la caja de este turno. "Sin turno" solo lo registra.'
+                                />
                             </div>
                         )}
                     </div>

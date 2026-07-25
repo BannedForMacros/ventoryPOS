@@ -40,6 +40,10 @@ export interface Empresa extends Record<string, unknown> {
     retiro_requiere_aprobacion: boolean;
     cierre_pregunta_destino: boolean;
     usa_caja_grande: boolean;
+    /* "Afecta caja" por módulo (opt-in). Mapa resuelto (defaults ∪ config)
+       que sirve el backend; lo lee el componente <AfectaCajaSelect> y la
+       pantalla de Configuración → Empresa. */
+    afecta_caja: Record<string, { activo: boolean; label: string; disponible: boolean }>;
     activo: boolean;
     created_at: string;
     updated_at: string;
