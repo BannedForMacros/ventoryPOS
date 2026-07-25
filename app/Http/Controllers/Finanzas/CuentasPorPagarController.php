@@ -11,6 +11,7 @@ use App\Models\ProveedorAdelanto;
 use App\Models\Turno;
 use App\Services\AuditoriaService;
 use App\Services\TesoreriaService;
+use App\Support\AfectaCaja;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -135,6 +136,9 @@ class CuentasPorPagarController extends Controller
             // ninguna caja. Va directo al EntradaPago (turno_id es fillable).
             'turno_id'              => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
+
+        // Gate por config de empresa (módulo 'cxp', modo libre: respeta lo elegido).
+        $data['turno_id'] = AfectaCaja::resolverTurno($user, 'cxp', $data['turno_id'] ?? null, 'libre');
 
         DB::transaction(function () use ($entrada, $user, $data) {
             // Si el pago consume un adelanto, validar saldo y descontarlo.

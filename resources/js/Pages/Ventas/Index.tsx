@@ -68,12 +68,15 @@ interface Resumen {
     gastos:           number;
     reembolsos:       number;   // devoluciones en efectivo
     compras:          number;   // pagos de entradas en efectivo (salen de caja)
+    deuda_ingreso:    number;   // desembolsos/cobros de deuda en efectivo (entran)
+    deuda_egreso:     number;   // cuotas/préstamos de deuda en efectivo (salen)
     apertura:         number;
     efectivo_en_caja: number;
     abonos_detalle:   { cliente: string; venta: string | null; metodo: string; monto: number }[];
     anticipos_detalle:{ cliente: string; metodo: string; monto: number }[];
     gastos_detalle:   { concepto: string; monto: number }[];
     compras_detalle:  { proveedor: string; documento: string | null; monto: number }[];
+    deuda_detalle:    { descripcion: string; tipo: string; monto: number }[];
 }
 
 interface Props extends PageProps {
@@ -691,6 +694,8 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
         resumen.anticipos_efectivo > 0 ? `anticipos ${money(resumen.anticipos_efectivo)}` : null,
         resumen.gastos > 0 ? `− gastos ${money(resumen.gastos)}` : null,
         resumen.compras > 0 ? `− compras ${money(resumen.compras)}` : null,
+        resumen.deuda_ingreso > 0 ? `deuda ${money(resumen.deuda_ingreso)}` : null,
+        resumen.deuda_egreso > 0 ? `− deuda ${money(resumen.deuda_egreso)}` : null,
     ].filter(Boolean).join(' · ');
 
     return (
@@ -847,6 +852,8 @@ function DetalleCajaModal({ open, onClose, resumen }: { open: boolean; onClose: 
                         {resumen.gastos > 0 && fila('Gastos', resumen.gastos, '−')}
                         {resumen.compras > 0 && fila('Compras pagadas en efectivo', resumen.compras, '−')}
                         {resumen.reembolsos > 0 && fila('Reembolsos (devoluciones)', resumen.reembolsos, '−')}
+                        {resumen.deuda_ingreso > 0 && fila('Deuda / préstamo cobrado en efectivo', resumen.deuda_ingreso)}
+                        {resumen.deuda_egreso > 0 && fila('Deuda / préstamo pagado en efectivo', resumen.deuda_egreso, '−')}
                         <div className="border-t mt-1 pt-1" style={{ borderColor: 'var(--color-border)' }}>
                             {fila('Efectivo esperado en caja', resumen.efectivo_en_caja, '=')}
                         </div>

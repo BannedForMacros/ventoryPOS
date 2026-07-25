@@ -628,6 +628,41 @@ class VentaController extends Controller
                 'monto'     => round((float) $p->monto, 2),
             ]);
 
+        // Deuda / préstamos (módulo "Afecta caja"): desembolsos y cuotas en
+        // EFECTIVO imputados a estas cajas. Igual que Turno::calcularMontoEsperado,
+        // la efectividad y el signo se leen del movimiento de tesorería (ingreso
+        // entra al cajón, egreso sale). Es lo que hace que el desglose cuadre con
+        // el total 'efectivo_en_caja' cuando hay pagos de deuda.
+        $deudaEfectivo = function (string $tipoMov) use ($turnoIds, $turno) {
+            return (float) \App\Models\CuentaMovimiento::where('empresa_id', $turno->empresa_id)
+                ->where('tipo', $tipoMov)
+                ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
+                ->where(function ($q) use ($turnoIds) {
+                    $q->where(fn ($s) => $s->where('ref_tipo', 'deuda')
+                            ->whereIn('ref_id', \App\Models\Deuda::whereIn('turno_id', $turnoIds)->select('id')))
+                      ->orWhere(fn ($s) => $s->where('ref_tipo', 'deuda_pago')
+                            ->whereIn('ref_id', \App\Models\DeudaPago::whereIn('turno_id', $turnoIds)->select('id')));
+                })
+                ->sum('monto');
+        };
+        $deudaIngreso = $deudaEfectivo('ingreso');
+        $deudaEgreso  = $deudaEfectivo('egreso');
+
+        $deudaDetalle = \App\Models\CuentaMovimiento::where('empresa_id', $turno->empresa_id)
+            ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
+            ->where(function ($q) use ($turnoIds) {
+                $q->where(fn ($s) => $s->where('ref_tipo', 'deuda')
+                        ->whereIn('ref_id', \App\Models\Deuda::whereIn('turno_id', $turnoIds)->select('id')))
+                  ->orWhere(fn ($s) => $s->where('ref_tipo', 'deuda_pago')
+                        ->whereIn('ref_id', \App\Models\DeudaPago::whereIn('turno_id', $turnoIds)->select('id')));
+            })
+            ->orderByDesc('id')->get()
+            ->map(fn ($m) => [
+                'descripcion' => $m->descripcion,
+                'tipo'        => $m->tipo,   // ingreso | egreso
+                'monto'       => round((float) $m->monto, 2),
+            ]);
+
         $variosTurnos = count($turnoIds) > 1;
         return [
             'turno' => [
@@ -649,6 +684,8 @@ class VentaController extends Controller
             'gastos'           => round($gastos, 2),
             'reembolsos'       => round($reembolsos, 2),      // devoluciones en efectivo
             'compras'          => round($compras, 2),         // pagos de entradas en efectivo (salen de caja)
+            'deuda_ingreso'    => round($deudaIngreso, 2),    // desembolsos/cobros de deuda en efectivo (entran)
+            'deuda_egreso'     => round($deudaEgreso, 2),     // cuotas/préstamos de deuda en efectivo (salen)
             'apertura'         => round((float) $turnos->sum('monto_apertura'), 2),
             // Efectivo real esperado, SUMADO sobre todas las cajas del conjunto
             // (apertura + ventas + abonos − gastos − reembolsos − compras).
@@ -657,6 +694,7 @@ class VentaController extends Controller
             'anticipos_detalle'=> $anticiposDetalle,
             'gastos_detalle'   => $gastosDetalle,
             'compras_detalle'  => $comprasDetalle,
+            'deuda_detalle'    => $deudaDetalle,
         ];
     }
 

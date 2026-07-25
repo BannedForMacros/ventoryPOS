@@ -40,13 +40,13 @@ class AfectaCaja
      * vive dentro de un turno), no es opt-in.
      */
     public const MODULOS = [
-        'deuda'        => ['label' => 'Préstamos y pagos de deuda', 'default' => false, 'disponible' => true],
-        'entradas'     => ['label' => 'Entradas (compras)',          'default' => false, 'disponible' => false],
-        'cxp'          => ['label' => 'Cuentas por pagar (abonos)',   'default' => true,  'disponible' => false],
-        'cxc'          => ['label' => 'Cuentas por cobrar (abonos)',  'default' => true,  'disponible' => false],
-        'anticipos'    => ['label' => 'Anticipos de cliente',         'default' => true,  'disponible' => false],
-        'gastos'       => ['label' => 'Gastos',                       'default' => true,  'disponible' => false],
-        'devoluciones' => ['label' => 'Devoluciones',                 'default' => true,  'disponible' => false],
+        'deuda'        => ['label' => 'Préstamos y pagos de deuda', 'default' => false, 'disponible' => true, 'modo' => 'forzado'],
+        'entradas'     => ['label' => 'Entradas (compras)',          'default' => true,  'disponible' => true, 'modo' => 'libre'],
+        'cxp'          => ['label' => 'Cuentas por pagar (abonos)',   'default' => true,  'disponible' => true, 'modo' => 'libre'],
+        'cxc'          => ['label' => 'Cuentas por cobrar (abonos)',  'default' => true,  'disponible' => true, 'modo' => 'libre'],
+        'anticipos'    => ['label' => 'Anticipos de cliente',         'default' => true,  'disponible' => true, 'modo' => 'libre'],
+        'gastos'       => ['label' => 'Gastos',                       'default' => true,  'disponible' => true, 'modo' => 'forzado'],
+        'devoluciones' => ['label' => 'Devoluciones',                 'default' => true,  'disponible' => true, 'modo' => 'forzado'],
     ];
 
     /**
@@ -84,25 +84,32 @@ class AfectaCaja
      * Regla ÚNICA de imputación de turno para un movimiento de un módulo.
      * Reemplaza los bloques inline repetidos en cada controlador.
      *
-     *   · Módulo apagado para la empresa   → null (nunca afecta caja).
-     *   · Cajero con turno activo           → su turno (forzado), ignora lo pedido.
-     *   · Admin (o cajero sin turno)        → el turno solicitado (ya validado)
-     *                                          o null si eligió "Sin turno".
+     * Primero SIEMPRE gatea por config: módulo apagado → null (nunca afecta
+     * caja). Luego, según el modo del módulo:
      *
-     * @param  int|null  $turnoSolicitado  turno_id que mandó el form (admin).
+     *   · 'forzado' (gastos, devoluciones): el cajero se imputa a su turno
+     *     activo (ignora lo pedido); el admin usa el turno solicitado. Es el
+     *     patrón donde el cajero NO puede elegir "Sin turno".
+     *   · 'libre' (entradas, cxp, cxc, anticipos): se respeta lo elegido para
+     *     TODOS (incluido "Sin turno" = null). El cajero decide (opt-in).
+     *
+     * @param  int|null  $turnoSolicitado  turno_id que mandó el form.
      */
-    public static function resolverTurno(User $user, string $modulo, ?int $turnoSolicitado): ?int
+    public static function resolverTurno(User $user, string $modulo, ?int $turnoSolicitado, string $modo = 'forzado'): ?int
     {
         $empresa = $user->empresa;
         if (! $empresa || ! self::activo($empresa, $modulo)) {
             return null;
         }
 
-        $esAdmin = (bool) ($user->rol?->es_admin ?? false);
+        if ($modo === 'libre') {
+            return $turnoSolicitado;
+        }
 
+        // 'forzado'
+        $esAdmin = (bool) ($user->rol?->es_admin ?? false);
         if (! $esAdmin) {
-            $activo = Turno::turnoActivoDelUsuario($user->id);
-            return $activo?->id;
+            return Turno::turnoActivoDelUsuario($user->id)?->id;
         }
 
         return $turnoSolicitado;
