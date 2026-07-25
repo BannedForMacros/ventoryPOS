@@ -62,6 +62,11 @@ class EmpresaRequest extends FormRequest
             'retiro_requiere_aprobacion'      => 'boolean',
             'cierre_pregunta_destino'         => 'boolean',
             'usa_caja_grande'                 => 'boolean',
+            // "Afecta caja" por módulo: mapa { modulo: { activo: bool } }.
+            // Solo se persiste el flag `activo`; labels/defaults viven en el
+            // registro App\Support\AfectaCaja, no en la BD.
+            'afecta_caja_config'              => ['nullable', 'array'],
+            'afecta_caja_config.*.activo'     => ['boolean'],
         ];
     }
 }

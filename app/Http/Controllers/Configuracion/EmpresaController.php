@@ -65,6 +65,19 @@ class EmpresaController extends Controller
         unset($datos['ticket_cliente_celular'], $datos['ticket_cliente_direccion'],
               $datos['ticket_pie'], $datos['ticket_lineas_extra']);
 
+        // "Afecta caja" por módulo: persistimos SOLO el flag `activo` de cada
+        // módulo conocido; labels/defaults viven en el registro AfectaCaja, no
+        // en la BD (evita guardar textos que luego queden viejos).
+        if (array_key_exists('afecta_caja_config', $datos)) {
+            $limpio = [];
+            foreach ($datos['afecta_caja_config'] ?? [] as $modulo => $cfg) {
+                if (array_key_exists($modulo, \App\Support\AfectaCaja::MODULOS)) {
+                    $limpio[$modulo] = ['activo' => (bool) ($cfg['activo'] ?? false)];
+                }
+            }
+            $datos['afecta_caja_config'] = $limpio;
+        }
+
         // Logo: es un archivo, se maneja aparte del update de columnas. Solo se
         // reemplaza si llega un archivo nuevo; si no viene, se conserva el actual.
         unset($datos['logo']);

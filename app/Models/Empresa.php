@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\Storage;
 
 class Empresa extends Model
 {
-    /** URL pública del logo (o null) — se serializa al frontend. */
-    protected $appends = ['logo_url'];
+    /** URL pública del logo y mapa de "Afecta caja" — se serializan al frontend. */
+    protected $appends = ['logo_url', 'afecta_caja'];
 
     protected $fillable = [
         'razon_social',
@@ -48,6 +48,8 @@ class Empresa extends Model
         'retiro_requiere_aprobacion',
         'cierre_pregunta_destino',
         'usa_caja_grande',
+        // "Afecta caja" configurable por módulo (JSON). Ver App\Support\AfectaCaja.
+        'afecta_caja_config',
     ];
 
     protected function casts(): array
@@ -72,7 +74,20 @@ class Empresa extends Model
             'retiro_requiere_aprobacion'      => 'boolean',
             'cierre_pregunta_destino'         => 'boolean',
             'usa_caja_grande'                 => 'boolean',
+            'afecta_caja_config'              => 'array',
         ];
+    }
+
+    /**
+     * Mapa resuelto de "Afecta caja" por módulo (defaults ∪ config guardada),
+     * con metadatos para la UI. Se serializa al frontend: el componente
+     * <AfectaCajaSelect> y la pantalla de Configuración leen de aquí.
+     */
+    protected function afectaCaja(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => \App\Support\AfectaCaja::resuelto($this),
+        );
     }
 
     /** URL pública del logo subido (o null si no hay). */
