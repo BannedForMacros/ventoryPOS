@@ -10,6 +10,7 @@ use App\Models\MetodoPago;
 use App\Services\AuditoriaService;
 use App\Services\TesoreriaService;
 use App\Support\AfectaCaja;
+use App\Support\ExigeCuentaDePago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -22,6 +23,8 @@ use Inertia\Inertia;
  */
 class DeudaController extends Controller
 {
+    use ExigeCuentaDePago;
+
     public function __construct(private TesoreriaService $tesoreria) {}
 
     public function index(Request $request)
@@ -106,7 +109,7 @@ class DeudaController extends Controller
             // (ya gastadas / sin rastro de caja).
             'registrar_caja'    => ['boolean'],
             'metodo_pago_id'    => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'         => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'         => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             // "Afecta caja a:" — turno cuya caja recibe/entrega el desembolso.
             'turno_id'          => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
@@ -185,7 +188,7 @@ class DeudaController extends Controller
             'fecha'          => ['required', 'date'],
             'monto'          => ['required', 'numeric', 'min:0.01'],
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'observacion'    => ['nullable', 'string', 'max:500'],
             // "Afecta caja a:" — turno cuya caja mueve el efectivo de esta cuota.
             'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],

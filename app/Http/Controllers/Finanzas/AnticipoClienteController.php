@@ -18,6 +18,7 @@ use App\Services\ConfiguracionOperacionService;
 use App\Services\LocalScopeService;
 use App\Services\TesoreriaService;
 use App\Support\AfectaCaja;
+use App\Support\ExigeCuentaDePago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -37,6 +38,8 @@ use Inertia\Inertia;
  */
 class AnticipoClienteController extends Controller
 {
+    use ExigeCuentaDePago;
+
     public function __construct(
         private TesoreriaService $tesoreria,
         private LocalScopeService $scope,
@@ -165,7 +168,7 @@ class AnticipoClienteController extends Controller
             'fecha'             => ['required', 'date'],
             'monto'             => ['required', 'numeric', 'min:0.01'],
             'metodo_pago_id'    => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'         => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'         => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'tipo_valorizacion' => ['required', Rule::in(['monto', 'material'])],
             'producto_id'       => ['required_if:tipo_valorizacion,material', 'nullable', 'integer', Rule::exists('productos', 'id')->where('empresa_id', $user->empresa_id)],
             'cantidad'          => ['required_if:tipo_valorizacion,material', 'nullable', 'numeric', 'min:0.0001'],
@@ -253,7 +256,7 @@ class AnticipoClienteController extends Controller
             'fecha'          => ['required', 'date'],
             'monto'          => ['required', 'numeric', 'min:0.01'],
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'observacion'    => ['nullable', 'string', 'max:500'],
             // "Afecta caja a:" — turno de cuya caja entra el dinero. null = "Sin turno".
             'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
@@ -336,7 +339,7 @@ class AnticipoClienteController extends Controller
             // Entrega EN DINERO: por dónde sale la plata (egreso de caja). En
             // material no aplica (sale mercadería, no dinero).
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
         ]);
 
         // ── Calcular cobertura y excedente ──────────────────────────────
@@ -614,7 +617,7 @@ class AnticipoClienteController extends Controller
             // Devolución: por dónde y cuándo sale el dinero. Opcionales; si no se
             // eligen, cae en la cuenta original del anticipo y la fecha de hoy.
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'fecha'          => ['nullable', 'date'],
         ]);
 
@@ -686,7 +689,7 @@ class AnticipoClienteController extends Controller
             'fecha'          => ['required', 'date'],
             'observacion'    => ['nullable', 'string', 'max:500'],
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
         ]);
 
         // La suma de entregas no puede superar el monto del anticipo.

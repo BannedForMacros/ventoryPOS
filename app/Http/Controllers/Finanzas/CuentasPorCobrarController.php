@@ -11,6 +11,7 @@ use App\Models\VentaAbono;
 use App\Services\AuditoriaService;
 use App\Services\TesoreriaService;
 use App\Support\AfectaCaja;
+use App\Support\ExigeCuentaDePago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -22,6 +23,8 @@ use Inertia\Inertia;
  */
 class CuentasPorCobrarController extends Controller
 {
+    use ExigeCuentaDePago;
+
     public function __construct(private TesoreriaService $tesoreria) {}
 
     public function index(Request $request)
@@ -131,7 +134,7 @@ class CuentasPorCobrarController extends Controller
             'monto'          => ['required', 'numeric', 'min:0.01', 'max:' . (float) $venta->saldo_pendiente],
             'fecha'          => ['required', 'date'],
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
             // "Afecta caja a:" — turno de cuya caja entra el cobro. null = "Sin turno".
@@ -203,7 +206,7 @@ class CuentasPorCobrarController extends Controller
             'monto'          => ['required', 'numeric', 'min:0.01', "max:{$maxMonto}"],
             'fecha'          => ['required', 'date'],
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
         ]);

@@ -9,6 +9,7 @@ use App\Models\Proveedor;
 use App\Models\ProveedorAdelanto;
 use App\Services\AuditoriaService;
 use App\Services\TesoreriaService;
+use App\Support\ExigeCuentaDePago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -24,6 +25,8 @@ use Inertia\Inertia;
  */
 class AdelantoProveedorController extends Controller
 {
+    use ExigeCuentaDePago;
+
     public function __construct(private TesoreriaService $tesoreria) {}
 
     public function index(Request $request)
