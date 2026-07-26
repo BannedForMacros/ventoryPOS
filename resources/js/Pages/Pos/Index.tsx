@@ -11,7 +11,7 @@ import axios from 'axios';
 import PosLayout from '@/Layouts/PosLayout';
 import Button from '@/Components/UI/Button';
 import CarritoItem, { LineaCarrito, HistorialPrecioCliente, DescModo, DescTipo } from './Partials/CarritoItem';
-import PanelPago, { LineaPago } from './Partials/PanelPago';
+import PanelPago, { LineaPago, faltanCuentas } from './Partials/PanelPago';
 import PanelDescuento from './Partials/PanelDescuento';
 import ModalClienteRapido from './Partials/ModalClienteRapido';
 import ModalCrearCliente from './Partials/ModalCrearCliente';
@@ -765,6 +765,12 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         } else {
             if (pagos.length === 0) { toast.error('Agrega al menos un método de pago.'); return; }
             if (totalPagado < total - 0.009) { toast.error(`Faltan S/ ${(total - totalPagado).toFixed(2)} por cubrir.`); return; }
+        }
+        // Cuenta obligatoria: si un método tiene 2+ cuentas hay que elegir cuál
+        // (con 1 se autoselecciona). Aplica también al pago inicial de crédito.
+        if (faltanCuentas(pagos, metodosPago)) {
+            toast.error('Selecciona la cuenta de cada pago (obligatorio cuando el método tiene más de una cuenta).');
+            return;
         }
         setModalConfirm(true);
     }

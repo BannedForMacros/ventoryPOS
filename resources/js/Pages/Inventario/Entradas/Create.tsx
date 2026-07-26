@@ -117,6 +117,13 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
 
     const cuentasDeLinea = (l: LineaPago) =>
         metodosPago.find(m => m.id === l.metodo_pago_id)?.cuentas ?? [];
+    // Cuenta por defecto: 1 cuenta → se autoselecciona; 2+ → obligatorio elegir.
+    const cuentaDefaultDe = (metodoId: number | ''): number | '' => {
+        const cts = metodosPago.find(m => m.id === Number(metodoId))?.cuentas ?? [];
+        return cts.length === 1 ? cts[0].id : '';
+    };
+    // ¿Alguna línea usa un método CON cuentas pero sin cuenta elegida?
+    const faltanCuentasPago = pagos.some(p => cuentasDeLinea(p).length > 0 && !p.cuenta_id);
     const totalPagado = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
 
     function cambiarEstadoPago(v: EstadoPago) {
@@ -672,12 +679,13 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                                             required
                                             placeholder="Seleccionar método"
                                             value={p.metodo_pago_id}
-                                            onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: '' })}
+                                            onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: cuentaDefaultDe(v === '' ? '' : Number(v)) })}
                                             options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
                                         />
                                         <Select
                                             label={idx === 0 ? 'Cuenta' : undefined}
-                                            placeholder={cuentas.length ? '(Opcional) elegir cuenta' : 'Se asigna sola'}
+                                            required={cuentas.length > 0}
+                                            placeholder={cuentas.length ? '— Selecciona una cuenta —' : 'Se asigna sola'}
                                             value={p.cuenta_id}
                                             onChange={v => setPago(p.key, { cuenta_id: v === '' ? '' : Number(v) })}
                                             options={cuentas.map(c => ({
@@ -685,6 +693,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                                                 label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
                                             }))}
                                             disabled={cuentas.length === 0}
+                                            error={cuentas.length > 0 && !p.cuenta_id ? 'Elige la cuenta' : undefined}
                                         />
                                         <Input
                                             label={idx === 0 ? 'Fecha' : undefined}

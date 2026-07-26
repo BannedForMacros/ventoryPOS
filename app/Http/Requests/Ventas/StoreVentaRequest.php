@@ -345,6 +345,27 @@ class StoreVentaRequest extends FormRequest
      */
     private function validarPagosPertenencia($validator, int $empresaId): void
     {
+        // Cuenta OBLIGATORIA: si el método de pago tiene cuentas vinculadas, el
+        // pago debe traer una (con 1 el front la autoselecciona; con 2+ el usuario
+        // elige). Los métodos SIN cuentas (efectivo, electrónico sin vincular) se
+        // resuelven solos en TesoreriaService, así que no se exigen.
+        $metodoIds = collect($this->input('pagos', []))
+            ->pluck('metodo_pago_id')->filter()->unique()->all();
+        $metodosConCuentas = empty($metodoIds) ? [] : DB::table('cuenta_metodo_pago')
+            ->whereIn('metodo_pago_id', $metodoIds)
+            ->pluck('metodo_pago_id')->flip()->all();
+
+        foreach ($this->input('pagos', []) as $index => $pago) {
+            $metodoId = $pago['metodo_pago_id'] ?? null;
+            $pivotId  = $pago['cuenta_metodo_pago_id'] ?? null;
+            if ($metodoId && !$pivotId && isset($metodosConCuentas[$metodoId])) {
+                $validator->errors()->add(
+                    "pagos.{$index}.cuenta_metodo_pago_id",
+                    'Debes seleccionar la cuenta para este método de pago.',
+                );
+            }
+        }
+
         $pivotIds = collect($this->input('pagos', []))
             ->pluck('cuenta_metodo_pago_id')
             ->filter()

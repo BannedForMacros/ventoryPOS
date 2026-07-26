@@ -103,11 +103,19 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
 
     // Método elegido y sus cuentas (para el segundo select, igual que el POS).
     const metodoSel        = metodosPago.find(m => m.id === Number(form.metodo_pago_id)) ?? null;
-    const cuentasDelMetodo = metodoSel?.cuentas ?? [];
+    const cuentasDelMetodo = (metodoSel?.cuentas ?? []).filter(c => c.pivot?.id);
+    // Cuenta por defecto: si el método tiene EXACTAMENTE 1 cuenta se autoselecciona
+    // (id del pivote); con 2+ queda '' y es obligatorio elegir.
+    const cuentaDefaultDe = (m: typeof metodoSel): number | '' => {
+        const cts = (m?.cuentas ?? []).filter(c => c.pivot?.id);
+        return cts.length === 1 ? cts[0].pivot!.id : '';
+    };
+    const faltaCuenta = cuentasDelMetodo.length > 0 && !form.cuenta_metodo_pago_id;
 
     function handleMetodoChange(v: number | string) {
-        // Al cambiar de método se resetea la cuenta (evita mezclar cuentas ajenas).
-        setForm(f => ({ ...f, metodo_pago_id: Number(v) || '', cuenta_metodo_pago_id: '' }));
+        // Al cambiar de método: autoselecciona su cuenta si tiene 1, si no resetea.
+        const m = metodosPago.find(x => x.id === Number(v)) ?? null;
+        setForm(f => ({ ...f, metodo_pago_id: Number(v) || '', cuenta_metodo_pago_id: cuentaDefaultDe(m) }));
     }
 
     const esTurnogasto = form.turno_id !== null;
@@ -133,6 +141,11 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
     }
 
     function submit() {
+        // Cuenta obligatoria: si el método tiene cuentas, hay que elegir una.
+        if (faltaCuenta) {
+            setErrors({ cuenta_metodo_pago_id: 'Selecciona la cuenta para este método de pago.' });
+            return;
+        }
         setSaving(true);
         const opts = {
             onSuccess: () => { setSaving(false); handleClose(); },
@@ -268,6 +281,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                 {cuentasDelMetodo.length > 0 && (
                     <Select
                         label="Cuenta"
+                        required
                         value={form.cuenta_metodo_pago_id}
                         onChange={v => setForm(f => ({ ...f, cuenta_metodo_pago_id: Number(v) || '' }))}
                         // value = id del PIVOTE cuenta_metodo_pago (lo que valida el
@@ -275,8 +289,8 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                         options={cuentasDelMetodo
                             .filter(c => c.pivot?.id)
                             .map(c => ({ value: c.pivot!.id, label: c.nombre }))}
-                        placeholder="Cuenta por defecto del método"
-                        error={errors.cuenta_metodo_pago_id}
+                        placeholder="— Selecciona una cuenta —"
+                        error={errors.cuenta_metodo_pago_id ?? (faltaCuenta ? 'Selecciona la cuenta de este método.' : undefined)}
                         disabled={saving}
                     />
                 )}

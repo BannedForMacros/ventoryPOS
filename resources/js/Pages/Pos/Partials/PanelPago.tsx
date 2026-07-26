@@ -29,6 +29,26 @@ interface Props {
 
 function uid() { return Math.random().toString(36).slice(2); }
 
+/** Cuentas (pivote) vinculadas a un método. */
+function cuentasDe(metodo?: MetodoPagoConCuentas): Cuenta[] {
+    return (metodo?.cuentas ?? []).filter(c => c.pivot?.id);
+}
+
+/** Cuenta por defecto: si el método tiene EXACTAMENTE 1 cuenta, se autoselecciona
+ *  (su id de pivote); si tiene 2+ queda null → el usuario debe elegir. */
+function cuentaDefaultDe(metodo?: MetodoPagoConCuentas): number | null {
+    const cts = cuentasDe(metodo);
+    return cts.length === 1 ? cts[0].pivot!.id : null;
+}
+
+/** ¿Alguna línea usa un método CON cuentas pero sin cuenta elegida? (bloquea cobro) */
+export function faltanCuentas(pagos: LineaPago[], metodosPago: MetodoPagoConCuentas[]): boolean {
+    return pagos.some(p => {
+        const cts = cuentasDe(metodosPago.find(m => m.id === p.metodo_pago_id));
+        return cts.length > 0 && !p.cuenta_metodo_pago_id;
+    });
+}
+
 function MetodoIcon({ tipo }: { tipo: string }) {
     const size = 14;
     if (tipo === 'efectivo') return <Banknote size={size} />;
@@ -49,7 +69,7 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
         const nuevoPago: LineaPago = {
             key:                   uid(),
             metodo_pago_id:        metodo.id,
-            cuenta_metodo_pago_id: null,
+            cuenta_metodo_pago_id: cuentaDefaultDe(metodo),
             monto:                 pendiente > 0 ? parseFloat(pendiente.toFixed(2)) : 0,
             referencia:            '',
             admite_vuelto:         admiteVuelto,
@@ -73,7 +93,7 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
             metodo_pago_id:        metodoId,
             admite_vuelto:         !!metodo?.admite_vuelto,
             es_efectivo:           tipoSlug === 'efectivo',
-            cuenta_metodo_pago_id: null,
+            cuenta_metodo_pago_id: cuentaDefaultDe(metodo),
         });
     }
 
@@ -147,19 +167,21 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
                             </button>
                         </div>
 
-                        {cuentas.length > 0 && (
+                        {cuentas.filter(c => c.pivot?.id).length > 0 && (
                             <select
                                 value={pago.cuenta_metodo_pago_id ?? ''}
                                 onChange={e => updatePago(pago.key, { cuenta_metodo_pago_id: e.target.value ? Number(e.target.value) : null })}
                                 className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2"
                                 style={{
-                                    borderColor: 'var(--color-border)',
+                                    // Cuenta OBLIGATORIA: si el método tiene cuentas hay que elegir
+                                    // una (con 1 sola se autoseleccionó). Borde rojo mientras falte.
+                                    borderColor: pago.cuenta_metodo_pago_id ? 'var(--color-border)' : 'var(--color-danger)',
                                     backgroundColor: 'var(--color-bg)',
                                     color: 'var(--color-text)',
                                     '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
                                 } as React.CSSProperties}
                             >
-                                <option value="">— Cuenta (opcional)</option>
+                                <option value="">— Selecciona una cuenta —</option>
                                 {/* value = id del PIVOTE cuenta_metodo_pago (lo que valida el
                                     backend), NO el id de la cuenta — antes coincidían de
                                     casualidad y al divergir los ids rompía la validación. */}

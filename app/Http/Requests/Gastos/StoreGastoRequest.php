@@ -32,7 +32,17 @@ class StoreGastoRequest extends FormRequest
                 Rule::exists('metodos_pago', 'id')->where('empresa_id', $empresaId)->where('activo', true),
             ],
             // Id de la fila pivote cuenta_metodo_pago (NO el id de la cuenta).
-            'cuenta_metodo_pago_id' => ['nullable', 'integer', 'exists:cuenta_metodo_pago,id'],
+            // Obligatoria si el método tiene cuentas vinculadas (con 1 el front la
+            // autoselecciona; con 2+ el usuario elige). Efectivo/sin-cuenta: opcional.
+            'cuenta_metodo_pago_id' => ['nullable', 'integer', 'exists:cuenta_metodo_pago,id',
+                function ($attr, $value, $fail) {
+                    if (! $value && \App\Support\PagoCuenta::requiere(
+                        $this->input('metodo_pago_id') ? (int) $this->input('metodo_pago_id') : null
+                    )) {
+                        $fail('Debes seleccionar la cuenta para este método de pago.');
+                    }
+                },
+            ],
             // F7 (compat) — cuenta directa de la que sale el dinero (null = efectivo)
             'cuenta_id'  => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $empresaId)],
             'fecha'      => ['required', 'date'],
