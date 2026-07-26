@@ -473,11 +473,12 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                             placeholder="— Seleccionar —"
                         />
                         {cuentasDeMetodo(formPago.metodo_pago_id).length > 0 ? (
-                            <Select label="Cuenta"
+                            <Select label="Cuenta" required
                                 options={cuentasDeMetodo(formPago.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
                                 value={formPago.cuenta_id}
                                 onChange={v => setFormPago(f => ({ ...f, cuenta_id: String(v) }))}
-                                placeholder="— Seleccionar —"
+                                placeholder="— Selecciona una cuenta —"
+                                error={errors.cuenta_id}
                             />
                         ) : (
                             <Callout variant="info">

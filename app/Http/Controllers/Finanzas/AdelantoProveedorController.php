@@ -96,7 +96,7 @@ class AdelantoProveedorController extends Controller
             'fecha'          => ['required', 'date'],
             'monto'          => ['required', 'numeric', 'min:0.01'],
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
         ]);
@@ -204,7 +204,7 @@ class AdelantoProveedorController extends Controller
             'monto'          => [$tieneConsumos ? 'prohibited' : 'required', 'numeric', 'min:0.01'],
             'fecha'          => ['required', 'date'],
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
         ], [

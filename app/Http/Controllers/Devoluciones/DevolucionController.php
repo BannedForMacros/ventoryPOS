@@ -201,7 +201,16 @@ class DevolucionController extends Controller
             'items.*.observacion'     => 'nullable|string',
             'pagos'                   => 'nullable|array',
             'pagos.*.metodo_pago_id'  => 'required_with:pagos|exists:metodos_pago,id',
-            'pagos.*.cuenta_metodo_pago_id' => 'nullable|integer',
+            // Cuenta obligatoria si el método tiene cuentas (1 se autoselecciona; 2+ elige).
+            'pagos.*.cuenta_metodo_pago_id' => ['nullable', 'integer',
+                function ($attr, $value, $fail) use ($request) {
+                    if ($value) return;
+                    preg_match('/pagos\.(\d+)\./', $attr, $m);
+                    if (isset($m[1]) && \App\Support\PagoCuenta::requiere((int) $request->input("pagos.{$m[1]}.metodo_pago_id"))) {
+                        $fail('Debes seleccionar la cuenta para este método de pago.');
+                    }
+                },
+            ],
             'pagos.*.monto'           => 'required_with:pagos|numeric|min:0',
             'pagos.*.referencia'      => 'nullable|string|max:100',
             // "Afecta caja a:" — turno al que se imputa la devolución (opcional).
