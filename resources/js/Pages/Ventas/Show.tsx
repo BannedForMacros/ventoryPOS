@@ -110,6 +110,18 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                         >
                             {venta.numero}
                         </span>
+                        {/* ID interno — útil para buscar la venta al hacer una devolución. */}
+                        <span
+                            className="font-mono text-xs px-2 py-1 rounded-lg"
+                            style={{
+                                backgroundColor: 'var(--color-bg)',
+                                color: 'var(--color-text-muted)',
+                                border: '1px solid var(--color-border)',
+                            }}
+                            title="ID interno de la venta (para devoluciones)"
+                        >
+                            ID: {venta.id}
+                        </span>
                         <Badge variant={venta.estado === 'completada' ? 'success' : 'danger'}>
                             {venta.estado === 'completada' ? 'Completada' : 'Anulada'}
                         </Badge>
@@ -152,6 +164,7 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                     <SectionCard icon={Receipt} title="Datos de la venta">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
                             <InfoRow label="Número" value={<span className="font-mono">{venta.numero}</span>} />
+                            <InfoRow label="ID (para devolución)" value={<span className="font-mono">{venta.id}</span>} />
                             <InfoRow label="Fecha" value={
                                 <span className="flex items-center gap-1">
                                     <Calendar size={12} className="opacity-50" />
