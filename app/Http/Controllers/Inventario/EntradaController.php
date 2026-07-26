@@ -7,6 +7,7 @@ use App\Models\Almacen;
 use App\Models\Cuenta;
 use App\Models\Entrada;
 use App\Support\AfectaCaja;
+use App\Support\PagoCuenta;
 use App\Models\EntradaPago;
 use App\Models\MetodoPago;
 use App\Models\Producto;
@@ -241,7 +242,15 @@ class EntradaController extends Controller
             'cuenta_id'        => 'nullable|exists:cuentas,id',
             'pagos'                    => 'nullable|array|max:10',
             'pagos.*.metodo_pago_id'   => ['required', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id),
+                function ($attr, $value, $fail) use ($request) {
+                    if ($value) return;
+                    preg_match('/pagos\.(\d+)\./', $attr, $m);
+                    if (isset($m[1]) && PagoCuenta::requiere((int) $request->input("pagos.{$m[1]}.metodo_pago_id"))) {
+                        $fail('Debes seleccionar la cuenta para este método de pago.');
+                    }
+                },
+            ],
             'pagos.*.monto'            => 'required|numeric|min:0.01',
             'pagos.*.referencia'       => 'nullable|string|max:200',
             'pagos.*.fecha'            => ['nullable', 'date'],
@@ -463,7 +472,15 @@ class EntradaController extends Controller
             // producto y se paga la diferencia ahí mismo).
             'pagos'                    => 'nullable|array|max:10',
             'pagos.*.metodo_pago_id'   => ['required', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id),
+                function ($attr, $value, $fail) use ($request) {
+                    if ($value) return;
+                    preg_match('/pagos\.(\d+)\./', $attr, $m);
+                    if (isset($m[1]) && PagoCuenta::requiere((int) $request->input("pagos.{$m[1]}.metodo_pago_id"))) {
+                        $fail('Debes seleccionar la cuenta para este método de pago.');
+                    }
+                },
+            ],
             'pagos.*.monto'            => 'required|numeric|min:0.01',
             'pagos.*.referencia'       => 'nullable|string|max:200',
             'pagos.*.fecha'            => ['nullable', 'date'],
@@ -473,7 +490,15 @@ class EntradaController extends Controller
             'pagos_editados.*.id'             => ['required', 'integer'],
             'pagos_editados.*.monto'          => ['nullable', 'numeric', 'min:0.01'],
             'pagos_editados.*.metodo_pago_id' => ['nullable', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'pagos_editados.*.cuenta_id'      => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos_editados.*.cuenta_id'      => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id),
+                function ($attr, $value, $fail) use ($request) {
+                    if ($value) return;
+                    preg_match('/pagos_editados\.(\d+)\./', $attr, $m);
+                    if (isset($m[1]) && PagoCuenta::requiere((int) $request->input("pagos_editados.{$m[1]}.metodo_pago_id"))) {
+                        $fail('Debes seleccionar la cuenta para este método de pago.');
+                    }
+                },
+            ],
             'pagos_editados.*.turno_id'       => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
             // Pagos YA registrados ANULADOS en la misma pantalla (solo admin): ids.
             'pagos_anulados'                  => 'nullable|array',

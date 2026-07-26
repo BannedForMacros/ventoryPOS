@@ -122,8 +122,6 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
         const cts = metodosPago.find(m => m.id === Number(metodoId))?.cuentas ?? [];
         return cts.length === 1 ? cts[0].id : '';
     };
-    // ¿Alguna línea usa un método CON cuentas pero sin cuenta elegida?
-    const faltanCuentasPago = pagos.some(p => cuentasDeLinea(p).length > 0 && !p.cuenta_id);
     const totalPagado = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
 
     function cambiarEstadoPago(v: EstadoPago) {
@@ -242,6 +240,8 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                 if (!p.metodo_pago_id) errs.push(`Pago #${n}: falta el método de pago`);
                 const m = parseFloat(p.monto);
                 if (!p.monto || isNaN(m) || m <= 0) errs.push(`Pago #${n}: el monto debe ser mayor a 0`);
+                // Cuenta obligatoria si el método tiene cuentas (con 1 se autoselecciona).
+                if (cuentasDeLinea(p).length > 0 && !p.cuenta_id) errs.push(`Pago #${n}: selecciona la cuenta`);
             });
             const suma = Math.round(totalPagado * 100) / 100;
             const tot  = Math.round(total * 100) / 100;

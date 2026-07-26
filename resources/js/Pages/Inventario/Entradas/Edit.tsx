@@ -228,6 +228,11 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
 
     const cuentasDeLinea = (l: LineaPago) =>
         metodosPago.find(m => m.id === l.metodo_pago_id)?.cuentas ?? [];
+    // Cuenta por defecto: 1 → autoselecciona; 2+ → obligatorio elegir.
+    const cuentaDefaultDe = (metodoId: number | ''): number | '' => {
+        const cts = metodosPago.find(m => m.id === Number(metodoId))?.cuentas ?? [];
+        return cts.length === 1 ? cts[0].id : '';
+    };
     function setPago(key: string, patch: Partial<LineaPago>) {
         setPagosNuevos(prev => prev.map(p => p.key === key ? { ...p, ...patch } : p));
     }
@@ -360,6 +365,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
             if (!p.metodo_pago_id) errs.push(`Pago nuevo #${n}: falta el método de pago`);
             const m = parseFloat(p.monto);
             if (!p.monto || isNaN(m) || m <= 0) errs.push(`Pago nuevo #${n}: el monto debe ser mayor a 0`);
+            if (cuentasDeLinea(p).length > 0 && !p.cuenta_id) errs.push(`Pago nuevo #${n}: selecciona la cuenta`);
         });
         if (totalPagoNuevo > saldoActual + 0.009) {
             errs.push(`Los pagos nuevos (S/ ${totalPagoNuevo.toFixed(2)}) superan el saldo pendiente (S/ ${saldoActual.toFixed(2)})`);
@@ -368,6 +374,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
         editPagos.filter(r => !r.eliminar && !r.esAdelanto).forEach(r => {
             const m = parseFloat(r.monto);
             if (!r.monto || isNaN(m) || m <= 0) errs.push('Hay un pago ya registrado con monto inválido');
+            if (cuentasDeMetodo(r.metodo_pago_id).length > 0 && !r.cuenta_id) errs.push('Un pago editado requiere seleccionar la cuenta');
         });
         if (!tipo)      errs.push('Selecciona el tipo de entrada');
         if (!fecha)     errs.push('Indica la fecha');
@@ -830,12 +837,14 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                 <div className="grid grid-cols-1 sm:grid-cols-[1.1fr_1.1fr_100px] gap-2">
                                                     <Select label="Método" placeholder="Sin método"
                                                         value={r.metodo_pago_id} disabled={disabled}
-                                                        onChange={v => setEditPago(r.id, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: '' })}
+                                                        onChange={v => setEditPago(r.id, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: cuentaDefaultDe(v === '' ? '' : Number(v)) })}
                                                         options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))} />
                                                     <Select label="Cuenta"
-                                                        placeholder={cuentas.length ? '(Opcional)' : 'Se asigna sola'}
+                                                        required={cuentas.length > 0}
+                                                        placeholder={cuentas.length ? '— Elige cuenta —' : 'Se asigna sola'}
                                                         value={r.cuenta_id} disabled={disabled || cuentas.length === 0}
                                                         onChange={v => setEditPago(r.id, { cuenta_id: v === '' ? '' : Number(v) })}
+                                                        error={!r.eliminar && cuentas.length > 0 && !r.cuenta_id ? 'Elige la cuenta' : undefined}
                                                         options={cuentas.map(c => ({ value: c.id, label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre }))} />
                                                     <Input label="Monto" type="number" min="0.01" step="0.01"
                                                         value={r.monto} disabled={disabled}
@@ -891,12 +900,13 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                             required
                                             placeholder="Seleccionar método"
                                             value={p.metodo_pago_id}
-                                            onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: '' })}
+                                            onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: cuentaDefaultDe(v === '' ? '' : Number(v)) })}
                                             options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
                                         />
                                         <Select
                                             label={idx === 0 ? 'Cuenta' : undefined}
-                                            placeholder={cuentas.length ? '(Opcional) elegir cuenta' : 'Se asigna sola'}
+                                            required={cuentas.length > 0}
+                                            placeholder={cuentas.length ? '— Selecciona una cuenta —' : 'Se asigna sola'}
                                             value={p.cuenta_id}
                                             onChange={v => setPago(p.key, { cuenta_id: v === '' ? '' : Number(v) })}
                                             options={cuentas.map(c => ({
@@ -904,6 +914,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                 label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
                                             }))}
                                             disabled={cuentas.length === 0}
+                                            error={cuentas.length > 0 && !p.cuenta_id ? 'Elige la cuenta' : undefined}
                                         />
                                         <Input
                                             label={idx === 0 ? 'Fecha' : undefined}
