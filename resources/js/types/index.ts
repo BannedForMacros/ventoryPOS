@@ -502,10 +502,15 @@ export interface FacturacionPosConfig {
     produccion:                 boolean;
     /** config('facturamac.umbral_boleta_identificada') — por defecto 700. */
     umbral_boleta_identificada?: number;
-    /** Serie que se usará por tipo, p. ej. { boleta: 'B002', factura: 'F002' }. */
+    /**
+     * Serie que se usará por tipo. Acepta tal cual `config('facturamac.series')`
+     * (claves '01'/'03' del catálogo SUNAT) o las claves legibles.
+     */
     series?: {
-        boleta?:  string | null;
+        '01'?:    string | null;   // factura
+        '03'?:    string | null;   // boleta
         factura?: string | null;
+        boleta?:  string | null;
     };
 }
 

@@ -546,10 +546,11 @@ class VentaController extends Controller
 
         // Anticipos de clientes recibidos EN ESTE TURNO (dinero que entró a caja,
         // aparte de ventas y abonos). Solo el efectivo suma al esperado del cajón
-        // (mismo criterio que Turno::calcularMontoEsperado). Los anulados/devueltos
-        // no cuentan.
+        // (mismo criterio que Turno::calcularMontoEsperado). Solo los anulados se
+        // excluyen (su ingreso fue revertido); los devueltos sí entraron aquí y su
+        // egreso se descuenta en la caja por donde salió (ver $devolucionAnticipos).
         $anticiposBase = \App\Models\ClienteAnticipo::whereIn('turno_id', $turnoIds)
-            ->whereNotIn('estado', ['anulado', 'devuelto']);
+            ->where('estado', '<>', 'anulado');
         $anticiposEfectivo = (float) (clone $anticiposBase)
             ->where(fn($q) =>
                 $q->whereHas('metodoPago.tipo', fn($t) => $t->where('slug', 'efectivo'))
@@ -664,6 +665,38 @@ class VentaController extends Controller
                 'monto'       => round((float) $m->monto, 2),
             ]);
 
+        // Devoluciones de anticipo pagadas EN EFECTIVO desde estas cajas: el
+        // billete sale del cajón. Espejo exacto de Turno::calcularMontoEsperado:
+        // el monto y la efectividad se leen del movimiento de tesorería, porque se
+        // devuelve el SALDO del momento (no el monto original) y puede salir por
+        // una cuenta distinta a la que lo recibió.
+        $devolucionAnticipoMovs = \App\Models\CuentaMovimiento::where('empresa_id', $turno->empresa_id)
+            ->where('tipo', 'egreso')
+            ->where('ref_tipo', 'cliente_anticipo_devolucion')
+            ->whereIn('ref_id', \App\Models\ClienteAnticipo::whereIn('turno_devolucion_id', $turnoIds)->select('id'))
+            ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
+            ->orderByDesc('id')->get();
+
+        $devolucionAnticipos = (float) $devolucionAnticipoMovs->sum('monto');
+
+        $devolucionAnticiposDetalle = \App\Models\ClienteAnticipo::whereIn('turno_devolucion_id', $turnoIds)
+            ->with('cliente')->orderByDesc('id')->get()
+            ->map(function ($a) use ($devolucionAnticipoMovs) {
+                $mov = $devolucionAnticipoMovs->firstWhere('ref_id', $a->id);
+                return [
+                    'anticipo' => $a->id,
+                    'cliente'  => $a->cliente
+                        ? ($a->cliente->es_cliente_general
+                            ? 'Clientes varios'
+                            : ($a->cliente->razon_social
+                                ?? trim(($a->cliente->nombres ?? '') . ' ' . ($a->cliente->apellidos ?? ''))))
+                        : '—',
+                    // Sin movimiento en efectivo → salió por banco: se muestra en 0
+                    // para que la cajera lo vea, pero no descuenta su cajón.
+                    'monto'    => round((float) ($mov->monto ?? 0), 2),
+                ];
+            })->values();
+
         $variosTurnos = count($turnoIds) > 1;
         return [
             'turno' => [
@@ -687,6 +720,7 @@ class VentaController extends Controller
             'compras'          => round($compras, 2),         // pagos de entradas en efectivo (salen de caja)
             'deuda_ingreso'    => round($deudaIngreso, 2),    // desembolsos/cobros de deuda en efectivo (entran)
             'deuda_egreso'     => round($deudaEgreso, 2),     // cuotas/préstamos de deuda en efectivo (salen)
+            'devolucion_anticipos' => round($devolucionAnticipos, 2), // devoluciones de anticipo en efectivo (salen)
             'apertura'         => round((float) $turnos->sum('monto_apertura'), 2),
             // Efectivo real esperado, SUMADO sobre todas las cajas del conjunto
             // (apertura + ventas + abonos − gastos − reembolsos − compras).
@@ -696,6 +730,7 @@ class VentaController extends Controller
             'gastos_detalle'   => $gastosDetalle,
             'compras_detalle'  => $comprasDetalle,
             'deuda_detalle'    => $deudaDetalle,
+            'devolucion_anticipos_detalle' => $devolucionAnticiposDetalle,
         ];
     }
 

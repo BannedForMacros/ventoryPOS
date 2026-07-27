@@ -30,6 +30,7 @@ use App\Http\Controllers\Reportes\ReporteDevolucionController;
 use App\Http\Controllers\Reportes\ReporteGastoController;
 use App\Http\Controllers\Reportes\ReporteProductoController;
 use App\Http\Controllers\Reportes\ReporteVentaController;
+use App\Http\Controllers\Ventas\ComprobanteElectronicoController;
 use App\Http\Controllers\Ventas\CotizacionController;
 use App\Http\Controllers\Ventas\DescuentoConceptoController;
 use App\Http\Controllers\Ventas\DescuentoLogController;
@@ -302,6 +303,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // (el guard de tiempo lo aplica el controlador). Reutiliza el editor del POS.
         Route::middleware(['permiso:ventas,editar', 'throttle:60,1'])->put('/{venta}', [VentaController::class, 'update'])->name('update');
         Route::middleware('permiso:ventas,editar')->post('/{venta}/anular', [VentaController::class, 'anular'])->name('anular');
+
+        // ── Comprobante electrónico (SUNAT vía FacturaMac) ────────────────
+        // `estado` lo consulta el POS cada pocos segundos tras cerrar la venta:
+        // se sirve desde la BD (una fila), no llama a SUNAT, por eso va con
+        // permiso de solo lectura. El PDF se PROXEA a propósito — así el token
+        // de FacturaMac nunca llega al navegador del cajero. `reintentar`
+        // vuelve a encolar la emisión: exige permiso de edición y va con
+        // throttle porque cada intento puede terminar en un envío real.
+        Route::middleware('permiso:ventas,ver')->get('/{venta}/comprobante/estado', [ComprobanteElectronicoController::class, 'estado'])->name('comprobante.estado');
+        Route::middleware('permiso:ventas,ver')->get('/{venta}/comprobante/pdf', [ComprobanteElectronicoController::class, 'pdf'])->name('comprobante.pdf');
+        Route::middleware(['permiso:ventas,editar', 'throttle:20,1'])->post('/{venta}/comprobante/reintentar', [ComprobanteElectronicoController::class, 'reintentar'])->name('comprobante.reintentar');
     });
 
     // ── COTIZACIONES ─────────────────────────────────────────────────────

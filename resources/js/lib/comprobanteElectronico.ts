@@ -21,12 +21,45 @@ export type TipoComprobantePos = 'ticket' | 'boleta' | 'factura';
  */
 export const UMBRAL_BOLETA_IDENTIFICADA = 700;
 
-/** Rutas del comprobante electrónico de una venta (ver ComprobanteElectronicoController). */
+/**
+ * Rutas del comprobante electrónico de una venta
+ * (ver Ventas\ComprobanteElectronicoController). Se escriben literales, sin
+ * `route()`, para que la pantalla no reviente si Ziggy todavía no conoce los
+ * nombres (despliegue parcial, caché de rutas vieja).
+ */
 export const rutaComprobante = {
     estado:     (ventaId: number) => `/ventas/${ventaId}/comprobante/estado`,
     reintentar: (ventaId: number) => `/ventas/${ventaId}/comprobante/reintentar`,
     pdf:        (ventaId: number) => `/ventas/${ventaId}/comprobante/pdf`,
 };
+
+/**
+ * Respuesta de GET /ventas/{venta}/comprobante/estado.
+ * Es plana a propósito (el POS la consulta cada pocos segundos).
+ */
+export interface EstadoComprobanteResp {
+    tiene_comprobante:  boolean;
+    /** false = esta venta nunca va a tener comprobante (ticket o módulo apagado). */
+    emitible:           boolean;
+    id?:                number;
+    tipo?:              '01' | '03';
+    serie?:             string;
+    correlativo?:       number;
+    numero?:            string;
+    estado?:            ComprobanteEstado | null;
+    mensaje?:           string;
+    hash_cpe?:          string | null;
+    qr?:                string | null;
+    sunat_codigo?:      string | null;
+    sunat_descripcion?: string | null;
+    error?:             string | null;
+    intentos?:          number;
+    enviado_at?:        string | null;
+    puede_reintentar?:  boolean;
+    tiene_pdf?:         boolean;
+    /** Estado terminal según el backend: se puede dejar de preguntar. */
+    final?:             boolean;
+}
 
 /** El Cliente General no identifica al adquirente (flag `es_cliente_general`). */
 export function esClienteGeneral(cliente: Cliente | null | undefined): boolean {
@@ -130,6 +163,16 @@ export interface EstadoMeta {
     detalle: string | null;
 }
 
+/**
+ * Estados en los que todavía puede cambiar algo solo (job en curso, reintento
+ * automático o resumen diario pendiente) → tiene sentido seguir consultando.
+ * `error_mapeo` NO está: ahí el problema es el dato de la venta y no se
+ * resuelve esperando.
+ */
+const ESTADOS_EN_CURSO: ComprobanteEstado[] = [
+    'pendiente', 'enviando', 'pendiente_resumen', 'error_envio',
+];
+
 const ESTADOS: Record<ComprobanteEstado, EstadoMeta> = {
     pendiente: {
         label: 'En cola', color: 'var(--color-text-muted)', terminal: false,
@@ -152,8 +195,8 @@ const ESTADOS: Record<ComprobanteEstado, EstadoMeta> = {
         detalle: 'SUNAT rechazó el comprobante. Corrige el motivo y reintenta.',
     },
     error_envio: {
-        label: 'Error de envío', color: 'var(--color-danger)', terminal: true,
-        detalle: 'No se pudo llegar a SUNAT. Puedes reintentar el envío.',
+        label: 'Error de envío', color: 'var(--color-danger)', terminal: false,
+        detalle: 'No se pudo llegar a SUNAT. Se reintenta solo; también puedes reintentar ahora.',
     },
     error_mapeo: {
         label: 'Error de datos', color: 'var(--color-danger)', terminal: true,

@@ -81,16 +81,36 @@ class Turno extends Model
         // Anticipos de clientes cobrados EN EFECTIVO durante el turno: ese
         // billete entra al cajón, así que el sistema debe esperarlo. Se cuenta
         // el MONTO recibido (aunque luego se aplique en mercadería, el efectivo
-        // ya entró y quedó). Anulados/devueltos no cuentan (el dinero se revirtió
-        // o se regresó al cliente). Efectivo = método efectivo, o sin método con
-        // cuenta de efectivo (mismo criterio que las compras de abajo).
+        // ya entró y quedó). Solo los ANULADOS se excluyen: anular revierte el
+        // ingreso en tesorería, así que ese dinero nunca existió.
+        //
+        // Los DEVUELTOS sí cuentan aquí: el billete entró de verdad en ESTE turno
+        // y se quedó. La devolución se descuenta abajo, en el turno por cuya caja
+        // salió — que casi nunca es este (suele ser días después). Excluirlos aquí
+        // descuadraba dos cajas de un golpe: la de origen perdía un ingreso real
+        // y la de la devolución nunca veía el egreso.
+        //
+        // Efectivo = método efectivo, o sin método con cuenta de efectivo (mismo
+        // criterio que las compras de abajo).
         $anticiposEfectivo = (float) \App\Models\ClienteAnticipo::where('turno_id', $this->id)
-            ->whereNotIn('estado', ['anulado', 'devuelto'])
+            ->where('estado', '<>', 'anulado')
             ->where(fn($q) =>
                 $q->whereHas('metodoPago.tipo', fn($t) => $t->where('slug', 'efectivo'))
                   ->orWhere(fn($q2) => $q2->whereNull('metodo_pago_id')
                         ->whereHas('cuenta', fn($c) => $c->where('es_efectivo', true)))
             )->sum('monto');
+
+        // Devoluciones de anticipo pagadas EN EFECTIVO desde ESTA caja: el billete
+        // sale del cajón. El monto y la "efectividad" se leen del movimiento de
+        // tesorería real (mismo patrón que deuda, abajo) y no del anticipo: se
+        // devuelve el SALDO al momento de devolver, no el monto original, y la
+        // cuenta de salida puede ser distinta a la de entrada.
+        $devolucionAnticipoEfectivo = (float) \App\Models\CuentaMovimiento::where('empresa_id', $this->empresa_id)
+            ->where('tipo', 'egreso')
+            ->where('ref_tipo', 'cliente_anticipo_devolucion')
+            ->whereIn('ref_id', \App\Models\ClienteAnticipo::where('turno_devolucion_id', $this->id)->select('id'))
+            ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
+            ->sum('monto');
 
         // Reembolsos de devoluciones en efectivo del turno (descuentan caja)
         $reembolsosEfectivo = (float) \App\Models\DevolucionPago::whereHas('devolucion', fn($q) =>
@@ -154,6 +174,7 @@ class Turno extends Model
              - $comprasEfectivo
              - $retirosEfectivo
              - $deudaEgreso
+             - $devolucionAnticipoEfectivo
              + ($sumaFondos ? $fondos : 0.0);
     }
 

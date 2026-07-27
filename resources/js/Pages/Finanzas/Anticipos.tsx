@@ -152,7 +152,7 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     // Entregas por ítem (anticipos multi-producto del POS): item.id → cantidad a entregar.
     const [entregas, setEntregas]       = useState<Record<number, string>>({});
     const [excesoACxc, setExcesoACxc]   = useState(false);
-    const [formAnular, setFormAnular]   = useState({ accion: 'devuelto', motivo: '', metodo_pago_id: '', cuenta_id: '', fecha: hoy() });
+    const [formAnular, setFormAnular]   = useState({ accion: 'devuelto', motivo: '', metodo_pago_id: '', cuenta_id: '', fecha: hoy(), turno_id: '' });
     // Editar / anular una ENTREGA de dinero ya registrada.
     const [editandoEntrega, setEditandoEntrega] = useState<Aplicacion | null>(null);
     const [anulandoEntrega, setAnulandoEntrega] = useState<Aplicacion | null>(null);
@@ -305,7 +305,10 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     function submitAnular() {
         if (!anulando) return;
         setSaving(true);
-        router.post(route('finanzas.anticipos.anular', anulando.id), formAnular as any, {
+        router.post(route('finanzas.anticipos.anular', anulando.id), {
+            ...formAnular,
+            turno_id: formAnular.turno_id || null,
+        } as any, {
             onSuccess: () => { setAnulando(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         });
@@ -426,7 +429,7 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                 style={{ color: 'var(--color-primary)' }}>
                                 <PackageCheck size={15} />
                             </button>
-                            <button onClick={() => { setErrors({}); setFormAnular({ accion: 'devuelto', motivo: '', metodo_pago_id: a.metodo_pago_id ? String(a.metodo_pago_id) : '', cuenta_id: a.cuenta_id ? String(a.cuenta_id) : '', fecha: hoy() }); setAnulando(a); }}
+                            <button onClick={() => { setErrors({}); setFormAnular({ accion: 'devuelto', motivo: '', metodo_pago_id: a.metodo_pago_id ? String(a.metodo_pago_id) : '', cuenta_id: a.cuenta_id ? String(a.cuenta_id) : '', fecha: hoy(), turno_id: turnoActivoId ? String(turnoActivoId) : '' }); setAnulando(a); }}
                                 className="p-1.5 rounded-lg hover:bg-black/5" title="Devolver / anular"
                                 style={{ color: 'var(--color-danger)' }}>
                                 <Ban size={15} />
@@ -855,6 +858,19 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                             )}
                             <Input type="date" label="Fecha de la devolución" value={formAnular.fecha}
                                 onChange={e => setFormAnular(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                            {/* "Afecta caja a:" — de qué cajón sale el billete. NO es el turno
+                                donde entró el anticipo (ese suele ser de otro día, o ninguno si
+                                el pendiente nació de una venta POS). Sin esto, la devolución
+                                salía en tesorería pero la caja de la cajera nunca la restaba. */}
+                            <AfectaCajaSelect
+                                modulo="anticipos" modo="libre" formato="largo"
+                                label="Afecta caja a (turno)"
+                                sinTurnoLabel="Sin turno (no afecta caja)"
+                                turnos={turnos}
+                                value={formAnular.turno_id === '' ? '' : Number(formAnular.turno_id)}
+                                onChange={v => setFormAnular(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                                hint="Si devuelves en efectivo, el billete sale de la caja de este turno y se resta de su efectivo esperado. «Sin turno» no afecta ninguna caja (p. ej. si sale por banco)."
+                            />
                         </>
                     )}
 

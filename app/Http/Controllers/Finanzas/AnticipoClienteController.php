@@ -619,6 +619,9 @@ class AnticipoClienteController extends Controller
             'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'fecha'          => ['nullable', 'date'],
+            // "Afecta caja a:" — de qué caja sale físicamente el billete. Puede
+            // ser un turno distinto (y de otro día) al que recibió el anticipo.
+            'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
         // Un pendiente nacido de una venta POS no se "anula" aquí: su dinero
@@ -633,8 +636,19 @@ class AnticipoClienteController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($anticipo, $user, $data) {
-            $anticipo->update(['estado' => $data['accion']]);
+        // A qué caja se le descuenta el billete que sale. Se resuelve ANTES de la
+        // transacción porque depende del turno activo del usuario, no del anticipo.
+        // Ojo: no es $anticipo->turno_id — ese es el turno donde ENTRÓ el dinero,
+        // que suele ser otro día (o NULL, si el anticipo nació de una venta POS).
+        $turnoDevolucion = $data['accion'] === 'devuelto'
+            ? AfectaCaja::resolverTurno($user, 'anticipos', $data['turno_id'] ?? null, 'libre')
+            : null;
+
+        DB::transaction(function () use ($anticipo, $user, $data, $turnoDevolucion) {
+            $anticipo->update([
+                'estado'              => $data['accion'],
+                'turno_devolucion_id' => $turnoDevolucion,
+            ]);
 
             // F7 — Tesorería: si se devuelve el dinero, egreso por el saldo
             // restante; si fue un registro erróneo, se revierte el ingreso.
@@ -855,7 +869,11 @@ class AnticipoClienteController extends Controller
             $agotado = $anticipo->tipo_valorizacion === 'material'
                 ? ($anticipo->cantidad_pendiente !== null && (float) $anticipo->cantidad_pendiente <= 0.0001)
                 : ((float) $anticipo->saldo <= 0.01);
-            $anticipo->update(['estado' => $agotado ? 'aplicado' : 'activo']);
+            // El egreso se revirtió: la caja de esa devolución ya no debe descontarlo.
+            $anticipo->update([
+                'estado'              => $agotado ? 'aplicado' : 'activo',
+                'turno_devolucion_id' => null,
+            ]);
         });
 
         AuditoriaService::log('anticipo_cliente.reactivado', $anticipo, [
