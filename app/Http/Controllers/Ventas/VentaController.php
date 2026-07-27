@@ -545,10 +545,11 @@ class VentaController extends Controller
 
         // Anticipos de clientes recibidos EN ESTE TURNO (dinero que entró a caja,
         // aparte de ventas y abonos). Solo el efectivo suma al esperado del cajón
-        // (mismo criterio que Turno::calcularMontoEsperado). Los anulados/devueltos
-        // no cuentan.
+        // (mismo criterio que Turno::calcularMontoEsperado). Solo los anulados se
+        // excluyen (su ingreso fue revertido); los devueltos sí entraron aquí y su
+        // egreso se descuenta en la caja por donde salió (ver $devolucionAnticipos).
         $anticiposBase = \App\Models\ClienteAnticipo::whereIn('turno_id', $turnoIds)
-            ->whereNotIn('estado', ['anulado', 'devuelto']);
+            ->where('estado', '<>', 'anulado');
         $anticiposEfectivo = (float) (clone $anticiposBase)
             ->where(fn($q) =>
                 $q->whereHas('metodoPago.tipo', fn($t) => $t->where('slug', 'efectivo'))
@@ -663,6 +664,44 @@ class VentaController extends Controller
                 'monto'       => round((float) $m->monto, 2),
             ]);
 
+        // Devoluciones de anticipo pagadas EN EFECTIVO desde estas cajas: el
+        // billete sale del cajón. Espejo exacto de Turno::calcularMontoEsperado —
+        // la caja se DERIVA del movimiento de tesorería (quién lo registró y en
+        // qué momento real), porque el anticipo solo sabe en qué turno ENTRÓ el
+        // dinero, que casi nunca es el mismo por el que sale.
+        $devolucionAnticipoMovs = \App\Models\CuentaMovimiento::where('empresa_id', $turno->empresa_id)
+            ->where('tipo', 'egreso')
+            ->where('ref_tipo', 'cliente_anticipo_devolucion')
+            ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
+            ->where(function ($q) use ($turnos) {
+                foreach ($turnos as $t) {
+                    $q->orWhere(fn ($s) => $s
+                        ->where('user_id', $t->user_id)
+                        ->where('created_at', '>=', $t->fecha_apertura)
+                        ->when($t->fecha_cierre, fn ($w) => $w->where('created_at', '<=', $t->fecha_cierre)));
+                }
+            })
+            ->orderByDesc('id')->get();
+
+        $devolucionAnticipos = (float) $devolucionAnticipoMovs->sum('monto');
+
+        // Nombre del cliente para el modal: el movimiento apunta al anticipo por ref_id.
+        $anticiposDevueltos = \App\Models\ClienteAnticipo::whereIn('id', $devolucionAnticipoMovs->pluck('ref_id')->filter())
+            ->with('cliente')->get()->keyBy('id');
+
+        $devolucionAnticiposDetalle = $devolucionAnticipoMovs->map(function ($m) use ($anticiposDevueltos) {
+            $cli = $anticiposDevueltos->get($m->ref_id)?->cliente;
+            return [
+                'anticipo' => (int) $m->ref_id,
+                'cliente'  => $cli
+                    ? ($cli->es_cliente_general
+                        ? 'Clientes varios'
+                        : ($cli->razon_social ?? trim(($cli->nombres ?? '') . ' ' . ($cli->apellidos ?? ''))))
+                    : '—',
+                'monto'    => round((float) $m->monto, 2),
+            ];
+        })->values();
+
         $variosTurnos = count($turnoIds) > 1;
         return [
             'turno' => [
@@ -686,6 +725,7 @@ class VentaController extends Controller
             'compras'          => round($compras, 2),         // pagos de entradas en efectivo (salen de caja)
             'deuda_ingreso'    => round($deudaIngreso, 2),    // desembolsos/cobros de deuda en efectivo (entran)
             'deuda_egreso'     => round($deudaEgreso, 2),     // cuotas/préstamos de deuda en efectivo (salen)
+            'devolucion_anticipos' => round($devolucionAnticipos, 2), // devoluciones de anticipo en efectivo (salen)
             'apertura'         => round((float) $turnos->sum('monto_apertura'), 2),
             // Efectivo real esperado, SUMADO sobre todas las cajas del conjunto
             // (apertura + ventas + abonos − gastos − reembolsos − compras).
@@ -695,6 +735,7 @@ class VentaController extends Controller
             'gastos_detalle'   => $gastosDetalle,
             'compras_detalle'  => $comprasDetalle,
             'deuda_detalle'    => $deudaDetalle,
+            'devolucion_anticipos_detalle' => $devolucionAnticiposDetalle,
         ];
     }
 

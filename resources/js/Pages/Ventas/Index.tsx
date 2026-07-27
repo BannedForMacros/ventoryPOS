@@ -70,6 +70,7 @@ interface Resumen {
     compras:          number;   // pagos de entradas en efectivo (salen de caja)
     deuda_ingreso:    number;   // desembolsos/cobros de deuda en efectivo (entran)
     deuda_egreso:     number;   // cuotas/préstamos de deuda en efectivo (salen)
+    devolucion_anticipos: number; // devoluciones de anticipo en efectivo (salen de caja)
     apertura:         number;
     efectivo_en_caja: number;
     abonos_detalle:   { cliente: string; venta: string | null; metodo: string; monto: number }[];
@@ -77,6 +78,7 @@ interface Resumen {
     gastos_detalle:   { concepto: string; monto: number }[];
     compras_detalle:  { proveedor: string; documento: string | null; monto: number }[];
     deuda_detalle:    { descripcion: string; tipo: string; monto: number }[];
+    devolucion_anticipos_detalle: { anticipo: number; cliente: string; monto: number }[];
 }
 
 interface Props extends PageProps {
@@ -696,6 +698,7 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
         resumen.compras > 0 ? `− compras ${money(resumen.compras)}` : null,
         resumen.deuda_ingreso > 0 ? `deuda ${money(resumen.deuda_ingreso)}` : null,
         resumen.deuda_egreso > 0 ? `− deuda ${money(resumen.deuda_egreso)}` : null,
+        resumen.devolucion_anticipos > 0 ? `− devol. anticipos ${money(resumen.devolucion_anticipos)}` : null,
     ].filter(Boolean).join(' · ');
 
     return (
@@ -854,6 +857,7 @@ function DetalleCajaModal({ open, onClose, resumen }: { open: boolean; onClose: 
                         {resumen.reembolsos > 0 && fila('Reembolsos (devoluciones)', resumen.reembolsos, '−')}
                         {resumen.deuda_ingreso > 0 && fila('Deuda / préstamo cobrado en efectivo', resumen.deuda_ingreso)}
                         {resumen.deuda_egreso > 0 && fila('Deuda / préstamo pagado en efectivo', resumen.deuda_egreso, '−')}
+                        {resumen.devolucion_anticipos > 0 && fila('Devoluciones de anticipo en efectivo', resumen.devolucion_anticipos, '−')}
                         <div className="border-t mt-1 pt-1" style={{ borderColor: 'var(--color-border)' }}>
                             {fila('Efectivo esperado en caja', resumen.efectivo_en_caja, '=')}
                         </div>
@@ -947,6 +951,31 @@ function DetalleCajaModal({ open, onClose, resumen }: { open: boolean; onClose: 
                                 <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
                                     <span style={{ color: 'var(--color-text)' }}>{c.proveedor}{c.documento ? ` · ${c.documento}` : ''}</span>
                                     <span className="font-mono" style={{ color: 'var(--color-danger)' }}>− {money(c.monto)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* Devoluciones de anticipo pagadas desde esta caja. El anticipo pudo
+                    haber entrado en otro turno (u otro día): lo que se descuenta aquí
+                    es el billete que salió de ESTE cajón. */}
+                {resumen.devolucion_anticipos_detalle.length > 0 && (
+                    <section>
+                        <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Devoluciones de anticipo ({money(resumen.devolucion_anticipos)})
+                        </p>
+                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                            {resumen.devolucion_anticipos_detalle.map((d, i) => (
+                                <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ borderTop: i > 0 ? '1px solid var(--color-border)' : undefined }}>
+                                    <span style={{ color: 'var(--color-text)' }}>
+                                        {d.cliente} <span style={{ color: 'var(--color-text-muted)' }}>(anticipo #{d.anticipo})</span>
+                                    </span>
+                                    {d.monto > 0 ? (
+                                        <span className="font-mono" style={{ color: 'var(--color-danger)' }}>− {money(d.monto)}</span>
+                                    ) : (
+                                        <span style={{ color: 'var(--color-text-muted)' }}>no salió en efectivo</span>
+                                    )}
                                 </div>
                             ))}
                         </div>

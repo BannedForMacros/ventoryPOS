@@ -855,6 +855,15 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                             )}
                             <Input type="date" label="Fecha de la devolución" value={formAnular.fecha}
                                 onChange={e => setFormAnular(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                            {/* La caja afectada no se pregunta: se deriva de quién registra la
+                                devolución y de su turno abierto en ese momento. Si devuelves en
+                                efectivo estando en turno, sale de tu cajón. */}
+                            {turnoActivoId && (
+                                <Callout variant="info">
+                                    Si devuelves en efectivo, el billete sale de la caja de tu turno abierto
+                                    y se resta de su efectivo esperado.
+                                </Callout>
+                            )}
                         </>
                     )}
 
