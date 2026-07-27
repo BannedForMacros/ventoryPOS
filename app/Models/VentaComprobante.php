@@ -18,8 +18,38 @@ class VentaComprobante extends Model
 {
     protected $table = 'venta_comprobantes';
 
-    /** Estados en los que el comprobante ya salió del POS y SUNAT lo conoce (o lo conocerá hoy). */
-    public const ESTADOS_EMITIDOS = ['aceptado', 'enviando', 'pendiente_resumen'];
+    /**
+     * Estados en los que el comprobante ya salió del POS y SUNAT lo conoce
+     * (o lo conocerá hoy). Bloquean anular/editar la venta: ver la guarda de
+     * VentaService. Ante la duda hay que INCLUIR el estado, no omitirlo: dejar
+     * anular una venta ya informada a SUNAT descuadra la declaración, mientras
+     * que bloquearla de más solo obliga a emitir una Nota de Crédito.
+     *
+     * La lista debe cubrir TODOS los estados no terminales de FacturaMac:
+     *   enviando            factura en camino al billService
+     *   enviado             enviada, sin CDR interpretado todavía
+     *   pendiente_resumen   boleta esperando el Resumen Diario de las 23:55
+     *   en_resumen          boleta ya incluida en un RC enviado a SUNAT
+     *   pendiente_anulacion boleta marcada para baja, aún sin confirmar
+     *   aceptado            CDR conforme
+     */
+    public const ESTADOS_EMITIDOS = [
+        'aceptado',
+        'enviando',
+        'enviado',
+        'pendiente_resumen',
+        'en_resumen',
+        'pendiente_anulacion',
+    ];
+
+    /**
+     * Estados sobre los que SUNAT admite una Nota de Crédito: el comprobante
+     * tiene que haber llegado ya a SUNAT. Una boleta en `pendiente_resumen`
+     * todavía no existe para SUNAT, así que la NC hay que ESPERARLA, no
+     * fallarla (ver EmitirNotaCreditoElectronica). Debe mantenerse alineada con
+     * EmisionExternaService::emitirNotaCredito() en FacturaMac.
+     */
+    public const ESTADOS_ACREDITABLES = ['aceptado', 'enviado'];
 
     /** Estados de fallo que admiten un nuevo intento sobre el MISMO comprobante. */
     public const ESTADOS_REINTENTABLES = ['pendiente', 'error_envio', 'rechazado'];

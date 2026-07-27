@@ -6,6 +6,7 @@ use App\Exceptions\MapeoComprobanteException;
 use App\Models\Devolucion;
 use App\Models\User;
 use App\Models\Venta;
+use App\Models\VentaComprobante;
 use App\Models\VentaItem;
 use App\Services\AuditoriaService;
 use App\Services\Facturacion\FacturaMacClient;
@@ -40,9 +41,19 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
 
     public array $backoff = [30, 120, 600];
 
+    /**
+     * Tope de esperas por "el comprobante todavía no llegó a SUNAT". Con la
+     * cadencia de abajo cubre algo más de 2 días, de sobra para que el Resumen
+     * Diario de las 23:55 se envíe y SUNAT devuelva el CDR incluso si un día
+     * falla. Pasado ese punto se avisa al admin en vez de reintentar en vano.
+     */
+    private const MAX_ESPERAS = 48;
+
     public function __construct(
         public int $devolucionId,
         public ?int $userId = null,
+        /** Cuántas veces se pospuso ya por comprobante aún no informado a SUNAT. */
+        public int $esperas = 0,
     ) {}
 
     public function handle(FacturaMacClient $client, MapaUnidadesSunat $unidades): void
@@ -78,6 +89,43 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         // era un `ticket` (nota interna) o su emisión falló. En ambos casos la
         // devolución se queda como está, que es exactamente lo correcto.
         if (!$ce || !$ce->esEmitido() || !$ce->facturamac_id) {
+            return;
+        }
+
+        // SUNAT solo admite acreditar lo que ya conoce. Una BOLETA vive en
+        // `pendiente_resumen` hasta que el Resumen Diario sale a las 23:55, así
+        // que la inmensa mayoría de devoluciones del día caen aquí. Fallar sería
+        // garantizar que ninguna boleta devuelta genere jamás su nota de crédito;
+        // lo correcto es ESPERAR a que el comprobante llegue a SUNAT.
+        //
+        // Se despacha una instancia NUEVA en vez de usar release(): release()
+        // incrementa attempts() y agotaría los $tries, que deben quedar
+        // reservados para los fallos de red. La espera no es un fallo.
+        if (! in_array($ce->estado, VentaComprobante::ESTADOS_ACREDITABLES, true)) {
+            if ($this->esperas >= self::MAX_ESPERAS) {
+                $this->avisarFallo($devolucion, sprintf(
+                    'El comprobante %s lleva demasiado tiempo en estado "%s" y no se pudo emitir '
+                    . 'la nota de crédito. Revisa el envío a SUNAT y emítela manualmente.',
+                    $ce->numero,
+                    $ce->estado,
+                ));
+
+                return;
+            }
+
+            $esperaMinutos = $ce->estado === 'pendiente_resumen' ? 60 : 5;
+
+            Log::info('Nota de crédito en espera: el comprobante aún no llegó a SUNAT.', [
+                'devolucion_id' => $devolucion->id,
+                'comprobante'   => $ce->numero,
+                'estado'        => $ce->estado,
+                'espera'        => ($this->esperas + 1) . '/' . self::MAX_ESPERAS,
+                'reintento_en'  => $esperaMinutos . ' min',
+            ]);
+
+            self::dispatch($this->devolucionId, $this->userId, $this->esperas + 1)
+                ->delay(now()->addMinutes($esperaMinutos));
+
             return;
         }
 
@@ -237,7 +285,8 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             if (! $item) {
                 // Sin la línea de venta no sabemos si el producto era gravado o
                 // exonerado, y adivinarlo cambiaría el IGV acreditado.
-                throw MapeoComprobanteException::para($venta->id,
+                throw MapeoComprobanteException::para(
+                    $venta->id,
                     "La línea de devolución {$d->id} no tiene el ítem de venta asociado; "
                     . 'no se puede determinar su afectación de IGV.'
                 );
@@ -288,7 +337,8 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         }
 
         if ($detalles === []) {
-            throw MapeoComprobanteException::para($venta->id,
+            throw MapeoComprobanteException::para(
+                $venta->id,
                 "La devolución {$devolucion->id} no tiene líneas con cantidad devuelta."
             );
         }
@@ -326,7 +376,8 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         $empresa   = (float) ($venta->empresa?->tasa_igv ?? $soportada);
 
         if (abs($empresa - $soportada) > 0.0001) {
-            throw MapeoComprobanteException::para($venta->id,
+            throw MapeoComprobanteException::para(
+                $venta->id,
                 "La empresa tiene una tasa de IGV de {$empresa}% y la emisión electrónica solo "
                 . "está soportada al {$soportada}%."
             );
@@ -359,7 +410,8 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         }
 
         if ($bruto <= 0 || $descuento > $bruto + 0.01) {
-            throw MapeoComprobanteException::para($venta->id,
+            throw MapeoComprobanteException::para(
+                $venta->id,
                 "El descuento global de la venta {$venta->numero} (S/ {$descuento}) no es "
                 . 'coherente con el bruto de sus ítems; la nota de crédito saldría negativa.'
             );
