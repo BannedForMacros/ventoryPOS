@@ -136,8 +136,48 @@ class DevolucionService
                 $devolucion->refresh()->completar();
             }
 
+            $this->encolarNotaCredito($devolucion, $venta, $user); // V15
+
             return $devolucion->fresh(['detalles', 'pagos', 'motivo', 'venta']);
         });
+    }
+
+    /**
+     * V15 — Si la venta tiene un comprobante informado a SUNAT, la devolución
+     * exige una Nota de Crédito: lo devuelto no puede seguir declarado.
+     *
+     * CRÍTICO — esto es un HOOK, no un paso de la devolución:
+     *  · Se encola `afterCommit`, así que la NC nunca corre dentro de la
+     *    transacción ni puede hacerla fallar.
+     *  · Si la NC falla, la devolución NO se revierte. El stock ya volvió y el
+     *    dinero ya salió de la caja; deshacer eso porque SUNAT no respondió
+     *    dejaría al cliente sin su plata en el mostrador. El job registra el
+     *    error y lo audita para que el admin lo resuelva.
+     *  · Incluso el propio dispatch va en try/catch: ni un fallo de la cola
+     *    puede tumbar una operación de caja.
+     */
+    private function encolarNotaCredito(Devolucion $devolucion, Venta $venta, User $user): void
+    {
+        try {
+            // La integración es opcional y se despliega por partes.
+            if (!method_exists($venta, 'comprobanteElectronico')) {
+                return;
+            }
+
+            $ce = $venta->comprobanteElectronico()->first();
+            if (!$ce || !$ce->esEmitido()) {
+                return; // ticket o comprobante nunca emitido: nada que acreditar
+            }
+
+            \App\Jobs\EmitirNotaCreditoElectronica::dispatch($devolucion->id, $user->id)
+                ->afterCommit();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('No se pudo encolar la nota de crédito de la devolución', [
+                'devolucion_id' => $devolucion->id,
+                'venta_id'      => $venta->id,
+                'error'         => $e->getMessage(),
+            ]);
+        }
     }
 
     protected function validarCantidadesDevolverpiles(Venta $venta, array $items): void

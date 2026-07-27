@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon, CreditCard, RefreshCw, Truck,
+    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
@@ -17,7 +17,14 @@ import ModalClienteRapido from './Partials/ModalClienteRapido';
 import ModalCrearCliente from './Partials/ModalCrearCliente';
 import ModalConfirmacionVenta from './Partials/ModalConfirmacionVenta';
 import ModalSelectorPresentacion from './Partials/ModalSelectorPresentacion';
-import type { Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, ProductoUnidad, Turno, PageProps } from '@/types';
+import {
+    validarComprobante, etiquetaComprobante, metaEstado,
+    UMBRAL_BOLETA_IDENTIFICADA, type BloqueoComprobante,
+} from '@/lib/comprobanteElectronico';
+import type {
+    Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, ProductoUnidad,
+    Turno, PageProps, FacturacionPosConfig,
+} from '@/types';
 
 interface MetodoPagoConCuentas extends MetodoPago { cuentas?: Cuenta[]; }
 
@@ -133,6 +140,9 @@ interface Props extends PageProps {
     // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
     monedas?:           string[];
     tipoCambioHoy?:     number | null;
+    // Facturación electrónica (V10). OPCIONAL: si el backend no la envía (o el
+    // módulo está apagado) el POS se comporta exactamente como hoy.
+    facturacion?:       FacturacionPosConfig | null;
 }
 
 type TipoComprobante = 'ticket' | 'boleta' | 'factura';
@@ -277,7 +287,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total };
 }
 
-export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy }: Props) {
+export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion }: Props) {
     // Tasa de IGV de la empresa (configurable por tenant). Default 18% si no llega.
     const empresaAuth = usePage().props.auth?.user?.empresa as { tasa_igv?: number | string } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
@@ -719,7 +729,37 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         || (cliente as Cliente & { es_cliente_general?: boolean }).es_cliente_general
         || cliente.numero_documento === '99999999';
 
+    /* ── V10 · Facturación electrónica ───────────────────────────────────────
+       Las validaciones de §5.4 se resuelven ACÁ, una sola vez, y se reparten a
+       los dos selectores de comprobante (barra superior y barra móvil) y al
+       botón de cobrar. Si `facturacion` no llega o el módulo está apagado,
+       `bloqueoComprobante` es siempre null y nada cambia respecto de hoy. */
+    const feActiva  = !!facturacion?.enabled;
+    const emiteCPE  = feActiva && tipoComprobante !== 'ticket';
+    const umbralCPE = facturacion?.umbral_boleta_identificada ?? UMBRAL_BOLETA_IDENTIFICADA;
+    const serieCPE  = tipoComprobante === 'factura'
+        ? facturacion?.series?.factura ?? null
+        : tipoComprobante === 'boleta'
+            ? facturacion?.series?.boleta ?? null
+            : null;
+
+    const bloqueoComprobante: BloqueoComprobante | null = useMemo(
+        () => (feActiva
+            ? validarComprobante({ tipoComprobante, cliente, total, moneda, umbral: umbralCPE })
+            : null),
+        [feActiva, tipoComprobante, cliente, total, moneda, umbralCPE],
+    );
+
+    // Badge del comprobante recién emitido (lo trae el flash de la venta anterior).
+    const comprobanteFlash = flash?.comprobante ?? null;
+
     function confirmarVenta() {
+        // V10 — avisar ANTES de cobrar, no después de emitir mal.
+        if (bloqueoComprobante) {
+            toast.error(bloqueoComprobante.motivo);
+            if (bloqueoComprobante.requiereCliente) setModalCliente(true);
+            return;
+        }
         if (carrito.length === 0) { toast.error('El carrito está vacío.'); return; }
         if (hayInactivos) {
             toast.error(`Hay ${itemsInactivos.length} ítem(s) inactivo(s). Elimínalos del carrito antes de cobrar.`);
@@ -1076,7 +1116,25 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                             <option value="boleta" className="text-gray-900">Boleta</option>
                             <option value="factura" className="text-gray-900">Factura</option>
                         </select>
+                        {/* Serie que se usará / motivo de bloqueo, junto al selector. */}
+                        <PistaComprobante
+                            visible={emiteCPE}
+                            serie={serieCPE}
+                            bloqueo={bloqueoComprobante}
+                            sobrePrimario
+                        />
                     </div>
+
+                    {/* Badge del comprobante de la venta recién cerrada. */}
+                    {comprobanteFlash && (
+                        <span
+                            className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-white/15 whitespace-nowrap"
+                            title={`Comprobante ${comprobanteFlash.numero}: ${metaEstado(comprobanteFlash.estado).label}`}
+                        >
+                            <FileCheck2 size={12} className="opacity-80" />
+                            {comprobanteFlash.numero} · {metaEstado(comprobanteFlash.estado).label}
+                        </span>
+                    )}
 
                     {/* Moneda (multimoneda). USD requiere TC del día disponible. */}
                     {(monedas ?? ['PEN']).includes('USD') && tipoCambioHoy ? (
@@ -1111,6 +1169,79 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                     </button>
                 </div>
             </div>
+
+            {/* ── V10 · Aviso de comprobante electrónico ─────────────────
+                Franja permanente mientras el comprobante NO sea "ticket": qué
+                se va a emitir, con qué serie, y —si el emisor apunta a SUNAT
+                PRODUCCIÓN— el aviso rojo que no se puede ignorar (§8: ya hubo
+                un incidente por emitir a producción creyendo estar en beta). */}
+            {emiteCPE && (
+                <div className="flex flex-col flex-shrink-0">
+                    {facturacion?.produccion && (
+                        <div
+                            className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm font-bold"
+                            style={{ backgroundColor: 'var(--color-danger)', color: '#fff' }}
+                        >
+                            <AlertTriangle size={16} className="flex-shrink-0" />
+                            <span>⚠️ SUNAT PRODUCCIÓN — los comprobantes son reales</span>
+                        </div>
+                    )}
+                    <div
+                        className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 flex-wrap border-b text-sm"
+                        style={{
+                            backgroundColor: bloqueoComprobante
+                                ? 'color-mix(in srgb, var(--color-danger) 12%, var(--color-bg))'
+                                : 'color-mix(in srgb, var(--color-primary) 10%, var(--color-bg))',
+                            borderColor: bloqueoComprobante ? 'var(--color-danger)' : 'var(--color-primary)',
+                            color: 'var(--color-text)',
+                        }}
+                    >
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <span
+                                className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                                style={{
+                                    backgroundColor: bloqueoComprobante ? 'var(--color-danger)' : 'var(--color-primary)',
+                                    color: '#fff',
+                                }}
+                            >
+                                {etiquetaComprobante(tipoComprobante)}
+                            </span>
+                            {serieCPE && (
+                                <span style={{ color: 'var(--color-text-muted)' }}>
+                                    Serie <strong style={{ color: 'var(--color-text)' }}>{serieCPE}</strong>
+                                </span>
+                            )}
+                            {bloqueoComprobante ? (
+                                <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>
+                                    {bloqueoComprobante.motivo}
+                                </span>
+                            ) : (
+                                <span className="text-xs opacity-80" style={{ color: 'var(--color-text-muted)' }}>
+                                    · Se emitirá a SUNAT al cerrar la venta
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                            {bloqueoComprobante?.requiereCliente && (
+                                <button
+                                    onClick={() => setModalCliente(true)}
+                                    className="text-xs font-bold underline hover:opacity-80"
+                                    style={{ color: 'var(--color-danger)' }}
+                                >
+                                    Elegir cliente
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setTipoComprobante('ticket')}
+                                className="text-xs font-medium underline hover:opacity-80"
+                                style={{ color: 'var(--color-text-muted)' }}
+                            >
+                                Sin comprobante
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── Contenido principal ───────────────────────────────────
                 flex-row-reverse: el DOM mantiene productos primero (autofocus
@@ -1320,7 +1451,22 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 <option value="boleta">Boleta</option>
                                 <option value="factura">Factura</option>
                             </select>
+                            {/* Misma pista que en la barra superior (misma lógica, sin duplicar). */}
+                            <PistaComprobante
+                                visible={emiteCPE}
+                                serie={serieCPE}
+                                bloqueo={bloqueoComprobante}
+                            />
                         </div>
+                        {emiteCPE && bloqueoComprobante && (
+                            <button
+                                onClick={() => bloqueoComprobante.requiereCliente ? setModalCliente(true) : setTipoComprobante('ticket')}
+                                className="mt-1.5 w-full text-left text-[11px] font-medium leading-tight underline"
+                                style={{ color: 'var(--color-danger)' }}
+                            >
+                                {bloqueoComprobante.motivo}
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -1358,6 +1504,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         onConfirmar={confirmarVenta}
                         puedeVender={puedeVender}
                         razonNoVender={razonNoVender}
+                        bloqueoComprobante={bloqueoComprobante}
                         esCredito={esCredito}
                         fechaVencimiento={fechaVencimiento}
                         onSetEsCredito={activarCredito}
@@ -1429,6 +1576,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 onConfirmar={confirmarVenta}
                                 puedeVender={puedeVender}
                                 razonNoVender={razonNoVender}
+                                bloqueoComprobante={bloqueoComprobante}
                                 esCredito={esCredito}
                                 fechaVencimiento={fechaVencimiento}
                                 onSetEsCredito={activarCredito}
@@ -1636,6 +1784,9 @@ interface CarritoPanelProps {
     // A14: bandera de bloqueo del POS (admin sin local, almacén desactivado, etc.)
     puedeVender: boolean;
     razonNoVender: string | null;
+    // V10: motivo por el que el comprobante elegido no se puede emitir (null =
+    // no hay problema; siempre null para ventas `ticket`).
+    bloqueoComprobante: BloqueoComprobante | null;
     // F1 — Venta a crédito
     esCredito: boolean;
     fechaVencimiento: string;
@@ -1659,7 +1810,7 @@ function CarritoPanel({
     subtotal, igv, total, tasaIgv, inactivosCount,
     onCambiarCantidad, onEstablecerCantidad, onCambiarPrecio, onAplicarDescuentoItem, onEliminarItem,
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar,
-    puedeVender, razonNoVender,
+    puedeVender, razonNoVender, bloqueoComprobante,
     esCredito, fechaVencimiento, onSetEsCredito, onSetFechaVencimiento,
     permitirPendiente, entregaPendiente, fechaEntrega, pendienteDe, totalPendientes,
     onSetEntregaPendiente, onSetFechaEntrega, onSetPendiente,
@@ -2071,6 +2222,32 @@ function CarritoPanel({
                     </div>
                 )}
 
+                {/* V10: el comprobante elegido no se puede emitir con estos datos.
+                    Se avisa ACÁ (antes de cobrar) y no después de emitir mal. */}
+                {bloqueoComprobante && (
+                    <div
+                        className="flex items-start gap-2 px-3 py-2 rounded-lg text-sm font-medium border"
+                        style={{
+                            background: '#fef2f2',
+                            color: '#991b1b',
+                            borderColor: '#fecaca',
+                        }}
+                    >
+                        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                            <p>{bloqueoComprobante.motivo}</p>
+                            {bloqueoComprobante.requiereCliente && (
+                                <button
+                                    onClick={onAbrirCliente}
+                                    className="mt-0.5 text-xs font-bold underline hover:opacity-80"
+                                >
+                                    Elegir cliente
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* Botón cobrar */}
                 <Button
                     variant="success"
@@ -2078,18 +2255,64 @@ function CarritoPanel({
                     radius="lg"
                     className="w-full !py-3 !text-base !font-bold"
                     onClick={onConfirmar}
-                    disabled={carrito.length === 0 || hayInactivos || !puedeVender}
+                    disabled={carrito.length === 0 || hayInactivos || !puedeVender || !!bloqueoComprobante}
                     title={
                         !puedeVender ? (razonNoVender ?? 'No puedes registrar ventas en este momento.')
                         : hayInactivos ? 'Hay ítems inactivos en el carrito. Elimínalos para cobrar.'
+                        : bloqueoComprobante ? bloqueoComprobante.motivo
                         : undefined
                     }
                 >
                     {!puedeVender ? 'POS bloqueado'
                      : hayInactivos ? 'Resuelve ítems inactivos'
+                     : bloqueoComprobante ? 'Corrige el comprobante'
                      : 'Cobrar venta'}
                 </Button>
             </div>
         </>
+    );
+}
+
+/* ─── V10 · Pista compacta junto a CADA selector de comprobante ──────────────
+   Hay dos selectores (barra superior y barra móvil) porque hay dos layouts.
+   Este componente es el único lugar donde se decide qué se muestra al lado del
+   selector, así los dos quedan consistentes sin duplicar lógica: la serie que
+   se usará, o un aviso rojo si la venta no se puede emitir así. */
+function PistaComprobante({ visible, serie, bloqueo, sobrePrimario = false }: {
+    visible: boolean;
+    serie: string | null;
+    bloqueo: BloqueoComprobante | null;
+    /** true = va sobre la barra de color primario (texto blanco). */
+    sobrePrimario?: boolean;
+}) {
+    if (!visible) return null;
+
+    if (bloqueo) {
+        return (
+            <span
+                className="inline-flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap"
+                style={
+                    sobrePrimario
+                        ? { backgroundColor: '#fff', color: 'var(--color-danger)' }
+                        : { backgroundColor: 'color-mix(in srgb, var(--color-danger) 15%, transparent)', color: 'var(--color-danger)' }
+                }
+                title={bloqueo.motivo}
+            >
+                <AlertTriangle size={11} />
+                Revisar
+            </span>
+        );
+    }
+
+    if (!serie) return null;
+
+    return (
+        <span
+            className="text-[11px] font-semibold whitespace-nowrap"
+            style={sobrePrimario ? { color: 'rgba(255,255,255,0.9)' } : { color: 'var(--color-text-muted)' }}
+            title="Serie con la que se emitirá el comprobante"
+        >
+            {serie}
+        </span>
     );
 }

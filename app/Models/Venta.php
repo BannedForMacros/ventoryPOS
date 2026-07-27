@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\DB;
 
 class Venta extends Model
@@ -49,6 +50,19 @@ class Venta extends Model
     public function descuentosLog(): HasMany     { return $this->hasMany(DescuentoLog::class); }
     /** Anticipos "pendiente por entregar" creados por esta venta desde el POS. */
     public function anticipos(): HasMany         { return $this->hasMany(ClienteAnticipo::class, 'venta_id'); }
+
+    /**
+     * Comprobante electrónico SUNAT de esta venta (integración FacturaMac).
+     *
+     * hasOne y no hasMany: una venta genera a lo sumo UN comprobante. Si SUNAT
+     * rechaza se reintenta sobre esa misma fila (mismo correlativo), nunca se crea
+     * un segundo. Es null en las ventas `ticket` y en todo lo anterior a la
+     * integración, que siguen comportándose exactamente igual que siempre.
+     */
+    public function comprobanteElectronico(): HasOne
+    {
+        return $this->hasOne(VentaComprobante::class);
+    }
 
     public function scopeCompletadas(Builder $q): Builder        { return $q->where('estado', 'completada'); }
     public function scopeAnuladas(Builder $q): Builder           { return $q->where('estado', 'anulada'); }

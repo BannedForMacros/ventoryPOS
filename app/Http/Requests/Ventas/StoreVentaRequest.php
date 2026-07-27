@@ -136,7 +136,80 @@ class StoreVentaRequest extends FormRequest
 
             $this->validarSobrepagoNoEfectivo($validator, $total, $empresaId);
             $this->validarEntregaPendiente($validator, $empresaId);
+            $this->validarComprobanteElectronico($validator, $empresaId, $total); // V13
         });
+    }
+
+    /**
+     * V13 — Requisitos de SUNAT para boleta/factura, validados ANTES de cerrar
+     * la venta.
+     *
+     * POR QUÉ AQUÍ Y NO DESPUÉS: si la venta se cierra y recién entonces
+     * descubrimos que la factura no tiene RUC, el dinero ya entró a caja y el
+     * comprobante queda impagable — solo se arregla anulando o con Nota de
+     * Crédito. Es infinitamente más barato decírselo a la cajera con el cliente
+     * todavía en el mostrador.
+     *
+     * El flujo `ticket` (hoy el 100 % de las ventas) NO cambia en absoluto:
+     * estas reglas solo se activan con tipo_comprobante boleta o factura.
+     */
+    private function validarComprobanteElectronico($validator, int $empresaId, float $total): void
+    {
+        $tipo = $this->input('tipo_comprobante');
+        if (!in_array($tipo, ['boleta', 'factura'], true)) {
+            return; // ticket: nota de venta interna, sin reglas SUNAT
+        }
+
+        // G12 — La venta puede cobrarse en USD, pero ventoryPOS contabiliza
+        // todo en soles al TC congelado. Emitir en dólares exigiría un mapeo
+        // distinto que hoy no existe, así que se bloquea de raíz.
+        $moneda = strtoupper((string) ($this->input('moneda') ?: 'PEN'));
+        if ($moneda !== 'PEN') {
+            $validator->errors()->add(
+                'moneda',
+                'Los comprobantes electrónicos solo se emiten en soles. Cambia la moneda a PEN o registra la venta como ticket.',
+            );
+        }
+
+        $clienteId = $this->input('cliente_id');
+        $cliente   = $clienteId
+            ? \App\Models\Cliente::where('id', $clienteId)->where('empresa_id', $empresaId)->first()
+            : null;
+
+        // G5 — Factura (01): SUNAT rechaza toda factura cuyo adquirente no
+        // tenga RUC y dirección. Sin cliente se usaría el Cliente General, que
+        // no tiene ninguno de los dos.
+        if ($tipo === 'factura') {
+            $esRuc        = $cliente && strtoupper((string) $cliente->tipo_documento) === 'RUC';
+            $tieneDirec   = $cliente && trim((string) $cliente->direccion) !== '';
+            $identificado = $cliente && !$cliente->es_cliente_general;
+
+            if (!$identificado || !$esRuc || !$tieneDirec) {
+                $validator->errors()->add(
+                    'cliente_id',
+                    'Una factura requiere un cliente con RUC y dirección.',
+                );
+            }
+
+            return; // el umbral de boleta no aplica a facturas
+        }
+
+        // Boleta (03): SUNAT exige identificar al adquirente a partir de S/ 700.
+        // Por debajo se admite el Cliente General (documento tipo "0").
+        $umbral = (float) config('facturamac.umbral_boleta_identificada', 700);
+        if ($total >= $umbral - 0.01) {
+            if (!$cliente || $cliente->es_cliente_general) {
+                $validator->errors()->add(
+                    'cliente_id',
+                    sprintf(
+                        'Esta boleta suma S/ %s. Desde S/ %s SUNAT exige identificar al cliente: '
+                        . 'selecciona (o registra) uno con DNI o RUC antes de cobrar.',
+                        number_format($total, 2),
+                        number_format($umbral, 2),
+                    ),
+                );
+            }
+        }
     }
 
     /**

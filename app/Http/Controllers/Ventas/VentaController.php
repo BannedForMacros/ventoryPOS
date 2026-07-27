@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Ventas;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Ventas\AnularVentaRequest;
 use App\Http\Requests\Ventas\StoreVentaRequest;
+use App\Jobs\EmitirComprobanteElectronico;
 use App\Models\Cliente;
 use App\Models\DescuentoConcepto;
 use App\Models\MetodoPago;
@@ -817,6 +818,15 @@ class VentaController extends Controller
 
         $venta = $this->ventaService->actualizar($venta, $request->validated(), $user);
 
+        // V12 — La edición puede cambiar el tipo de comprobante (ticket →
+        // boleta/factura) o el detalle de uno aún no emitido. Llegar aquí ya
+        // implica que la venta NO tenía comprobante informado a SUNAT: la
+        // guarda de VentaService::actualizar() aborta ese caso (solo cabe Nota
+        // de Crédito). Aun así el job revalida con esEmitido() antes de emitir.
+        if ($venta->tipo_comprobante !== 'ticket') {
+            EmitirComprobanteElectronico::dispatch($venta)->afterCommit();
+        }
+
         return redirect()->route('ventas.show', $venta)
             ->with('success', "Venta {$venta->numero} actualizada correctamente.")
             // Auto-imprime solo si usó "Crear e imprimir" (mismo criterio que store).
@@ -899,6 +909,15 @@ class VentaController extends Controller
                     'total_venta'  => (float) $venta->total,
                 ], $user);
             }
+        }
+
+        // V12 — Facturación electrónica. La venta YA está cerrada y cuadrada en
+        // caja; la emisión ante SUNAT va aparte y en segundo plano: si SUNAT
+        // tarda o está caído, el cajero no puede quedarse esperando con la cola
+        // de clientes delante. `afterCommit` garantiza que el worker no lea la
+        // venta antes de que exista. El `ticket` es nota interna: no se emite.
+        if ($venta->tipo_comprobante !== 'ticket') {
+            EmitirComprobanteElectronico::dispatch($venta)->afterCommit();
         }
 
         return redirect()->route('ventas.show', $venta)

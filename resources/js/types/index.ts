@@ -447,8 +447,66 @@ export interface Venta extends Record<string, unknown> {
     items?:                VentaItem[];
     pagos?:                VentaPago[];
     descuentos_log?:       DescuentoLog[];
+    /* Facturación electrónica (aditivo): solo llega cuando la venta tiene un
+       comprobante emitido/en emisión. Las ventas `ticket` NO lo traen. */
+    comprobante_electronico?: ComprobanteElectronico | null;
     created_at:            string;
     updated_at:            string;
+}
+
+/**
+ * Estados del comprobante electrónico (tabla `venta_comprobantes`).
+ * `pendiente_resumen` es el estado normal de una BOLETA recién emitida: SUNAT
+ * la recibe en el resumen diario, no al instante. No es un error.
+ */
+export type ComprobanteEstado =
+    | 'pendiente'
+    | 'enviando'
+    | 'pendiente_resumen'
+    | 'aceptado'
+    | 'rechazado'
+    | 'error_envio'
+    | 'error_mapeo'
+    | 'anulado';
+
+/** Comprobante electrónico SUNAT asociado a una venta (`venta_comprobantes`). */
+export interface ComprobanteElectronico extends Record<string, unknown> {
+    id?:                number;
+    venta_id?:          number;
+    /** Catálogo 01 SUNAT: '01' factura · '03' boleta. */
+    tipo:               '01' | '03';
+    serie:              string;
+    correlativo:        number | string;
+    /** Número oficial completo, p. ej. "F002-00000123". */
+    numero:             string;
+    estado:             ComprobanteEstado;
+    hash_cpe?:          string | null;
+    /** String del QR ya armado con el formato SUNAT (no es una imagen). */
+    qr?:                string | null;
+    sunat_codigo?:      string | null;
+    sunat_descripcion?: string | null;
+    error?:             string | null;
+    created_at?:        string;
+    updated_at?:        string;
+}
+
+/**
+ * Config de facturación electrónica que el POS necesita para avisar ANTES de
+ * cobrar. Opcional: si el backend no la envía (módulo apagado o aún no
+ * desplegado), el POS se comporta exactamente como hoy.
+ */
+export interface FacturacionPosConfig {
+    /** config('facturamac.enabled') */
+    enabled:                    boolean;
+    /** true = el emisor está apuntando a SUNAT PRODUCCIÓN (comprobantes reales). */
+    produccion:                 boolean;
+    /** config('facturamac.umbral_boleta_identificada') — por defecto 700. */
+    umbral_boleta_identificada?: number;
+    /** Serie que se usará por tipo, p. ej. { boleta: 'B002', factura: 'F002' }. */
+    series?: {
+        boleta?:  string | null;
+        factura?: string | null;
+    };
 }
 
 export interface Cliente extends Record<string, unknown> {
@@ -474,6 +532,12 @@ export interface Flash {
     error?: string | null;
     /** La venta se acaba de registrar: auto-imprimir el ticket una sola vez. */
     imprimir_ticket?: boolean;
+    /** Comprobante electrónico recién emitido (badge de estado en el POS). */
+    comprobante?: {
+        numero: string;
+        estado: ComprobanteEstado;
+        tipo?:  '01' | '03';
+    } | null;
 }
 
 export interface ModuloMenu {

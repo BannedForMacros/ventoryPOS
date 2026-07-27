@@ -410,6 +410,8 @@ class VentaService
      */
     public function actualizar(Venta $venta, array $data, User $user): Venta
     {
+        $this->bloquearSiTieneComprobanteEmitido($venta); // V14
+
         return DB::transaction(function () use ($venta, $data, $user) {
             if ($venta->estado === 'anulada') {
                 abort(422, 'No se puede editar una venta anulada.');
@@ -531,6 +533,8 @@ class VentaService
      */
     public function anular(Venta $venta, User $user, ?string $motivo = null): void
     {
+        $this->bloquearSiTieneComprobanteEmitido($venta); // V14
+
         DB::transaction(function () use ($venta, $user, $motivo) {
             if ($venta->estado === 'anulada') {
                 throw new \RuntimeException('La venta ya está anulada.');
@@ -607,5 +611,35 @@ class VentaService
                 'motivo'           => $motivo,
             ], $user);
         });
+    }
+
+    /**
+     * V14 — Guarda de facturación electrónica para anular() y actualizar().
+     *
+     * POR QUÉ: un comprobante que ya viajó a SUNAT (aceptado, en envío o en el
+     * resumen diario del día) no se puede deshacer desde el POS. Borrar la
+     * venta localmente dejaría declarada una operación que la empresa dice que
+     * no existió: la contabilidad y la declaración mensual quedan fuera de
+     * cuadre y el correlativo, huérfano. El único instrumento legal para
+     * revertirlo es la Nota de Crédito.
+     *
+     * Es la ÚNICA conducta que cambia respecto de hoy, y cambia solo para las
+     * ventas que efectivamente se emitieron: las `ticket` (hoy, el 100 % del
+     * flujo) y las que tengan el comprobante en error/rechazado se comportan
+     * exactamente igual que antes.
+     */
+    private function bloquearSiTieneComprobanteEmitido(Venta $venta): void
+    {
+        // La integración es opcional y se despliega por partes: si el modelo de
+        // comprobantes todavía no está instalado, el POS opera como siempre.
+        if (!method_exists($venta, 'comprobanteElectronico')) {
+            return;
+        }
+
+        $ce = $venta->comprobanteElectronico()->first();
+        if ($ce && $ce->esEmitido()) {
+            abort(422, "La venta tiene el comprobante {$ce->numero} informado a SUNAT. "
+                . 'Para revertirla emite una Nota de Crédito.');
+        }
     }
 }

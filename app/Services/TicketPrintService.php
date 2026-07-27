@@ -28,6 +28,23 @@ class TicketPrintService
     ];
 
     /**
+     * Etiqueta cuando la venta SÍ tiene comprobante electrónico emitido, por
+     * código del catálogo 01 de SUNAT (venta_comprobantes.tipo). Este ticket de
+     * 80 mm ES la representación impresa del comprobante (decisión §10.2 del
+     * plan de integración: no se imprimen dos documentos).
+     */
+    private const TIPOS_DOCUMENTO_ELECTRONICO = [
+        '01' => 'FACTURA ELECTRÓNICA',
+        '03' => 'BOLETA DE VENTA ELECTRÓNICA',
+    ];
+
+    /** Leyenda legal obligatoria al pie de la representación impresa. */
+    private const LEYENDA_CPE = [
+        'Representación impresa del comprobante electrónico.',
+        'Consulte en www.sunat.gob.pe',
+    ];
+
+    /**
      * Plantilla del ticket con defaults. El admin la edita en Configuración →
      * Empresas (columna empresas.ticket_config); aquí se decide QUÉ se manda al
      * agente, así los cambios de plantilla no requieren recompilar el exe.
@@ -90,6 +107,17 @@ class TicketPrintService
         $caja    = $venta->caja ?? $venta->turno?->caja;
         $cfg     = $this->configTicket($empresa);
 
+        // ── Comprobante electrónico (V9) ────────────────────────────────────
+        // null salvo que la venta tenga un CPE emitido/en emisión. Si es null,
+        // TODO lo de abajo queda exactamente igual que antes de la integración.
+        $cpe = $this->comprobanteElectronico($venta);
+
+        // Con CPE los datos del adquirente son parte del comprobante: la
+        // dirección se imprime aunque la plantilla la tenga desactivada.
+        if ($cpe) {
+            $cfg['cliente_direccion'] = true;
+        }
+
         // ── Cliente ─────────────────────────────────────────────────────────
         // nombre_completo = razon_social o "nombres apellidos" (accessor del modelo).
         $cliente   = $venta->cliente;
@@ -121,9 +149,15 @@ class TicketPrintService
             ],
 
             'documento' => [
-                'tipo'     => self::TIPOS_DOCUMENTO[$venta->tipo_comprobante] ?? 'NOTA DE VENTA',
+                // Con CPE manda el nombre oficial del comprobante ("BOLETA DE
+                // VENTA ELECTRÓNICA"); sin CPE, la etiqueta interna de siempre.
+                'tipo'     => $cpe
+                    ? (self::TIPOS_DOCUMENTO_ELECTRONICO[(string) $cpe->tipo] ?? 'COMPROBANTE ELECTRÓNICO')
+                    : (self::TIPOS_DOCUMENTO[$venta->tipo_comprobante] ?? 'NOTA DE VENTA'),
+                // `serie` se mantiene en null: el agente ya imprime el número
+                // completo y `numero` del CPE viene con la serie ("B002-00000123").
                 'serie'    => null,
-                'numero'   => $venta->numero,
+                'numero'   => $cpe && $cpe->numero ? (string) $cpe->numero : $venta->numero,
                 'fecha'    => $venta->fecha_venta?->format('d/m/Y h:i A'),
                 'vendedor' => $venta->user?->name,
                 'caja'     => $caja?->nombre,
@@ -154,8 +188,14 @@ class TicketPrintService
                 'vuelto'   => $vuelto > 0 ? $vuelto : null,
             ],
 
-            'pie'        => $this->pieVenta($cfg),
-            'qr'         => null,
+            // Con CPE el pie lleva además la leyenda legal, el hash y la
+            // referencia interna. Sin CPE es el pie de siempre, byte a byte.
+            'pie'        => $cpe
+                ? $this->pieComprobanteElectronico($cpe, $venta, $this->pieVenta($cfg))
+                : $this->pieVenta($cfg),
+            // El QR SUNAT ya viene armado desde el emisor; el agente lo imprime
+            // en ESC/POS. Sin CPE sigue siendo null (no se imprime QR).
+            'qr'         => $cpe && trim((string) $cpe->qr) !== '' ? (string) $cpe->qr : null,
             // Abrir el cajón portamonedas solo cuando entró efectivo.
             'abrirCajon' => $hayEfectivo,
             'copias'     => 1,
@@ -337,6 +377,50 @@ class TicketPrintService
             'copias'     => 1,
             'logo'       => $this->logoBase64($empresa),
         ];
+    }
+
+    /**
+     * Comprobante electrónico de la venta, o null.
+     *
+     * Deliberadamente defensivo: la relación y la tabla `venta_comprobantes`
+     * son parte de la integración SUNAT y pueden no existir todavía (módulo
+     * apagado, migración sin correr, despliegue parcial). Ante CUALQUIER
+     * problema devuelve null y el ticket sale exactamente como hoy: imprimir
+     * nunca puede fallar por la facturación electrónica.
+     */
+    private function comprobanteElectronico(Venta $venta): ?object
+    {
+        if (!method_exists($venta, 'comprobanteElectronico')) {
+            return null;
+        }
+
+        try {
+            $cpe = $venta->comprobanteElectronico;
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        // Sin número oficial no hay nada que representar: se imprime como hoy.
+        return ($cpe && trim((string) $cpe->numero) !== '') ? $cpe : null;
+    }
+
+    /**
+     * Pie de la representación impresa: el pie configurado de siempre + la
+     * leyenda legal SUNAT, el hash del CPE (si ya se conoce) y el número
+     * interno de la venta, que sigue siendo la referencia para devoluciones.
+     */
+    private function pieComprobanteElectronico(object $cpe, Venta $venta, string $pieBase): string
+    {
+        $lineas = self::LEYENDA_CPE;
+
+        $hash = trim((string) ($cpe->hash_cpe ?? ''));
+        if ($hash !== '') {
+            $lineas[] = 'Hash: ' . $hash;
+        }
+
+        $lineas[] = 'Ref. interna: ' . $venta->numero;
+
+        return trim(implode("\n", $lineas) . ($pieBase !== '' ? "\n" . $pieBase : ''));
     }
 
     /**

@@ -1,16 +1,21 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { router, usePage, Link } from '@inertiajs/react';
+import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     ArrowLeft, XCircle, Receipt, User, ShoppingBag,
     CreditCard, Percent, Calendar, Store, UserCheck, Printer,
+    FileCheck2, Download, RefreshCw,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
 import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
-import type { PageProps, Venta, VentaItem, VentaPago, DescuentoLog } from '@/types';
+import {
+    rutaComprobante, metaEstado, estadoEnCurso, puedeReintentar, etiquetaTipoSunat,
+} from '@/lib/comprobanteElectronico';
+import type { PageProps, Venta, VentaItem, VentaPago, DescuentoLog, ComprobanteElectronico } from '@/types';
 
 interface Props extends PageProps {
     venta: Venta;
@@ -303,6 +308,15 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                         </div>
                     </div>
 
+                    {/* V11 — Comprobante electrónico. Solo si la venta tiene uno:
+                        las ventas `ticket` no muestran nada. */}
+                    {venta.comprobante_electronico && (
+                        <BloqueComprobanteElectronico
+                            ventaId={venta.id}
+                            inicial={venta.comprobante_electronico}
+                        />
+                    )}
+
                     {/* Pagos */}
                     <SectionCard icon={CreditCard} title="Pagos">
                         <div className="flex flex-col gap-2 -mt-1">
@@ -366,5 +380,138 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                 </div>
             </div>
         </AppLayout>
+    );
+}
+
+/* ─── V11 · Comprobante electrónico (SUNAT) ──────────────────────────────────
+   Solo se monta cuando la venta TIENE comprobante. Mientras el estado no sea
+   terminal consulta /ventas/{id}/comprobante/estado cada 10 s y se detiene al
+   llegar a un estado final o al desmontarse (sin intervals huérfanos). */
+
+/** Cada cuánto se consulta el estado mientras el CPE sigue en curso. */
+const POLL_MS = 10000;
+
+function BloqueComprobanteElectronico({ ventaId, inicial }: {
+    ventaId: number;
+    inicial: ComprobanteElectronico;
+}) {
+    const [ce, setCe]               = useState<ComprobanteElectronico>(inicial);
+    const [reintentando, setReint]  = useState(false);
+    const meta                      = metaEstado(ce.estado);
+    const enCurso                   = estadoEnCurso(ce.estado);
+
+    useEffect(() => {
+        if (!enCurso) return;
+        let vivo = true;
+        const id = window.setInterval(async () => {
+            try {
+                const r = await axios.get(rutaComprobante.estado(ventaId));
+                // Tolerante al envoltorio de la respuesta ({...} o {comprobante:{...}}).
+                const data = (r.data?.comprobante ?? r.data) as Partial<ComprobanteElectronico> | null;
+                if (!vivo || !data?.estado) return;
+                setCe(prev => ({ ...prev, ...data }));
+            } catch {
+                // Un fallo puntual de red no debe romper la pantalla: se
+                // reintenta en el siguiente tick.
+            }
+        }, POLL_MS);
+        return () => { vivo = false; window.clearInterval(id); };
+    }, [ventaId, enCurso]);
+
+    function reintentar() {
+        if (reintentando) return;
+        setReint(true);
+        router.post(rutaComprobante.reintentar(ventaId), {}, {
+            preserveScroll: true,
+            onFinish: () => setReint(false),
+        });
+    }
+
+    return (
+        <SectionCard icon={FileCheck2} title="Comprobante electrónico">
+            <div className="flex flex-col gap-3 -mt-1">
+                {/* Número + tipo + estado */}
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div className="min-w-0">
+                        <p className="font-mono text-base font-bold leading-tight" style={{ color: 'var(--color-text)' }}>
+                            {ce.numero}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                            {etiquetaTipoSunat(ce.tipo)}
+                        </p>
+                    </div>
+                    <span
+                        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold flex-shrink-0"
+                        style={{
+                            backgroundColor: `color-mix(in srgb, ${meta.color} 14%, transparent)`,
+                            color: meta.color,
+                        }}
+                    >
+                        {enCurso && (
+                            <span
+                                className="inline-block h-1.5 w-1.5 rounded-full animate-pulse"
+                                style={{ backgroundColor: meta.color }}
+                            />
+                        )}
+                        {meta.label}
+                    </span>
+                </div>
+
+                {/* Qué significa el estado (la cajera no debe creer que falló algo) */}
+                {meta.detalle && (
+                    <p className="text-xs leading-snug" style={{ color: 'var(--color-text-muted)' }}>
+                        {meta.detalle}
+                    </p>
+                )}
+
+                {/* Respuesta de SUNAT / error del envío */}
+                {ce.sunat_descripcion && (
+                    <div
+                        className="rounded-lg px-3 py-2 text-xs leading-snug"
+                        style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                    >
+                        <span className="font-semibold">SUNAT{ce.sunat_codigo ? ` ${ce.sunat_codigo}` : ''}:</span>{' '}
+                        {ce.sunat_descripcion}
+                    </div>
+                )}
+                {ce.error && (
+                    <div
+                        className="rounded-lg px-3 py-2 text-xs leading-snug"
+                        style={{
+                            backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, transparent)',
+                            color: 'var(--color-danger)',
+                        }}
+                    >
+                        {ce.error}
+                    </div>
+                )}
+
+                {ce.hash_cpe && (
+                    <p className="text-[10px] font-mono break-all" style={{ color: 'var(--color-text-muted)' }}>
+                        Hash: {ce.hash_cpe}
+                    </p>
+                )}
+
+                {/* Acciones */}
+                <div className="flex gap-2 flex-wrap">
+                    <a href={rutaComprobante.pdf(ventaId)} target="_blank" rel="noopener noreferrer">
+                        <Button variant="secondary" size="sm" startContent={<Download size={14} />}>
+                            Descargar PDF
+                        </Button>
+                    </a>
+                    {puedeReintentar(ce.estado) && (
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            startContent={<RefreshCw size={14} className={reintentando ? 'animate-spin' : ''} />}
+                            onClick={reintentar}
+                            disabled={reintentando}
+                        >
+                            {reintentando ? 'Reintentando…' : 'Reintentar'}
+                        </Button>
+                    )}
+                </div>
+            </div>
+        </SectionCard>
     );
 }
