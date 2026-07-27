@@ -2,14 +2,17 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\MapeoComprobanteException;
 use App\Models\Devolucion;
 use App\Models\User;
+use App\Models\Venta;
+use App\Models\VentaItem;
 use App\Services\AuditoriaService;
 use App\Services\Facturacion\FacturaMacClient;
 use App\Services\Facturacion\FacturaMacException;
+use App\Services\Facturacion\MapaUnidadesSunat;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -42,13 +45,23 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         public ?int $userId = null,
     ) {}
 
-    public function handle(FacturaMacClient $client): void
+    public function handle(FacturaMacClient $client, MapaUnidadesSunat $unidades): void
     {
         if (!config('facturamac.enabled')) {
             return;
         }
 
-        $devolucion = Devolucion::with(['venta', 'detalles'])->find($this->devolucionId);
+        // Se cargan las relaciones que necesita la aritmética de la NC: los ítems de
+        // la venta (para el prorrateo del descuento global y el criterio de IGV) y la
+        // unidad de cada línea (Catálogo 03). Sin esto cada detalle dispararía su
+        // propia consulta y, peor, `incluye_igv` no estaría disponible.
+        $devolucion = Devolucion::with([
+            'venta.items',
+            'venta.empresa',
+            'detalles.ventaItem.producto',
+            'detalles.ventaItem.productoUnidad.unidadMedida',
+        ])->find($this->devolucionId);
+
         if (!$devolucion || !$devolucion->venta) {
             return;
         }
@@ -68,23 +81,53 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             return;
         }
 
-        $motivo = $this->motivoSunat($devolucion, $venta->id);
+        $motivo = $this->motivoSunat($devolucion, $venta);
+
+        $peticion = [
+            // Idempotencia: una devolución = UNA nota de crédito, por más
+            // veces que se reintente este job.
+            'idempotency_key' => 'devolucion-' . $devolucion->id,
+            // Catálogo 09 SUNAT: 06 devolución total | 07 devolución por ítem.
+            'motivo'          => $motivo,
+            'observaciones'   => sprintf(
+                'Devolución %s — venta %s',
+                $devolucion->numero ?: ('#' . $devolucion->id),
+                $venta->numero,
+            ),
+        ];
+
+        // DEVOLUCIÓN PARCIAL ('07'): la NC debe acreditar SOLO lo devuelto, así que
+        // viajan sus líneas y su importe. Sin ellas FacturaMac copiaría los totales
+        // del comprobante original y una devolución de 1 saco de 10 emitiría una NC
+        // por la factura entera — un error fiscal que solo se corrige con otra NC.
+        //
+        // DEVOLUCIÓN TOTAL ('06'): NO se mandan líneas a propósito. La NC tiene que
+        // acreditar el comprobante ÍNTEGRO, y la forma de garantizarlo al céntimo es
+        // que FacturaMac copie los importes que ya declaró: nuestro recálculo podría
+        // desviarse un céntimo del original, porque aquel pasó por la conciliación de
+        // VentaAComprobante y este no.
+        if ($motivo !== '06') {
+            try {
+                $detalles = $this->detalles($devolucion, $venta, $unidades);
+            } catch (MapeoComprobanteException $e) {
+                // Mejor no emitir que emitir una NC con importes equivocados.
+                $this->avisarFallo($devolucion, $e->getMessage());
+
+                return;
+            }
+
+            $peticion['detalles'] = $detalles;
+            // Contrato de verificación, el equivalente de `totales_esperados` en la
+            // emisión: si FacturaMac recalcula las líneas y no coincide con esto,
+            // devuelve 422 y no emite nada.
+            $peticion['monto'] = round(
+                array_sum(array_column($detalles, 'total_item')),
+                2,
+            );
+        }
 
         try {
-            $respuesta = $client->notaCredito((int) $ce->facturamac_id, [
-                // Idempotencia: una devolución = UNA nota de crédito, por más
-                // veces que se reintente este job.
-                'idempotency_key' => 'devolucion-' . $devolucion->id,
-                // Catálogo 09 SUNAT: 06 devolución total | 07 devolución por ítem.
-                'motivo'          => $motivo,
-                'observaciones'   => sprintf(
-                    'Devolución %s — venta %s',
-                    $devolucion->numero ?: ('#' . $devolucion->id),
-                    $venta->numero,
-                ),
-                'monto'           => round((float) $devolucion->monto_devolucion, 2),
-                'detalles'        => $this->detalles($devolucion),
-            ]);
+            $respuesta = $client->notaCredito((int) $ce->facturamac_id, $peticion);
         } catch (FacturaMacException $e) {
             if ($e->reintentable) {
                 throw $e;
@@ -112,34 +155,42 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             'nota_credito'      => $respuesta['numero'] ?? null,
             'nota_credito_id'   => $respuesta['id'] ?? null,
             'monto'             => round((float) $devolucion->monto_devolucion, 2),
+            // Lo realmente acreditado ante SUNAT. En una devolución parcial NO tiene
+            // por qué coincidir con `monto_devolucion`: la NC descuenta la parte
+            // proporcional del descuento global de la venta. En una total va a null
+            // porque la NC copia los importes del comprobante original.
+            'monto_acreditado'  => $peticion['monto'] ?? null,
         ], $this->usuario());
     }
 
     /**
-     * Catálogo 09 SUNAT: '06' devolución TOTAL (se devolvió todo lo vendido,
-     * contando devoluciones anteriores) o '07' devolución POR ÍTEM (parcial).
-     * La distinción importa: una NC por '06' cancela el comprobante entero.
+     * Catálogo 09 SUNAT: '06' devolución TOTAL o '07' devolución POR ÍTEM (parcial).
+     *
+     * '06' solo cuando ESTA devolución, por sí sola, devuelve todos los ítems de la
+     * venta en su totalidad — porque es la única situación en la que la NC acredita el
+     * comprobante ENTERO. No basta con que la suma de todas las devoluciones cubra la
+     * venta: si el cliente devolvió 5 sacos ayer y 5 hoy, la NC de hoy acredita media
+     * factura, y declararla como "devolución total" haría que el motivo dijera una
+     * cosa y los importes otra.
      */
-    private function motivoSunat(Devolucion $devolucion, int $ventaId): string
+    private function motivoSunat(Devolucion $devolucion, Venta $venta): string
     {
-        $vendido = DB::table('venta_items')
-            ->where('venta_id', $ventaId)
-            ->pluck('cantidad', 'id');
+        $items = $venta->items;
 
-        if ($vendido->isEmpty()) {
+        if ($items === null || count($items) === 0) {
             return '07';
         }
 
-        $devuelto = DB::table('devoluciones_detalle')
-            ->join('devoluciones', 'devoluciones.id', '=', 'devoluciones_detalle.devolucion_id')
-            ->where('devoluciones.venta_id', $ventaId)
-            ->whereIn('devoluciones.estado', ['pendiente', 'aprobada', 'completada'])
-            ->select('devoluciones_detalle.venta_item_id', DB::raw('SUM(devoluciones_detalle.cantidad) as total'))
-            ->groupBy('devoluciones_detalle.venta_item_id')
-            ->pluck('total', 'venta_item_id');
+        // Cantidad devuelta en ESTA devolución, agrupada por línea de venta.
+        $devuelto = [];
+        foreach ($devolucion->detalles as $d) {
+            $devuelto[$d->venta_item_id] = ($devuelto[$d->venta_item_id] ?? 0.0) + (float) $d->cantidad;
+        }
 
-        foreach ($vendido as $itemId => $cantidad) {
-            if ((float) ($devuelto[$itemId] ?? 0) < (float) $cantidad - 0.0001) {
+        foreach ($items as $item) {
+            // 0.0001 es la precisión con la que se guardan las cantidades; por debajo
+            // de eso es ruido de coma flotante, no una unidad pendiente.
+            if (($devuelto[$item->id] ?? 0.0) < (float) $item->cantidad - 0.0001) {
                 return '07';
             }
         }
@@ -147,16 +198,174 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         return '06';
     }
 
-    /** Líneas devueltas, para que FacturaMac acredite solo lo que volvió. */
-    private function detalles(Devolucion $devolucion): array
+    /**
+     * Líneas devueltas en el formato EXACTO que valida FacturaMac
+     * (`StoreComprobanteApiRequest::reglasDetalles()`), para que acredite solo lo que
+     * volvió al almacén.
+     *
+     * La aritmética replica la de `VentaAComprobante` línea por línea, y eso no es
+     * opcional: si la NC calculara el IGV con otro criterio que el comprobante
+     * original, los importes acreditados no serían un subconjunto de los declarados y
+     * quedaría un residuo imposible de cuadrar ante SUNAT. En concreto:
+     *
+     *  · `incluye_igv = true`  → GRAVADO ('10'): el precio del POS ya trae el IGV, así
+     *    que la base se obtiene dividiendo entre (1 + tasa).
+     *  · `incluye_igv = false` → EXONERADO ('20'): base = importe, igv_item = 0.
+     *  · El descuento global de la venta se prorratea por el bruto de la línea, igual
+     *    que en el comprobante original, y NUNCA viaja como campo aparte (G2).
+     *
+     * @return list<array<string, mixed>>
+     *
+     * @throws MapeoComprobanteException
+     */
+    private function detalles(Devolucion $devolucion, Venta $venta, MapaUnidadesSunat $unidades): array
     {
-        return $devolucion->detalles->map(fn ($d) => [
-            'venta_item_id'   => $d->venta_item_id,
-            'producto_id'     => $d->producto_id,
-            'cantidad'        => (float) $d->cantidad,
-            'precio_unitario' => (float) $d->precio_unitario,
-            'subtotal'        => (float) $d->subtotal,
-        ])->values()->all();
+        $tasa      = $this->tasaIgv($venta);
+        $factor    = $this->factorDescuentoGlobal($venta);
+        $empresaId = (int) $venta->empresa_id;
+        $detalles  = [];
+
+        foreach ($devolucion->detalles as $d) {
+            $cantidad = round((float) $d->cantidad, 4);
+
+            if ($cantidad <= 0) {
+                continue; // una línea sin unidades devueltas no acredita nada
+            }
+
+            $item = $d->ventaItem;
+
+            if (! $item) {
+                // Sin la línea de venta no sabemos si el producto era gravado o
+                // exonerado, y adivinarlo cambiaría el IGV acreditado.
+                throw MapeoComprobanteException::para($venta->id,
+                    "La línea de devolución {$d->id} no tiene el ítem de venta asociado; "
+                    . 'no se puede determinar su afectación de IGV.'
+                );
+            }
+
+            // `devoluciones_detalle.subtotal` ya es (precio − descuento_item) × cantidad
+            // devuelta, el mismo bruto que usa Venta::calcularTotales() por línea.
+            $bruto = round((float) $d->subtotal, 2);
+            $neto  = $bruto * $factor;
+
+            if ($item->incluye_igv) {
+                $subtotal   = round($neto / (1 + $tasa), 2);
+                $igv        = round($subtotal * $tasa, 2);
+                $afectacion = '10';
+            } else {
+                $subtotal   = round($neto, 2);
+                $igv        = 0.00;
+                $afectacion = '20';
+            }
+
+            $totalItem   = round($subtotal + $igv, 2);
+            $abreviatura = trim((string) ($item->productoUnidad?->unidadMedida?->abreviatura ?: $item->unidad_nombre));
+
+            $detalles[] = [
+                // MISMO código que envió el comprobante original: FacturaMac lo usa
+                // para comprobar que no se acreditan más unidades de las facturadas.
+                'codigo_producto'       => $item->producto?->codigo ?: ('P-' . $item->producto_id),
+                'codigo_producto_sunat' => null,
+                'descripcion'           => $this->descripcion($item, $abreviatura),
+                'unidad_medida'         => $unidades->codigoSunat(
+                    $empresaId,
+                    $item->productoUnidad?->unidad_medida_id,
+                    $abreviatura,
+                ),
+                'cantidad'                => $cantidad,
+                // 10 decimales: la precisión con la que Greenter declara el valor
+                // unitario, para que SUNAT no recalcule un importe distinto.
+                'precio_unitario'         => round($subtotal / $cantidad, 10),
+                'precio_unitario_con_igv' => round($totalItem / $cantidad, 2),
+                // El descuento ya está incorporado al precio efectivo; mandarlo además
+                // como campo lo restaría dos veces.
+                'descuento'               => 0,
+                'subtotal'                => $subtotal,
+                'igv_item'                => $igv,
+                'total_item'              => $totalItem,
+                'tipo_afectacion_igv'     => $afectacion,
+            ];
+        }
+
+        if ($detalles === []) {
+            throw MapeoComprobanteException::para($venta->id,
+                "La devolución {$devolucion->id} no tiene líneas con cantidad devuelta."
+            );
+        }
+
+        return $detalles;
+    }
+
+    /**
+     * Descripción idéntica a la del comprobante original (VentaAComprobante): conserva
+     * la unidad del POS entre paréntesis porque el Catálogo 03 es genérico y sin ella
+     * el cliente no reconocería en la NC lo que devolvió.
+     */
+    private function descripcion(VentaItem $item, string $abreviatura): string
+    {
+        $nombre = trim((string) $item->producto_nombre);
+
+        if ($abreviatura !== '') {
+            $nombre .= " ({$abreviatura})";
+        }
+
+        return mb_substr($nombre, 0, 250); // límite de SUNAT
+    }
+
+    /**
+     * Guarda G4. FacturaMac tiene el 18 % cableado; ventoryPOS lo lee de
+     * `empresas.tasa_igv`. Con otra tasa la NC saldría con un IGV que no corresponde
+     * al del comprobante que pretende acreditar, y nadie se enteraría hasta la
+     * declaración.
+     *
+     * @throws MapeoComprobanteException
+     */
+    private function tasaIgv(Venta $venta): float
+    {
+        $soportada = (float) config('facturamac.tasa_igv_soportada', 18.0);
+        $empresa   = (float) ($venta->empresa?->tasa_igv ?? $soportada);
+
+        if (abs($empresa - $soportada) > 0.0001) {
+            throw MapeoComprobanteException::para($venta->id,
+                "La empresa tiene una tasa de IGV de {$empresa}% y la emisión electrónica solo "
+                . "está soportada al {$soportada}%."
+            );
+        }
+
+        return $empresa / 100;
+    }
+
+    /**
+     * Proporción del bruto que sobrevive al descuento global de la venta.
+     *
+     * El comprobante original repartió `ventas.descuento_total` entre sus líneas en
+     * proporción al bruto de cada una (VentaAComprobante::construirLineas). La NC tiene
+     * que aplicar ese mismo reparto o acreditaría más de lo que se facturó: sobre una
+     * venta con 10 % de descuento global, devolver un ítem de S/ 100 acredita S/ 90.
+     *
+     * @throws MapeoComprobanteException
+     */
+    private function factorDescuentoGlobal(Venta $venta): float
+    {
+        $descuento = round((float) $venta->descuento_total, 2);
+
+        if ($descuento <= 0) {
+            return 1.0;
+        }
+
+        $bruto = 0.0;
+        foreach ($venta->items as $item) {
+            $bruto += ((float) $item->precio_unitario - (float) $item->descuento_item) * (float) $item->cantidad;
+        }
+
+        if ($bruto <= 0 || $descuento > $bruto + 0.01) {
+            throw MapeoComprobanteException::para($venta->id,
+                "El descuento global de la venta {$venta->numero} (S/ {$descuento}) no es "
+                . 'coherente con el bruto de sus ítems; la nota de crédito saldría negativa.'
+            );
+        }
+
+        return max(0.0, 1 - ($descuento / $bruto));
     }
 
     private function usuario(): ?User

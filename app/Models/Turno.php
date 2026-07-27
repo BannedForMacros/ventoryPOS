@@ -101,14 +101,27 @@ class Turno extends Model
             )->sum('monto');
 
         // Devoluciones de anticipo pagadas EN EFECTIVO desde ESTA caja: el billete
-        // sale del cajón. El monto y la "efectividad" se leen del movimiento de
-        // tesorería real (mismo patrón que deuda, abajo) y no del anticipo: se
-        // devuelve el SALDO al momento de devolver, no el monto original, y la
-        // cuenta de salida puede ser distinta a la de entrada.
+        // sale del cajón y el sistema no debe esperarlo.
+        //
+        // El anticipo NO dice de qué caja salió (su turno_id es el turno donde
+        // ENTRÓ el dinero — normalmente de otro día, o NULL si nació de una venta
+        // POS). La caja se DERIVA del movimiento de tesorería: quien registró la
+        // devolución (user_id) y cuándo lo hizo de verdad (created_at, no `fecha`,
+        // que puede venir retrofechada). Si ese usuario tenía este turno abierto
+        // en ese instante, el billete salió de este cajón.
+        //
+        // Derivarlo en vez de guardarlo tiene una ventaja: arregla también las
+        // devoluciones YA registradas, sin migrar ni corregir datos.
+        //
+        // Monto y "efectividad" se leen del movimiento (mismo patrón que deuda,
+        // abajo): se devuelve el SALDO al momento de devolver, no el monto
+        // original, y la cuenta de salida puede diferir de la de entrada.
         $devolucionAnticipoEfectivo = (float) \App\Models\CuentaMovimiento::where('empresa_id', $this->empresa_id)
             ->where('tipo', 'egreso')
             ->where('ref_tipo', 'cliente_anticipo_devolucion')
-            ->whereIn('ref_id', \App\Models\ClienteAnticipo::where('turno_devolucion_id', $this->id)->select('id'))
+            ->where('user_id', $this->user_id)
+            ->where('created_at', '>=', $this->fecha_apertura)
+            ->when($this->fecha_cierre, fn ($q) => $q->where('created_at', '<=', $this->fecha_cierre))
             ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
             ->sum('monto');
 

@@ -355,7 +355,59 @@ class VentaController extends Controller
             // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
             'monedas'            => ['PEN', 'USD'],
             'tipoCambioHoy'      => $this->tipoCambioHoy(),
+            // Facturación electrónica: el POS necesita saber si emite de verdad,
+            // con qué serie y —sobre todo— si el emisor apunta a SUNAT producción.
+            'facturacion'        => $this->configFacturacionPos(),
         ]);
+    }
+
+    /**
+     * Configuración de facturación electrónica que consume el POS.
+     *
+     * El dato delicado es `produccion`: determina si la cajera ve el aviso rojo
+     * de "los comprobantes son reales". Vive en el tenant de FacturaMac (campo
+     * `sunat_beta`), no aquí, así que se consulta por /ping y se cachea 10
+     * minutos para no meter una llamada HTTP en cada carga del POS.
+     *
+     * FAIL-SAFE DELIBERADO: si la consulta falla o aún no hay dato, se asume
+     * PRODUCCIÓN y se muestra el aviso. Ya hubo un incidente por emitir contra
+     * producción creyendo estar en beta (ver AUDITORIA_PRODUCCION_SUNAT.md); un
+     * aviso de más no cuesta nada, uno de menos cuesta una Nota de Crédito.
+     */
+    private function configFacturacionPos(): array
+    {
+        $enabled = (bool) config('facturamac.enabled');
+
+        $produccion = true;
+        if ($enabled) {
+            $produccion = \Illuminate\Support\Facades\Cache::remember(
+                'facturamac.es_produccion',
+                now()->addMinutes(10),
+                function (): bool {
+                    try {
+                        $ping = app(\App\Services\Facturacion\FacturaMacClient::class)->ping();
+
+                        // sunat_beta === true ⇒ pruebas. Cualquier otra cosa (false,
+                        // ausente, respuesta rara) se trata como producción.
+                        return ! ($ping['tenant']['sunat_beta'] ?? false);
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning(
+                            'No se pudo determinar el modo SUNAT de FacturaMac; se asume producción.',
+                            ['error' => $e->getMessage()],
+                        );
+
+                        return true;
+                    }
+                },
+            );
+        }
+
+        return [
+            'enabled'                    => $enabled,
+            'produccion'                 => $produccion,
+            'umbral_boleta_identificada' => (float) config('facturamac.umbral_boleta_identificada', 700),
+            'series'                     => config('facturamac.series', []),
+        ];
     }
 
     // ── Ventas (historial) ─────────────────────────────────────────────────────
@@ -666,36 +718,42 @@ class VentaController extends Controller
             ]);
 
         // Devoluciones de anticipo pagadas EN EFECTIVO desde estas cajas: el
-        // billete sale del cajón. Espejo exacto de Turno::calcularMontoEsperado:
-        // el monto y la efectividad se leen del movimiento de tesorería, porque se
-        // devuelve el SALDO del momento (no el monto original) y puede salir por
-        // una cuenta distinta a la que lo recibió.
+        // billete sale del cajón. Espejo exacto de Turno::calcularMontoEsperado —
+        // la caja se DERIVA del movimiento de tesorería (quién lo registró y en
+        // qué momento real), porque el anticipo solo sabe en qué turno ENTRÓ el
+        // dinero, que casi nunca es el mismo por el que sale.
         $devolucionAnticipoMovs = \App\Models\CuentaMovimiento::where('empresa_id', $turno->empresa_id)
             ->where('tipo', 'egreso')
             ->where('ref_tipo', 'cliente_anticipo_devolucion')
-            ->whereIn('ref_id', \App\Models\ClienteAnticipo::whereIn('turno_devolucion_id', $turnoIds)->select('id'))
             ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
+            ->where(function ($q) use ($turnos) {
+                foreach ($turnos as $t) {
+                    $q->orWhere(fn ($s) => $s
+                        ->where('user_id', $t->user_id)
+                        ->where('created_at', '>=', $t->fecha_apertura)
+                        ->when($t->fecha_cierre, fn ($w) => $w->where('created_at', '<=', $t->fecha_cierre)));
+                }
+            })
             ->orderByDesc('id')->get();
 
         $devolucionAnticipos = (float) $devolucionAnticipoMovs->sum('monto');
 
-        $devolucionAnticiposDetalle = \App\Models\ClienteAnticipo::whereIn('turno_devolucion_id', $turnoIds)
-            ->with('cliente')->orderByDesc('id')->get()
-            ->map(function ($a) use ($devolucionAnticipoMovs) {
-                $mov = $devolucionAnticipoMovs->firstWhere('ref_id', $a->id);
-                return [
-                    'anticipo' => $a->id,
-                    'cliente'  => $a->cliente
-                        ? ($a->cliente->es_cliente_general
-                            ? 'Clientes varios'
-                            : ($a->cliente->razon_social
-                                ?? trim(($a->cliente->nombres ?? '') . ' ' . ($a->cliente->apellidos ?? ''))))
-                        : '—',
-                    // Sin movimiento en efectivo → salió por banco: se muestra en 0
-                    // para que la cajera lo vea, pero no descuenta su cajón.
-                    'monto'    => round((float) ($mov->monto ?? 0), 2),
-                ];
-            })->values();
+        // Nombre del cliente para el modal: el movimiento apunta al anticipo por ref_id.
+        $anticiposDevueltos = \App\Models\ClienteAnticipo::whereIn('id', $devolucionAnticipoMovs->pluck('ref_id')->filter())
+            ->with('cliente')->get()->keyBy('id');
+
+        $devolucionAnticiposDetalle = $devolucionAnticipoMovs->map(function ($m) use ($anticiposDevueltos) {
+            $cli = $anticiposDevueltos->get($m->ref_id)?->cliente;
+            return [
+                'anticipo' => (int) $m->ref_id,
+                'cliente'  => $cli
+                    ? ($cli->es_cliente_general
+                        ? 'Clientes varios'
+                        : ($cli->razon_social ?? trim(($cli->nombres ?? '') . ' ' . ($cli->apellidos ?? ''))))
+                    : '—',
+                'monto'    => round((float) $m->monto, 2),
+            ];
+        })->values();
 
         $variosTurnos = count($turnoIds) > 1;
         return [

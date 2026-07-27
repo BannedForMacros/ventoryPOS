@@ -390,6 +390,12 @@ class TicketPrintService
      */
     private function comprobanteElectronico(Venta $venta): ?object
     {
+        // Un `ticket` es nota de venta interna: nunca tiene CPE. Cortar acá deja
+        // el flujo actual de ferretería sin una sola consulta extra.
+        if ($venta->tipo_comprobante === 'ticket') {
+            return null;
+        }
+
         if (!method_exists($venta, 'comprobanteElectronico')) {
             return null;
         }

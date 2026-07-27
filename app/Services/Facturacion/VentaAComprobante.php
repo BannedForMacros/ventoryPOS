@@ -744,13 +744,17 @@ class VentaAComprobante
         $vencimiento = $venta->fecha_vencimiento;
         $emision     = $venta->fecha_venta ?? $venta->created_at;
 
+        // Carbon 3 devuelve float en diffInDays; el plazo de crédito se expresa en
+        // días enteros, así que se normaliza aquí y no en el texto.
         $dias = ($vencimiento && $emision)
-            ? max(0, $emision->copy()->startOfDay()->diffInDays($vencimiento->copy()->startOfDay()))
+            ? (int) max(0, round($emision->copy()->startOfDay()->diffInDays($vencimiento->copy()->startOfDay())))
             : null;
 
         return [
             'forma_pago'        => 'Credito',
-            'condicion_pago'    => $dias !== null ? "Crédito a {$dias} días" : 'Crédito',
+            'condicion_pago'    => $dias !== null
+                ? 'Crédito a ' . $dias . ($dias === 1 ? ' día' : ' días')
+                : 'Crédito',
             'fecha_vencimiento' => $vencimiento?->format('Y-m-d'),
         ];
     }

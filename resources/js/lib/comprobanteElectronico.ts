@@ -44,7 +44,7 @@ export interface EstadoComprobanteResp {
     id?:                number;
     tipo?:              '01' | '03';
     serie?:             string;
-    correlativo?:       number;
+    correlativo?:       number | string;
     numero?:            string;
     estado?:            ComprobanteEstado | null;
     mensaje?:           string;
@@ -91,6 +91,14 @@ interface ArgsValidacion {
     moneda:          'PEN' | 'USD';
     /** Umbral SUNAT de boleta identificada (default 700). */
     umbral?:         number;
+    /**
+     * ¿Está encendida la emisión electrónica? (config('facturamac.enabled')).
+     * Debe reflejar EXACTAMENTE el mismo gate que StoreVentaRequest: si el
+     * backend no valida, el POS tampoco debe bloquear, o le estaríamos
+     * impidiendo a la cajera algo que hoy puede hacer sin consecuencias.
+     * Default false = comportamiento previo a la integración.
+     */
+    emisionActiva?:  boolean;
 }
 
 /**
@@ -102,7 +110,16 @@ interface ArgsValidacion {
  */
 export function validarComprobante({
     tipoComprobante, cliente, total, moneda, umbral = UMBRAL_BOLETA_IDENTIFICADA,
+    emisionActiva = false,
 }: ArgsValidacion): BloqueoComprobante | null {
+    // Con la integración apagada, 'boleta' y 'factura' son hoy meras etiquetas
+    // que no emiten nada. Bloquear la venta por reglas de SUNAT que nadie va a
+    // aplicar sería una regresión pura para la caja. El backend
+    // (StoreVentaRequest::validarComprobanteElectronico) tiene este mismo gate:
+    // los dos lados deben encenderse a la vez o la cajera vería un bloqueo en
+    // pantalla sin respaldo, o peor, un 422 tras cobrar.
+    if (! emisionActiva) return null;
+
     // Nota de venta interna: no se emite nada a SUNAT. Cero validaciones.
     if (tipoComprobante === 'ticket') return null;
 
@@ -118,7 +135,7 @@ export function validarComprobante({
         const tieneRuc       = (cliente?.tipo_documento ?? '').toUpperCase() === 'RUC'
             && !!(cliente?.numero_documento ?? '').trim();
         const tieneDireccion = !!(cliente?.direccion ?? '').trim();
-        if (!tieneRuc || !tieneDireccion) {
+        if (esClienteGeneral(cliente) || !tieneRuc || !tieneDireccion) {
             return {
                 motivo: 'Una factura requiere cliente con RUC y dirección.',
                 requiereCliente: true,
@@ -128,7 +145,9 @@ export function validarComprobante({
     }
 
     // Boleta: desde el umbral, SUNAT exige identificar al adquirente.
-    if (total >= umbral && esClienteGeneral(cliente)) {
+    // El margen de 0.01 es el mismo que aplica StoreVentaRequest: si el backend
+    // va a rechazar la venta, la cajera tiene que enterarse ANTES de cobrar.
+    if (total >= umbral - 0.01 && esClienteGeneral(cliente)) {
         return {
             motivo: `Desde S/ ${umbral} SUNAT exige identificar al cliente en la boleta. Selecciona un cliente con DNI.`,
             requiereCliente: true,
@@ -218,10 +237,15 @@ export function metaEstado(estado: ComprobanteEstado | string | null | undefined
 
 /** ¿Tiene sentido seguir consultando el estado? (polling) */
 export function estadoEnCurso(estado: ComprobanteEstado | string | null | undefined): boolean {
-    return !metaEstado(estado).terminal;
+    return ESTADOS_EN_CURSO.includes(estado as ComprobanteEstado);
 }
 
-/** Estados desde los que reintentar el envío es una acción válida. */
+/**
+ * Estados desde los que reintentar el envío es una acción válida.
+ * Espejo de VentaComprobante::ESTADOS_REINTENTABLES: el reintento va SIEMPRE
+ * sobre el mismo correlativo (G11) y `error_mapeo` queda fuera porque ahí hay
+ * que corregir el dato de la venta, no reenviar.
+ */
 export function puedeReintentar(estado: ComprobanteEstado | string | null | undefined): boolean {
-    return estado === 'rechazado' || estado === 'error_envio' || estado === 'error_mapeo';
+    return estado === 'pendiente' || estado === 'error_envio' || estado === 'rechazado';
 }

@@ -61,6 +61,15 @@ class SimularEmision extends Command
             return self::FAILURE;
         }
 
+        // Mismo criterio que en --todas: hoy toda la ferretería vende como `ticket`,
+        // y sin esto el comando no serviría para lo único que se le pide, que es
+        // ensayar el mapeo antes de emitir. La reasignación es SOLO en memoria.
+        if ($venta->tipo_comprobante === 'ticket') {
+            $venta->tipo_comprobante = $this->tipoTentativo($venta);
+            $this->warn("La venta es un ticket (no se emitiría). Se simula como '{$venta->tipo_comprobante}' "
+                . 'para ensayar el mapeo.');
+        }
+
         $this->linea($venta);
 
         try {

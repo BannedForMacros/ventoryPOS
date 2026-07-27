@@ -155,6 +155,15 @@ class StoreVentaRequest extends FormRequest
      */
     private function validarComprobanteElectronico($validator, int $empresaId, float $total): void
     {
+        // Mientras la integración esté apagada, el POS debe comportarse EXACTAMENTE
+        // como antes de existir este archivo: 'boleta' y 'factura' son hoy meras
+        // etiquetas que no emiten nada, y rechazar una venta por reglas de SUNAT
+        // que nadie va a aplicar sería romper la caja sin ninguna contrapartida.
+        // Las reglas se activan junto con la emisión real (FACTURAMAC_ENABLED=true).
+        if (! config('facturamac.enabled')) {
+            return;
+        }
+
         $tipo = $this->input('tipo_comprobante');
         if (!in_array($tipo, ['boleta', 'factura'], true)) {
             return; // ticket: nota de venta interna, sin reglas SUNAT

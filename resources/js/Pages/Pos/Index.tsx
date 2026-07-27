@@ -732,23 +732,28 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     /* ── V10 · Facturación electrónica ───────────────────────────────────────
        Las validaciones de §5.4 se resuelven ACÁ, una sola vez, y se reparten a
        los dos selectores de comprobante (barra superior y barra móvil) y al
-       botón de cobrar. Si `facturacion` no llega o el módulo está apagado,
-       `bloqueoComprobante` es siempre null y nada cambia respecto de hoy. */
+       botón de cobrar. Para una venta `ticket` —hoy el 100 % del flujo— todo
+       esto es null y la pantalla se comporta exactamente como antes. */
+    // Las reglas SUNAT se validan SIEMPRE que el comprobante no sea `ticket`:
+    // StoreVentaRequest las aplica igual aunque el módulo esté apagado, y un 422
+    // después de cobrar es justo lo que V10 existe para evitar.
     const feActiva  = !!facturacion?.enabled;
-    const emiteCPE  = feActiva && tipoComprobante !== 'ticket';
+    const emiteCPE  = tipoComprobante !== 'ticket';
     const umbralCPE = facturacion?.umbral_boleta_identificada ?? UMBRAL_BOLETA_IDENTIFICADA;
-    const serieCPE  = tipoComprobante === 'factura'
-        ? facturacion?.series?.factura ?? null
-        : tipoComprobante === 'boleta'
-            ? facturacion?.series?.boleta ?? null
-            : null;
+    const serieCPE  = !feActiva ? null
+        : tipoComprobante === 'factura' ? (facturacion?.series?.['01'] ?? facturacion?.series?.factura ?? null)
+        : tipoComprobante === 'boleta'  ? (facturacion?.series?.['03'] ?? facturacion?.series?.boleta  ?? null)
+        : null;
 
     const bloqueoComprobante: BloqueoComprobante | null = useMemo(
-        () => (feActiva
-            ? validarComprobante({ tipoComprobante, cliente, total, moneda, umbral: umbralCPE })
-            : null),
-        [feActiva, tipoComprobante, cliente, total, moneda, umbralCPE],
+        () => validarComprobante({ tipoComprobante, cliente, total, moneda, umbral: umbralCPE, emisionActiva: feActiva }),
+        [tipoComprobante, cliente, total, moneda, umbralCPE, feActiva],
     );
+
+    // La franja informativa solo aparece si el módulo está activo (hay algo real
+    // que emitir) o si hay un problema que impide cobrar. Con el módulo apagado
+    // y todo en orden, el POS se ve exactamente como hoy.
+    const mostrarAvisoCPE = emiteCPE && (feActiva || !!bloqueoComprobante);
 
     // Badge del comprobante recién emitido (lo trae el flash de la venta anterior).
     const comprobanteFlash = flash?.comprobante ?? null;
@@ -1175,9 +1180,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 se va a emitir, con qué serie, y —si el emisor apunta a SUNAT
                 PRODUCCIÓN— el aviso rojo que no se puede ignorar (§8: ya hubo
                 un incidente por emitir a producción creyendo estar en beta). */}
-            {emiteCPE && (
+            {mostrarAvisoCPE && (
                 <div className="flex flex-col flex-shrink-0">
-                    {facturacion?.produccion && (
+                    {feActiva && facturacion?.produccion && (
                         <div
                             className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm font-bold"
                             style={{ backgroundColor: 'var(--color-danger)', color: '#fff' }}
@@ -1204,7 +1209,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                     color: '#fff',
                                 }}
                             >
-                                {etiquetaComprobante(tipoComprobante)}
+                                {feActiva
+                                    ? etiquetaComprobante(tipoComprobante)
+                                    : (tipoComprobante === 'factura' ? 'Factura' : 'Boleta')}
                             </span>
                             {serieCPE && (
                                 <span style={{ color: 'var(--color-text-muted)' }}>
@@ -1215,7 +1222,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>
                                     {bloqueoComprobante.motivo}
                                 </span>
-                            ) : (
+                            ) : feActiva && (
                                 <span className="text-xs opacity-80" style={{ color: 'var(--color-text-muted)' }}>
                                     · Se emitirá a SUNAT al cerrar la venta
                                 </span>

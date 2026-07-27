@@ -14,6 +14,7 @@ import Badge from '@/Components/UI/Badge';
 import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import {
     rutaComprobante, metaEstado, estadoEnCurso, puedeReintentar, etiquetaTipoSunat,
+    type EstadoComprobanteResp,
 } from '@/lib/comprobanteElectronico';
 import type { PageProps, Venta, VentaItem, VentaPago, DescuentoLog, ComprobanteElectronico } from '@/types';
 
@@ -308,12 +309,12 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                         </div>
                     </div>
 
-                    {/* V11 — Comprobante electrónico. Solo si la venta tiene uno:
-                        las ventas `ticket` no muestran nada. */}
-                    {venta.comprobante_electronico && (
+                    {/* V11 — Comprobante electrónico. Las ventas `ticket` son notas
+                        de venta internas: no se consulta nada y no se pinta nada. */}
+                    {venta.tipo_comprobante !== 'ticket' && (
                         <BloqueComprobanteElectronico
                             ventaId={venta.id}
-                            inicial={venta.comprobante_electronico}
+                            inicial={venta.comprobante_electronico ?? null}
                         />
                     )}
 
@@ -384,48 +385,90 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
 }
 
 /* ─── V11 · Comprobante electrónico (SUNAT) ──────────────────────────────────
-   Solo se monta cuando la venta TIENE comprobante. Mientras el estado no sea
-   terminal consulta /ventas/{id}/comprobante/estado cada 10 s y se detiene al
-   llegar a un estado final o al desmontarse (sin intervals huérfanos). */
+   Solo se monta en ventas boleta/factura (las `ticket` ni siquiera preguntan).
+   El estado se toma de GET /ventas/{id}/comprobante/estado y se refresca
+   mientras siga en curso; el intervalo se corta al llegar a un estado final, al
+   agotar el tope de consultas o al desmontar el componente. */
 
 /** Cada cuánto se consulta el estado mientras el CPE sigue en curso. */
 const POLL_MS = 10000;
+/** Tope de consultas (~5 min): una pestaña olvidada no puede preguntar eternamente. */
+const POLL_MAX = 30;
 
 function BloqueComprobanteElectronico({ ventaId, inicial }: {
     ventaId: number;
-    inicial: ComprobanteElectronico;
+    inicial: ComprobanteElectronico | null;
 }) {
-    const [ce, setCe]               = useState<ComprobanteElectronico>(inicial);
-    const [reintentando, setReint]  = useState(false);
-    const meta                      = metaEstado(ce.estado);
-    const enCurso                   = estadoEnCurso(ce.estado);
+    const [ce, setCe] = useState<EstadoComprobanteResp | null>(
+        inicial ? { tiene_comprobante: true, emitible: true, ...inicial } : null,
+    );
+    const [reintentando, setReint] = useState(false);
+    // Cambia al reintentar para relanzar la consulta aunque el estado anterior
+    // ya fuera final (rechazado → enviando).
+    const [ciclo, setCiclo] = useState(0);
 
     useEffect(() => {
-        if (!enCurso) return;
         let vivo = true;
-        const id = window.setInterval(async () => {
+        let consultas = 0;
+        let timer: number | undefined;
+
+        const detener = () => {
+            if (timer !== undefined) { window.clearInterval(timer); timer = undefined; }
+        };
+
+        const consultar = async () => {
             try {
                 const r = await axios.get(rutaComprobante.estado(ventaId));
-                // Tolerante al envoltorio de la respuesta ({...} o {comprobante:{...}}).
-                const data = (r.data?.comprobante ?? r.data) as Partial<ComprobanteElectronico> | null;
-                if (!vivo || !data?.estado) return;
-                setCe(prev => ({ ...prev, ...data }));
+                const data = r.data as EstadoComprobanteResp | null;
+                if (!vivo || !data) return;
+                setCe(data);
+                const sigue = data.tiene_comprobante ? estadoEnCurso(data.estado) : data.emitible;
+                if (!sigue) detener();
             } catch {
                 // Un fallo puntual de red no debe romper la pantalla: se
                 // reintenta en el siguiente tick.
             }
+        };
+
+        // Consulta inmediata: el detalle de la venta no precarga la relación.
+        void consultar();
+
+        timer = window.setInterval(() => {
+            consultas += 1;
+            if (consultas > POLL_MAX) { detener(); return; }
+            void consultar();
         }, POLL_MS);
-        return () => { vivo = false; window.clearInterval(id); };
-    }, [ventaId, enCurso]);
+
+        return () => { vivo = false; detener(); };
+    }, [ventaId, ciclo]);
 
     function reintentar() {
         if (reintentando) return;
         setReint(true);
         router.post(rutaComprobante.reintentar(ventaId), {}, {
             preserveScroll: true,
-            onFinish: () => setReint(false),
+            onFinish: () => { setReint(false); setCiclo(c => c + 1); },
         });
     }
+
+    // Aún consultando, o la venta no llegó a generar comprobante y tampoco va a
+    // hacerlo (módulo apagado): no se pinta nada, la pantalla queda como hoy.
+    if (!ce) return null;
+
+    if (!ce.tiene_comprobante) {
+        if (!ce.emitible) return null;
+        return (
+            <SectionCard icon={FileCheck2} title="Comprobante electrónico">
+                <p className="text-xs leading-snug -mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                    {ce.mensaje ?? 'La emisión está en cola.'} La venta ya está cerrada; el número
+                    del comprobante aparecerá acá en cuanto se emita.
+                </p>
+            </SectionCard>
+        );
+    }
+
+    const meta    = metaEstado(ce.estado);
+    const enCurso = estadoEnCurso(ce.estado);
 
     return (
         <SectionCard icon={FileCheck2} title="Comprobante electrónico">
@@ -494,12 +537,14 @@ function BloqueComprobanteElectronico({ ventaId, inicial }: {
 
                 {/* Acciones */}
                 <div className="flex gap-2 flex-wrap">
-                    <a href={rutaComprobante.pdf(ventaId)} target="_blank" rel="noopener noreferrer">
-                        <Button variant="secondary" size="sm" startContent={<Download size={14} />}>
-                            Descargar PDF
-                        </Button>
-                    </a>
-                    {puedeReintentar(ce.estado) && (
+                    {(ce.tiene_pdf ?? true) && (
+                        <a href={rutaComprobante.pdf(ventaId)} target="_blank" rel="noopener noreferrer">
+                            <Button variant="secondary" size="sm" startContent={<Download size={14} />}>
+                                Descargar PDF
+                            </Button>
+                        </a>
+                    )}
+                    {(ce.puede_reintentar ?? puedeReintentar(ce.estado)) && (
                         <Button
                             variant="primary"
                             size="sm"
