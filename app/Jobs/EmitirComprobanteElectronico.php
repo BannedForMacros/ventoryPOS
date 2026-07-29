@@ -69,12 +69,27 @@ class EmitirComprobanteElectronico implements ShouldQueue
             return;
         }
 
-        $ce = $this->marcarEnviando($venta, $ce);
-
-        // G11 — Un comprobante RECHAZADO ya consumió su correlativo en FacturaMac.
-        // Reenviarlo por /reintentar reutiliza ese mismo correlativo; volver a emitir
+        // G11 — Un comprobante ya creado en el emisor consumió su correlativo.
+        // Reenviarlo por /reintentar reutiliza ESE mismo correlativo; volver a emitir
         // dejaría un hueco en la numeración que hay que justificar ante SUNAT.
-        $usarReintento = $ce->facturamac_id && $ce->estado === EstadoComprobante::RECHAZADO->value;
+        //
+        // OJO AL ORDEN: el estado se lee ANTES de marcar `enviando`. Comprobarlo
+        // después hacía que la condición fuese SIEMPRE falsa —marcarEnviando() acababa
+        // de sobrescribir el estado— y el reintento nunca reenviaba nada: se
+        // re-POSTeaba con la misma clave, el emisor lo absorbía por idempotencia y
+        // devolvía el comprobante rechazado tal cual. La cajera veía "reintentado" y a
+        // SUNAT no había llegado nada.
+        //
+        // Se incluye `error_envio` además de `rechazado`: en ambos el comprobante ya
+        // existe en el emisor y lo que falta es volver a mandarlo a SUNAT. Son
+        // exactamente los dos estados que admite EmisionExternaService::reintentar().
+        $estadoPrevio  = $ce?->estado;
+        $usarReintento = $ce?->facturamac_id && in_array($estadoPrevio, [
+            EstadoComprobante::RECHAZADO->value,
+            EstadoComprobante::ERROR_ENVIO->value,
+        ], true);
+
+        $ce = $this->marcarEnviando($venta, $ce);
 
         // ── Mapeo ────────────────────────────────────────────────────────────
         // Lo que falla aquí son DEFECTOS DE DATOS (un ticket, una venta sin cliente,
@@ -170,7 +185,12 @@ class EmitirComprobanteElectronico implements ShouldQueue
 
         $ce->estado   = EstadoComprobante::ENVIANDO->value;
         $ce->intentos = (int) $ce->intentos + 1;
-        $ce->error    = null;
+
+        // El motivo del fallo anterior NO se borra aquí. Antes se limpiaba al empezar
+        // el intento, así que si el reintento volvía a fallar la cajera se quedaba con
+        // un comprobante rechazado y sin explicación —peor que antes de reintentar—.
+        // Se limpia solo cuando el envío se resuelve bien (ver persistirRespuesta).
+
         $ce->save();
 
         return $ce;
@@ -197,7 +217,16 @@ class EmitirComprobanteElectronico implements ShouldQueue
         $ce->correlativo   = $comprobante?->numero         ?? $ce->correlativo;
         $ce->hash_cpe      = $comprobante?->hash           ?? $ce->hash_cpe;
         $ce->qr            = $comprobante?->qr             ?? $ce->qr;
-        $ce->error         = null;
+
+        // El motivo del fallo anterior solo se borra si el envío se resolvió BIEN.
+        // Si el emisor devuelve otra vez `rechazado`, conservarlo es la única pista
+        // que le queda a quien tiene que corregir el dato: limpiarlo dejaba un
+        // comprobante rechazado sin explicación, y encima con aspecto de reintentado.
+        // Los datos del rechazo nuevo (sunat_codigo/descripcion) llegan por el polling.
+        if (! in_array($estado, [EstadoComprobante::RECHAZADO, EstadoComprobante::ERROR_ENVIO], true)) {
+            $ce->error = null;
+        }
+
         $ce->enviado_at    = now();
         $ce->save();
 

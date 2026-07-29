@@ -6,7 +6,9 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use MacSoft\Facturacion\Contrato\Dto\ErrorRespuesta;
 use MacSoft\Facturacion\Contrato\Dto\Respuesta;
+use MacSoft\Facturacion\Contrato\Enum\CodigoError;
 use Throwable;
 
 /**
@@ -266,8 +268,21 @@ class FacturaMacClient
     }
 
     /**
-     * Clasifica la respuesta. El criterio es simple y lo usa el Job tal cual:
-     * si el problema puede desaparecer solo con el tiempo, es reintentable.
+     * Clasifica la respuesta. El criterio lo usa el Job tal cual: si el problema puede
+     * desaparecer solo con el tiempo, es reintentable.
+     *
+     * TRES CAPAS, en este orden y no en otro:
+     *
+     *   1. `reintentable` del CUERPO (§4.3). Manda siempre: el emisor conoce la
+     *      situación concreta y puede saber algo que el catálogo no.
+     *   2. El catálogo, por código (`CodigoError::esReintentable()`).
+     *   3. El HTTP status, solo cuando el cuerpo no trae nada útil.
+     *
+     * Deducir por status a secas —lo que se hacía antes— rompe un caso por diseño:
+     * `estado_no_permite_nota_credito` es 409 CON `reintentable: true`, porque una
+     * boleta en `pendiente_resumen` hay que ESPERARLA hasta el Resumen Diario de las
+     * 23:55. Tratar ese 4xx como definitivo significaría que ninguna boleta devuelta
+     * genera jamás su nota de crédito.
      *
      * @throws FacturaMacException
      */
@@ -279,25 +294,120 @@ class FacturaMacClient
 
         $status = $response->status();
         $cuerpo = $this->cuerpo($response);
-        $detalle = $this->mensajeDe($cuerpo) ?: $response->body();
+        $datos  = is_array($cuerpo) ? $cuerpo : [];
 
-        // 5xx: FacturaMac o SUNAT con problemas. 429: nos estamos pasando de ritmo.
-        // 408: timeout del servidor. Todo eso se arregla esperando.
-        if ($status >= 500 || $status === 429 || $status === 408) {
-            throw FacturaMacException::reintentable(
-                "FacturaMac respondió {$status} al {$operacion}: {$detalle}",
+        // Respaldo de la capa 3. 5xx: FacturaMac o SUNAT con problemas. 429: nos
+        // estamos pasando de ritmo. 408: timeout del servidor. Se arregla esperando.
+        $porStatus = $status >= 500 || $status === 429 || $status === 408;
+
+        // El código estable del contrato. Se conserva TAL CUAL aunque el catálogo del
+        // paquete todavía no lo conozca: el emisor puede ir por delante y perder el
+        // código dejaría al consumidor decidiendo por el texto del mensaje.
+        $codigo = is_string($datos['error'] ?? null) && $datos['error'] !== ''
+            ? $datos['error']
+            : null;
+        $codigoConocido = $codigo !== null ? CodigoError::tryFrom($codigo) : null;
+
+        $mensajeUsuario = $this->mensajeDe($cuerpo);
+
+        // Sin código del contrato no hay error del contrato: será una validación de
+        // Laravel, un proxy caído o HTML. Se clasifica por status, como toda la vida.
+        if ($codigo === null) {
+            $reintentableCuerpo = isset($datos['reintentable']) ? (bool) $datos['reintentable'] : null;
+
+            $this->lanzar(
+                $operacion,
                 $status,
                 $cuerpo,
+                $reintentableCuerpo ?? $porStatus,
+                $mensajeUsuario ?? $this->cuerpoLegible($response),
             );
         }
 
-        // 422: el payload no cuadra (totales, validación). 401/403: token. 404: no existe.
-        // Reintentar con el mismo dato daría exactamente el mismo error.
-        throw FacturaMacException::definitiva(
-            "FacturaMac rechazó la petición ({$status}) al {$operacion}: {$detalle}",
+        // El DTO compartido es quien sabe leer §4.3; no reimplementamos el catálogo.
+        // Se le pasa el mensaje ya resuelto porque él solo mira `mensaje`, y hay
+        // respuestas antiguas o de otro origen que traen `message`. Si no hay ninguno
+        // se QUITA la clave para que aplique el texto por defecto del DTO: un
+        // `"mensaje": ""` le haría lanzar, y un error del emisor no puede convertirse
+        // en una excepción distinta de camino a casa.
+        $datosError = $datos;
+        $datosError['campo']    = $this->texto($datos['campo'] ?? null);
+        $datosError['solucion'] = $this->texto($datos['solucion'] ?? null);
+
+        if ($mensajeUsuario !== null) {
+            $datosError['mensaje'] = $mensajeUsuario;
+        } else {
+            unset($datosError['mensaje']);
+        }
+
+        $error = ErrorRespuesta::desdeArray($datosError);
+
+        $reintentable = $codigoConocido !== null
+            // `esReintentable()` ya aplica «cuerpo manda, catálogo de respaldo».
+            ? $error->esReintentable()
+            // Código desconocido: el catálogo no opina (el DTO lo degradó a
+            // `error_interno`, que es reintentable, y creérselo dejaría la cola
+            // girando sobre un error definitivo). Vale lo que dijo el emisor y,
+            // si no dijo nada, el status.
+            : ($error->reintentable ?? $porStatus);
+
+        $this->lanzar(
+            $operacion,
             $status,
             $cuerpo,
+            $reintentable,
+            $this->detalle($error, $codigo),
+            $error,
+            $codigo,
         );
+    }
+
+    /**
+     * Arma y lanza la excepción. Extraído para que `verificar()` se lea como la
+     * decisión que es y no como cuatro `throw` casi iguales.
+     *
+     * @param array<string, mixed>|string|null $cuerpo
+     *
+     * @throws FacturaMacException
+     */
+    private function lanzar(
+        string $operacion,
+        int $status,
+        array|string|null $cuerpo,
+        bool $reintentable,
+        ?string $detalle,
+        ?ErrorRespuesta $error = null,
+        ?string $codigo = null,
+    ): never {
+        $detalle = $detalle !== null && $detalle !== '' ? $detalle : 'sin detalle en la respuesta';
+
+        // El verbo cambia según la decisión, no según el status: un 409 reintentable
+        // no lo «rechazó» nadie, es que todavía no toca.
+        $texto = $reintentable
+            ? "FacturaMac respondió {$status} al {$operacion}: {$detalle}"
+            : "FacturaMac rechazó la petición ({$status}) al {$operacion}: {$detalle}";
+
+        throw $error !== null
+            ? FacturaMacException::desdeContrato($texto, $error, $reintentable, $status, $cuerpo, $codigo)
+            : new FacturaMacException($texto, $reintentable, $status, $cuerpo);
+    }
+
+    /**
+     * Texto técnico para el log y para `venta_comprobantes.error`.
+     *
+     * Primero lo que entiende una persona, después qué hacer, y el código al final
+     * entre corchetes: es lo que se busca en los logs, pero la cajera lee el principio
+     * de la frase, no el final.
+     */
+    private function detalle(ErrorRespuesta $error, ?string $codigo): string
+    {
+        $partes = array_filter([
+            $error->mensaje,
+            $error->solucion,
+            $codigo !== null ? "[{$codigo}]" : null,
+        ]);
+
+        return implode(' ', $partes);
     }
 
     /** @return array<string, mixed> */
@@ -316,23 +426,80 @@ class FacturaMacClient
         return is_array($data) ? $data : $response->body();
     }
 
-    /** @param array<string, mixed>|string $cuerpo */
+    /**
+     * Texto para una PERSONA, si la respuesta trae alguno.
+     *
+     * El orden es deliberado: el contrato (§4.3) manda `mensaje` para la pantalla y
+     * `error` para programar. Leer `error` como si fuera el texto es lo que acababa
+     * enseñándole `cliente_sin_ruc` o `totales_no_cuadran` a la cajera y guardándolo
+     * en `venta_comprobantes.error`.
+     *
+     * `message` se conserva de respaldo porque lo usan las validaciones de Laravel y
+     * cualquier respuesta anterior al contrato o de otro origen (un proxy, un WAF).
+     *
+     * @param array<string, mixed>|string $cuerpo
+     */
     private function mensajeDe(array|string $cuerpo): ?string
     {
         if (! is_array($cuerpo)) {
             return null;
         }
 
-        $mensaje = $cuerpo['message'] ?? $cuerpo['error'] ?? null;
+        $mensaje = $this->texto($cuerpo['mensaje'] ?? null)
+            ?? $this->texto($cuerpo['message'] ?? null);
 
+        // `error` como texto SOLO si no es un código del catálogo: hay APIs que ponen
+        // ahí la frase entera, pero un código del contrato no es un mensaje.
+        if ($mensaje === null) {
+            $suelto = $this->texto($cuerpo['error'] ?? null);
+            $mensaje = $suelto !== null && CodigoError::tryFrom($suelto) === null ? $suelto : null;
+        }
+
+        // Bolsa de validación de Laravel: se anexa porque dice QUÉ campo falló, que
+        // es justo lo que le falta al mensaje genérico.
         if (! empty($cuerpo['errors']) && is_array($cuerpo['errors'])) {
             $detalles = [];
             foreach ($cuerpo['errors'] as $campo => $errores) {
-                $detalles[] = $campo . ': ' . implode(', ', (array) $errores);
+                $detalles[] = $campo . ': ' . implode(', ', array_map('strval', (array) $errores));
             }
             $mensaje = trim(($mensaje ? $mensaje . ' — ' : '') . implode(' | ', $detalles));
         }
 
-        return $mensaje ? (string) $mensaje : null;
+        return $mensaje !== null && $mensaje !== '' ? $mensaje : null;
+    }
+
+    /**
+     * Último recurso cuando la respuesta no es JSON: un proxy caído, un WAF o un
+     * Cloudflare devuelven HTML. Volcarlo entero dejaba una página web dentro de
+     * `venta_comprobantes.error` y en la pantalla de la cajera, así que se resume.
+     */
+    private function cuerpoLegible(Response $response): ?string
+    {
+        $body = trim($response->body());
+
+        if ($body === '') {
+            return null;
+        }
+
+        if (str_starts_with($body, '<')) {
+            return 'la respuesta no era JSON (probablemente un proxy o el servidor caído).';
+        }
+
+        return mb_strimwidth($body, 0, 300, '…');
+    }
+
+    /**
+     * Normaliza a texto no vacío. Un cuerpo mal formado (un array donde debía haber
+     * una cadena) no puede tumbar al cliente: el fallo real ya lo tenemos delante.
+     */
+    private function texto(mixed $valor): ?string
+    {
+        if (! is_scalar($valor)) {
+            return null;
+        }
+
+        $texto = trim((string) $valor);
+
+        return $texto !== '' ? $texto : null;
     }
 }

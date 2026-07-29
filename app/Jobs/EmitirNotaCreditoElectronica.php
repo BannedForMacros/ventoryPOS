@@ -11,6 +11,7 @@ use App\Models\VentaItem;
 use App\Services\AuditoriaService;
 use App\Services\Facturacion\FacturaMacClient;
 use App\Services\Facturacion\FacturaMacException;
+use MacSoft\Facturacion\Contrato\Enum\CodigoError;
 use MacSoft\Facturacion\Contrato\Enum\Impuesto;
 use MacSoft\Facturacion\Contrato\Enum\MotivoNotaCredito;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -103,29 +104,7 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         // incrementa attempts() y agotaría los $tries, que deben quedar
         // reservados para los fallos de red. La espera no es un fallo.
         if (! in_array($ce->estado, VentaComprobante::ESTADOS_ACREDITABLES, true)) {
-            if ($this->esperas >= self::MAX_ESPERAS) {
-                $this->avisarFallo($devolucion, sprintf(
-                    'El comprobante %s lleva demasiado tiempo en estado "%s" y no se pudo emitir '
-                    . 'la nota de crédito. Revisa el envío a SUNAT y emítela manualmente.',
-                    $ce->numero,
-                    $ce->estado,
-                ));
-
-                return;
-            }
-
-            $esperaMinutos = $ce->estado === 'pendiente_resumen' ? 60 : 5;
-
-            Log::info('Nota de crédito en espera: el comprobante aún no llegó a SUNAT.', [
-                'devolucion_id' => $devolucion->id,
-                'comprobante'   => $ce->numero,
-                'estado'        => $ce->estado,
-                'espera'        => ($this->esperas + 1) . '/' . self::MAX_ESPERAS,
-                'reintento_en'  => $esperaMinutos . ' min',
-            ]);
-
-            self::dispatch($this->devolucionId, $this->userId, $this->esperas + 1)
-                ->delay(now()->addMinutes($esperaMinutos));
+            $this->posponer($devolucion, $ce, 'el comprobante aún no llegó a SUNAT');
 
             return;
         }
@@ -185,13 +164,29 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         try {
             $respuesta = $client->notaCredito((int) $ce->facturamac_id, $peticion);
         } catch (FacturaMacException $e) {
+            // El emisor dice que el comprobante todavía no admite nota de crédito
+            // (típicamente una boleta que sigue esperando el Resumen Diario). NO es
+            // un fallo de red: dejarlo caer en el `throw` de abajo consumiría los 4
+            // intentos con backoff en unos doce minutos, cuando el comprobante puede
+            // tardar hasta las 23:55. Va al mismo mecanismo de espera larga que la
+            // comprobación local.
+            //
+            // Existe además de esa comprobación porque el estado local se refresca
+            // por polling: puede estar desactualizado y ser el emisor quien tenga
+            // razón.
+            if ($e->esCodigo(CodigoError::ESTADO_NO_PERMITE_NOTA_CREDITO)) {
+                $this->posponer($devolucion, $ce, 'el emisor aún no admite la nota de crédito');
+
+                return;
+            }
+
             if ($e->reintentable) {
                 throw $e;
             }
 
             // 422: FacturaMac/SUNAT rechazan la NC por contenido. Reintentar da
             // lo mismo; hay que avisar a una persona.
-            $this->avisarFallo($devolucion, $e->getMessage());
+            $this->avisarFallo($devolucion, $e->paraUsuario());
 
             return;
         }
@@ -217,6 +212,47 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             // porque la NC copia los importes del comprobante original.
             'monto_acreditado'  => $peticion['total'] ?? null,
         ], $this->usuario());
+    }
+
+    /**
+     * Pospone la nota de crédito hasta que el comprobante esté en SUNAT.
+     *
+     * Una BOLETA vive en `pendiente_resumen` hasta que el Resumen Diario sale a las
+     * 23:55, así que la inmensa mayoría de devoluciones del día pasan por aquí.
+     * Tratarlo como fallo garantizaría que ninguna boleta devuelta genere jamás su
+     * nota de crédito.
+     *
+     * Se despacha una instancia NUEVA en vez de usar release(): release() incrementa
+     * attempts() y agotaría los $tries, que deben quedar reservados para los fallos
+     * de red. Esperar no es fallar.
+     */
+    private function posponer(Devolucion $devolucion, VentaComprobante $ce, string $motivo): void
+    {
+        if ($this->esperas >= self::MAX_ESPERAS) {
+            $this->avisarFallo($devolucion, sprintf(
+                'El comprobante %s lleva demasiado tiempo en estado "%s" y no se pudo emitir '
+                . 'la nota de crédito. Revisa el envío a SUNAT y emítela manualmente.',
+                $ce->numero,
+                $ce->estado,
+            ));
+
+            return;
+        }
+
+        // Una boleta no se mueve hasta el resumen de las 23:55; consultar antes solo
+        // gasta cola. Lo demás se resuelve en minutos.
+        $esperaMinutos = $ce->estado === 'pendiente_resumen' ? 60 : 5;
+
+        Log::info('Nota de crédito en espera: ' . $motivo . '.', [
+            'devolucion_id' => $devolucion->id,
+            'comprobante'   => $ce->numero,
+            'estado'        => $ce->estado,
+            'espera'        => ($this->esperas + 1) . '/' . self::MAX_ESPERAS,
+            'reintento_en'  => $esperaMinutos . ' min',
+        ]);
+
+        self::dispatch($this->devolucionId, $this->userId, $this->esperas + 1)
+            ->delay(now()->addMinutes($esperaMinutos));
     }
 
     /**
