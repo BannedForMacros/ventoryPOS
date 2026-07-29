@@ -42,9 +42,11 @@ const highlights = [
 export default function Login({
     status,
     canResetPassword,
+    canRegister = false,
 }: {
     status?: string;
     canResetPassword: boolean;
+    canRegister?: boolean;
 }) {
     const { data, setData, post, processing, errors, reset } = useForm({
         email: '',
@@ -415,17 +417,21 @@ export default function Login({
                                 </button>
                             </form>
 
-                            {/* Footer / Register */}
-                            <p className="mt-6 text-center text-sm" style={{ color: palette.textMuted }}>
-                                ¿Aún no tienes cuenta?{' '}
-                                <Link
-                                    href={route('register')}
-                                    className="font-semibold transition-colors duration-150 hover:underline"
-                                    style={{ color: palette.primary }}
-                                >
-                                    Crear cuenta gratis
-                                </Link>
-                            </p>
+                            {/* Footer / Register — solo si el registro público está activo.
+                                Las cuentas las crea el proveedor y los usuarios de cada
+                                empresa se dan de alta desde /usuarios. */}
+                            {canRegister && (
+                                <p className="mt-6 text-center text-sm" style={{ color: palette.textMuted }}>
+                                    ¿Aún no tienes cuenta?{' '}
+                                    <Link
+                                        href={route('register')}
+                                        className="font-semibold transition-colors duration-150 hover:underline"
+                                        style={{ color: palette.primary }}
+                                    >
+                                        Crear cuenta gratis
+                                    </Link>
+                                </p>
+                            )}
 
                             <div
                                 className="mt-8 flex items-center justify-center gap-1.5 text-xs"

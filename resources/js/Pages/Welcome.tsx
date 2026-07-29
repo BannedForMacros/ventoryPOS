@@ -98,7 +98,14 @@ const palette = {
     textMuted: '#64748b',
 };
 
-export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; phpVersion?: string }>) {
+// `canRegister` sale de `Route::has('register')` (routes/web.php). El registro
+// público está desactivado —las cuentas las crea el proveedor—, así que llega
+// `false` y los CTA de alta no se pintan. Si algún día se reactiva la ruta,
+// vuelven solos: no hay que tocar esta página.
+export default function Welcome({
+    auth,
+    canRegister = false,
+}: PageProps<{ laravelVersion?: string; phpVersion?: string; canRegister?: boolean }>) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -209,14 +216,16 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                                 >
                                     Iniciar sesión
                                 </Link>
-                                <Link
-                                    href={route('register')}
-                                    className="group inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
-                                    style={{ backgroundColor: palette.primary }}
-                                >
-                                    Empezar gratis
-                                    <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-1" />
-                                </Link>
+                                {canRegister && (
+                                    <Link
+                                        href={route('register')}
+                                        className="group inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
+                                        style={{ backgroundColor: palette.primary }}
+                                    >
+                                        Empezar gratis
+                                        <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-1" />
+                                    </Link>
+                                )}
                             </>
                         )}
                     </nav>
@@ -254,14 +263,19 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                             </p>
 
                             <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                                <Link
-                                    href={auth?.user ? route('dashboard') : route('register')}
-                                    className="group inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-base font-semibold text-white shadow-xl transition-all duration-200 hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] sm:w-auto"
-                                    style={{ backgroundColor: palette.primary }}
-                                >
-                                    {auth?.user ? 'Ir al Dashboard' : 'Empezar ahora'}
-                                    <ArrowRight size={18} className="transition-transform duration-200 group-hover:translate-x-1" />
-                                </Link>
+                                {/* Sin registro público, el visitante anónimo solo tiene el
+                                    botón de "Ya tengo cuenta": no se le ofrece un alta que
+                                    no puede completar. */}
+                                {(auth?.user || canRegister) && (
+                                    <Link
+                                        href={auth?.user ? route('dashboard') : route('register')}
+                                        className="group inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-base font-semibold text-white shadow-xl transition-all duration-200 hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] sm:w-auto"
+                                        style={{ backgroundColor: palette.primary }}
+                                    >
+                                        {auth?.user ? 'Ir al Dashboard' : 'Empezar ahora'}
+                                        <ArrowRight size={18} className="transition-transform duration-200 group-hover:translate-x-1" />
+                                    </Link>
+                                )}
                                 <Link
                                     href={route('login')}
                                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl border px-6 py-3 text-base font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] sm:w-auto"
@@ -489,14 +503,16 @@ export default function Welcome({ auth }: PageProps<{ laravelVersion?: string; p
                                 Empieza hoy mismo. Configuración en minutos, no en días.
                             </p>
                             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                                <Link
-                                    href={auth?.user ? route('dashboard') : route('register')}
-                                    className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-bold shadow-xl transition-all duration-200 hover:scale-[1.03] active:scale-[0.98] sm:w-auto"
-                                    style={{ color: palette.primary }}
-                                >
-                                    {auth?.user ? 'Ir al Dashboard' : 'Crear cuenta gratis'}
-                                    <ArrowRight size={18} className="transition-transform duration-200 group-hover:translate-x-1" />
-                                </Link>
+                                {(auth?.user || canRegister) && (
+                                    <Link
+                                        href={auth?.user ? route('dashboard') : route('register')}
+                                        className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-7 py-3.5 text-base font-bold shadow-xl transition-all duration-200 hover:scale-[1.03] active:scale-[0.98] sm:w-auto"
+                                        style={{ color: palette.primary }}
+                                    >
+                                        {auth?.user ? 'Ir al Dashboard' : 'Crear cuenta gratis'}
+                                        <ArrowRight size={18} className="transition-transform duration-200 group-hover:translate-x-1" />
+                                    </Link>
+                                )}
                                 <Link
                                     href={route('login')}
                                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-white/30 px-7 py-3.5 text-base font-semibold text-white transition-all duration-200 hover:bg-white/10 sm:w-auto"

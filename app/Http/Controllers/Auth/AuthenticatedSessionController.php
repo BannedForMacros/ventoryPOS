@@ -20,6 +20,11 @@ class AuthenticatedSessionController extends Controller
     {
         return Inertia::render('Auth/Login', [
             'canResetPassword' => Route::has('password.request'),
+            // Mismo criterio que `canResetPassword`: la vista pregunta si la ruta
+            // existe en vez de dar por hecho que sí. El registro público está
+            // desactivado (ver routes/auth.php), así que el enlace "Crear cuenta"
+            // no se pinta; si se reactiva, reaparece sin tocar el frontend.
+            'canRegister' => Route::has('register'),
             'status' => session('status'),
         ]);
     }
