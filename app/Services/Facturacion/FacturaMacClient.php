@@ -6,6 +6,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use MacSoft\Facturacion\Contrato\Dto\Respuesta;
 use Throwable;
 
 /**
@@ -34,38 +35,64 @@ class FacturaMacClient
     }
 
     /**
-     * Emite un comprobante. `POST /api/v1/comprobantes`.
+     * Manda una VENTA a emitir. `POST /api/v1/ventas`.
+     *
+     * El recurso se llama `ventas` y no `comprobantes` porque es lo que el POS envía:
+     * una venta. Que salga factura, boleta o nada es decisión del emisor.
      *
      * El header `Idempotency-Key` es la defensa contra el peor escenario de esta
      * integración: el POS manda la emisión, la red se corta ANTES de que llegue la
      * respuesta, el Job reintenta y SUNAT acaba con dos comprobantes fiscales reales
-     * de la misma venta. Con la clave, el segundo intento recibe 409 y FacturaMac
-     * devuelve el comprobante original — por eso el 409 se trata como ÉXITO y no como
-     * error: la emisión ya ocurrió, que es exactamente lo que queríamos.
+     * de la misma venta.
+     *
+     * OJO — corrección de un desajuste real: la clave repetida NO devuelve 409, sino
+     * `200` con el comprobante original y `reutilizado: true` (el 409 está reservado a
+     * `referencia_externa_duplicada`, que sí es un fallo del adaptador). Tratar el 409
+     * como éxito era, además de inútil, peligroso: habría dado por emitida una venta
+     * que el emisor rechazó por referencia repetida. Quien quiera saber si hubo
+     * reutilización mira `Respuesta->reutilizado`.
      *
      * @param  array<string, mixed> $payload
-     * @return array<string, mixed>
      *
      * @throws FacturaMacException
      */
-    public function emitir(array $payload): array
+    public function emitirVenta(array $payload): Respuesta
     {
         $clave = (string) ($payload['idempotency_key'] ?? '');
 
         $response = $this->enviar(
             fn (PendingRequest $req) => $req
                 ->withHeaders(['Idempotency-Key' => $clave])
-                ->post("{$this->baseUrl}/api/v1/comprobantes", $payload),
-            'emitir comprobante',
+                ->post("{$this->baseUrl}/api/v1/ventas", $payload),
+            'emitir la venta',
         );
 
-        // 409 = ya emitido con esta misma clave. No es un fallo: es la idempotencia
-        // funcionando. El cuerpo trae el comprobante original.
-        if ($response->status() === 409) {
-            return $this->json($response);
-        }
+        $this->verificar($response, 'emitir la venta');
 
-        $this->verificar($response, 'emitir comprobante');
+        return Respuesta::desdeArray($this->json($response));
+    }
+
+    /**
+     * Configuración fiscal vigente del emisor. `GET /api/v1/configuracion`.
+     *
+     * Fuente ÚNICA de verdad de modo, umbrales y series. La cachea
+     * `ConfiguracionFacturacion`; aquí solo se lee.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws FacturaMacException
+     */
+    public function configuracion(): array
+    {
+        $response = $this->enviar(
+            // Timeout recortado: esto se lee al pintar pantallas del POS, y ahí una
+            // espera larga es peor que un default razonable.
+            fn (PendingRequest $req) => $req->timeout(min($this->timeout, 8))
+                ->get("{$this->baseUrl}/api/v1/configuracion"),
+            'leer la configuración',
+        );
+
+        $this->verificar($response, 'leer la configuración');
 
         return $this->json($response);
     }
