@@ -43,7 +43,22 @@ class FacturaMacClient
 
     public function __construct(?string $token = null)
     {
-        $this->baseUrl = rtrim((string) config('facturamac.base_url'), '/');
+        // Se comprueba AQUÍ y no al fallar la petición porque el error de red no
+        // dice nada útil: sin `FACTURAMAC_URL` la llamada salía contra el default
+        // de desarrollo y la cajera veía «cURL error 7: Failed to connect to
+        // localhost port 8001», que no menciona la variable que falta. Pasó en el
+        // primer despliegue a producción y costó más de lo que debería.
+        $base = trim((string) config('facturamac.base_url'));
+
+        if ($base === '') {
+            throw new \RuntimeException(
+                'Falta configurar FACTURAMAC_URL: ventoryPOS no sabe en qué dirección '
+                . 'está FacturaMac. Añade FACTURAMAC_URL=https://tu-facturamac al .env '
+                . 'del servidor y ejecuta `php artisan config:cache`.',
+            );
+        }
+
+        $this->baseUrl = rtrim($base, '/');
         $this->token   = $token;
         $this->timeout = (int) config('facturamac.timeout', 20);
     }

@@ -273,3 +273,33 @@ it('falla sin reintento cuando no hay token configurado', function () {
     expect(fn () => (new FacturaMacClient(null))->ping())
         ->toThrow(FacturaMacException::class);
 });
+
+it('sin FACTURAMAC_URL el error nombra la variable que falta', function () {
+    // ─── El fallo que esto cierra ────────────────────────────────────────────
+    //
+    // `config/facturamac.php` tenía `env('FACTURAMAC_URL', 'http://localhost:8001')`.
+    // Cómodo en desarrollo, trampa en producción: si la clave falta NO falla, apunta
+    // a localhost en silencio, y la petición muere con
+    //
+    //     cURL error 7: Failed to connect to localhost port 8001
+    //
+    // que no menciona en ningún momento que lo que falta es una variable de entorno.
+    // Ocurrió en el primer despliegue a producción, al pulsar «Conectar»: el mensaje
+    // hablaba de un puerto que nadie había configurado nunca.
+    //
+    // Ahora `base_url` no lleva default y el cliente se niega a construirse, con un
+    // mensaje que dice QUÉ clave poner y QUÉ comando ejecutar después.
+    config(['facturamac.base_url' => null]);
+
+    expect(fn () => new FacturaMacClient('token-cualquiera'))
+        ->toThrow(RuntimeException::class, 'FACTURAMAC_URL');
+});
+
+it('no se traga una base_url en blanco', function () {
+    // Un `FACTURAMAC_URL=` vacío en el .env es el mismo fallo con otra cara: la clave
+    // está escrita, así que a simple vista parece configurada.
+    config(['facturamac.base_url' => '   ']);
+
+    expect(fn () => new FacturaMacClient('token-cualquiera'))
+        ->toThrow(RuntimeException::class, 'FACTURAMAC_URL');
+});

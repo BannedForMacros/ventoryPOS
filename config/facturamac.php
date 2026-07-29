@@ -70,8 +70,15 @@ return [
     | responde en cuanto persiste el comprobante y encola el envío; si tarda más
     | de 20 s es que algo va mal y conviene fallar rápido y reintentar en el Job.
     |
+    | `base_url` NO LLEVA DEFAULT A PROPÓSITO. Antes caía a `http://localhost:8001`,
+    | que es cómodo en desarrollo y una trampa en producción: si la clave falta no
+    | falla, apunta a localhost en silencio, y el error que llega a la cajera dice
+    | «cURL error 7: Failed to connect to localhost port 8001» — que no menciona en
+    | ningún momento que lo que falta es una variable de entorno. Pasó en el primer
+    | despliegue. Con `null`, quien conecta se lleva un mensaje que nombra la clave.
+    |
     */
-    'base_url' => env('FACTURAMAC_URL', 'http://localhost:8001'),
+    'base_url' => env('FACTURAMAC_URL'),
     'timeout'  => env('FACTURAMAC_TIMEOUT', 20),
 
     /*
