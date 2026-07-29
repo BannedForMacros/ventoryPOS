@@ -14,6 +14,7 @@ use App\Models\Venta;
 use App\Models\VentaItem;
 use App\Models\VentaPago;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class VentaService
 {
@@ -630,9 +631,23 @@ class VentaService
      */
     private function bloquearSiTieneComprobanteEmitido(Venta $venta): void
     {
-        // La integración es opcional y se despliega por partes: si el modelo de
-        // comprobantes todavía no está instalado, el POS opera como siempre.
-        if (!method_exists($venta, 'comprobanteElectronico')) {
+        // La integración es opcional y se despliega por partes. La comprobación
+        // anterior (`method_exists`) era código muerto: el método SIEMPRE existe
+        // porque está definido en el modelo. Con la tabla sin crear —código
+        // desplegado antes que la migración— esto reventaba con un 42P01 y la
+        // cajera no podía anular una venta mal cobrada, con el cliente delante.
+        //
+        // `Schema::hasTable()` consulta el catálogo de la base, así que se cachea
+        // por proceso: esto corre en cada anulación y edición.
+        if (! config('facturamac.enabled')) {
+            return;
+        }
+
+        static $tablaDisponible = null;
+
+        $tablaDisponible ??= Schema::hasTable('venta_comprobantes');
+
+        if (! $tablaDisponible) {
             return;
         }
 

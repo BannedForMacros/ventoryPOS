@@ -28,9 +28,13 @@ class DevolucionService
      */
     public function crear(array $data, User $user, ?Turno $turno = null): Devolucion
     {
-        return DB::transaction(function () use ($data, $user, $turno) {
-            $venta = Venta::with('items.producto', 'local')->findOrFail($data['venta_id']);
-            abort_if($venta->empresa_id !== $user->empresa_id, 403, 'La venta no pertenece a tu empresa.');
+        // La venta se resuelve fuera para poder pasarla al hook de la nota de
+        // crédito una vez CONFIRMADA la transacción (ver más abajo).
+        $venta = Venta::with('items.producto', 'local')->findOrFail($data['venta_id']);
+
+        abort_if($venta->empresa_id !== $user->empresa_id, 403, 'La venta no pertenece a tu empresa.');
+
+        $devolucion = DB::transaction(function () use ($data, $user, $turno, $venta) {
 
             $local  = $venta->local;
             abort_unless($this->config->permiteDevoluciones($local), 422,
@@ -136,10 +140,23 @@ class DevolucionService
                 $devolucion->refresh()->completar();
             }
 
-            $this->encolarNotaCredito($devolucion, $venta, $user); // V15
-
             return $devolucion->fresh(['detalles', 'pagos', 'motivo', 'venta']);
         });
+
+        // V15 — FUERA de la transacción, a propósito.
+        //
+        // Estaba dentro y su try/catch parecía suficiente, pero en PostgreSQL una
+        // consulta fallida deja la transacción en estado abortado: el `fresh()` de
+        // arriba reventaba con 25P02 y el rollback se llevaba la devolución ENTERA.
+        // El stock no volvía y el reembolso no se registraba, después de haberle
+        // devuelto el dinero al cliente.
+        //
+        // Aquí la devolución ya está confirmada y es intocable, que es la regla de
+        // oro: un fallo al emitir la nota de crédito no puede deshacer una
+        // operación de caja que ya ocurrió.
+        $this->encolarNotaCredito($devolucion, $venta, $user);
+
+        return $devolucion;
     }
 
     /**
