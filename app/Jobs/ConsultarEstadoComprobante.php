@@ -96,17 +96,32 @@ class ConsultarEstadoComprobante implements ShouldQueue
 
         $estadoPrevio = $ce->estado;
 
-        $ce->estado            = $respuesta['estado']            ?? $ce->estado;
-        $ce->hash_cpe          = $respuesta['hash_cpe']          ?? $ce->hash_cpe;
-        $ce->qr                = $respuesta['qr']                ?? $ce->qr;
-        $ce->numero            = $respuesta['numero']            ?? $ce->numero;
-        $ce->serie             = $respuesta['serie']             ?? $ce->serie;
-        $ce->correlativo       = $respuesta['correlativo']       ?? $ce->correlativo;
-        $ce->sunat_codigo      = $respuesta['sunat_codigo']      ?? $ce->sunat_codigo;
-        $ce->sunat_descripcion = $respuesta['sunat_descripcion'] ?? $ce->sunat_descripcion;
-        if (!empty($respuesta['error'])) {
-            $ce->error = mb_substr((string) $respuesta['error'], 0, 1000);
+        // Se leen los campos a través del DTO del contrato y no del array crudo.
+        // La versión anterior accedía a claves de primer nivel —'hash_cpe', 'serie',
+        // 'sunat_codigo', 'error'— que la respuesta NO tiene: van anidadas en
+        // `comprobante` y `sunat`. El resultado era que ocho de los nueve campos no
+        // se actualizaban nunca y, en particular, el motivo de un rechazo de SUNAT
+        // se perdía por completo: quedaba un estado `rechazado` sin explicación.
+        // Con el DTO, un cambio de forma en la respuesta rompe al compilar en vez
+        // de degradar en silencio.
+        $cpe = $respuesta->comprobante;
+
+        $ce->estado            = $respuesta->estado?->value      ?? $ce->estado;
+        $ce->hash_cpe          = $cpe?->hash                     ?? $ce->hash_cpe;
+        $ce->qr                = $cpe?->qr                       ?? $ce->qr;
+        $ce->numero            = $cpe?->numeroCompleto           ?: $ce->numero;
+        $ce->serie             = $cpe?->serie                    ?: $ce->serie;
+        $ce->correlativo       = $cpe?->numero                   ?: $ce->correlativo;
+        $ce->sunat_codigo      = $respuesta->sunat?->codigo      ?? $ce->sunat_codigo;
+        $ce->sunat_descripcion = $respuesta->sunat?->descripcion ?? $ce->sunat_descripcion;
+
+        // El motivo del rechazo es la descripción del CDR. Se copia a `error` solo
+        // cuando SUNAT no aceptó, para que la UI pueda mostrar por qué falló sin
+        // tener que interpretar códigos.
+        if ($respuesta->sunat && ! $respuesta->sunat->aceptado() && $respuesta->sunat->descripcion) {
+            $ce->error = mb_substr($respuesta->sunat->descripcion, 0, 1000);
         }
+
         $ce->save();
 
         if (in_array($ce->estado, self::TERMINALES, true)) {

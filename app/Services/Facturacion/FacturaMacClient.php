@@ -98,7 +98,7 @@ class FacturaMacClient
     }
 
     /**
-     * Estado actual del comprobante. `GET /api/v1/comprobantes/{id}`.
+     * Estado actual del comprobante. `GET /api/v1/ventas/{id}`.
      *
      * Es la única forma de saber si una boleta salió del Resumen Diario con CDR
      * aceptado: en el momento de emitir todavía no existe respuesta de SUNAT.
@@ -107,16 +107,22 @@ class FacturaMacClient
      *
      * @throws FacturaMacException
      */
-    public function consultar(int $id): array
+    /**
+     * Devuelve el DTO del contrato, no el array crudo: los campos del comprobante
+     * y de SUNAT van anidados, y leerlos a mano por clave de primer nivel es
+     * exactamente el error que hacía que el motivo de un rechazo no se registrase
+     * nunca. Con el DTO, un cambio de forma se detecta al compilar.
+     */
+    public function consultar(int $id): Respuesta
     {
         $response = $this->enviar(
-            fn (PendingRequest $req) => $req->get("{$this->baseUrl}/api/v1/comprobantes/{$id}"),
+            fn (PendingRequest $req) => $req->get("{$this->baseUrl}/api/v1/ventas/{$id}"),
             "consultar comprobante {$id}",
         );
 
         $this->verificar($response, "consultar comprobante {$id}");
 
-        return $this->json($response);
+        return Respuesta::desdeArray($this->json($response));
     }
 
     /**
@@ -132,7 +138,7 @@ class FacturaMacClient
                 ->withHeaders(['Accept' => 'application/pdf'])
                 // El PDF se genera al vuelo y puede tardar más que un JSON.
                 ->timeout($this->timeout * 2)
-                ->get("{$this->baseUrl}/api/v1/comprobantes/{$id}/pdf"),
+                ->get("{$this->baseUrl}/api/v1/ventas/{$id}/pdf"),
             "descargar PDF del comprobante {$id}",
         );
 
@@ -143,7 +149,7 @@ class FacturaMacClient
 
     /**
      * Emite la Nota de Crédito que revierte un comprobante ya aceptado.
-     * `POST /api/v1/comprobantes/{id}/nota-credito`.
+     * `POST /api/v1/ventas/{id}/nota-credito`.
      *
      * Es el único camino legal para deshacer una venta ya informada a SUNAT: anularla
      * solo en el POS dejaría la declaración fuera de cuadre (G7).
@@ -156,7 +162,7 @@ class FacturaMacClient
     public function notaCredito(int $id, array $data): array
     {
         $response = $this->enviar(
-            fn (PendingRequest $req) => $req->post("{$this->baseUrl}/api/v1/comprobantes/{$id}/nota-credito", $data),
+            fn (PendingRequest $req) => $req->post("{$this->baseUrl}/api/v1/ventas/{$id}/nota-credito", $data),
             "emitir nota de crédito del comprobante {$id}",
         );
 
@@ -166,7 +172,7 @@ class FacturaMacClient
     }
 
     /**
-     * Reenvía a SUNAT un comprobante rechazado. `POST /api/v1/comprobantes/{id}/reintentar`.
+     * Reenvía a SUNAT un comprobante rechazado. `POST /api/v1/ventas/{id}/reintentar`.
      *
      * Sobre el MISMO comprobante y el mismo correlativo, nunca creando otro: si cada
      * rechazo generase un documento nuevo, la numeración quedaría llena de huecos que
@@ -179,7 +185,7 @@ class FacturaMacClient
     public function reintentar(int $id): array
     {
         $response = $this->enviar(
-            fn (PendingRequest $req) => $req->post("{$this->baseUrl}/api/v1/comprobantes/{$id}/reintentar"),
+            fn (PendingRequest $req) => $req->post("{$this->baseUrl}/api/v1/ventas/{$id}/reintentar"),
             "reintentar comprobante {$id}",
         );
 
