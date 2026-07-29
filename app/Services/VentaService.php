@@ -639,10 +639,12 @@ class VentaService
         //
         // `Schema::hasTable()` consulta el catálogo de la base, así que se cachea
         // por proceso: esto corre en cada anulación y edición.
-        if (! config('facturamac.enabled')) {
-            return;
-        }
-
+        // OJO: aquí NO se consulta `facturamac.enabled`, a diferencia del resto de
+        // guardas del módulo. Si una empresa emitió comprobantes y luego apaga la
+        // integración, esas ventas SIGUEN informadas a SUNAT: dejar que se anulen
+        // porque el interruptor está en off descuadraría la declaración. Lo único
+        // que puede eximir de comprobar es que la tabla no exista, porque entonces
+        // no se emitió nunca nada.
         static $tablaDisponible = null;
 
         $tablaDisponible ??= Schema::hasTable('venta_comprobantes');
