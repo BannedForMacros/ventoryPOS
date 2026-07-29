@@ -22,6 +22,18 @@ use Throwable;
  * El tenant emisor (RUC, certificado, clave SOL) NO viaja en el payload: se deduce del
  * Bearer token vía el TenantScope de FacturaMac. Un token equivocado emite con el RUC
  * equivocado, así que el token es dato sensible de configuración, no de request.
+ *
+ * ─── El token se INYECTA, no se lee de la configuración global ────────────────
+ *
+ * Antes se leía de `config('facturamac.token')`, es decir, del `.env`: UN token para
+ * toda la instalación. Como el token identifica a una empresa emisora, con dos
+ * contribuyentes en el mismo ventoryPOS las ventas del segundo salían firmadas con el
+ * RUC del primero. Ahora el token llega por constructor y quien lo resuelve es
+ * `FacturacionEmpresa::cliente($empresaId)`, que lo saca de la conexión de ESA
+ * empresa. Este cliente ya no puede equivocarse de emisor porque ya no elige.
+ *
+ * La URL sí sigue en `config/facturamac.php`: FacturaMac es un único servicio para
+ * toda la instalación. Eso es dónde vive el servicio, no de quién es la cuenta.
  */
 class FacturaMacClient
 {
@@ -29,11 +41,17 @@ class FacturaMacClient
     private ?string $token;
     private int $timeout;
 
-    public function __construct()
+    public function __construct(?string $token = null)
     {
         $this->baseUrl = rtrim((string) config('facturamac.base_url'), '/');
-        $this->token   = config('facturamac.token');
+        $this->token   = $token;
         $this->timeout = (int) config('facturamac.timeout', 20);
+    }
+
+    /** ¿Este cliente tiene con qué autenticarse? Lo usa la pantalla de configuración. */
+    public function tieneToken(): bool
+    {
+        return trim((string) $this->token) !== '';
     }
 
     /**
@@ -217,6 +235,82 @@ class FacturaMacClient
         return $this->json($response);
     }
 
+    /**
+     * Canjea un CÓDIGO CORTO de vinculación por el token de la empresa.
+     * `POST /api/v1/vincular` — PÚBLICO, sin autenticación.
+     *
+     * Es el único método que NO pasa por `enviar()`, y a propósito: aquí todavía no
+     * hay token, que es justo lo que se viene a buscar. La guarda de `enviar()` lo
+     * rechazaría antes de salir.
+     *
+     * POR QUÉ UN CÓDIGO Y NO EL TOKEN A MANO: el requisito es que todo se haga por
+     * interfaz. Un token de Sanctum son 50 caracteres que hay que copiar sin
+     * equivocarse, y equivocarse significa emitir con el RUC de otro o no emitir. Un
+     * código de 8 caracteres de un solo uso y con caducidad se dicta por teléfono.
+     *
+     * Contrato (cerrado, lo implementa FacturaMac):
+     *   200 → { token, emisor: { ruc, razon_social, modo } }
+     *   422 → codigo_invalido   410 → codigo_expirado
+     *   409 → codigo_usado      429 → rate limit
+     *
+     * @return array<string, mixed>
+     *
+     * @throws FacturaMacException
+     */
+    public function vincular(string $codigo, string $instalacion): array
+    {
+        try {
+            $response = Http::acceptJson()
+                ->asJson()
+                ->timeout(min($this->timeout, 15))
+                ->withOptions(['http_errors' => false])
+                ->post("{$this->baseUrl}/api/v1/vincular", [
+                    'codigo'      => $codigo,
+                    'sistema'     => 'ventoryPOS',
+                    'instalacion' => $instalacion,
+                ]);
+        } catch (ConnectionException $e) {
+            throw FacturaMacException::reintentable(
+                "No se pudo contactar con FacturaMac en {$this->baseUrl}: {$e->getMessage()}",
+                null,
+                null,
+                $e,
+            );
+        } catch (Throwable $e) {
+            throw FacturaMacException::reintentable(
+                "Fallo inesperado hablando con FacturaMac al vincular: {$e->getMessage()}",
+                null,
+                null,
+                $e,
+            );
+        }
+
+        if ($response->successful()) {
+            return $this->json($response);
+        }
+
+        // Los códigos del contrato se traducen a algo que lea la persona que tiene el
+        // código delante. `error` es el código estable; nunca se le enseña tal cual.
+        $codigoError = (string) ($this->json($response)['error'] ?? '');
+
+        $mensaje = match (true) {
+            $codigoError === 'codigo_invalido'  => 'El código de vinculación no es válido. Revísalo y vuelve a intentarlo.',
+            $codigoError === 'codigo_expirado'  => 'El código de vinculación ya caducó. Pide uno nuevo en FacturaMac.',
+            $codigoError === 'codigo_usado'     => 'Ese código de vinculación ya se usó. Pide uno nuevo en FacturaMac.',
+            $response->status() === 429         => 'Demasiados intentos seguidos. Espera un minuto y vuelve a intentarlo.',
+            default                             => $this->mensajeDe($this->cuerpo($response))
+                ?? "FacturaMac respondió {$response->status()} al vincular.",
+        };
+
+        // 429 es el único reintentable: los otros tres exigen un código distinto.
+        throw new FacturaMacException(
+            $mensaje,
+            $response->status() === 429,
+            $response->status(),
+            $this->cuerpo($response),
+        );
+    }
+
     // ── Interno ──────────────────────────────────────────────────────────────────
 
     private function base(): PendingRequest
@@ -244,7 +338,8 @@ class FacturaMacClient
     {
         if (empty($this->token)) {
             throw FacturaMacException::definitiva(
-                "No hay token de FacturaMac configurado (FACTURAMAC_TOKEN); no se puede {$operacion}.",
+                "Esta empresa no está conectada con FacturaMac; no se puede {$operacion}. "
+                . 'Conéctala en Configuración → Facturación Electrónica.',
             );
         }
 

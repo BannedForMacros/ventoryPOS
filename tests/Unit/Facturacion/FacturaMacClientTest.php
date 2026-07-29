@@ -23,7 +23,6 @@ uses(Tests\TestCase::class);
 
 beforeEach(function () {
     config()->set('facturamac.base_url', 'https://emisor.test');
-    config()->set('facturamac.token', 'token-de-prueba');
     config()->set('facturamac.timeout', 5);
 });
 
@@ -41,7 +40,7 @@ function errorAlEmitir(array|string $cuerpo, int $status): FacturaMacException
     ]);
 
     try {
-        (new FacturaMacClient())->emitirVenta(['idempotency_key' => 'venta-1']);
+        (new FacturaMacClient('token-de-prueba'))->emitirVenta(['idempotency_key' => 'venta-1']);
     } catch (FacturaMacException $e) {
         return $e;
     }
@@ -258,7 +257,7 @@ it('clasifica igual la nota de crédito', function () {
     ]);
 
     try {
-        (new FacturaMacClient())->notaCredito(812, ['idempotency_key' => 'dev-1']);
+        (new FacturaMacClient('token-de-prueba'))->notaCredito(812, ['idempotency_key' => 'dev-1']);
         $this->fail('Se esperaba una FacturaMacException.');
     } catch (FacturaMacException $e) {
         expect($e->reintentable)->toBeTrue()
@@ -267,9 +266,10 @@ it('clasifica igual la nota de crédito', function () {
 });
 
 it('falla sin reintento cuando no hay token configurado', function () {
-    config()->set('facturamac.token', null);
+    // Cliente SIN token: es lo que devuelve `FacturacionEmpresa::cliente()` para una
+    // empresa que no está conectada.
     Http::fake();
 
-    expect(fn () => (new FacturaMacClient())->ping())
+    expect(fn () => (new FacturaMacClient(null))->ping())
         ->toThrow(FacturaMacException::class);
 });

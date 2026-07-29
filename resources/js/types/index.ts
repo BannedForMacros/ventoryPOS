@@ -527,11 +527,17 @@ export type ModoFacturacion =
  * desplegado), el POS se comporta exactamente como hoy.
  *
  * TODO lo fiscal de aquí lo dicta el EMISOR (`GET /api/v1/configuracion`), no
- * `config/facturamac.php`. La única clave local es `enabled`, que es el
- * interruptor de despliegue. Ver App\Services\Facturacion\ConfiguracionFacturacion.
+ * `config/facturamac.php`. Lo único local es `enabled`, que es el interruptor de
+ * emisión DE ESTA EMPRESA. Ver App\Services\Facturacion\ConfiguracionFacturacion.
  */
 export interface FacturacionPosConfig {
-    /** config('facturamac.enabled') — ¿está CABLEADA la integración? */
+    /**
+     * ¿Esta EMPRESA emite comprobantes electrónicos?
+     * `FacturacionEmpresa::activa($empresaId)`, resuelto desde
+     * `facturacion_conexiones`. Antes era `config('facturamac.enabled')`, un flag
+     * del `.env` común a toda la instalación: con dos contribuyentes, encender uno
+     * encendía los dos y las ventas del segundo salían con el RUC del primero.
+     */
     enabled:                    boolean;
     /** Modo del emisor: gobierna el banner del POS. */
     modo?:                      ModoFacturacion;

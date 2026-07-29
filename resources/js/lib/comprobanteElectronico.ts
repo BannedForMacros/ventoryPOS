@@ -174,7 +174,8 @@ interface ArgsValidacion {
     /** Umbral SUNAT de boleta identificada (default 700). */
     umbral?:         number;
     /**
-     * ¿Está encendida la emisión electrónica? (config('facturamac.enabled')).
+     * ¿Está encendida la emisión electrónica DE ESTA EMPRESA?
+     * (`FacturacionEmpresa::activa($empresaId)`, no un flag del `.env`).
      * Debe reflejar EXACTAMENTE el mismo gate que StoreVentaRequest: si el
      * backend no valida, el POS tampoco debe bloquear, o le estaríamos
      * impidiendo a la cajera algo que hoy puede hacer sin consecuencias.

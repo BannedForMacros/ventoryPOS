@@ -23,39 +23,48 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | ¿Está CABLEADA la integración?
+    | Aquí NO están ni el interruptor ni el token. Y es a propósito.
     |--------------------------------------------------------------------------
     |
-    | Ojo con la distinción, que es la clave de todo el diseño:
+    | Hasta 2026-07 este archivo tenía `enabled` (FACTURAMAC_ENABLED) y `token`
+    | (FACTURAMAC_TOKEN). Los dos se han ido a la base de datos, a la tabla
+    | `facturacion_conexiones`, UNA FILA POR EMPRESA.
     |
-    |   `enabled` (aquí)   = "¿esta instalación de ventoryPOS sabe hablar con
-    |                        FacturaMac?" Es infraestructura: hay URL y token, la
-    |                        red llega, el módulo está desplegado. Es un
-    |                        interruptor de DESPLIEGUE.
+    | POR QUÉ: un token de FacturaMac identifica a UNA empresa emisora — de él se
+    | deducen el RUC, el certificado y la clave SOL. El `.env` es uno solo para
+    | toda la instalación, y esta instalación sirve a dos contribuyentes
+    | distintos (MacSoft E.I.R.L. y HYC FERROMATERIALES SRL). Con un único token,
+    | cuando vendía la segunda su comprobante salía firmado con el RUC de la
+    | primera: facturar a nombre de otro contribuyente, sobre documentos fiscales
+    | irreversibles. No era arreglable aquí, porque no hay dónde poner el segundo
+    | token.
     |
-    |   `emision_activa` /
-    |   `modo` (FacturaMac)= "¿esta empresa emite a SUNAT y en qué modo?" Es una
-    |                        decisión de NEGOCIO del emisor, y por tanto vive
-    |                        junto al certificado y la clave SOL, no aquí.
+    | Dónde vive ahora cada cosa:
     |
-    | Con `enabled=false` el POS funciona exactamente como antes de existir la
-    | integración: ticket interno, cero llamadas de red, cero validaciones SUNAT.
-    | Por defecto FALSE: emitir mal es irreversible, así que cada instalación lo
-    | enciende a conciencia en vez de arrastrar un default peligroso al desplegar.
+    |   token, RUC del emisor, modo, ¿emite? → `facturacion_conexiones`, por
+    |     empresa. Se gestiona ENTERAMENTE por interfaz, en Configuración →
+    |     Facturación Electrónica, pegando el código corto de vinculación que da
+    |     FacturaMac. Nadie tiene que entrar por SSH ni editar este archivo.
+    |
+    |   ¿esta empresa emite? → `FacturacionEmpresa::activa($empresaId)`. Es el
+    |     reemplazo literal de `config('facturamac.enabled')` y el ÚNICO sitio
+    |     desde el que se pregunta.
+    |
+    | Si FACTURAMAC_ENABLED o FACTURAMAC_TOKEN siguen en algún `.env`, ya no se
+    | leen. Pueden borrarse cuando se quiera.
     |
     */
-    'enabled' => env('FACTURAMAC_ENABLED', false),
 
     /*
     |--------------------------------------------------------------------------
-    | Conexión con FacturaMac
+    | Dónde vive FacturaMac
     |--------------------------------------------------------------------------
     |
-    | `token` es un personal access token de Sanctum ligado a un usuario de
-    | FacturaMac que pertenece al Tenant correcto: el tenant (y por tanto el RUC
-    | emisor, el certificado, la clave SOL y TODA la configuración fiscal) se
-    | deduce del token, nunca se manda en el payload. Un token equivocado emite
-    | con el RUC equivocado: es dato sensible de despliegue.
+    | Esto SÍ se queda aquí, y no en la tabla por empresa: FacturaMac es un único
+    | servicio para toda la instalación. `base_url` responde a "a qué máquina se
+    | llama", que es infraestructura de despliegue, no una decisión del usuario.
+    | De hecho ponerlo por empresa sería peligroso: dejaría que alguien apuntara
+    | una empresa a un emisor cualquiera desde una pantalla del POS.
     |
     | `timeout` corto a propósito: el cajero no espera a SUNAT. FacturaMac
     | responde en cuanto persiste el comprobante y encola el envío; si tarda más
@@ -63,7 +72,6 @@ return [
     |
     */
     'base_url' => env('FACTURAMAC_URL', 'http://localhost:8001'),
-    'token'    => env('FACTURAMAC_TOKEN'),
     'timeout'  => env('FACTURAMAC_TIMEOUT', 20),
 
     /*

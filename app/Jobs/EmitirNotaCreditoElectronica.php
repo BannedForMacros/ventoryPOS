@@ -9,7 +9,7 @@ use App\Models\Venta;
 use App\Models\VentaComprobante;
 use App\Models\VentaItem;
 use App\Services\AuditoriaService;
-use App\Services\Facturacion\FacturaMacClient;
+use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\Facturacion\FacturaMacException;
 use MacSoft\Facturacion\Contrato\Enum\CodigoError;
 use MacSoft\Facturacion\Contrato\Enum\Impuesto;
@@ -51,18 +51,30 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
      */
     private const MAX_ESPERAS = 48;
 
+    /**
+     * OJO — `$empresaId` VIAJA EN EL JOB, y va delante de todo lo opcional.
+     *
+     * Un job corre sin sesión: `auth()->user()` es null y no hay de dónde deducir la
+     * empresa. La emisora es la de la VENTA que se acredita —no la del usuario que
+     * registró la devolución, que podría ser un admin de la otra empresa—, así que
+     * `DevolucionService` la pasa desde `$venta->empresa_id` al despachar y aquí se
+     * vuelve a comprobar contra la devolución cargada.
+     */
     public function __construct(
         public int $devolucionId,
+        public int $empresaId,
         public ?int $userId = null,
         /** Cuántas veces se pospuso ya por comprobante aún no informado a SUNAT. */
         public int $esperas = 0,
     ) {}
 
-    public function handle(FacturaMacClient $client): void
+    public function handle(FacturacionEmpresa $facturacion): void
     {
-        if (!config('facturamac.enabled')) {
+        if (! $facturacion->activa($this->empresaId)) {
             return;
         }
+
+        $client = $facturacion->cliente($this->empresaId);
 
         // Se cargan las relaciones que necesita la aritmética de la NC: los ítems de
         // la venta (para el prorrateo del descuento global y el criterio de IGV) y la
@@ -85,7 +97,22 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         }
 
         $venta = $devolucion->venta;
-        $ce    = $venta->comprobanteElectronico()->first();
+
+        // La empresa del job tiene que ser la de la venta que se acredita. Si no
+        // cuadra, se emitiría la nota de crédito con el token del contribuyente
+        // equivocado: un documento fiscal a nombre de quien no vendió.
+        if ((int) $venta->empresa_id !== $this->empresaId) {
+            Log::error('Nota de crédito descartada: la empresa del job no es la de la venta', [
+                'devolucion_id' => $devolucion->id,
+                'venta_id'      => $venta->id,
+                'empresa_job'   => $this->empresaId,
+                'empresa_real'  => $venta->empresa_id,
+            ]);
+
+            return;
+        }
+
+        $ce = $venta->comprobanteElectronico()->first();
 
         // Sin comprobante informado a SUNAT no hay nada que acreditar: la venta
         // era un `ticket` (nota interna) o su emisión falló. En ambos casos la
@@ -251,7 +278,7 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             'reintento_en'  => $esperaMinutos . ' min',
         ]);
 
-        self::dispatch($this->devolucionId, $this->userId, $this->esperas + 1)
+        self::dispatch($this->devolucionId, $this->empresaId, $this->userId, $this->esperas + 1)
             ->delay(now()->addMinutes($esperaMinutos));
     }
 

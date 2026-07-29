@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\Facturacion\ConfiguracionFacturacion;
+use App\Services\Facturacion\FacturacionEmpresa;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\TestEnv;
@@ -48,12 +48,25 @@ function cfgEmisorRemoto(array $override = []): array
 }
 
 beforeEach(function () {
-    // Integración CABLEADA: hay a quién preguntar.
-    config(['facturamac.enabled' => true, 'facturamac.base_url' => 'http://emisor.test']);
+    config(['facturamac.base_url' => 'http://emisor.test']);
 
     $this->env = TestEnv::crear(['modo_cierre_caja' => 'rapido']);
+
+    // Empresa CONECTADA y emitiendo: hay a quién preguntar. Antes esto era
+    // `config(['facturamac.enabled' => true])`, un flag del `.env` común a toda la
+    // instalación; ahora la conexión —y el token— son de ESTA empresa.
+    $this->env->conectarFacturacion();
+
     $this->actingAs($this->env->admin);
 });
+
+/** La configuración de LA empresa del entorno. Atajo para no repetirlo 12 veces. */
+function cfg(): \App\Services\Facturacion\ConfiguracionFacturacion
+{
+    // Instancia NUEVA a propósito en cada llamada: varios tests comprueban que la
+    // caché compartida (no la memoria por request) es la que evita las llamadas HTTP.
+    return (new FacturacionEmpresa())->configuracion(test()->env->empresa->id);
+}
 
 // ── Caché ───────────────────────────────────────────────────────────────────
 
@@ -62,9 +75,9 @@ it('cachea la configuración: varias lecturas, una sola llamada al emisor', func
 
     // Instancias DISTINTAS a propósito: la memoria por request no basta, la caché
     // compartida es la que evita meter una llamada HTTP en cada carga de pantalla.
-    expect(app(ConfiguracionFacturacion::class)->umbralBoletaIdentificada())->toBe(500.0);
-    expect(app(ConfiguracionFacturacion::class)->modo())->toBe('beta');
-    expect(app(ConfiguracionFacturacion::class)->seriesPorDefecto()['boleta'])->toBe('B002');
+    expect(cfg()->umbralBoletaIdentificada())->toBe(500.0);
+    expect(cfg()->modo())->toBe('beta');
+    expect(cfg()->seriesPorDefecto()['boleta'])->toBe('B002');
 
     Http::assertSentCount(1);
 });
@@ -72,10 +85,10 @@ it('cachea la configuración: varias lecturas, una sola llamada al emisor', func
 it('olvidar() fuerza a volver a preguntar', function () {
     Http::fake(['*/api/v1/configuracion' => Http::response(cfgEmisorRemoto(), 200)]);
 
-    $config = app(ConfiguracionFacturacion::class);
+    $config = cfg();
     $config->modo();
     $config->olvidar();
-    app(ConfiguracionFacturacion::class)->modo();
+    cfg()->modo();
 
     Http::assertSentCount(2);
 });
@@ -90,9 +103,9 @@ it('no vuelve a intentarlo en cada lectura mientras el emisor esté caído', fun
         throw new ConnectionException('Connection refused');
     });
 
-    app(ConfiguracionFacturacion::class)->modo();
-    app(ConfiguracionFacturacion::class)->umbralBoletaIdentificada();
-    app(ConfiguracionFacturacion::class)->esProduccion();
+    cfg()->modo();
+    cfg()->umbralBoletaIdentificada();
+    cfg()->esProduccion();
 
     expect($intentos)->toBe(1);
 });
@@ -102,7 +115,7 @@ it('no vuelve a intentarlo en cada lectura mientras el emisor esté caído', fun
 it('el umbral del emisor manda sobre el default local de 700', function () {
     Http::fake(['*/api/v1/configuracion' => Http::response(cfgEmisorRemoto(), 200)]);
 
-    expect(app(ConfiguracionFacturacion::class)->umbralBoletaIdentificada())->toBe(500.0);
+    expect(cfg()->umbralBoletaIdentificada())->toBe(500.0);
 });
 
 it('una boleta de 600 al Cliente General se BLOQUEA si el emisor pide identificar desde 500', function () {
@@ -158,7 +171,7 @@ it('con el emisor caído esProduccion() es TRUE y el modo es desconocido', funct
     // Un aviso de más no cuesta nada; uno de menos cuesta una Nota de Crédito.
     Http::fake(fn () => throw new ConnectionException('Connection refused'));
 
-    $config = app(ConfiguracionFacturacion::class);
+    $config = cfg();
 
     expect($config->modo())->toBe('desconocido');
     expect($config->esProduccion())->toBeTrue();
@@ -224,7 +237,7 @@ it('distingue simulacion de produccion', function () {
         cfgEmisorRemoto(['modo' => 'simulacion', 'envia_a_sunat' => false]), 200,
     )]);
 
-    $config = app(ConfiguracionFacturacion::class);
+    $config = cfg();
 
     expect($config->modo())->toBe('simulacion');
     expect($config->esProduccion())->toBeFalse();

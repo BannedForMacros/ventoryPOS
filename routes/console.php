@@ -2,10 +2,12 @@
 
 use App\Jobs\ConsultarEstadoComprobante;
 use App\Models\VentaComprobante;
+use App\Services\Facturacion\FacturacionEmpresa;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule;
+use Illuminate\Support\Facades\Schema;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -24,26 +26,44 @@ Artisan::command('inspire', function () {
  * Es idempotente y barato: consultar de más NO emite nada ante SUNAT.
  */
 Schedule::call(function () {
-    if (!config('facturamac.enabled') || !class_exists(VentaComprobante::class)) {
+    // El scheduler corre sin sesión y sirve a TODAS las empresas de la instalación,
+    // así que no puede preguntar por "la" empresa: recoge el `empresa_id` de la
+    // venta de cada comprobante y decide uno a uno. Antes bastaba con mirar el flag
+    // global `facturamac.enabled`; hoy cada contribuyente tiene su propio emisor y
+    // reencolar los de una empresa apagada solo llenaría la cola de trabajo inútil.
+    $facturacion = app(FacturacionEmpresa::class);
+
+    if (! $facturacion->tablaDisponible() || ! Schema::hasTable('venta_comprobantes')) {
         return;
     }
 
     $comprobantes = VentaComprobante::query()
-        ->whereIn('estado', ['pendiente_resumen', 'enviando'])
-        ->whereNotNull('facturamac_id')
-        ->where('updated_at', '<', now()->subHours(2))
+        ->join('ventas', 'ventas.id', '=', 'venta_comprobantes.venta_id')
+        ->whereIn('venta_comprobantes.estado', ['pendiente_resumen', 'enviando'])
+        ->whereNotNull('venta_comprobantes.facturamac_id')
+        ->where('venta_comprobantes.updated_at', '<', now()->subHours(2))
         // Más allá de una semana el problema ya no es de espera: se revisa a mano.
-        ->where('updated_at', '>', now()->subDays(7))
+        ->where('venta_comprobantes.updated_at', '>', now()->subDays(7))
         ->limit(200)
-        ->get(['id']);
+        ->get(['venta_comprobantes.id', 'ventas.empresa_id']);
+
+    $encolados = 0;
 
     foreach ($comprobantes as $ce) {
-        ConsultarEstadoComprobante::dispatch($ce->id);
+        $empresaId = (int) $ce->empresa_id;
+
+        // `activa()` memoiza por empresa: dos empresas = dos consultas, no 200.
+        if (! $facturacion->activa($empresaId)) {
+            continue;
+        }
+
+        ConsultarEstadoComprobante::dispatch($ce->id, $empresaId);
+        $encolados++;
     }
 
-    if ($comprobantes->isNotEmpty()) {
+    if ($encolados > 0) {
         Log::info('Reencoladas consultas de comprobantes electrónicos pendientes', [
-            'cantidad' => $comprobantes->count(),
+            'cantidad' => $encolados,
         ]);
     }
 })->hourly()->name('comprobantes:reencolar-consultas')->withoutOverlapping();

@@ -6,6 +6,7 @@ use App\Models\Almacen;
 use App\Models\Caja;
 use App\Models\Categoria;
 use App\Models\Cliente;
+use App\Models\ConexionFacturacion;
 use App\Models\DescuentoConcepto;
 use App\Models\DevolucionMotivo;
 use App\Models\Empresa;
@@ -272,6 +273,36 @@ class TestEnv
     public function motivo(string $slug): DevolucionMotivo
     {
         return $this->motivos[$slug] ?? throw new \RuntimeException("Motivo '{$slug}' no inicializado");
+    }
+
+    /**
+     * Conecta ESTA empresa con un emisor de FacturaMac, como si alguien hubiera
+     * pegado un código de vinculación en Configuración → Facturación Electrónica.
+     *
+     * Sustituye a lo que antes hacían los tests con
+     * `config(['facturamac.enabled' => true, 'facturamac.token' => '...'])`. Ya no
+     * vale: el interruptor y el token viven POR EMPRESA en `facturacion_conexiones`,
+     * porque un token del `.env` es uno solo para toda la instalación y con dos
+     * contribuyentes emitía las ventas del segundo con el RUC del primero.
+     *
+     * Defaults pensados para el caso corriente de un test: producción y emitiendo.
+     * El RUC del emisor se toma del de la empresa: cualquier otra cosa sería una
+     * conexión que la aplicación habría rechazado al crearse.
+     */
+    public function conectarFacturacion(array $opts = []): ConexionFacturacion
+    {
+        return ConexionFacturacion::updateOrCreate(
+            ['empresa_id' => $this->empresa->id],
+            array_merge([
+                'token'               => 'token-de-prueba-' . $this->empresa->id,
+                'ruc_emisor'          => $this->empresa->ruc,
+                'razon_social_emisor' => $this->empresa->razon_social,
+                'modo'                => 'produccion',
+                'emision_activa'      => true,
+                'instalacion'         => 'tests',
+                'conectado_at'        => now(),
+            ], $opts),
+        );
     }
 
     private function seedMetodosPago(): void

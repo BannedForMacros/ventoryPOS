@@ -6,6 +6,7 @@ use App\Models\Cuenta;
 use App\Models\Empresa;
 use App\Models\MetodoPago;
 use App\Models\ProductoUnidad;
+use App\Services\Facturacion\FacturacionEmpresa;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -155,12 +156,16 @@ class StoreVentaRequest extends FormRequest
      */
     private function validarComprobanteElectronico($validator, int $empresaId, float $total): void
     {
-        // Mientras la integración esté apagada, el POS debe comportarse EXACTAMENTE
-        // como antes de existir este archivo: 'boleta' y 'factura' son hoy meras
-        // etiquetas que no emiten nada, y rechazar una venta por reglas de SUNAT
-        // que nadie va a aplicar sería romper la caja sin ninguna contrapartida.
-        // Las reglas se activan junto con la emisión real (FACTURAMAC_ENABLED=true).
-        if (! config('facturamac.enabled')) {
+        // Mientras la emisión de ESTA empresa esté apagada, el POS debe comportarse
+        // EXACTAMENTE como antes de existir este archivo: 'boleta' y 'factura' son
+        // meras etiquetas que no emiten nada, y rechazar una venta por reglas de
+        // SUNAT que nadie va a aplicar sería romper la caja sin contrapartida.
+        //
+        // POR EMPRESA, no por instalación: antes esto era
+        // `config('facturamac.enabled')`, un flag del `.env` común a los dos
+        // contribuyentes de esta instalación. Ahora se pregunta por la empresa que
+        // está vendiendo, que es la única que puede responderlo.
+        if (! app(FacturacionEmpresa::class)->activa($empresaId)) {
             return;
         }
 
@@ -218,7 +223,8 @@ class StoreVentaRequest extends FormRequest
         // no lanza y cae al default legal (700). Lo peor que puede pasar con el
         // emisor caído es aplicar el umbral de ayer; lo que no puede pasar es que
         // la caja deje de cobrar.
-        $umbral = app(\App\Services\Facturacion\ConfiguracionFacturacion::class)
+        $umbral = app(FacturacionEmpresa::class)
+            ->configuracion($empresaId)
             ->umbralBoletaIdentificada();
         if ($total >= $umbral - 0.01) {
             if (!$cliente || $cliente->es_cliente_general) {

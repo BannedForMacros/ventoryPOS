@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Venta;
 use App\Models\VentaComprobante;
-use App\Services\Facturacion\FacturaMacClient;
+use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\Facturacion\FacturaMacException;
 use App\Services\Facturacion\VentaAContrato;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -46,15 +46,27 @@ class EmitirComprobanteElectronico implements ShouldQueue
 
     public function __construct(public Venta $venta) {}
 
-    public function handle(VentaAContrato $mapper, FacturaMacClient $client): void
+    /**
+     * OJO — LA EMPRESA VIAJA EN EL JOB, no se deduce del usuario autenticado.
+     *
+     * Un job corre en un worker: no hay sesión, `auth()->user()` es null y
+     * `$user->empresa_id` no existe. La empresa sale de `$this->venta->empresa_id`,
+     * que es dato de la venta y viaja serializado con ella. De ahí sale el token
+     * con el que se emite, así que una venta de HYC se emite SIEMPRE con el token
+     * de HYC aunque quien la registrara fuera un usuario de MacSoft.
+     */
+    public function handle(VentaAContrato $mapper, FacturacionEmpresa $facturacion): void
     {
-        // Interruptor global: con la integración apagada el POS funciona exactamente
+        $venta     = $this->venta;
+        $empresaId = (int) $venta->empresa_id;
+
+        // Interruptor POR EMPRESA: sin emisión activa el POS funciona exactamente
         // como antes de que existiera (todo el flujo histórico es `ticket`).
-        if (!config('facturamac.enabled')) {
+        if (! $facturacion->activa($empresaId)) {
             return;
         }
 
-        $venta = $this->venta;
+        $client = $facturacion->cliente($empresaId);
 
         // El `ticket` es nota de venta INTERNA: no se informa a SUNAT.
         if ($venta->tipo_comprobante === 'ticket') {
@@ -162,7 +174,9 @@ class EmitirComprobanteElectronico implements ShouldQueue
         $estado = EstadoComprobante::tryFrom((string) $ce->estado);
 
         if ($estado && !$estado->esTerminal() && $ce->facturamac_id) {
-            ConsultarEstadoComprobante::dispatch($ce->id)
+            // La empresa viaja al siguiente job: el polling también consulta con el
+            // token de ESTA empresa, no con uno global.
+            ConsultarEstadoComprobante::dispatch($ce->id, $empresaId)
                 ->delay(ConsultarEstadoComprobante::proximaConsulta($ce->estado, 0));
         }
     }

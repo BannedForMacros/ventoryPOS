@@ -186,7 +186,10 @@ class DevolucionService
                 return; // ticket o comprobante nunca emitido: nada que acreditar
             }
 
-            \App\Jobs\EmitirNotaCreditoElectronica::dispatch($devolucion->id, $user->id)
+            // La empresa que emite es la de LA VENTA, no la del usuario que
+            // registra la devolución: un admin de una empresa puede tramitar la
+            // devolución de la otra, y la nota de crédito la firma quien vendió.
+            \App\Jobs\EmitirNotaCreditoElectronica::dispatch($devolucion->id, (int) $venta->empresa_id, $user->id)
                 ->afterCommit();
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('No se pudo encolar la nota de crédito de la devolución', [

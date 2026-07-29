@@ -9,6 +9,7 @@ use App\Http\Controllers\Proveedores\ProveedorController;
 use App\Http\Controllers\Configuracion\AlmacenController;
 use App\Http\Controllers\Configuracion\CajaController;
 use App\Http\Controllers\Configuracion\EmpresaController;
+use App\Http\Controllers\Configuracion\FacturacionElectronicaController;
 use App\Http\Controllers\Configuracion\LocalController;
 use App\Http\Controllers\Configuracion\CuentaController;
 use App\Http\Controllers\Configuracion\MetodoPagoController;
@@ -128,6 +129,33 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::apiResource('devolucion-motivos', DevolucionMotivoController::class)
                 ->parameters(['devolucion-motivos' => 'motivo'])
                 ->except(['show']);
+        });
+
+        // ── Facturación electrónica: conexión con el emisor, POR EMPRESA ──────
+        //
+        // Todo el módulo se administra desde aquí: conectar con un código corto,
+        // probar, activar la emisión y desconectar. NO hace falta entrar por SSH ni
+        // editar el `.env` — la conexión vive en `facturacion_conexiones`.
+        //
+        // Las acciones van EXPLÍCITAS en el middleware y no derivadas del verbo:
+        // "probar" es un POST pero no crea nada (es una lectura), y activar la
+        // emisión es lo más delicado de la pantalla, así que exige "editar" y no el
+        // "crear" que le tocaría por ser POST.
+        Route::prefix('facturacion')->name('facturacion.')->group(function () {
+            Route::middleware('permiso:configuracion.facturacion,ver')
+                ->get('/', [FacturacionElectronicaController::class, 'index'])->name('index');
+
+            Route::middleware('permiso:configuracion.facturacion,crear')
+                ->post('conectar', [FacturacionElectronicaController::class, 'conectar'])->name('conectar');
+
+            Route::middleware('permiso:configuracion.facturacion,ver')
+                ->post('probar', [FacturacionElectronicaController::class, 'probar'])->name('probar');
+
+            Route::middleware('permiso:configuracion.facturacion,editar')
+                ->put('emision', [FacturacionElectronicaController::class, 'emision'])->name('emision');
+
+            Route::middleware('permiso:configuracion.facturacion,eliminar')
+                ->delete('/', [FacturacionElectronicaController::class, 'desconectar'])->name('desconectar');
         });
     });
 

@@ -14,6 +14,7 @@ use App\Models\Turno;
 use App\Models\User;
 use App\Models\Venta;
 use App\Services\CitaService;
+use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\LocalScopeService;
 use App\Services\TicketPrintService;
 use App\Services\VentaService;
@@ -357,7 +358,7 @@ class VentaController extends Controller
             'tipoCambioHoy'      => $this->tipoCambioHoy(),
             // Facturación electrónica: el POS necesita saber si emite de verdad,
             // con qué serie y —sobre todo— si el emisor apunta a SUNAT producción.
-            'facturacion'        => $this->configFacturacionPos(),
+            'facturacion'        => $this->configFacturacionPos($user->empresa_id),
         ]);
     }
 
@@ -379,17 +380,20 @@ class VentaController extends Controller
      * si el emisor no responde, `produccion` es `true` y la cajera ve el aviso
      * rojo. Un aviso de más no cuesta nada; uno de menos cuesta una Nota de
      * Crédito (ya pasó: ver AUDITORIA_PRODUCCION_SUNAT.md).
+     *
+     * Se pide POR EMPRESA: el emisor —y por tanto el modo, el umbral y las series—
+     * es distinto para cada contribuyente de la instalación.
      */
-    private function configFacturacionPos(): array
+    private function configFacturacionPos(int $empresaId): array
     {
-        return app(\App\Services\Facturacion\ConfiguracionFacturacion::class)->paraPos();
+        return app(FacturacionEmpresa::class)->configuracion($empresaId)->paraPos();
     }
 
     /**
      * ¿Se puede consultar `venta_comprobantes` sin riesgo de reventar la pantalla?
      *
      * POR QUÉ EXISTE ESTA GUARDA: la facturación electrónica es un módulo OPCIONAL
-     * que se despliega por partes, y `enabled` es `false` por defecto. En una
+     * que se despliega por partes, y una empresa sin conexión no emite. En una
      * instalación con el módulo apagado y la migración sin aplicar, un `with()`
      * sobre la relación tira un "relation venta_comprobantes does not exist" y
      * devuelve 500 en `/ventas` — la pantalla más usada del POS— por un módulo que
@@ -404,15 +408,17 @@ class VentaController extends Controller
      */
     private ?bool $cpeDisponible = null;
 
-    private function comprobantesDisponibles(): bool
+    private function comprobantesDisponibles(int $empresaId): bool
     {
         if ($this->cpeDisponible !== null) {
             return $this->cpeDisponible;
         }
 
-        // Interruptor de despliegue: apagado no se consulta nada, ni aunque la
-        // tabla exista. Es lo que hace que el módulo sea de verdad inerte.
-        if (! config('facturamac.enabled')) {
+        // Interruptor de emisión DE ESTA EMPRESA: apagado no se consulta nada, ni
+        // aunque la tabla exista. Es lo que hace que el módulo sea de verdad
+        // inerte. Antes era `config('facturamac.enabled')`, común a las dos
+        // empresas de la instalación.
+        if (! app(FacturacionEmpresa::class)->activa($empresaId)) {
             return $this->cpeDisponible = false;
         }
 
@@ -448,7 +454,7 @@ class VentaController extends Controller
         // Con el módulo apagado (o sin migrar) NO se toca `venta_comprobantes`:
         // `/ventas` es la pantalla más usada del POS y no puede caerse por un
         // módulo opcional. Ver comprobantesDisponibles().
-        $conCpe = $this->comprobantesDisponibles();
+        $conCpe = $this->comprobantesDisponibles($user->empresa_id);
 
         $ventas = Venta::deEmpresa($user->empresa_id)
             ->with(array_merge(

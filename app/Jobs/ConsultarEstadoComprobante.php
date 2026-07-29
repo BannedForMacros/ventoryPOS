@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\VentaComprobante;
-use App\Services\Facturacion\FacturaMacClient;
+use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\Facturacion\FacturaMacException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -49,21 +49,47 @@ class ConsultarEstadoComprobante implements ShouldQueue
      */
     private const DIAS_MAX = 7;
 
+    /**
+     * OJO — `$empresaId` VIAJA EN EL JOB, y es obligatorio.
+     *
+     * Un job corre sin sesión: no hay `auth()->user()` del que sacar la empresa. Y a
+     * diferencia de los otros dos jobs, aquí solo llega un id de comprobante, así
+     * que ni siquiera hay un modelo del que deducirla sin ir a la base. Se pasa
+     * explícita y se comprueba en `handle()` que coincide con la del comprobante:
+     * consultar con el token de otra empresa devolvería 404 (o, peor, el estado de
+     * un comprobante ajeno con el mismo id).
+     */
     public function __construct(
         public int $comprobanteId,
+        public int $empresaId,
         public int $intento = 0,
     ) {}
 
-    public function handle(FacturaMacClient $client): void
+    public function handle(FacturacionEmpresa $facturacion): void
     {
-        if (!config('facturamac.enabled')) {
+        if (! $facturacion->activa($this->empresaId)) {
             return;
         }
 
-        $ce = VentaComprobante::find($this->comprobanteId);
+        $ce = VentaComprobante::with('venta:id,empresa_id')->find($this->comprobanteId);
         if (!$ce || !$ce->facturamac_id) {
             return;
         }
+
+        // El id del comprobante y la empresa vienen de sitios distintos (el job y la
+        // base). Si no cuadran, algo se despachó mal y lo último que hay que hacer es
+        // preguntarle al emisor equivocado por un comprobante que no es suyo.
+        if ($ce->venta && (int) $ce->venta->empresa_id !== $this->empresaId) {
+            Log::warning('Consulta de comprobante descartada: la empresa del job no es la del comprobante', [
+                'comprobante_id'   => $ce->id,
+                'empresa_job'      => $this->empresaId,
+                'empresa_real'     => $ce->venta->empresa_id,
+            ]);
+
+            return;
+        }
+
+        $client = $facturacion->cliente($this->empresaId);
 
         if (in_array($ce->estado, self::TERMINALES, true)) {
             return;
@@ -141,7 +167,7 @@ class ConsultarEstadoComprobante implements ShouldQueue
         }
 
         // Sigue en vuelo (`pendiente_resumen` o `enviando`) → otra vuelta.
-        self::dispatch($ce->id, $this->intento + 1)
+        self::dispatch($ce->id, $this->empresaId, $this->intento + 1)
             ->delay(self::proximaConsulta($ce->estado, $this->intento + 1));
     }
 

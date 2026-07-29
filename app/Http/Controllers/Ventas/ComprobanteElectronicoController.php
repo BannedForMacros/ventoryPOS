@@ -9,6 +9,7 @@ use App\Models\Venta;
 use App\Models\VentaComprobante;
 use App\Services\AuditoriaService;
 use App\Services\Facturacion\CompartirComprobante;
+use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\Facturacion\FacturaMacClient;
 use App\Services\Facturacion\FacturaMacException;
 use Illuminate\Http\JsonResponse;
@@ -31,34 +32,52 @@ use Illuminate\Support\Facades\Mail;
  */
 class ComprobanteElectronicoController extends Controller
 {
-    /** Memoria por request de la comprobación de disponibilidad (ver abajo). */
-    private ?bool $cpeDisponible = null;
+    /** @var array<int, bool> Memoria por request de la comprobación, POR EMPRESA. */
+    private array $cpeDisponible = [];
 
     /**
-     * ¿Se puede consultar `venta_comprobantes` sin riesgo de reventar la pantalla?
+     * ¿Se puede consultar `venta_comprobantes` de ESTA empresa sin riesgo de
+     * reventar la pantalla?
      *
-     * `facturamac.enabled` es `false` por defecto y la migración del módulo puede
-     * no estar aplicada: consultar la tabla en esa situación es un 500. Copia
-     * deliberada del criterio de VentaService / DevolucionService /
-     * TicketPrintService — la facturación electrónica nunca puede tumbar al POS.
+     * Una empresa puede no estar conectada (o estarlo pero con la emisión apagada)
+     * y la migración del módulo puede no estar aplicada: consultar la tabla en esa
+     * situación es un 500. Copia deliberada del criterio de VentaService /
+     * DevolucionService / TicketPrintService — la facturación electrónica nunca
+     * puede tumbar al POS.
      *
-     * Memoizado en la instancia (una por request), no en un `static`, para que un
-     * test no herede la respuesta del anterior.
+     * La memoria va POR EMPRESA y en la instancia (una por request), no en un
+     * `static`: este controlador sirve a los dos contribuyentes de la instalación y
+     * una respuesta compartida haría que la empresa conectada decidiera por la que
+     * no lo está. Y en `static` un test heredaría la respuesta del anterior.
      */
-    private function comprobantesDisponibles(): bool
+    private function comprobantesDisponibles(int $empresaId): bool
     {
-        if ($this->cpeDisponible !== null) {
-            return $this->cpeDisponible;
+        if (array_key_exists($empresaId, $this->cpeDisponible)) {
+            return $this->cpeDisponible[$empresaId];
         }
 
-        if (! config('facturamac.enabled')) {
-            return $this->cpeDisponible = false;
+        if (! app(FacturacionEmpresa::class)->activa($empresaId)) {
+            return $this->cpeDisponible[$empresaId] = false;
         }
 
+        return $this->cpeDisponible[$empresaId] = $this->tablaComprobantes();
+    }
+
+    /**
+     * ¿Existe la tabla `venta_comprobantes`?
+     *
+     * Aparte de `comprobantesDisponibles()` porque `pdfPublico()` tiene un problema
+     * de huevo y gallina: no hay usuario del que deducir la empresa, y la empresa
+     * está en el comprobante… que vive precisamente en esa tabla. Así que primero
+     * se comprueba que la tabla exista, luego se lee el comprobante, y solo
+     * entonces se puede preguntar por la empresa.
+     */
+    private function tablaComprobantes(): bool
+    {
         try {
-            return $this->cpeDisponible = \Illuminate\Support\Facades\Schema::hasTable('venta_comprobantes');
+            return \Illuminate\Support\Facades\Schema::hasTable('venta_comprobantes');
         } catch (\Throwable $e) {
-            return $this->cpeDisponible = false;
+            return false;
         }
     }
 
@@ -78,7 +97,7 @@ class ComprobanteElectronicoController extends Controller
         // consulta es un 500. El módulo tiene que ser INERTE cuando está apagado,
         // y eso incluye no tocar sus tablas. Mismo criterio que VentaService,
         // DevolucionService y TicketPrintService.
-        $ce = $this->comprobantesDisponibles()
+        $ce = $this->comprobantesDisponibles($venta->empresa_id)
             ? $venta->comprobanteElectronico()->first()
             : null;
 
@@ -88,7 +107,7 @@ class ComprobanteElectronicoController extends Controller
                 // `emitible` le dice al POS si vale la pena seguir preguntando:
                 // un ticket nunca va a tener comprobante, y con el módulo apagado
                 // tampoco lo va a tener ninguna venta.
-                'emitible' => $venta->tipo_comprobante !== 'ticket' && $this->comprobantesDisponibles(),
+                'emitible' => $venta->tipo_comprobante !== 'ticket' && $this->comprobantesDisponibles($venta->empresa_id),
                 'estado'   => null,
                 'mensaje'  => $venta->tipo_comprobante === 'ticket'
                     ? 'Nota de venta interna: no se informa a SUNAT.'
@@ -153,8 +172,8 @@ class ComprobanteElectronicoController extends Controller
         abort_if($venta->tipo_comprobante === 'ticket', 422,
             'Un ticket es una nota de venta interna: no se emite ante SUNAT.');
         // Misma guarda que el resto: apagado o sin migrar, ni se consulta la tabla.
-        abort_unless($this->comprobantesDisponibles(), 422,
-            'La facturación electrónica está desactivada.');
+        abort_unless($this->comprobantesDisponibles($venta->empresa_id), 422,
+            'La facturación electrónica de esta empresa está desactivada.');
 
         $ce = $venta->comprobanteElectronico()->first();
 
@@ -182,13 +201,13 @@ class ComprobanteElectronicoController extends Controller
      * en el servidor y NUNCA debe llegar al navegador del cajero. De paso, el
      * permiso de ventas sigue aplicando sobre el documento.
      */
-    public function pdf(Request $request, Venta $venta, FacturaMacClient $client)
+    public function pdf(Request $request, Venta $venta, FacturacionEmpresa $facturacion)
     {
         abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
 
         // Sin módulo no hay PDF que proxear (ni tabla que consultar): 404 limpio
         // en vez de un 500 por una relación inexistente.
-        $ce = $this->comprobantesDisponibles()
+        $ce = $this->comprobantesDisponibles($venta->empresa_id)
             ? $venta->comprobanteElectronico()->first()
             : null;
 
@@ -197,7 +216,11 @@ class ComprobanteElectronicoController extends Controller
 
         $ce->setRelation('venta', $venta);
 
-        return $this->responderPdf($ce, $client);
+        // El PDF se pide con el token de LA EMPRESA DE LA VENTA. Con el token
+        // global del `.env` este proxy habría pedido a MacSoft el PDF de un
+        // comprobante de HYC: un 404 en el mejor caso, el documento de otro
+        // contribuyente en el peor.
+        return $this->responderPdf($ce, $facturacion->cliente($venta->empresa_id));
     }
 
     /**
@@ -228,16 +251,26 @@ class ComprobanteElectronicoController extends Controller
      * hay usuario del que deducir una empresa. La autorización aquí es poseer el
      * enlace firmado. Ver App\Services\Facturacion\CompartirComprobante.
      */
-    public function pdfPublico(string $ventaComprobante, FacturaMacClient $client)
+    public function pdfPublico(string $ventaComprobante, FacturacionEmpresa $facturacion)
     {
-        $ce = $this->comprobantesDisponibles()
-            ? VentaComprobante::find($ventaComprobante)
+        // OJO 3 — Aquí NO hay usuario, así que la empresa no se puede deducir de la
+        // sesión: sale del comprobante. Por eso el orden es tabla → comprobante →
+        // empresa → token, y no el de los demás métodos. Lo que NO cambia es de
+        // quién es el token con el que se pide el PDF: el de la empresa dueña del
+        // comprobante, nunca uno global.
+        $ce = $this->tablaComprobantes()
+            ? VentaComprobante::with('venta:id,empresa_id,numero')->find($ventaComprobante)
             : null;
 
-        abort_unless($ce && $ce->facturamac_id, 404,
+        abort_unless($ce && $ce->facturamac_id && $ce->venta, 404,
             'Este comprobante todavía no está disponible.');
 
-        return $this->responderPdf($ce, $client);
+        $empresaId = (int) $ce->venta->empresa_id;
+
+        abort_unless($this->comprobantesDisponibles($empresaId), 404,
+            'Este comprobante todavía no está disponible.');
+
+        return $this->responderPdf($ce, $facturacion->cliente($empresaId));
     }
 
     /**
@@ -250,7 +283,7 @@ class ComprobanteElectronicoController extends Controller
     public function enviarCorreo(
         Request $request,
         Venta $venta,
-        FacturaMacClient $client,
+        FacturacionEmpresa $facturacion,
         CompartirComprobante $compartir,
     ) {
         abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
@@ -259,7 +292,7 @@ class ComprobanteElectronicoController extends Controller
             'email' => ['nullable', 'email', 'max:255'],
         ]);
 
-        $ce = $this->comprobantesDisponibles()
+        $ce = $this->comprobantesDisponibles($venta->empresa_id)
             ? $venta->comprobanteElectronico()->first()
             : null;
 
@@ -292,7 +325,7 @@ class ComprobanteElectronicoController extends Controller
         $pdf = null;
         if ($ce->facturamac_id) {
             try {
-                $pdf = $client->pdf((int) $ce->facturamac_id);
+                $pdf = $facturacion->cliente($venta->empresa_id)->pdf((int) $ce->facturamac_id);
             } catch (FacturaMacException $e) {
                 Log::warning('Correo del comprobante: no se pudo adjuntar el PDF', [
                     'venta_id'      => $venta->id,

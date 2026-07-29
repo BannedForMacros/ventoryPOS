@@ -3,7 +3,7 @@
 use App\Jobs\EmitirComprobanteElectronico;
 use App\Models\Venta;
 use App\Models\VentaComprobante;
-use App\Services\Facturacion\FacturaMacClient;
+use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\Facturacion\VentaAContrato;
 use App\Services\VentaService;
 use Illuminate\Support\Facades\Http;
@@ -42,12 +42,11 @@ beforeEach(function () {
     $this->env   = TestEnv::crear();
     $this->turno = $this->env->abrirTurno();
 
-    // El cliente HTTP de FacturaMac se niega a hablar sin token configurado.
-    config([
-        'facturamac.enabled'  => true,
-        'facturamac.base_url' => 'http://emisor.test',
-        'facturamac.token'    => 'token-de-prueba',
-    ]);
+    config(['facturamac.base_url' => 'http://emisor.test']);
+
+    // El cliente HTTP de FacturaMac se niega a hablar sin token, y el token ya no
+    // sale del `.env`: sale de la conexión de ESTA empresa.
+    $this->env->conectarFacturacion();
 });
 
 /**
@@ -120,12 +119,19 @@ function respuestaEmisorReintento(string $estado = 'aceptado', int $id = 4321): 
     ];
 }
 
-/** Ejecuta el job igual que lo haría el worker, sin pasar por la cola. */
+/**
+ * Ejecuta el job igual que lo haría el worker, sin pasar por la cola.
+ *
+ * Se le inyecta `FacturacionEmpresa` y no un cliente ya construido: el job resuelve
+ * el token a partir del `empresa_id` de la venta, que es lo que hace que una venta
+ * se emita siempre con el token de SU empresa. Pasarle el cliente hecho saltaría
+ * justo la parte que importa.
+ */
 function correrEmision(Venta $venta): void
 {
     (new EmitirComprobanteElectronico($venta))->handle(
         app(VentaAContrato::class),
-        app(FacturaMacClient::class),
+        app(FacturacionEmpresa::class),
     );
 }
 

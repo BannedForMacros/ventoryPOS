@@ -36,6 +36,10 @@ class ModuloSeeder extends Seeder
             ['slug' => 'config.usuarios', 'nombre' => 'Usuarios',          'icono' => 'Users',     'ruta' => '/configuracion/usuarios', 'orden' => 4],
             ['slug' => 'config.modulos',  'nombre' => 'Módulos',           'icono' => 'Layers',    'ruta' => '/configuracion/modulos',  'orden' => 5],
             ['slug' => 'config.permisos', 'nombre' => 'Permisos por Rol',  'icono' => 'Lock',      'ruta' => '/configuracion/permisos', 'orden' => 6],
+            // Conexión con el emisor electrónico, POR EMPRESA. En instalaciones ya
+            // existentes esta fila la crea produccion/sql/2026_07_facturacion_conexion_empresa.sql;
+            // aquí está para que una instalación nueva la traiga de fábrica.
+            ['slug' => 'configuracion.facturacion', 'nombre' => 'Facturación Electrónica', 'icono' => 'FileText', 'ruta' => '/configuracion/facturacion', 'orden' => 7],
         ];
 
         foreach ($hijos as $hijo) {

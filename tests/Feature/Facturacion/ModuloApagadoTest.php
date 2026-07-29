@@ -29,8 +29,10 @@ use Tests\Support\TestEnv;
  */
 
 beforeEach(function () {
-    // Interruptor de DESPLIEGUE apagado: es el default de config/facturamac.php.
-    config(['facturamac.enabled' => false]);
+    // Empresa SIN conectar: el default de una instalación recién desplegada. Antes
+    // esto era `config(['facturamac.enabled' => false])`, el flag del `.env`; hoy el
+    // interruptor es la ausencia de fila en `facturacion_conexiones`, que es lo que
+    // de verdad ocurre en producción mientras nadie pega un código de vinculación.
 
     // Con el módulo apagado no debería salir NI UNA petición al emisor. Si sale,
     // Http::fake lo absorbe y la aserción de más abajo lo delata.

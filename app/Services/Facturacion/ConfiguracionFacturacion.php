@@ -27,9 +27,21 @@ use Throwable;
  *
  * No se contradicen: lo primero decide qué AVISA la pantalla, lo segundo qué BLOQUEA
  * el cobro. Ante la duda: avisar sí, bloquear no.
+ *
+ * ─── Es POR EMPRESA, no por instalación ──────────────────────────────────────────
+ *
+ * Esta clase ya no se resuelve del contenedor a pelo: se pide a
+ * `FacturacionEmpresa::configuracion($empresaId)`, que la construye con el cliente
+ * HTTP del emisor de ESA empresa. Con dos contribuyentes en la misma instalación,
+ * una sola instancia global significaba leer la configuración fiscal del emisor
+ * equivocado — y con ella su umbral, su tasa y sus series. La caché también está
+ * partida por empresa (`facturamac.configuracion.{empresaId}`) por lo mismo: una
+ * clave compartida habría hecho que la primera empresa que cargara una pantalla
+ * dejara SU configuración cacheada para la otra durante diez minutos.
  */
 class ConfiguracionFacturacion
 {
+    /** Prefijo; la clave real lleva el `empresa_id` detrás. Ver `claveCache()`. */
     public const CACHE_KEY = 'facturamac.configuracion';
 
     /** Marca de "el emisor no respondió hace un momento": evita un timeout por pantalla. */
@@ -59,8 +71,36 @@ class ConfiguracionFacturacion
     /** @var array<string, mixed>|null Memoria por request: se consulta varias veces por pantalla. */
     private ?array $memo = null;
 
-    public function __construct(private readonly FacturaMacClient $client)
+    /**
+     * @param FacturaMacClient $client  Ya viene con el token de ESTA empresa.
+     * @param int              $empresaId
+     * @param bool             $activa  ¿Esta empresa emite? Es lo que antes era
+     *                                  `config('facturamac.enabled')`, ahora resuelto
+     *                                  por `FacturacionEmpresa` desde la conexión de
+     *                                  la empresa. Se recibe ya calculado para que
+     *                                  esta clase no vuelva a consultar la base.
+     */
+    public function __construct(
+        private readonly FacturaMacClient $client,
+        private readonly int $empresaId,
+        private readonly bool $activa = false,
+    ) {
+    }
+
+    /** ¿Esta empresa tiene la emisión activa? Reemplazo de `config('facturamac.enabled')`. */
+    public function activa(): bool
     {
+        return $this->activa;
+    }
+
+    private function claveCache(): string
+    {
+        return self::CACHE_KEY . '.' . $this->empresaId;
+    }
+
+    private function claveCacheFallo(): string
+    {
+        return self::CACHE_KEY_FALLO . '.' . $this->empresaId;
     }
 
     /**
@@ -74,51 +114,52 @@ class ConfiguracionFacturacion
             return $this->memo;
         }
 
-        // Integración no cableada: ni siquiera hay a quién preguntar.
-        if (! config('facturamac.enabled')) {
+        // Empresa sin emisión activa: ni siquiera hay a quién preguntar.
+        if (! $this->activa) {
             return $this->memo = [];
         }
 
-        $cacheada = Cache::get(self::CACHE_KEY);
+        $cacheada = Cache::get($this->claveCache());
 
         if (is_array($cacheada)) {
             return $this->memo = $cacheada;
         }
 
-        if (Cache::has(self::CACHE_KEY_FALLO)) {
+        if (Cache::has($this->claveCacheFallo())) {
             return [];   // no se memoiza: otro request, más tarde, sí podrá leerla
         }
 
         try {
             $remota = $this->client->configuracion();
         } catch (Throwable $e) {
-            Cache::put(self::CACHE_KEY_FALLO, true, (int) config('facturamac.cooldown_fallo', 30));
+            Cache::put($this->claveCacheFallo(), true, (int) config('facturamac.cooldown_fallo', 30));
 
             Log::warning('No se pudo leer la configuración de FacturaMac; el POS usa sus defaults y avisa de PRODUCCIÓN.', [
-                'error' => $e->getMessage(),
+                'empresa_id' => $this->empresaId,
+                'error'      => $e->getMessage(),
             ]);
 
             return [];
         }
 
-        Cache::put(self::CACHE_KEY, $remota, (int) config('facturamac.config_ttl', 600));
-        Cache::forget(self::CACHE_KEY_FALLO);
+        Cache::put($this->claveCache(), $remota, (int) config('facturamac.config_ttl', 600));
+        Cache::forget($this->claveCacheFallo());
 
         return $this->memo = $remota;
     }
 
-    /** Invalida la caché para que el próximo acceso vuelva a preguntar. */
+    /** Invalida la caché DE ESTA EMPRESA para que el próximo acceso vuelva a preguntar. */
     public function olvidar(): void
     {
-        Cache::forget(self::CACHE_KEY);
-        Cache::forget(self::CACHE_KEY_FALLO);
+        Cache::forget($this->claveCache());
+        Cache::forget($this->claveCacheFallo());
         $this->memo = null;
     }
 
     /** `desactivado` | `simulacion` | `beta` | `produccion` | `desconocido`. */
     public function modo(): string
     {
-        if (! config('facturamac.enabled')) {
+        if (! $this->activa) {
             return self::MODO_DESACTIVADO;
         }
 
@@ -136,7 +177,7 @@ class ConfiguracionFacturacion
      */
     public function emisionActiva(): bool
     {
-        if (! config('facturamac.enabled')) {
+        if (! $this->activa) {
             return false;
         }
 
@@ -285,7 +326,7 @@ class ConfiguracionFacturacion
     public function paraPos(): array
     {
         return [
-            'enabled'                    => (bool) config('facturamac.enabled'),
+            'enabled'                    => $this->activa,
             // El banner del POS distingue simulacion / beta / produccion con esto.
             'modo'                       => $this->modo(),
             // Se mantiene aparte de `modo` porque es la lectura FAIL-SAFE: con el

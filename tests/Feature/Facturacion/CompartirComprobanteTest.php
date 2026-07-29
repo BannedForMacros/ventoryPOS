@@ -27,12 +27,11 @@ beforeEach(function () {
     $this->env   = TestEnv::crear();
     $this->turno = $this->env->abrirTurno();
 
-    // El cliente HTTP de FacturaMac se niega a hablar sin token configurado.
-    config([
-        'facturamac.enabled'  => true,
-        'facturamac.base_url' => 'http://facturamac.test',
-        'facturamac.token'    => 'token-de-prueba',
-    ]);
+    config(['facturamac.base_url' => 'http://facturamac.test']);
+
+    // El cliente HTTP de FacturaMac se niega a hablar sin token, y el token ya no
+    // sale del `.env`: sale de la conexión de ESTA empresa.
+    $this->env->conectarFacturacion();
 
     // Ninguna llamada real a FacturaMac: el PDF llega falseado.
     Http::fake([
