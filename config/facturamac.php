@@ -76,9 +76,15 @@ return [
     | HTTP en el camino más caliente del sistema.
     |
     | 10 minutos es el equilibrio: un cambio de modo (beta → producción) tarda
-    | como mucho ese rato en verse en caja, y quien lo haga puede forzarlo al
-    | instante con `php artisan facturacion:estado --refrescar`. Bajarlo mucho
-    | castiga la carga del POS; subirlo mucho retrasa un aviso que importa.
+    | como mucho ese rato en verse en caja. Bajarlo mucho castiga la carga del
+    | POS; subirlo mucho retrasa un aviso que importa. Para forzarlo al instante
+    | está `ConfiguracionFacturacion::olvidar()`.
+    |
+    | Consecuencia deliberada de este TTL: el POS NO manda la serie al emitir.
+    | Mandar un valor cacheado 10 minutos significaría que, justo mientras alguien
+    | cambia de serie para separar pruebas de producción, el POS seguiría forzando
+    | la vieja. La serie se lee solo para MOSTRARLA en caja; quien numera es el
+    | emisor. Ver ConfiguracionFacturacion::seriesPorDefecto().
     |
     | `cooldown_fallo`: cuando FacturaMac no responde NO cacheamos la respuesta
     | (no existe), pero sí anotamos el fallo unos segundos para no reintentar la

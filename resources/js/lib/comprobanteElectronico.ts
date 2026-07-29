@@ -9,17 +9,78 @@
  * NADA de esto afecta a las ventas `ticket`: sin comprobante electrónico todas
  * las funciones devuelven null / "sin bloqueo".
  */
-import type { Cliente, ComprobanteEstado } from '@/types';
+import type { Cliente, ComprobanteEstado, ModoFacturacion } from '@/types';
 
 /** Tipos de comprobante del POS (ventas.tipo_comprobante). */
 export type TipoComprobantePos = 'ticket' | 'boleta' | 'factura';
 
 /**
  * Umbral SUNAT: desde este importe una boleta exige adquirente identificado.
- * Default local; el backend puede sobreescribirlo con
- * config('facturamac.umbral_boleta_identificada').
+ *
+ * ES UN DEFAULT DE ÚLTIMO RECURSO, no "el umbral del POS": el valor bueno lo
+ * dicta el EMISOR y llega en `facturacion.umbral_boleta_identificada` (§7 del
+ * contrato). Este 700 solo se usa si el backend no mandó nada —módulo apagado o
+ * props antiguas—, y coincide a propósito con el default de
+ * ConfiguracionFacturacion para que los dos lados fallen igual.
+ *
+ * NO lo cambies aquí para adaptar una tienda: cámbialo en FacturaMac. Un umbral
+ * distinto en cada sistema es exactamente el bug que esto viene a cerrar (con
+ * 500 en el emisor y 700 aquí, el POS deja cobrar una boleta que el emisor
+ * rechaza DESPUÉS).
  */
 export const UMBRAL_BOLETA_IDENTIFICADA = 700;
+
+/** Aviso de modo de emisión que el POS pinta sobre la barra de comprobante. */
+export interface AvisoModoEmision {
+    /** Texto exacto de la franja. */
+    texto:  string;
+    /** Color de fondo (var(--color-*)). */
+    fondo:  string;
+    /** Color del texto sobre ese fondo. */
+    tinta:  string;
+    /** true = irreversible; merece el icono de alerta y el tono más fuerte. */
+    grave:  boolean;
+}
+
+/**
+ * Traduce el `modo` del emisor a la franja que ve la cajera.
+ *
+ * POR QUÉ HACEN FALTA TRES AVISOS Y NO UN BOOLEANO: antes esto salía de
+ * `/ping` + `sunat_beta`, que solo distingue "beta" de "todo lo demás". Con eso,
+ * `simulacion` (nada sale del emisor) y `produccion` (documento fiscal real e
+ * irreversible) se pintaban IGUAL. Son las dos situaciones que más importa no
+ * confundir.
+ *
+ * FAIL-SAFE: `desconocido` —el emisor no respondió— y cualquier valor que no
+ * reconozcamos se pintan como PRODUCCIÓN. Un aviso de más no cuesta nada; uno de
+ * menos cuesta una Nota de Crédito.
+ */
+export function avisoModoEmision(
+    modo: ModoFacturacion | string | null | undefined,
+): AvisoModoEmision | null {
+    // Emisión apagada en el emisor: no se crea comprobante ni se consume
+    // correlativo (§4.2). No hay nada de lo que avisar.
+    if (modo === 'desactivado') return null;
+
+    if (modo === 'simulacion') {
+        return {
+            texto: 'SIMULACIÓN — se numera en serie de ensayo y NO se envía a SUNAT',
+            fondo: 'var(--color-text-muted)', tinta: '#fff', grave: false,
+        };
+    }
+
+    if (modo === 'beta') {
+        return {
+            texto: 'SUNAT BETA — entorno de pruebas: los comprobantes no tienen valor fiscal',
+            fondo: 'var(--color-warning)', tinta: '#fff', grave: false,
+        };
+    }
+
+    return {
+        texto: '⚠️ SUNAT PRODUCCIÓN — los comprobantes son reales',
+        fondo: 'var(--color-danger)', tinta: '#fff', grave: true,
+    };
+}
 
 /**
  * Rutas del comprobante electrónico de una venta
@@ -28,10 +89,28 @@ export const UMBRAL_BOLETA_IDENTIFICADA = 700;
  * nombres (despliegue parcial, caché de rutas vieja).
  */
 export const rutaComprobante = {
-    estado:     (ventaId: number) => `/ventas/${ventaId}/comprobante/estado`,
-    reintentar: (ventaId: number) => `/ventas/${ventaId}/comprobante/reintentar`,
-    pdf:        (ventaId: number) => `/ventas/${ventaId}/comprobante/pdf`,
+    estado:       (ventaId: number) => `/ventas/${ventaId}/comprobante/estado`,
+    reintentar:   (ventaId: number) => `/ventas/${ventaId}/comprobante/reintentar`,
+    pdf:          (ventaId: number) => `/ventas/${ventaId}/comprobante/pdf`,
+    enviarCorreo: (ventaId: number) => `/ventas/${ventaId}/comprobante/enviar-correo`,
 };
+
+/**
+ * Datos para hacerle llegar el comprobante al cliente. Los arma el BACKEND
+ * (necesita la URL firmada del PDF y el teléfono del cliente) y viajan dentro
+ * de la respuesta de `estado`, SOLO cuando el comprobante ya está emitido.
+ *
+ * `whatsapp` es un enlace wa.me normal con el mensaje ya escrito: se abre en
+ * una pestaña y la conversación la manda la persona. No hay API de por medio.
+ */
+export interface CompartirComprobante {
+    /** https://wa.me/51...?text=... — null si el cliente no tiene teléfono. */
+    whatsapp:      string | null;
+    /** URL firmada y pública del PDF (la que viaja en el mensaje). */
+    pdf_publico:   string | null;
+    /** Correo guardado del cliente; null → hay que pedirlo antes de enviar. */
+    email_cliente: string | null;
+}
 
 /**
  * Respuesta de GET /ventas/{venta}/comprobante/estado.
@@ -45,7 +124,8 @@ export interface EstadoComprobanteResp {
     tipo?:              '01' | '03';
     serie?:             string;
     correlativo?:       number | string;
-    numero?:            string;
+    /** Puede llegar null: un comprobante que falló al mapear nunca se numeró. */
+    numero?:            string | null;
     estado?:            ComprobanteEstado | null;
     mensaje?:           string;
     hash_cpe?:          string | null;
@@ -59,6 +139,8 @@ export interface EstadoComprobanteResp {
     tiene_pdf?:         boolean;
     /** Estado terminal según el backend: se puede dejar de preguntar. */
     final?:             boolean;
+    /** Solo cuando el comprobante ya está emitido (ver CompartirComprobante). */
+    compartir?:         CompartirComprobante | null;
 }
 
 /** El Cliente General no identifica al adquirente (flag `es_cliente_general`). */
@@ -189,7 +271,8 @@ export interface EstadoMeta {
  * resuelve esperando.
  */
 const ESTADOS_EN_CURSO: ComprobanteEstado[] = [
-    'pendiente', 'enviando', 'pendiente_resumen', 'error_envio',
+    'pendiente', 'enviando', 'enviado', 'pendiente_resumen', 'en_resumen',
+    'pendiente_anulacion', 'error_envio',
 ];
 
 const ESTADOS: Record<ComprobanteEstado, EstadoMeta> = {
@@ -201,9 +284,29 @@ const ESTADOS: Record<ComprobanteEstado, EstadoMeta> = {
         label: 'Enviando a SUNAT', color: 'var(--color-primary)', terminal: false,
         detalle: 'SUNAT está procesando el comprobante.',
     },
+    enviado: {
+        label: 'Enviado', color: 'var(--color-primary)', terminal: false,
+        detalle: 'Ya salió hacia SUNAT; falta interpretar la constancia.',
+    },
     pendiente_resumen: {
         label: 'En resumen diario', color: 'var(--color-warning)', terminal: false,
         detalle: 'Las boletas se informan a SUNAT en el resumen del día: el estado final llega después. No falló nada.',
+    },
+    en_resumen: {
+        label: 'Informado en resumen', color: 'var(--color-primary)', terminal: false,
+        detalle: 'La boleta ya viaja en un resumen enviado a SUNAT. Falta su respuesta.',
+    },
+    pendiente_anulacion: {
+        label: 'Anulación en trámite', color: 'var(--color-warning)', terminal: false,
+        detalle: 'Se comunicó la baja a SUNAT y falta su confirmación.',
+    },
+    simulado: {
+        label: 'Simulado', color: 'var(--color-text-muted)', terminal: true,
+        detalle: 'Ensayo: se numeró en la serie de simulación y NO se envió a SUNAT. No tiene valor fiscal.',
+    },
+    no_emitido: {
+        label: 'Sin emitir', color: 'var(--color-text-muted)', terminal: true,
+        detalle: 'La emisión electrónica está desactivada para esta empresa. La venta quedó registrada con normalidad.',
     },
     aceptado: {
         label: 'Aceptado por SUNAT', color: 'var(--color-success)', terminal: true,
@@ -248,4 +351,36 @@ export function estadoEnCurso(estado: ComprobanteEstado | string | null | undefi
  */
 export function puedeReintentar(estado: ComprobanteEstado | string | null | undefined): boolean {
     return estado === 'pendiente' || estado === 'error_envio' || estado === 'rechazado';
+}
+
+/**
+ * Estados en los que el comprobante YA existe para el cliente: tiene número y
+ * se le puede mandar. Espejo de VentaComprobante::estadosEmitidos(), que a su
+ * vez deriva de EstadoComprobante::bloqueaAnulacion() en el paquete compartido.
+ *
+ * `simulado` queda fuera a propósito: es un ensayo sin valor fiscal y mandárselo
+ * al cliente sería peor que no mandar nada.
+ *
+ * `anulado` SÍ entra: el documento existe, tiene número y su PDF es real (lo que
+ * lo anula es la nota de crédito, que es otro documento). El backend lo trata
+ * igual desde que se corrigió la lista, y una divergencia aquí dejaría el botón
+ * de compartir escondido para algo que el servidor sí ofrece.
+ */
+const ESTADOS_EMITIDOS: ComprobanteEstado[] = [
+    'aceptado', 'enviando', 'enviado', 'pendiente_resumen', 'en_resumen',
+    'pendiente_anulacion', 'anulado',
+];
+
+/** ¿El comprobante ya se puede compartir con el cliente? */
+export function comprobanteEmitido(estado: ComprobanteEstado | string | null | undefined): boolean {
+    return ESTADOS_EMITIDOS.includes(estado as ComprobanteEstado);
+}
+
+/**
+ * Estados que exigen que alguien haga algo. Sirven para que en la LISTA de
+ * ventas destaquen sobre el resto: la cajera repasa cien filas buscando
+ * justo estas.
+ */
+export function comprobanteConProblema(estado: ComprobanteEstado | string | null | undefined): boolean {
+    return estado === 'rechazado' || estado === 'error_envio' || estado === 'error_mapeo';
 }

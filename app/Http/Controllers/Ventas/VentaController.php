@@ -364,50 +364,69 @@ class VentaController extends Controller
     /**
      * Configuración de facturación electrónica que consume el POS.
      *
-     * El dato delicado es `produccion`: determina si la cajera ve el aviso rojo
-     * de "los comprobantes son reales". Vive en el tenant de FacturaMac (campo
-     * `sunat_beta`), no aquí, así que se consulta por /ping y se cachea 10
-     * minutos para no meter una llamada HTTP en cada carga del POS.
+     * TODO lo fiscal —modo, umbral de boleta identificada, tasa, series— sale de
+     * `GET /api/v1/configuracion`, que es la fuente única de verdad del contrato
+     * (§7). Aquí no se decide nada: se pregunta.
      *
-     * FAIL-SAFE DELIBERADO: si la consulta falla o aún no hay dato, se asume
-     * PRODUCCIÓN y se muestra el aviso. Ya hubo un incidente por emitir contra
-     * producción creyendo estar en beta (ver AUDITORIA_PRODUCCION_SUNAT.md); un
-     * aviso de más no cuesta nada, uno de menos cuesta una Nota de Crédito.
+     * ANTES esto leía `config('facturamac.umbral_boleta_identificada')` y
+     * `config('facturamac.series')`, claves que ya NO existen en el
+     * `config/facturamac.php` adelgazado, así que el POS se quedaba con el umbral
+     * 700 pasara lo que pasara y con `series => []` — es decir, sin poder mostrar
+     * nunca en caja con qué serie se iba a emitir. Y el aviso de producción salía
+     * de `/ping` + `sunat_beta`, que no distingue `simulacion` de `produccion`.
+     *
+     * El FAIL-SAFE se conserva íntegro, ahora dentro de ConfiguracionFacturacion:
+     * si el emisor no responde, `produccion` es `true` y la cajera ve el aviso
+     * rojo. Un aviso de más no cuesta nada; uno de menos cuesta una Nota de
+     * Crédito (ya pasó: ver AUDITORIA_PRODUCCION_SUNAT.md).
      */
     private function configFacturacionPos(): array
     {
-        $enabled = (bool) config('facturamac.enabled');
+        return app(\App\Services\Facturacion\ConfiguracionFacturacion::class)->paraPos();
+    }
 
-        $produccion = true;
-        if ($enabled) {
-            $produccion = \Illuminate\Support\Facades\Cache::remember(
-                'facturamac.es_produccion',
-                now()->addMinutes(10),
-                function (): bool {
-                    try {
-                        $ping = app(\App\Services\Facturacion\FacturaMacClient::class)->ping();
+    /**
+     * ¿Se puede consultar `venta_comprobantes` sin riesgo de reventar la pantalla?
+     *
+     * POR QUÉ EXISTE ESTA GUARDA: la facturación electrónica es un módulo OPCIONAL
+     * que se despliega por partes, y `enabled` es `false` por defecto. En una
+     * instalación con el módulo apagado y la migración sin aplicar, un `with()`
+     * sobre la relación tira un "relation venta_comprobantes does not exist" y
+     * devuelve 500 en `/ventas` — la pantalla más usada del POS— por un módulo que
+     * se supone inerte. Esta forma exacta de fallo ya tumbó el sistema una vez.
+     *
+     * Mismo criterio que VentaService::bloquearSiTieneComprobanteEmitido(),
+     * DevolucionService::encolarNotaCredito() y TicketPrintService.
+     *
+     * Se memoiza en la INSTANCIA (no en un `static`) a propósito: el controlador se
+     * resuelve una vez por request, así que basta una comprobación por request y
+     * ningún test se contamina con el resultado del anterior.
+     */
+    private ?bool $cpeDisponible = null;
 
-                        // sunat_beta === true ⇒ pruebas. Cualquier otra cosa (false,
-                        // ausente, respuesta rara) se trata como producción.
-                        return ! ($ping['tenant']['sunat_beta'] ?? false);
-                    } catch (\Throwable $e) {
-                        \Illuminate\Support\Facades\Log::warning(
-                            'No se pudo determinar el modo SUNAT de FacturaMac; se asume producción.',
-                            ['error' => $e->getMessage()],
-                        );
-
-                        return true;
-                    }
-                },
-            );
+    private function comprobantesDisponibles(): bool
+    {
+        if ($this->cpeDisponible !== null) {
+            return $this->cpeDisponible;
         }
 
-        return [
-            'enabled'                    => $enabled,
-            'produccion'                 => $produccion,
-            'umbral_boleta_identificada' => (float) config('facturamac.umbral_boleta_identificada', 700),
-            'series'                     => config('facturamac.series', []),
-        ];
+        // Interruptor de despliegue: apagado no se consulta nada, ni aunque la
+        // tabla exista. Es lo que hace que el módulo sea de verdad inerte.
+        if (! config('facturamac.enabled')) {
+            return $this->cpeDisponible = false;
+        }
+
+        if (! method_exists(Venta::class, 'comprobanteElectronico')) {
+            return $this->cpeDisponible = false;
+        }
+
+        try {
+            return $this->cpeDisponible = \Illuminate\Support\Facades\Schema::hasTable('venta_comprobantes');
+        } catch (\Throwable $e) {
+            // Encendido pero sin migrar (o sin poder comprobarlo): la lista de
+            // ventas se pinta igual, solo que sin la columna del comprobante.
+            return $this->cpeDisponible = false;
+        }
     }
 
     // ── Ventas (historial) ─────────────────────────────────────────────────────
@@ -426,10 +445,22 @@ class VentaController extends Controller
 
         $q = trim((string) $request->input('q', ''));
 
+        // Con el módulo apagado (o sin migrar) NO se toca `venta_comprobantes`:
+        // `/ventas` es la pantalla más usada del POS y no puede caerse por un
+        // módulo opcional. Ver comprobantesDisponibles().
+        $conCpe = $this->comprobantesDisponibles();
+
         $ventas = Venta::deEmpresa($user->empresa_id)
-            ->with(['user', 'cliente', 'local', 'caja', 'turno',
-                    'pagos:id,venta_id,metodo_pago_id,monto',
-                    'pagos.metodoPago:id,nombre'])
+            ->with(array_merge(
+                ['user', 'cliente', 'local', 'caja', 'turno',
+                 'pagos:id,venta_id,metodo_pago_id,monto',
+                 'pagos.metodoPago:id,nombre'],
+                // Estado del CPE en la lista. Con `with` es UNA consulta por
+                // página (whereIn sobre las 25 ventas), no una por fila; y se
+                // piden solo las columnas que pinta la tabla. Las ventas
+                // `ticket` simplemente no tienen fila y llegan con null.
+                $conCpe ? ['comprobanteElectronico:id,venta_id,tipo,numero,estado'] : [],
+            ))
             ->when(!$esAdmin, fn($qq) => $qq->where('user_id', $user->id))
             ->when($request->estado, fn($qq, $v) => $qq->where('estado', $v))
             ->when($fechaDesde, fn($qq, $v) => $qq->where('fecha_venta', '>=', $v))
@@ -457,6 +488,27 @@ class VentaController extends Controller
             ->orderByDesc('id')
             ->paginate(25)
             ->withQueryString();
+
+        // El comprobante viaja aplanado a lo que la lista realmente muestra
+        // (número, tipo, estado y si el estado ya es final). Se envía el modelo
+        // recortado en vez del completo para no arrastrar hash, QR ni la
+        // respuesta de SUNAT en cada una de las 25 filas.
+        // OJO: `$venta->comprobanteElectronico` carga la relación PEREZOSAMENTE si
+        // no vino en el `with`. Sin el `$conCpe` de aquí, la guarda de arriba no
+        // serviría de nada: la consulta a `venta_comprobantes` se colaría igual,
+        // y encima una por fila.
+        $ventas->getCollection()->each(function (Venta $venta) use ($conCpe): void {
+            $ce = $conCpe ? $venta->comprobanteElectronico : null;
+            $venta->unsetRelation('comprobanteElectronico');
+            $venta->setAttribute('comprobante_electronico', $ce ? [
+                'numero' => $ce->numero,
+                'tipo'   => $ce->tipo,
+                'estado' => $ce->estado,
+                // Lo decide el modelo (ESTADOS_TERMINALES): la lista no debe
+                // tener su propia copia de esa lista.
+                'final'  => $ce->esFinal(),
+            ] : null);
+        });
 
         $locales = $this->scope->localesVisibles($user);
 

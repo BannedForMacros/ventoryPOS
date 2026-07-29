@@ -66,6 +66,25 @@ Route::get('/', function () {
     ]);
 });
 
+// ── COMPROBANTE ELECTRÓNICO — DESCARGA PÚBLICA (CLIENTE FINAL) ───────────────
+// La ÚNICA ruta de la aplicación fuera de `auth`, y a conciencia: el destinatario
+// es el cliente que recibe su comprobante por WhatsApp o correo, y ese cliente
+// nunca va a tener usuario en el POS. Mandarle `ventas.comprobante.pdf` solo le
+// enseñaría la pantalla de login.
+//
+// Lo que la protege es el middleware `signed`: la URL la genera el servidor con
+// `URL::temporarySignedRoute` (ver App\Services\Facturacion\CompartirComprobante),
+// firmada con APP_KEY y con caducidad de 30 días. Si alguien cambia el id, alarga
+// la caducidad o toca un solo carácter, la firma deja de cuadrar y Laravel corta
+// con 403 antes de tocar el controlador. Sin firma NO es enumerable por id.
+//
+// Va con throttle porque cada visita se traduce en una descarga real contra
+// FacturaMac: un enlace que acabe en un grupo grande de WhatsApp no debe poder
+// convertirse en una tormenta de peticiones contra el emisor.
+Route::middleware(['signed', 'throttle:30,1'])
+    ->get('/comprobante/{ventaComprobante}/pdf', [ComprobanteElectronicoController::class, 'pdfPublico'])
+    ->name('comprobante.publico.pdf');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -314,6 +333,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:ventas,ver')->get('/{venta}/comprobante/estado', [ComprobanteElectronicoController::class, 'estado'])->name('comprobante.estado');
         Route::middleware('permiso:ventas,ver')->get('/{venta}/comprobante/pdf', [ComprobanteElectronicoController::class, 'pdf'])->name('comprobante.pdf');
         Route::middleware(['permiso:ventas,editar', 'throttle:20,1'])->post('/{venta}/comprobante/reintentar', [ComprobanteElectronicoController::class, 'reintentar'])->name('comprobante.reintentar');
+        // Enviar el comprobante al correo del cliente. Basta `ventas,ver`: no
+        // modifica nada fiscal, solo reparte un documento ya emitido — es el
+        // equivalente digital de reimprimir el ticket, y la cajera que puede
+        // consultar la venta puede entregársela al cliente. El throttle sí es
+        // imprescindible: aquí SALE correo de verdad desde el servidor, y una
+        // IP de envío quemada por abuso afecta a toda la instalación.
+        // (WhatsApp no necesita endpoint: el enlace `wa.me` ya viaja en el
+        // bloque `compartir` de `comprobante.estado`, y lo abre la persona.)
+        Route::middleware(['permiso:ventas,ver', 'throttle:10,1'])->post('/{venta}/comprobante/enviar-correo', [ComprobanteElectronicoController::class, 'enviarCorreo'])->name('comprobante.enviar-correo');
     });
 
     // ── COTIZACIONES ─────────────────────────────────────────────────────

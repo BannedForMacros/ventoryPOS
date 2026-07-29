@@ -459,27 +459,48 @@ export interface Venta extends Record<string, unknown> {
  * `pendiente_resumen` es el estado normal de una BOLETA recién emitida: SUNAT
  * la recibe en el resumen diario, no al instante. No es un error.
  */
+/**
+ * Debe coincidir con VentaComprobante::ESTADOS_* del backend. Faltaban cinco
+ * estados que el emisor sí produce, y `simulado` / `no_emitido` no figuraban en
+ * ninguna lista de terminales: el POS se quedaba preguntando indefinidamente por
+ * comprobantes que jamás iban a moverse.
+ */
 export type ComprobanteEstado =
     | 'pendiente'
     | 'enviando'
+    | 'enviado'
     | 'pendiente_resumen'
+    | 'en_resumen'
+    | 'pendiente_anulacion'
     | 'aceptado'
     | 'rechazado'
     | 'error_envio'
     | 'error_mapeo'
-    | 'anulado';
+    | 'anulado'
+    /** Modo simulación: calculado y numerado en serie de ensayo, nunca enviado. */
+    | 'simulado'
+    /** La empresa tiene la emisión apagada: no hay nada que esperar. */
+    | 'no_emitido';
 
-/** Comprobante electrónico SUNAT asociado a una venta (`venta_comprobantes`). */
+/**
+ * Comprobante electrónico SUNAT asociado a una venta (`venta_comprobantes`).
+ *
+ * El detalle de venta lo recibe completo, pero la LISTA de ventas envía solo
+ * lo imprescindible (número, tipo, estado y si el estado ya es final) para no
+ * inflar 25 filas por página: por eso todo lo demás es opcional.
+ */
 export interface ComprobanteElectronico extends Record<string, unknown> {
     id?:                number;
     venta_id?:          number;
     /** Catálogo 01 SUNAT: '01' factura · '03' boleta. */
     tipo:               '01' | '03';
-    serie:              string;
-    correlativo:        number | string;
-    /** Número oficial completo, p. ej. "F002-00000123". */
-    numero:             string;
+    serie?:             string;
+    correlativo?:       number | string;
+    /** Número oficial completo, p. ej. "F002-00000123". Null si nunca se numeró. */
+    numero:             string | null;
     estado:             ComprobanteEstado;
+    /** true = el estado ya no cambia solo (lo calcula el backend). */
+    final?:             boolean;
     hash_cpe?:          string | null;
     /** String del QR ya armado con el formato SUNAT (no es una imagen). */
     qr?:                string | null;
@@ -491,24 +512,51 @@ export interface ComprobanteElectronico extends Record<string, unknown> {
 }
 
 /**
+ * Modo de emisión del EMISOR (FacturaMac), tal cual lo devuelve
+ * `GET /api/v1/configuracion` (§7 del contrato).
+ *
+ * `desconocido` no viene del emisor: lo pone el POS cuando no ha podido leer la
+ * configuración. Se trata como producción (aviso rojo) a propósito.
+ */
+export type ModoFacturacion =
+    | 'desactivado' | 'simulacion' | 'beta' | 'produccion' | 'desconocido';
+
+/**
  * Config de facturación electrónica que el POS necesita para avisar ANTES de
  * cobrar. Opcional: si el backend no la envía (módulo apagado o aún no
  * desplegado), el POS se comporta exactamente como hoy.
+ *
+ * TODO lo fiscal de aquí lo dicta el EMISOR (`GET /api/v1/configuracion`), no
+ * `config/facturamac.php`. La única clave local es `enabled`, que es el
+ * interruptor de despliegue. Ver App\Services\Facturacion\ConfiguracionFacturacion.
  */
 export interface FacturacionPosConfig {
-    /** config('facturamac.enabled') */
+    /** config('facturamac.enabled') — ¿está CABLEADA la integración? */
     enabled:                    boolean;
-    /** true = el emisor está apuntando a SUNAT PRODUCCIÓN (comprobantes reales). */
-    produccion:                 boolean;
-    /** config('facturamac.umbral_boleta_identificada') — por defecto 700. */
-    umbral_boleta_identificada?: number;
+    /** Modo del emisor: gobierna el banner del POS. */
+    modo?:                      ModoFacturacion;
     /**
-     * Serie que se usará por tipo. Acepta tal cual `config('facturamac.series')`
-     * (claves '01'/'03' del catálogo SUNAT) o las claves legibles.
+     * true = los comprobantes son reales. Lectura FAIL-SAFE: con el emisor caído
+     * el `modo` es `desconocido` pero esto llega `true`, porque un aviso de más
+     * no cuesta nada y uno de menos cuesta una Nota de Crédito.
+     */
+    produccion:                 boolean;
+    /** ¿El emisor va a crear comprobante si le mandamos la venta? */
+    emision_activa?:            boolean;
+    /** ¿Los manda de verdad a SUNAT o los calcula y guarda sin enviar? */
+    envia_a_sunat?:             boolean;
+    /** Umbral de boleta identificada del EMISOR (default legal 700). */
+    umbral_boleta_identificada?: number;
+    /** Tasa de IGV con la que calcula el emisor (§8.4). */
+    tasa_impuesto?:             number;
+    /** Monedas admitidas por el emisor. v1: solo PEN (§8.3). */
+    monedas?:                   string[];
+    /**
+     * Series con las que el emisor va a numerar. Son INFORMATIVAS: el POS las
+     * pinta para que la cajera vea con qué serie se emitirá, pero NO las manda al
+     * emitir (la numeración es competencia del emisor). Claves del contrato §7.
      */
     series?: {
-        '01'?:    string | null;   // factura
-        '03'?:    string | null;   // boleta
         factura?: string | null;
         boleta?:  string | null;
     };

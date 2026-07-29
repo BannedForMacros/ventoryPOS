@@ -18,7 +18,7 @@ import ModalCrearCliente from './Partials/ModalCrearCliente';
 import ModalConfirmacionVenta from './Partials/ModalConfirmacionVenta';
 import ModalSelectorPresentacion from './Partials/ModalSelectorPresentacion';
 import {
-    validarComprobante, etiquetaComprobante, metaEstado,
+    validarComprobante, etiquetaComprobante, metaEstado, avisoModoEmision,
     UMBRAL_BOLETA_IDENTIFICADA, type BloqueoComprobante,
 } from '@/lib/comprobanteElectronico';
 import type {
@@ -739,11 +739,22 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // después de cobrar es justo lo que V10 existe para evitar.
     const feActiva  = !!facturacion?.enabled;
     const emiteCPE  = tipoComprobante !== 'ticket';
+    // El umbral bueno lo dicta el EMISOR (§7). El 700 de la constante es el
+    // default de último recurso, no una configuración del POS.
     const umbralCPE = facturacion?.umbral_boleta_identificada ?? UMBRAL_BOLETA_IDENTIFICADA;
+    // Serie INFORMATIVA: la que el emisor dice que va a usar (`series_por_defecto`
+    // de /api/v1/configuracion). El POS no la manda al emitir —la numeración es
+    // del emisor— pero enseñarla en caja es lo que habría hecho visible, antes de
+    // cobrar, la boleta de prueba que salió por la serie fiscal real B001.
     const serieCPE  = !feActiva ? null
-        : tipoComprobante === 'factura' ? (facturacion?.series?.['01'] ?? facturacion?.series?.factura ?? null)
-        : tipoComprobante === 'boleta'  ? (facturacion?.series?.['03'] ?? facturacion?.series?.boleta  ?? null)
+        : tipoComprobante === 'factura' ? (facturacion?.series?.factura ?? null)
+        : tipoComprobante === 'boleta'  ? (facturacion?.series?.boleta  ?? null)
         : null;
+    // Franja de modo: distingue simulacion / beta / produccion. Ver avisoModoEmision.
+    // Si el backend aún no manda `modo` (props antiguas), se deduce del booleano
+    // `produccion`, que conserva el mismo fail-safe: ante la duda, aviso rojo.
+    const modoCPE   = facturacion?.modo ?? (facturacion?.produccion === false ? 'beta' : 'produccion');
+    const avisoModo = feActiva ? avisoModoEmision(modoCPE) : null;
 
     const bloqueoComprobante: BloqueoComprobante | null = useMemo(
         () => validarComprobante({ tipoComprobante, cliente, total, moneda, umbral: umbralCPE, emisionActiva: feActiva }),
@@ -1177,18 +1188,23 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
 
             {/* ── V10 · Aviso de comprobante electrónico ─────────────────
                 Franja permanente mientras el comprobante NO sea "ticket": qué
-                se va a emitir, con qué serie, y —si el emisor apunta a SUNAT
-                PRODUCCIÓN— el aviso rojo que no se puede ignorar (§8: ya hubo
-                un incidente por emitir a producción creyendo estar en beta). */}
+                se va a emitir, con qué serie, y en qué MODO está el emisor.
+
+                Los tres modos se ven distintos a propósito (§7): `simulacion` no
+                sale del emisor, `beta` va al SUNAT de pruebas y `produccion` es
+                irreversible. Antes esto era un booleano sacado de /ping y
+                `simulacion` se pintaba igual que `produccion` —o al revés—, que
+                es justo la confusión que provocó el incidente de emitir contra
+                producción creyendo estar en pruebas. */}
             {mostrarAvisoCPE && (
                 <div className="flex flex-col flex-shrink-0">
-                    {feActiva && facturacion?.produccion && (
+                    {avisoModo && (
                         <div
                             className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm font-bold"
-                            style={{ backgroundColor: 'var(--color-danger)', color: '#fff' }}
+                            style={{ backgroundColor: avisoModo.fondo, color: avisoModo.tinta }}
                         >
-                            <AlertTriangle size={16} className="flex-shrink-0" />
-                            <span>⚠️ SUNAT PRODUCCIÓN — los comprobantes son reales</span>
+                            {avisoModo.grave && <AlertTriangle size={16} className="flex-shrink-0" />}
+                            <span>{avisoModo.texto}</span>
                         </div>
                     )}
                     <div

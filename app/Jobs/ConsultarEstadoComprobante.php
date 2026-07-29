@@ -35,8 +35,12 @@ class ConsultarEstadoComprobante implements ShouldQueue
 
     public array $backoff = [30, 120];
 
-    /** Estados que ya no cambian: consultar de nuevo no aporta nada. */
-    private const TERMINALES = ['aceptado', 'rechazado', 'anulado', 'error_mapeo'];
+    /**
+     * Estados que ya no cambian: consultar de nuevo no aporta nada.
+     * Fuente única en VentaComprobante — esta lista vivía por triplicado y las
+     * tres copias estaban desalineadas.
+     */
+    private const TERMINALES = VentaComprobante::ESTADOS_TERMINALES;
 
     /**
      * Techo de vida del polling. Si en 7 días SUNAT no resolvió, el problema

@@ -203,9 +203,23 @@ class StoreVentaRequest extends FormRequest
             return; // el umbral de boleta no aplica a facturas
         }
 
-        // Boleta (03): SUNAT exige identificar al adquirente a partir de S/ 700.
+        // Boleta (03): SUNAT exige identificar al adquirente a partir del umbral.
         // Por debajo se admite el Cliente General (documento tipo "0").
-        $umbral = (float) config('facturamac.umbral_boleta_identificada', 700);
+        //
+        // EL UMBRAL LO DICTA EL EMISOR (§7), no este archivo. Antes se leía
+        // `config('facturamac.umbral_boleta_identificada')`, una clave que ya no
+        // existe en el config adelgazado: el POS aplicaba SIEMPRE 700 aunque el
+        // tenant tuviera configurado otro. Con un umbral de 500 en el emisor, el
+        // POS dejaba cerrar una boleta de 600 al Cliente General y el emisor la
+        // rechazaba DESPUÉS de cobrar — justo el "fallar tarde" que esta
+        // validación existe para evitar.
+        //
+        // No poder leer la configuración NO bloquea la venta: `umbralBoletaIdentificada()`
+        // no lanza y cae al default legal (700). Lo peor que puede pasar con el
+        // emisor caído es aplicar el umbral de ayer; lo que no puede pasar es que
+        // la caja deje de cobrar.
+        $umbral = app(\App\Services\Facturacion\ConfiguracionFacturacion::class)
+            ->umbralBoletaIdentificada();
         if ($total >= $umbral - 0.01) {
             if (!$cliente || $cliente->es_cliente_general) {
                 $validator->errors()->add(

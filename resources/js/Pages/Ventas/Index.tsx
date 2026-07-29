@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import {
     Eye, ShoppingCart, Calendar, Receipt, Pencil, Trash2, KeyRound,
     AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins, ListChecks, PackageMinus,
+    Send, MessageCircle, Mail,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -13,7 +14,11 @@ import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import FiltrosCard from '@/Components/UI/FiltrosCard';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
-import type { Local, PageProps, Venta } from '@/types';
+import {
+    rutaComprobante, metaEstado, estadoEnCurso, comprobanteEmitido, comprobanteConProblema,
+    etiquetaTipoSunat, type EstadoComprobanteResp,
+} from '@/lib/comprobanteElectronico';
+import type { ComprobanteElectronico, Local, PageProps, Venta } from '@/types';
 
 // Ventana de edición (debe coincidir con VentaController::EDIT_WINDOW_SECONDS).
 const EDIT_WINDOW_MS = 3 * 60 * 1000;
@@ -123,6 +128,8 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
     const [saving, setSaving]   = useState(false);
     const [errAnular, setErrAnular] = useState<Record<string, string>>({});
     const [imprimiendo, setImprimiendo] = useState<number | null>(null);
+    // Venta cuyo comprobante se está compartiendo (null = diálogo cerrado).
+    const [compartir, setCompartir] = useState<Venta | null>(null);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -203,6 +210,12 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         const c = v.cliente as any;
         return c.razon_social ?? `${c.nombres} ${c.apellidos ?? ''}`.trim();
     }
+
+    // Comprobante electrónico de la venta (null en `ticket` y en el histórico
+    // anterior a la integración: esas filas se pintan exactamente como siempre).
+    const ce = (v: Venta): ComprobanteElectronico | null => v.comprobante_electronico ?? null;
+    // Solo se comparte lo que el cliente ya puede recibir: con número y emitido.
+    const puedeCompartir = (v: Venta) => comprobanteEmitido(ce(v)?.estado);
 
     // Venta al crédito con saldo pendiente (cuenta por cobrar).
     const saldo = (v: Venta) => Number((v as any).saldo_pendiente ?? 0);
@@ -359,6 +372,8 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     <span className="capitalize text-xs" style={{ color: 'var(--color-text-muted)' }}>
                                         {v.tipo_comprobante}
                                     </span>
+                                    {/* El sello solo aparece si hay CPE: un `ticket` se ve igual que siempre. */}
+                                    <SelloComprobante ce={ce(v)} />
                                 </td>
                                 <td className="px-4 py-3">
                                     <ChipsPago metodos={metodosDePago(v)} esCredito={Boolean(v.es_credito)} debe={saldo(v)} />
@@ -390,6 +405,16 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                         >
                                             <Eye size={14} />
                                         </Link>
+                                        {puedeCompartir(v) && (
+                                            <button
+                                                onClick={() => setCompartir(v)}
+                                                title={`Enviar ${ce(v)?.numero ?? 'el comprobante'} al cliente`}
+                                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:opacity-80"
+                                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-success) 12%, transparent)', color: 'var(--color-success)' }}
+                                            >
+                                                <Send size={14} />
+                                            </button>
+                                        )}
                                         {v.estado === 'completada' && (
                                             <button
                                                 onClick={() => imprimir(v)}
@@ -470,6 +495,8 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     </span>
                                     <span className="capitalize">{v.tipo_comprobante}</span>
                                 </div>
+                                {/* Mismo sello que en la tabla: la cajera de tablet ve lo mismo. */}
+                                <SelloComprobante ce={ce(v)} />
                                 <div className="mt-1.5">
                                     <ChipsPago metodos={metodosDePago(v)} esCredito={Boolean(v.es_credito)} debe={saldo(v)} />
                                 </div>
@@ -498,6 +525,15 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                             >
                                 <Eye size={14} /> Ver
                             </Link>
+                            {puedeCompartir(v) && (
+                                <button
+                                    onClick={() => setCompartir(v)}
+                                    className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg"
+                                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-success) 12%, transparent)', color: 'var(--color-success)' }}
+                                >
+                                    <Send size={14} /> Enviar
+                                </button>
+                            )}
                             {v.estado === 'completada' && (
                                 <button
                                     onClick={() => imprimir(v)}
@@ -561,6 +597,24 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                     )}
                 </div>
             )}
+
+            {/* ── Modal compartir comprobante ──────────────────────── */}
+            <Modal
+                isOpen={compartir !== null}
+                onClose={() => setCompartir(null)}
+                title={compartir ? `Enviar ${ce(compartir)?.numero ?? 'comprobante'}` : 'Enviar comprobante'}
+                size="sm"
+                footer={<Button variant="ghost" onClick={() => setCompartir(null)}>Cerrar</Button>}
+            >
+                {/* key: al abrir otra venta se remonta y vuelve a consultar. */}
+                {compartir && (
+                    <CompartirComprobanteBody
+                        key={compartir.id}
+                        venta={compartir}
+                        onEnviado={() => setCompartir(null)}
+                    />
+                )}
+            </Modal>
 
             {/* ── Modal anular ─────────────────────────────────────── */}
             <Modal
@@ -642,6 +696,221 @@ function paginasVisibles(actual: number, ultima: number): (number | '…')[] {
         else if (pages[pages.length - 1] !== '…') pages.push('…');
     }
     return pages;
+}
+
+/**
+ * Sello del comprobante electrónico en la lista.
+ *
+ * Regla de oro: si la venta no tiene CPE (todos los `ticket` y todo el
+ * histórico anterior a la integración) NO se pinta nada, la fila queda idéntica.
+ *
+ * El caso normal es un punto de color + el número oficial, que es el dato que
+ * el cliente menciona por teléfono. Los estados con problema escalan a pastilla
+ * roja con etiqueta: repasando cien filas, esas son las que hay que encontrar.
+ * El porqué del estado va en el `title` para no gastar ancho de tabla.
+ */
+function SelloComprobante({ ce }: { ce: ComprobanteElectronico | null }) {
+    if (!ce) return null;
+
+    const meta     = metaEstado(ce.estado);
+    const enCurso  = estadoEnCurso(ce.estado);
+    const problema = comprobanteConProblema(ce.estado);
+    // Un comprobante que falló al mapear nunca llegó a numerarse.
+    const numero   = ce.numero ?? 'Sin numerar';
+    const tooltip  = [etiquetaTipoSunat(ce.tipo), meta.label, meta.detalle].filter(Boolean).join(' · ');
+
+    if (problema) {
+        return (
+            <div className="mt-1 flex flex-col items-start gap-0.5" title={tooltip}>
+                <span
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5"
+                    style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-danger) 12%, transparent)',
+                        color: 'var(--color-danger)',
+                    }}
+                >
+                    <AlertTriangle size={11} className="flex-shrink-0" />
+                    <span className="font-mono text-[11px] font-bold">{numero}</span>
+                </span>
+                <span className="text-[10px] font-semibold leading-tight" style={{ color: 'var(--color-danger)' }}>
+                    {meta.label}
+                </span>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-1 flex items-center gap-1.5" title={tooltip}>
+            <span
+                className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${enCurso ? 'animate-pulse' : ''}`}
+                style={{ backgroundColor: meta.color }}
+            />
+            <span className="font-mono text-[11px] leading-none" style={{ color: 'var(--color-text)' }}>
+                {numero}
+            </span>
+        </div>
+    );
+}
+
+/**
+ * Contenido del diálogo «Enviar comprobante».
+ *
+ * Los enlaces para compartir (wa.me firmado + PDF público) los arma el backend
+ * y viajan dentro de GET /comprobante/estado. Se piden AL ABRIR el diálogo y no
+ * al cargar la lista: precargarlos serían 25 peticiones por página para algo
+ * que casi nunca se usa.
+ *
+ * Si el backend todavía no envía el bloque `compartir`, las dos acciones quedan
+ * deshabilitadas con su explicación en vez de fallar al pulsarlas.
+ */
+function CompartirComprobanteBody({ venta, onEnviado }: { venta: Venta; onEnviado: () => void }) {
+    const [resp, setResp]         = useState<EstadoComprobanteResp | null>(null);
+    const [cargando, setCargando] = useState(true);
+    const [fallo, setFallo]       = useState(false);
+    const [email, setEmail]       = useState('');
+    const [enviando, setEnviando] = useState(false);
+
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            try {
+                const { data } = await axios.get<EstadoComprobanteResp>(rutaComprobante.estado(venta.id));
+                if (!vivo) return;
+                setResp(data);
+                setEmail(data?.compartir?.email_cliente ?? '');
+            } catch {
+                if (vivo) setFallo(true);
+            } finally {
+                if (vivo) setCargando(false);
+            }
+        })();
+        return () => { vivo = false; };
+    }, [venta.id]);
+
+    const compartir = resp?.compartir ?? null;
+    const numero    = resp?.numero ?? venta.comprobante_electronico?.numero ?? null;
+
+    // wa.me abre WhatsApp con el mensaje ya escrito; el envío lo hace la persona.
+    function abrirWhatsapp() {
+        if (!compartir?.whatsapp) return;
+        window.open(compartir.whatsapp, '_blank', 'noopener,noreferrer');
+    }
+
+    async function enviarCorreo() {
+        const destino = email.trim();
+        if (!destino || enviando) return;
+        setEnviando(true);
+        const tid = toast.loading(`Enviando a ${destino}...`);
+        try {
+            const { data } = await axios.post<{ message?: string }>(
+                rutaComprobante.enviarCorreo(venta.id), { email: destino },
+            );
+            // Se prefiere el mensaje del backend: es el mismo texto que ve la
+            // cajera si el envío se hace desde el detalle de la venta.
+            toast.success(data?.message ?? `Comprobante enviado a ${destino}`, { id: tid });
+            onEnviado();
+        } catch (e) {
+            const msg = (axios.isAxiosError(e)
+                ? (e.response?.data as { message?: string } | undefined)?.message
+                : null)
+                ?? 'No se pudo enviar el correo. Revisa la dirección e inténtalo de nuevo.';
+            toast.error(msg, { id: tid });
+        } finally {
+            setEnviando(false);
+        }
+    }
+
+    if (cargando) {
+        return (
+            <p className="text-sm py-2" style={{ color: 'var(--color-text-muted)' }}>
+                Preparando el envío...
+            </p>
+        );
+    }
+
+    if (fallo) {
+        return (
+            <p className="text-sm py-2" style={{ color: 'var(--color-danger)' }}>
+                No se pudo leer el comprobante. Revisa la conexión y vuelve a abrir el envío.
+            </p>
+        );
+    }
+
+    const sinEnlaces = !compartir;
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <p className="font-mono text-base font-bold leading-tight" style={{ color: 'var(--color-text)' }}>
+                    {numero ?? 'Sin numerar'}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                    {etiquetaTipoSunat(resp?.tipo)} · {venta.numero}
+                </p>
+            </div>
+
+            {sinEnlaces && (
+                <p className="text-xs leading-snug rounded-lg px-3 py-2"
+                    style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
+                    El envío al cliente todavía no está disponible para este comprobante.
+                    Mientras tanto puedes descargar el PDF desde el detalle de la venta.
+                </p>
+            )}
+
+            {/* WhatsApp: enlace wa.me, sin APIs de por medio. */}
+            <Button
+                variant="success"
+                flat
+                className="w-full"
+                startContent={<MessageCircle size={15} />}
+                onClick={abrirWhatsapp}
+                disabled={!compartir?.whatsapp}
+                title={compartir?.whatsapp
+                    ? 'Abre WhatsApp con el mensaje y el enlace ya escritos'
+                    : 'El cliente no tiene teléfono registrado'}
+            >
+                Enviar por WhatsApp
+            </Button>
+
+            {/* Correo: si el cliente no tiene uno guardado, se pide aquí mismo. */}
+            <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                    Correo del cliente
+                </label>
+                <div className="flex gap-2">
+                    <input
+                        type="email"
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') void enviarCorreo(); }}
+                        disabled={sinEnlaces || enviando}
+                        placeholder="cliente@correo.pe"
+                        className="flex-1 min-w-0 rounded-xl px-3 py-2 text-sm disabled:opacity-50"
+                        style={{
+                            border: '1px solid var(--color-border)',
+                            backgroundColor: 'var(--color-surface)',
+                            color: 'var(--color-text)',
+                        }}
+                    />
+                    <Button
+                        variant="primary"
+                        startContent={<Mail size={15} />}
+                        onClick={() => void enviarCorreo()}
+                        loading={enviando}
+                        disabled={sinEnlaces || !email.trim()}
+                        title={sinEnlaces ? 'El envío por correo aún no está disponible' : 'Enviar el PDF a este correo'}
+                    >
+                        Enviar
+                    </Button>
+                </div>
+                {!sinEnlaces && !compartir?.email_cliente && (
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                        Este cliente no tiene correo guardado. Escribe uno para enviarle el comprobante.
+                    </p>
+                )}
+            </div>
+        </div>
+    );
 }
 
 /** Chips "con qué pagó": métodos de pago + crédito (con deuda si queda saldo). */
