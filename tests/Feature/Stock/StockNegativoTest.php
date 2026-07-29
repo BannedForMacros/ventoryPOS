@@ -68,10 +68,14 @@ it('StockController::index expone stocksNegativosCount y marca es_negativo en ca
 
     expect($props['stocksNegativosCount'])->toBe(1);
 
-    $rowP2 = collect($props['stocks'])->firstWhere('producto_id', $p2->id);
+    // `stocks` es un LengthAwarePaginator que Inertia serializa vía Arrayable:
+    // las filas viven en la clave `data`, no en la raíz. collect($props['stocks'])
+    // itera las claves de paginación (current_page, links, total…) y nunca
+    // encuentra un producto_id.
+    $rowP2 = collect($props['stocks']['data'])->firstWhere('producto_id', $p2->id);
     expect($rowP2['es_negativo'])->toBeTrue();
     expect((float) $rowP2['cantidad'])->toBe(-2.0);
 
-    $rowP1 = collect($props['stocks'])->firstWhere('producto_id', $p1->id);
+    $rowP1 = collect($props['stocks']['data'])->firstWhere('producto_id', $p1->id);
     expect($rowP1['es_negativo'])->toBeFalse();
 });

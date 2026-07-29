@@ -98,15 +98,18 @@ it('descuento global se prorratea entre base gravada y exonerada', function () {
     $gravado   = $this->env->crearProducto(['precio_venta' => 118, 'incluye_igv' => true]);
     $exonerado = $this->env->crearProducto(['precio_venta' => 100, 'incluye_igv' => false]);
 
-    // Bases pre-descuento:
-    //   gravada raw  = 118/1.18 = 100
-    //   exonerada    = 100
-    //   total bases  = 200
-    // Descuento 20: se reparte 50/50 → 10 gravado, 10 exonerado.
-    //   gravada final  = 90
-    //   exonerada final = 90
-    //   IGV = 90 * 0.18 = 16.20
-    //   total = 90 + 16.20 + 90 = 196.20
+    // `descuento_total` está en SOLES BRUTOS (IGV incluido): es lo que el cajero
+    // quiere que baje el total que paga el cliente. Venta::calcularTotales() lo
+    // prorratea por el BRUTO de cada base y convierte a neto la parte gravada
+    // ANTES de restarla, para que el total baje EXACTAMENTE el descuento tecleado.
+    //   bruto gravado = 100 × 1.18 = 118 ; exonerado = 100 ; bruto total = 218
+    //   desc gravado bruto = 20 × 118/218 = 10.825688 → neto ÷1.18 = 9.174312
+    //   desc exonerado     = 20 × 100/218 =  9.174312
+    //   base gravada final = 100 − 9.174312 = 90.825688 → IGV = 16.35
+    //   base exonerada final = 90.825688
+    //   total = 90.825688 + 16.35 + 90.825688 = 198.00  (= 218 − 20, exacto)
+    // Mismo criterio que StoreVentaRequest::calcularTotalEsperado(),
+    // VentaAComprobante::construirLineas() y el espejo TS de Pos/Index.tsx.
 
     $venta = ventaConItems($this->env, $this->turno, [
         [
@@ -123,8 +126,8 @@ it('descuento global se prorratea entre base gravada y exonerada', function () {
         ],
     ], descuentoTotal: 20);
 
-    expect((float) $venta->igv)->toBe(16.20);
-    expect((float) $venta->total)->toBe(196.20);
+    expect((float) $venta->igv)->toBe(16.35);
+    expect((float) $venta->total)->toBe(198.00);
 });
 
 it('tasa_igv configurable: 10% calcula correctamente', function () {

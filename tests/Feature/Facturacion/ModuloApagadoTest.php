@@ -134,5 +134,17 @@ it('el POS se pinta sin llamar al emisor y sin aviso de producción', function (
             // módulo se encienda, y el frontend necesita un número.
             ->where('facturacion.umbral_boleta_identificada', 700));
 
-    Http::assertNothingSent();
+    // OJO: no vale `Http::assertNothingSent()`. El POS SÍ hace una petición al
+    // pintarse —el tipo de cambio del dólar a Decolecta— y es anterior e ajena a
+    // la facturación. Lo que este test defiende es que no salga NADA hacia el
+    // emisor, así que se filtra por su host en vez de exigir silencio absoluto.
+    $emisor = parse_url(config('facturamac.base_url'), PHP_URL_HOST);
+
+    $alEmisor = collect(Http::recorded())
+        ->map(fn ($par) => $par[0]->url())
+        ->filter(fn ($url) => str_contains($url, $emisor))
+        ->values()
+        ->all();
+
+    expect($alEmisor)->toBeEmpty();
 });
