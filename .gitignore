@@ -22,4 +22,13 @@
 /vendor
 Homestead.json
 Homestead.yaml
-Thumbs.db.env.bak-*
+Thumbs.db
+
+# Copias del .env: contienen APP_KEY, contraseñas y tokens en claro.
+.env.bak-*
+.env.backup*
+
+# Volcados de base de datos: datos reales, nunca en el repositorio.
+*.dump
+ventoryPOS-*.sql
+bkp-*.sql
