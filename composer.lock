@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2ec4c661d9b7e6c870e06ebde34a7d78",
+    "content-hash": "95289f8366339833b71e8a30181246e5",
     "packages": [
         {
             "name": "brick/math",
@@ -2154,11 +2154,17 @@
         },
         {
             "name": "macsoft/facturacion-contrato",
-            "version": "dev-master",
+            "version": "v0.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/BannedForMacros/facturacion-contrato.git",
+                "reference": "1282bf1eb3ef0b3c1a6b42a13098ab0ec086e584"
+            },
             "dist": {
-                "type": "path",
-                "url": "../facturacion-contrato",
-                "reference": "939e6a0285f09999da15008db7f224be978bc611"
+                "type": "zip",
+                "url": "https://api.github.com/repos/BannedForMacros/facturacion-contrato/zipball/1282bf1eb3ef0b3c1a6b42a13098ab0ec086e584",
+                "reference": "1282bf1eb3ef0b3c1a6b42a13098ab0ec086e584",
+                "shasum": ""
             },
             "require": {
                 "php": "^8.2"
@@ -2186,9 +2192,11 @@
                 "proprietary"
             ],
             "description": "Contrato compartido para la emisión electrónica: DTOs y enums que hablan FacturaMac y los sistemas que emiten a través de él.",
-            "transport-options": {
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/BannedForMacros/facturacion-contrato/tree/v0.1.0",
+                "issues": "https://github.com/BannedForMacros/facturacion-contrato/issues"
+            },
+            "time": "2026-07-29T01:02:47+00:00"
         },
         {
             "name": "monolog/monolog",
@@ -9691,9 +9699,7 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {
-        "macsoft/facturacion-contrato": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

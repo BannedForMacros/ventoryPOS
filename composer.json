@@ -11,7 +11,7 @@
         "laravel/framework": "^12.0",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.10.1",
-        "macsoft/facturacion-contrato": "@dev",
+        "macsoft/facturacion-contrato": "^0.1.0",
         "tightenco/ziggy": "^2.0"
     },
     "require-dev": {
@@ -89,9 +89,11 @@
     },
     "minimum-stability": "stable",
     "prefer-stable": true,
-    "repositories": [{
-        "name": "contrato",
-        "type": "path",
-        "url": "../facturacion-contrato"
-    }]
+    "repositories": [
+        {
+            "name": "contrato",
+            "type": "vcs",
+            "url": "https://github.com/BannedForMacros/facturacion-contrato.git"
+        }
+    ]
 }
