@@ -11,7 +11,8 @@ use App\Models\VentaItem;
 use App\Services\AuditoriaService;
 use App\Services\Facturacion\FacturaMacClient;
 use App\Services\Facturacion\FacturaMacException;
-use App\Services\Facturacion\MapaUnidadesSunat;
+use MacSoft\Facturacion\Contrato\Enum\Impuesto;
+use MacSoft\Facturacion\Contrato\Enum\MotivoNotaCredito;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -56,7 +57,7 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         public int $esperas = 0,
     ) {}
 
-    public function handle(FacturaMacClient $client, MapaUnidadesSunat $unidades): void
+    public function handle(FacturaMacClient $client): void
     {
         if (!config('facturamac.enabled')) {
             return;
@@ -129,14 +130,17 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             return;
         }
 
-        $motivo = $this->motivoSunat($devolucion, $venta);
+        $esTotal = $this->esDevolucionTotal($devolucion, $venta);
 
         $peticion = [
             // Idempotencia: una devolución = UNA nota de crédito, por más
             // veces que se reintente este job.
             'idempotency_key' => 'devolucion-' . $devolucion->id,
-            // Catálogo 09 SUNAT: 06 devolución total | 07 devolución por ítem.
-            'motivo'          => $motivo,
+            // El contrato usa NOMBRES, no códigos de catálogo. Que `devolucion`
+            // se traduzca a 06 (total) o 07 (por ítem) del catálogo 09 lo decide
+            // el emisor a partir de si mandamos líneas o no: el POS no tiene por
+            // qué conocer los códigos de SUNAT.
+            'motivo'          => MotivoNotaCredito::DEVOLUCION->value,
             'observaciones'   => sprintf(
                 'Devolución %s — venta %s',
                 $devolucion->numero ?: ('#' . $devolucion->id),
@@ -154,9 +158,9 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         // que FacturaMac copie los importes que ya declaró: nuestro recálculo podría
         // desviarse un céntimo del original, porque aquel pasó por la conciliación de
         // VentaAComprobante y este no.
-        if ($motivo !== '06') {
+        if (! $esTotal) {
             try {
-                $detalles = $this->detalles($devolucion, $venta, $unidades);
+                $items = $this->items($devolucion, $venta);
             } catch (MapeoComprobanteException $e) {
                 // Mejor no emitir que emitir una NC con importes equivocados.
                 $this->avisarFallo($devolucion, $e->getMessage());
@@ -164,12 +168,16 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
                 return;
             }
 
-            $peticion['detalles'] = $detalles;
-            // Contrato de verificación, el equivalente de `totales_esperados` en la
-            // emisión: si FacturaMac recalcula las líneas y no coincide con esto,
-            // devuelve 422 y no emite nada.
-            $peticion['monto'] = round(
-                array_sum(array_column($detalles, 'total_item')),
+            $peticion['items'] = $items;
+            // Contrato de verificación, el equivalente de `total` en la emisión: si
+            // el emisor recalcula las líneas y no coincide con esto, devuelve 422 y
+            // no emite nada. Las líneas viajan con el precio BRUTO, así que el total
+            // es la suma directa.
+            $peticion['total'] = round(
+                array_sum(array_map(
+                    static fn (array $i): float => $i['precio_unitario'] * $i['cantidad'],
+                    $items,
+                )),
                 2,
             );
         }
@@ -192,14 +200,14 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             'devolucion_id'  => $devolucion->id,
             'venta_id'       => $venta->id,
             'comprobante'    => $ce->numero,
-            'motivo'         => $motivo,
+            'alcance'        => $esTotal ? 'total' : 'parcial',
             'nota_credito'   => $respuesta['numero'] ?? null,
         ]);
 
         AuditoriaService::log('venta_comprobante.nota_credito_emitida', $devolucion, [
             'venta_id'          => $venta->id,
             'comprobante'       => $ce->numero,
-            'motivo_sunat'      => $motivo,
+            'alcance'           => $esTotal ? 'total' : 'parcial',
             'nota_credito'      => $respuesta['numero'] ?? null,
             'nota_credito_id'   => $respuesta['id'] ?? null,
             'monto'             => round((float) $devolucion->monto_devolucion, 2),
@@ -207,26 +215,30 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             // por qué coincidir con `monto_devolucion`: la NC descuenta la parte
             // proporcional del descuento global de la venta. En una total va a null
             // porque la NC copia los importes del comprobante original.
-            'monto_acreditado'  => $peticion['monto'] ?? null,
+            'monto_acreditado'  => $peticion['total'] ?? null,
         ], $this->usuario());
     }
 
     /**
-     * Catálogo 09 SUNAT: '06' devolución TOTAL o '07' devolución POR ÍTEM (parcial).
+     * ¿Esta devolución acredita el comprobante ENTERO?
      *
-     * '06' solo cuando ESTA devolución, por sí sola, devuelve todos los ítems de la
+     * Determina si la nota viaja SIN líneas (el emisor copia los importes que ya
+     * declaró, garantizando que cuadre al céntimo) o CON ellas (acredita solo lo
+     * devuelto). El código del catálogo 09 lo elige el emisor a partir de eso.
+     *
+     * Solo es total cuando ESTA devolución, por sí sola, devuelve todos los ítems de la
      * venta en su totalidad — porque es la única situación en la que la NC acredita el
      * comprobante ENTERO. No basta con que la suma de todas las devoluciones cubra la
      * venta: si el cliente devolvió 5 sacos ayer y 5 hoy, la NC de hoy acredita media
      * factura, y declararla como "devolución total" haría que el motivo dijera una
      * cosa y los importes otra.
      */
-    private function motivoSunat(Devolucion $devolucion, Venta $venta): string
+    private function esDevolucionTotal(Devolucion $devolucion, Venta $venta): bool
     {
         $items = $venta->items;
 
         if ($items === null || count($items) === 0) {
-            return '07';
+            return false;
         }
 
         // Cantidad devuelta en ESTA devolución, agrupada por línea de venta.
@@ -239,11 +251,11 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             // 0.0001 es la precisión con la que se guardan las cantidades; por debajo
             // de eso es ruido de coma flotante, no una unidad pendiente.
             if (($devuelto[$item->id] ?? 0.0) < (float) $item->cantidad - 0.0001) {
-                return '07';
+                return false;
             }
         }
 
-        return '06';
+        return true;
     }
 
     /**
@@ -266,12 +278,27 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
      *
      * @throws MapeoComprobanteException
      */
-    private function detalles(Devolucion $devolucion, Venta $venta, MapaUnidadesSunat $unidades): array
+    /**
+     * Líneas de la nota de crédito, en el vocabulario del CONTRATO.
+     *
+     * Antes esta función hacía la traducción fiscal: dividía entre (1+tasa), calculaba
+     * el IGV por línea y elegía el código del catálogo 07. Todo eso vive ahora en el
+     * emisor, que es quien conoce la tasa de la empresa y los catálogos vigentes.
+     * Aquí solo se declara el hecho comercial: qué se devolvió, cuánto y a qué precio.
+     *
+     * `devoluciones_detalle.subtotal` ya es (precio − descuento_item) × cantidad
+     * devuelta: el mismo bruto que usa Venta::calcularTotales(). De ahí se deriva el
+     * precio unitario bruto, que es lo que el contrato espera con
+     * `precio_incluye_impuesto = true`.
+     */
+    private function items(Devolucion $devolucion, Venta $venta): array
     {
-        $tasa      = $this->tasaIgv($venta);
-        $factor    = $this->factorDescuentoGlobal($venta);
-        $empresaId = (int) $venta->empresa_id;
-        $detalles  = [];
+        // El descuento global de la venta rebajó el precio efectivo de cada línea. Se
+        // incorpora al precio unitario en vez de viajar aparte: la nota de crédito no
+        // tiene campo de descuento global, y mandarlo como descuento de línea lo
+        // restaría dos veces.
+        $factor = $this->factorDescuentoGlobal($venta);
+        $items  = [];
 
         foreach ($devolucion->detalles as $d) {
             $cantidad = round((float) $d->cantidad, 4);
@@ -284,66 +311,44 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
 
             if (! $item) {
                 // Sin la línea de venta no sabemos si el producto era gravado o
-                // exonerado, y adivinarlo cambiaría el IGV acreditado.
+                // exonerado, y adivinarlo cambiaría el impuesto acreditado.
                 throw MapeoComprobanteException::para(
                     $venta->id,
                     "La línea de devolución {$d->id} no tiene el ítem de venta asociado; "
-                    . 'no se puede determinar su afectación de IGV.'
+                    . 'no se puede determinar cómo tributaba.'
                 );
             }
 
-            // `devoluciones_detalle.subtotal` ya es (precio − descuento_item) × cantidad
-            // devuelta, el mismo bruto que usa Venta::calcularTotales() por línea.
-            $bruto = round((float) $d->subtotal, 2);
-            $neto  = $bruto * $factor;
-
-            if ($item->incluye_igv) {
-                $subtotal   = round($neto / (1 + $tasa), 2);
-                $igv        = round($subtotal * $tasa, 2);
-                $afectacion = '10';
-            } else {
-                $subtotal   = round($neto, 2);
-                $igv        = 0.00;
-                $afectacion = '20';
-            }
-
-            $totalItem   = round($subtotal + $igv, 2);
+            $bruto       = round((float) $d->subtotal, 2) * $factor;
             $abreviatura = trim((string) ($item->productoUnidad?->unidadMedida?->abreviatura ?: $item->unidad_nombre));
 
-            $detalles[] = [
-                // MISMO código que envió el comprobante original: FacturaMac lo usa
+            $items[] = [
+                // MISMO código que envió el comprobante original: el emisor lo usa
                 // para comprobar que no se acreditan más unidades de las facturadas.
-                'codigo_producto'       => $item->producto?->codigo ?: ('P-' . $item->producto_id),
-                'codigo_producto_sunat' => null,
-                'descripcion'           => $this->descripcion($item, $abreviatura),
-                'unidad_medida'         => $unidades->codigoSunat(
-                    $empresaId,
-                    $item->productoUnidad?->unidad_medida_id,
-                    $abreviatura,
-                ),
-                'cantidad'                => $cantidad,
-                // 10 decimales: la precisión con la que Greenter declara el valor
-                // unitario, para que SUNAT no recalcule un importe distinto.
-                'precio_unitario'         => round($subtotal / $cantidad, 10),
-                'precio_unitario_con_igv' => round($totalItem / $cantidad, 2),
-                // El descuento ya está incorporado al precio efectivo; mandarlo además
-                // como campo lo restaría dos veces.
-                'descuento'               => 0,
-                'subtotal'                => $subtotal,
-                'igv_item'                => $igv,
-                'total_item'              => $totalItem,
-                'tipo_afectacion_igv'     => $afectacion,
+                'codigo'      => $item->producto?->codigo ?: ('P-' . $item->producto_id),
+                'descripcion' => $this->descripcion($item, $abreviatura),
+                'cantidad'    => $cantidad,
+                // Precio unitario BRUTO. 10 decimales para que cantidad × precio
+                // reproduzca el importe sin arrastrar error de redondeo.
+                'precio_unitario' => round($bruto / $cantidad, 10),
+                // Abreviatura del POS tal cual: el mapeo al catálogo 03 es del emisor.
+                'unidad'      => $abreviatura ?: 'UND',
+                // `incluye_igv` de ventoryPOS mezcla dos preguntas; el contrato las
+                // separa. Aquí se traduce, que es donde corresponde.
+                'impuesto'    => $item->incluye_igv ? Impuesto::GRAVADO->value : Impuesto::EXONERADO->value,
+                'precio_incluye_impuesto' => true,
+                'descuento'   => 0,
             ];
         }
 
-        if ($detalles === []) {
+        if ($items === []) {
             throw MapeoComprobanteException::para(
                 $venta->id,
                 "La devolución {$devolucion->id} no tiene líneas con cantidad devuelta."
             );
         }
 
-        return $detalles;
+        return $items;
     }
 
     /**
