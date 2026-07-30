@@ -40,7 +40,23 @@ class MapaUnidadesSunat
         'BOL' => 'BG', 'BOLSA' => 'BG', 'SACO' => 'BG',
         'PAQ' => 'PK', 'PQT' => 'PK', 'PAQUETE' => 'PK', 'PACK' => 'PK',
         'CIENTO' => 'CEN', 'DOC' => 'DZN', 'DOCENA' => 'DZN',
-        'SERV' => 'ZZ', 'SERVICIO' => 'ZZ',
+
+        // 'SRV' es la que MÁS importa de esta línea, y faltaba: es la abreviatura
+        // que `ProductoController::crearPresentacionDefaultServicio()` crea SOLA
+        // para cada servicio dado de alta desde la interfaz. Sin ella, todo
+        // servicio del sistema se declaraba como NIU ("unidad") en vez de ZZ
+        // ("servicio"): no rompe la emisión, pero describe mal la operación en
+        // todos los comprobantes de una empresa que vive de vender servicios.
+        'SERV' => 'ZZ', 'SERVICIO' => 'ZZ', 'SRV' => 'ZZ',
+
+        // Unidades de tiempo: licencias, suscripciones, soporte y capacitación se
+        // facturan por mes, hora, día o año, y ninguna estaba contemplada. Una
+        // licencia anual declarada como "unidad" pierde justo el dato que la
+        // define.
+        'MES' => 'MON', 'MESES' => 'MON', 'MENSUAL' => 'MON',
+        'HORA' => 'HUR', 'HORAS' => 'HUR', 'HR' => 'HUR', 'HRS' => 'HUR',
+        'DIA' => 'DAY', 'DIAS' => 'DAY',
+        'ANIO' => 'ANN', 'AÑO' => 'ANN', 'ANUAL' => 'ANN',
     ];
 
     /**
