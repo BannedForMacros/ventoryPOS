@@ -284,7 +284,16 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
 
     const igv   = Math.round(baseGravadaFinal * tasa * 100) / 100;
     const total = Math.round((baseGravadaFinal + igv + baseExonFinal) * 100) / 100;
-    return { subtotal, igv, total };
+    // Se devuelven también las BASES NETAS. Antes solo salían `subtotal` (el bruto)
+    // e `igv`, y el desglose las pintaba una debajo de la otra:
+    //
+    //     Subtotal    100.00      <- bruto, con el IGV YA dentro
+    //     IGV (18%)    15.25      <- ese mismo IGV, otra vez
+    //
+    // que leído en columna parece una suma de 115.25. Con las bases netas el
+    // desglose cuadra —84.75 + 15.25 = 100.00— y además dice lo mismo que va a
+    // declarar el comprobante, así que la cajera puede cotejarlo con el impreso.
+    return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
 export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion }: Props) {
@@ -494,7 +503,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         }
     }, []);
 
-    const { subtotal, igv, total } = calcularTotales(carrito, descuentoTotal, tasaIgv);
+    const { subtotal, igv, total, baseGravada, baseExonerada } = calcularTotales(carrito, descuentoTotal, tasaIgv);
 
     // Auto-agregar pago en efectivo por defecto cuando hay items y no hay pagos.
     // Historial de precios del cliente: se recarga al cambiar de cliente. Para el
@@ -1513,6 +1522,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                         descuentoConceptoId={descuentoConceptoId}
                         subtotal={subtotal}
                         igv={igv}
+                        baseGravada={baseGravada}
+                        baseExonerada={baseExonerada}
                         total={total}
                         tasaIgv={tasaIgv}
                         inactivosCount={itemsInactivos.length}
@@ -1585,6 +1596,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 descuentoConceptoId={descuentoConceptoId}
                                 subtotal={subtotal}
                                 igv={igv}
+                        baseGravada={baseGravada}
+                        baseExonerada={baseExonerada}
                                 total={total}
                                 tasaIgv={tasaIgv}
                                 inactivosCount={itemsInactivos.length}
@@ -1793,6 +1806,8 @@ interface CarritoPanelProps {
     subtotal: number;
     igv: number;
     total: number;
+    baseGravada: number;
+    baseExonerada: number;
     tasaIgv: number;
     inactivosCount: number;
     onCambiarCantidad: (key: string, delta: number) => void;
@@ -1830,7 +1845,7 @@ function CarritoPanel({
     carrito, pagos, conceptosDescuento, historial, metodosPago,
     cliente, onAbrirCliente,
     descuentoTotal, descuentoConceptoId,
-    subtotal, igv, total, tasaIgv, inactivosCount,
+    subtotal, igv, total, baseGravada, baseExonerada, tasaIgv, inactivosCount,
     onCambiarCantidad, onEstablecerCantidad, onCambiarPrecio, onAplicarDescuentoItem, onEliminarItem,
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar,
     puedeVender, razonNoVender, bloqueoComprobante,
@@ -2154,16 +2169,33 @@ function CarritoPanel({
                             />
                         </div>
 
-                        {/* Desglose */}
+                        {/* ── Desglose ────────────────────────────────────────────
+                            Las líneas SUMAN el total: gravado + exonerado + IGV.
+
+                            Antes la primera línea decía «Subtotal» y mostraba el
+                            importe BRUTO (los precios del catálogo llevan el IGV
+                            dentro), con el IGV debajo. Leído en columna parecía una
+                            suma: «Subtotal 100.00 / IGV 15.25» daba a entender 115.25
+                            cuando lo que se iba a cobrar eran 100.00.
+
+                            Ahora se muestran las bases NETAS, que es además el mismo
+                            desglose que va impreso en el comprobante, así que la
+                            cajera puede cotejar pantalla y papel sin traducir nada. */}
                         <div className="space-y-1 px-1 pb-1">
-                            <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                <span>Subtotal</span>
-                                <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {subtotal.toFixed(2)}</span>
-                            </div>
                             {descuentoTotal > 0 && (
                                 <div className="flex justify-between text-xs">
-                                    <span style={{ color: 'var(--color-text-muted)' }}>Descuento</span>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>Descuento aplicado</span>
                                     <span className="font-medium" style={{ color: 'var(--color-danger)' }}>-S/ {descuentoTotal.toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                <span>Op. gravada</span>
+                                <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {baseGravada.toFixed(2)}</span>
+                            </div>
+                            {baseExonerada > 0 && (
+                                <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                    <span>Op. exonerada</span>
+                                    <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {baseExonerada.toFixed(2)}</span>
                                 </div>
                             )}
                             <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>

@@ -153,7 +153,29 @@ class VentaController extends Controller
         $clientes = Cliente::where('empresa_id', $user->empresa_id)
             ->activo()
             ->orderBy('nombres')
-            ->get(['id', 'nombres', 'apellidos', 'razon_social', 'tipo_documento', 'numero_documento', 'telefono']);
+            // `direccion` y `es_cliente_general` NO son decorativos: son los dos
+            // campos con los que `validarComprobante()` decide si una factura puede
+            // emitirse. Al no venir en el SELECT llegaban como `undefined`, así que
+            // `tieneDireccion` era siempre false y el POS bloqueaba TODA factura con
+            // «Una factura requiere cliente con RUC y dirección» aunque el cliente
+            // tuviera las dos cosas en la base.
+            //
+            // Lo peor era la asimetría: `StoreVentaRequest` relee el cliente de la
+            // base, así que el backend SÍ habría aceptado esa venta. La pantalla
+            // frenaba algo que el servidor admitía, y sin salida posible para la
+            // cajera: no hay nada que corregir en un cliente que ya está completo.
+            //
+            // Solo se notaba con clientes YA EXISTENTES: el que se crea desde el modal
+            // vuelve como modelo completo y por eso funcionaba.
+            //
+            // `es_cliente_general` evita además que `esClienteGeneral()` caiga en su
+            // respaldo legado —comparar el documento con '99999999'—, que es un número
+            // mágico que deja de valer en cuanto una empresa cambia su cliente genérico.
+            ->get([
+                'id', 'nombres', 'apellidos', 'razon_social',
+                'tipo_documento', 'numero_documento', 'telefono',
+                'direccion', 'es_cliente_general',
+            ]);
 
         $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
             ->activo()
