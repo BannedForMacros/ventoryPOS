@@ -26,6 +26,12 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
+
+        // El superadmin no tiene empresa: su casa es el panel /admin.
+        if ($user->es_superadmin) {
+            return redirect()->route('admin.empresas.index');
+        }
+
         $user->loadMissing('rol');
 
         return $user->rol?->es_admin

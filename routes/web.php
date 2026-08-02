@@ -510,6 +510,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:reportes.kardex,ver')->get('kardex/historial-diario', [\App\Http\Controllers\Reportes\ReporteKardexController::class, 'historialDiario'])->name('kardex.historial-diario');
     });
 
+    // ── ADMINISTRACIÓN GLOBAL (panel del proveedor) ──────────────────────
+    // Fuera del sistema de permisos por empresa a propósito: la puerta es el
+    // flag users.es_superadmin (middleware `superadmin`), que ningún rol de
+    // tenant puede abrir. Aquí se da de alta una empresa completa
+    // (OnboardingEmpresaService) y se gestionan los usuarios de cualquiera.
+    Route::middleware('superadmin')->prefix('admin')->name('admin.')->group(function () {
+        Route::get('empresas', [\App\Http\Controllers\Admin\EmpresaAdminController::class, 'index'])->name('empresas.index');
+        Route::post('empresas', [\App\Http\Controllers\Admin\EmpresaAdminController::class, 'store'])->name('empresas.store');
+        Route::put('empresas/{empresa}', [\App\Http\Controllers\Admin\EmpresaAdminController::class, 'update'])->name('empresas.update');
+
+        Route::get('empresas/{empresa}/usuarios', [\App\Http\Controllers\Admin\UsuarioAdminController::class, 'index'])->name('empresas.usuarios');
+        Route::post('empresas/{empresa}/usuarios', [\App\Http\Controllers\Admin\UsuarioAdminController::class, 'store'])->name('empresas.usuarios.store');
+        Route::put('usuarios/{usuario}', [\App\Http\Controllers\Admin\UsuarioAdminController::class, 'update'])->name('usuarios.update');
+        Route::delete('usuarios/{usuario}', [\App\Http\Controllers\Admin\UsuarioAdminController::class, 'destroy'])->name('usuarios.destroy');
+    });
+
     // ── WHATSAPP ─────────────────────────────────────────────────────────
     // Cada endpoint exige el permiso del flujo POS (`ventas.crear`).
     // El controlador audita cada intento via AuditoriaService.

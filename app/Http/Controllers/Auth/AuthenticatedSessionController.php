@@ -38,6 +38,11 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        // El superadmin (proveedor) vive en /admin, no en el panel de tenant.
+        if ($request->user()->es_superadmin) {
+            return redirect()->route('admin.empresas.index');
+        }
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 

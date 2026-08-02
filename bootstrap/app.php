@@ -20,7 +20,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
-            'permiso' => \App\Http\Middleware\CheckPermiso::class,
+            'permiso'    => \App\Http\Middleware\CheckPermiso::class,
+            'superadmin' => \App\Http\Middleware\EsSuperadmin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

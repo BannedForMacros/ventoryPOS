@@ -33,6 +33,9 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password'          => 'hashed',
             'activo'            => 'boolean',
+            // Fuera de $fillable a propósito: solo se otorga por consola
+            // (superadmin:crear), nunca por mass-assignment de un formulario.
+            'es_superadmin'     => 'boolean',
         ];
     }
 

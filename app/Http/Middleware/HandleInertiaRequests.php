@@ -30,7 +30,10 @@ class HandleInertiaRequests extends Middleware
                     'rol.permisos.modulo',
                 ]) : null,
             ],
-            'modules' => fn () => $user ? $this->buildModulesTree($user) : [],
+            // El superadmin no navega el menú de tenant (su panel /admin trae
+            // su propia navegación); sin este corte, al no tener rol, el árbol
+            // le mostraría TODOS los módulos.
+            'modules' => fn () => ($user && !$user->es_superadmin) ? $this->buildModulesTree($user) : [],
             'turno_activo' => fn () => auth()->check()
                 ? Turno::turnoActivoDelUsuario(auth()->id())?->load('caja')
                 : null,
