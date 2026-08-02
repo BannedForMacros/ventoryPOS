@@ -115,13 +115,16 @@ export interface Permiso extends Record<string, unknown> {
 
 export interface User extends Record<string, unknown> {
     id: number;
-    empresa_id: number;
+    // null solo para el superadmin global (panel /admin), que no pertenece a
+    // ninguna empresa. Todo usuario de tenant la lleva siempre.
+    empresa_id: number | null;
     local_id: number | null;
     rol_id: number | null;
     name: string;
     email: string;
     email_verified_at?: string | null;
     activo: boolean;
+    es_superadmin?: boolean;
     empresa?: Empresa;
     local?: Local;
     rol?: Rol;
