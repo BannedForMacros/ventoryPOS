@@ -170,6 +170,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:inventario.entradas,ver')->get('entradas/crear', [EntradaController::class, 'create'])->name('entradas.create');
         Route::middleware('permiso:inventario.entradas,editar')->get('entradas/{entrada}/editar', [EntradaController::class, 'edit'])->name('entradas.edit');
         Route::middleware('permiso:inventario.entradas,editar')->post('entradas/{entrada}/confirmar', [EntradaController::class, 'confirmar'])->name('entradas.confirmar');
+        // Llegó la mercadería que estaba en camino: recién ahí entra el stock.
+        Route::middleware('permiso:inventario.entradas,editar')->post('entradas/{entrada}/recibir', [EntradaController::class, 'recibir'])->name('entradas.recibir');
         Route::middleware('permiso:inventario.entradas,editar')->post('entradas/{entrada}/anular', [EntradaController::class, 'anular'])->name('entradas.anular');
         Route::middleware('permiso:inventario.entradas,editar')->post('entradas/{entrada}/reactivar', [EntradaController::class, 'reactivar'])->name('entradas.reactivar');
         // Pago: independiente del estado de la entrada, por eso fuera del apiResource.

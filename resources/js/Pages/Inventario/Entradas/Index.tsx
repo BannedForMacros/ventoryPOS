@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet, Eye, Loader2, Ban, RotateCcw } from 'lucide-react';
+import { Plus, CheckCircle, Search, Edit2, Trash2, Package, FileText, Wallet, Eye, Loader2, Ban, RotateCcw, PackageCheck } from 'lucide-react';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -14,6 +14,27 @@ import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
 import { fmtFecha } from '@/lib/fechas';
 import type { PageProps } from '@/types';
+
+/** En camino y con la fecha prometida ya vencida. */
+function estaAtrasada(e: { estado: string; fecha_estimada_llegada: string | null }): boolean {
+    if (e.estado !== 'en_transito' || !e.fecha_estimada_llegada) return false;
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    return new Date(`${e.fecha_estimada_llegada}T00:00:00`) < hoy;
+}
+
+function estadoLabel(e: { estado: string; fecha_estimada_llegada: string | null }): string {
+    if (e.estado === 'confirmado')  return 'Confirmado';
+    if (e.estado === 'anulada')     return 'Anulada';
+    if (e.estado === 'en_transito') return estaAtrasada(e) ? 'Atrasada' : 'En camino';
+    return 'Borrador';
+}
+
+function estadoVariante(e: { estado: string; fecha_estimada_llegada: string | null }) {
+    if (e.estado === 'confirmado')  return 'success' as const;
+    if (e.estado === 'anulada')     return 'danger' as const;
+    if (e.estado === 'en_transito') return estaAtrasada(e) ? 'danger' as const : 'primary' as const;
+    return 'warning' as const;
+}
 
 interface Almacen { id: number; nombre: string; local?: { nombre: string } | null; }
 interface UserItem { id: number; name: string; }
@@ -47,7 +68,9 @@ interface Entrada extends Record<string, unknown> {
     almacen: Almacen;
     user: UserItem;
     total: string;
-    estado: 'borrador' | 'confirmado' | 'anulada';
+    estado: 'borrador' | 'en_transito' | 'confirmado' | 'anulada';
+    fecha_estimada_llegada: string | null;
+    fecha_recepcion: string | null;
     estado_pago: 'pendiente' | 'parcial' | 'pagado';
     monto_pagado: string;
     metodo_pago_id: number | null;
@@ -86,6 +109,8 @@ function Meta({ label, value, mono }: { label: string; value: string; mono?: boo
 export default function EntradasIndex({ entradas, almacenes, metodosPago, mostrarSelector, filters }: Props) {
     const { flash } = usePage<Props>().props;
     const [confirmId, setConfirmId]   = useState<number | null>(null);
+    const [recibir, setRecibir]       = useState<Entrada | null>(null);
+    const [fechaRecepcion, setFechaRecepcion] = useState('');
     const [deleteId, setDeleteId]     = useState<number | null>(null);
     const [anular, setAnular]         = useState<Entrada | null>(null);
     const [motivoAnular, setMotivoAnular] = useState('');
@@ -194,6 +219,12 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
         router.post(route('inventario.entradas.confirmar', id));
     }
 
+    function confirmarRecepcion(id: number) {
+        router.post(route('inventario.entradas.recibir', id), { fecha_recepcion: fechaRecepcion || null }, {
+            onSuccess: () => { setRecibir(null); setFechaRecepcion(''); },
+        });
+    }
+
     function eliminar(id: number) {
         setDeleteId(null);
         router.delete(route('inventario.entradas.destroy', id));
@@ -275,9 +306,19 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
         {
             key: 'estado', label: 'Estado', sortable: true,
             render: (e) => (
-                <Badge variant={e.estado === 'confirmado' ? 'success' : e.estado === 'anulada' ? 'danger' : 'warning'}>
-                    {e.estado === 'confirmado' ? 'Confirmado' : e.estado === 'anulada' ? 'Anulada' : 'Borrador'}
-                </Badge>
+                <div className="flex flex-col gap-0.5">
+                    <Badge variant={estadoVariante(e)}>{estadoLabel(e)}</Badge>
+                    {/* La fecha prometida solo importa mientras la mercadería sigue
+                        en el camión; en rojo si ya se pasó y no ha llegado. */}
+                    {e.estado === 'en_transito' && e.fecha_estimada_llegada && (
+                        <span
+                            className="text-[10px] font-medium"
+                            style={{ color: estaAtrasada(e) ? 'var(--color-danger)' : 'var(--color-text-muted)' }}
+                        >
+                            {estaAtrasada(e) ? 'Debió llegar ' : 'Llega '}{fmtFecha(e.fecha_estimada_llegada)}
+                        </span>
+                    )}
+                </div>
             ),
         },
         {
@@ -295,10 +336,21 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                             <CheckCircle size={13} />Confirmar
                         </button>
                     )}
+                    {e.estado === 'en_transito' && (
+                        <button
+                            type="button"
+                            onClick={() => setRecibir(e)}
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors"
+                            style={{ color: 'var(--color-primary)', backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)' }}
+                            title="Registrar la llegada de la mercadería (recién ahí entra al stock)"
+                        >
+                            <PackageCheck size={13} />Recibir
+                        </button>
+                    )}
                     {/* Pagar: solo si AÚN debe algo. Una entrada ya pagada no muestra el
                         botón (no hay nada que cobrar). Para corregir un pago ya hecho se usa
                         Editar o Finanzas → Cuentas por pagar. */}
-                    {e.estado === 'confirmado' && e.estado_pago !== 'pagado' && (
+                    {(e.estado === 'confirmado' || e.estado === 'en_transito') && e.estado_pago !== 'pagado' && (
                         <button
                             type="button"
                             onClick={() => abrirPagoModal(e)}
@@ -309,7 +361,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                             <Wallet size={13} />Pagar
                         </button>
                     )}
-                    {e.estado === 'confirmado' && (
+                    {(e.estado === 'confirmado' || e.estado === 'en_transito') && (
                         <button
                             type="button"
                             onClick={() => { setAnulErr({}); setMotivoAnular(''); setAnular(e); }}
@@ -414,6 +466,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     options={[
                         { value: '',           label: 'Todos los estados' },
                         { value: 'borrador',   label: 'Borrador' },
+                        { value: 'en_transito', label: 'En camino' },
                         { value: 'confirmado', label: 'Confirmado' },
                     ]}
                 />
@@ -464,9 +517,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                             : 'pago pendiente'}
                                     </p>
                                 )}
-                                <Badge variant={e.estado === 'confirmado' ? 'success' : 'warning'}>
-                                    {e.estado === 'confirmado' ? 'Confirmado' : 'Borrador'}
-                                </Badge>
+                                <Badge variant={estadoVariante(e)}>{estadoLabel(e)}</Badge>
                             </div>
                         </div>
 
@@ -504,6 +555,16 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                         style={{ color: 'var(--color-success)', backgroundColor: 'color-mix(in srgb, var(--color-success) 12%, transparent)' }}
                                     >
                                         <CheckCircle size={13} />Confirmar
+                                    </button>
+                                )}
+                                {e.estado === 'en_transito' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setRecibir(e)}
+                                        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
+                                        style={{ color: 'var(--color-primary)', backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)' }}
+                                    >
+                                        <PackageCheck size={13} />Recibir
                                     </button>
                                 )}
                                 {e.estado_pago !== 'pagado' && (
@@ -611,6 +672,53 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     Al confirmar, el stock se actualizará automáticamente y el costo promedio se recalculará.
                     Esta acción es <strong>irreversible</strong>.
                 </p>
+            </Modal>
+
+            {/* Recepción de mercadería que venía en camino. Es el momento en que el
+                stock entra de verdad: hasta aquí la compra existía solo en papel. */}
+            <Modal
+                isOpen={recibir !== null}
+                onClose={() => setRecibir(null)}
+                title="Recibir mercadería"
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setRecibir(null)}>Cancelar</Button>
+                        <Button onClick={() => recibir && confirmarRecepcion(recibir.id)}>
+                            Recibir y actualizar stock
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-3">
+                    <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                        Confirmas que llegó la mercadería de{' '}
+                        <strong>{recibir?.correlativo ?? recibir?.numero_documento ?? 'esta entrada'}</strong>.
+                        Recién ahora el stock entra al almacén y se recalcula el costo promedio.
+                    </p>
+                    <div>
+                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Fecha de llegada
+                        </label>
+                        <input
+                            type="date"
+                            value={fechaRecepcion}
+                            onChange={ev => setFechaRecepcion(ev.target.value)}
+                            className="w-full rounded-lg border px-3 py-2 text-sm"
+                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                        />
+                        <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Si la dejas vacía se usa hoy. No cambia la fecha de la compra, que es la
+                            que ordena el kardex y las finanzas.
+                        </p>
+                    </div>
+                    {recibir?.estado_pago !== 'pagado' && (
+                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            Esta entrada todavía tiene saldo por pagar. Recibirla no cambia la deuda:
+                            sigue en Cuentas por pagar hasta que la canceles.
+                        </p>
+                    )}
+                </div>
             </Modal>
 
             {/* Modal eliminar */}

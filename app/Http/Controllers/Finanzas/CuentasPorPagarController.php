@@ -32,8 +32,12 @@ class CuentasPorPagarController extends Controller
     {
         $user = $request->user();
 
+        // `comprometido()` = recibidas + en camino. Que la mercadería siga en el
+        // camión no cambia que el proveedor ya facturó: si quedó saldo, la deuda
+        // es real y se puede pagar por adelantado. Lo que decide si aparece aquí
+        // sigue siendo el saldo (total - monto_pagado), no el estado de entrega.
         $query = Entrada::deEmpresa($user->empresa_id)
-            ->confirmado()
+            ->comprometido()
             ->with([
                 'proveedorRel', 'almacen',
                 'pagosParciales.metodoPago', 'pagosParciales.cuenta', 'pagosParciales.adelanto', 'pagosParciales.user',
@@ -71,14 +75,14 @@ class CuentasPorPagarController extends Controller
         $entradas = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25)->withQueryString();
 
         $totalPendiente = (float) Entrada::deEmpresa($user->empresa_id)
-            ->confirmado()
+            ->comprometido()
             ->where('estado_pago', '!=', 'pagado')
             ->selectRaw('COALESCE(SUM(GREATEST(total - monto_pagado, 0)), 0) as v')
             ->value('v');
 
         // KPIs de cabecera (universo pendiente, independiente del filtro visible)
         $basePendiente = Entrada::deEmpresa($user->empresa_id)
-            ->confirmado()
+            ->comprometido()
             ->where('estado_pago', '!=', 'pagado')
             ->whereRaw('total - monto_pagado > 0.01');
         $kpis = [
@@ -122,7 +126,10 @@ class CuentasPorPagarController extends Controller
     {
         $user = $request->user();
         abort_if($entrada->empresa_id !== $user->empresa_id, 403);
-        abort_unless($entrada->estado === 'confirmado', 422, 'Solo se pueden abonar entradas confirmadas.');
+        // Se abona también lo que viene en camino: pagar por adelantado una
+        // compra ya facturada es normal, y no tiene por qué esperar al camión.
+        abort_unless(in_array($entrada->estado, [\App\Models\Entrada::ESTADO_CONFIRMADO, \App\Models\Entrada::ESTADO_EN_TRANSITO], true),
+            422, 'Solo se pueden abonar entradas confirmadas o en tránsito.');
 
         $saldo = $entrada->saldoPendiente();
         abort_if($saldo <= 0, 422, 'La entrada ya está pagada.');

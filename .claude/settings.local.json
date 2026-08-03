@@ -201,7 +201,10 @@
       "Bash(sips -g pixelWidth -g pixelHeight public/logo.png public/logo-original.png)",
       "Bash(curl -s -o /dev/null -w \"welcome:%{http_code} \" http://localhost:8000/)",
       "Bash(curl -s -o /dev/null -w \"favicon32:%{http_code} \" http://localhost:8000/favicon-32.png)",
-      "Bash(curl -s http://localhost:8000/)"
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(perl -0pi -e 's/\\(\\\\$query = Entrada::deEmpresa\\\\\\(\\\\$user->empresa_id\\\\\\)\\\\n\\\\s*\\)->confirmado\\\\\\(\\\\\\)/$1->comprometido\\(\\)/' app/Http/Controllers/Finanzas/CuentasPorPagarController.php)",
+      "Bash(perl -0pi -e 's/\\(\\\\$totalPendiente = \\\\\\(float\\\\\\) Entrada::deEmpresa\\\\\\(\\\\$user->empresa_id\\\\\\)\\\\n\\\\s*\\)->confirmado\\\\\\(\\\\\\)/$1->comprometido\\(\\)/' app/Http/Controllers/Finanzas/CuentasPorPagarController.php)",
+      "Bash(perl -0pi -e 's/\\(\\\\$basePendiente = Entrada::deEmpresa\\\\\\(\\\\$user->empresa_id\\\\\\)\\\\n\\\\s*\\)->confirmado\\\\\\(\\\\\\)/$1->comprometido\\(\\)/' app/Http/Controllers/Finanzas/CuentasPorPagarController.php)"
     ]
   },
   "hooks": {

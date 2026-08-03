@@ -27,6 +27,7 @@ class EntradaController extends Controller
     public function __construct(
         private LocalScopeService $scope,
         private TesoreriaService $tesoreria,
+        private \App\Services\MercaderiaTransitoService $transito,
     ) {}
 
     /**
@@ -165,6 +166,12 @@ class EntradaController extends Controller
             'entradas'        => $entradas,
             'almacenes'       => $this->scope->almacenesVisibles($user),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
+            // Mercadería en tránsito: la pestaña/badge y el aviso de atrasadas
+            // solo aparecen si la empresa encendió el módulo.
+            'usaTransito'     => $this->transito->habilitado($user->empresa),
+            'resumenTransito' => $this->transito->habilitado($user->empresa)
+                ? $this->transito->resumen($user->empresa_id)
+                : null,
             'filters'         => $request->only(['almacen_id', 'estado', 'fecha_desde', 'fecha_hasta', 'buscar']),
             // Para el modal de quick-pago en el Index. Eager cuentas para evitar query
             // adicional al abrir el modal y permitir filtrar cuentas por metodo en cliente.
@@ -182,6 +189,8 @@ class EntradaController extends Controller
         return Inertia::render('Inventario/Entradas/Create', [
             'almacenes' => $this->scope->almacenesParaCompras($user),
             'modoAlmacen' => $user->empresa->modo_almacen,
+            // Habilita el botón "Guardar como en camino" + la fecha estimada.
+            'usaTransito' => $this->transito->habilitado($user->empresa),
             'productos' => Producto::deEmpresa($empresaId)
                 ->activo()
                 ->productos()
@@ -224,6 +233,11 @@ class EntradaController extends Controller
             'numero_documento' => 'nullable|string|max:50',
             'tipo'             => 'required|in:compra,ajuste,devolucion,otro',
             'fecha'            => 'required|date',
+            // Mercadería en tránsito: la compra ya está hecha pero llega después.
+            // Solo se acepta si la empresa encendió el módulo; la fecha estimada
+            // es opcional (muchas veces el proveedor no promete una).
+            'en_transito'            => 'nullable|boolean',
+            'fecha_estimada_llegada' => 'nullable|date',
             'observacion'      => 'nullable|string',
             'detalles'         => 'required|array|min:1',
             'detalles.*.producto_id'       => 'required|exists:productos,id',
@@ -357,8 +371,11 @@ class EntradaController extends Controller
                 $this->registrarPagosIniciales($entrada, $lineas, $user->id, $turnoArg);
             }
 
-            // Si se pidió confirmar directamente
-            if (request()->boolean('confirmar')) {
+            // Destino del borrador recién creado. "En camino" gana sobre
+            // "confirmar": son excluyentes y el formulario manda uno u otro.
+            if (!empty($data['en_transito']) && $this->transito->habilitado($user->empresa)) {
+                $entrada->marcarEnTransito($data['fecha_estimada_llegada'] ?? null);
+            } elseif (request()->boolean('confirmar')) {
                 $entrada->confirmar();
             }
         });
@@ -860,6 +877,37 @@ class EntradaController extends Controller
     }
 
     /**
+     * Llegó la mercadería que estaba en camino: la entrada pasa a 'confirmado'
+     * y recién ahí el EntradaObserver suma el stock, con el costo de la compra.
+     *
+     * Si llegó MENOS de lo facturado, primero se edita la entrada (el flujo de
+     * edición ya revierte y reaplica stock) y después se recibe. No se recibe
+     * "a medias" para no dejar la entrada mintiendo sobre lo que dice la factura.
+     */
+    public function recibir(Request $request, Entrada $entrada)
+    {
+        abort_unless($this->scope->puedeAccederAlmacen($request->user(), $entrada->almacen), 403);
+        abort_unless($this->transito->habilitado($request->user()->empresa), 403);
+        abort_unless($entrada->esEnTransito(), 422, 'Esta entrada no está en tránsito.');
+
+        $data = $request->validate([
+            'fecha_recepcion' => 'nullable|date',
+        ]);
+
+        $entrada->recibir($data['fecha_recepcion'] ?? null);
+
+        AuditoriaService::log('entrada.recibida', $entrada, [
+            'correlativo'      => $entrada->correlativo,
+            'proveedor'        => $entrada->proveedor,
+            'total'            => (float) $entrada->total,
+            'fecha_estimada'   => $entrada->fecha_estimada_llegada?->toDateString(),
+            'fecha_recepcion'  => $entrada->fecha_recepcion?->toDateString(),
+        ]);
+
+        return redirect()->back()->with('success', 'Mercadería recibida. El stock ha sido actualizado.');
+    }
+
+    /**
      * JSON con la entrada + detalles para alimentar el modal "Ver detalle" del Index.
      * No usamos show() inertia (no hay pagina Show) — el modal vive en el Index y
      * trae los datos via axios.get cuando el usuario abre. Esto evita cargar los
@@ -1009,8 +1057,11 @@ class EntradaController extends Controller
     {
         $user = $request->user();
         abort_unless($this->scope->puedeAccederAlmacen($user, $entrada->almacen), 403);
-        abort_if($entrada->estado !== 'confirmado', 422,
-            'Solo se pueden anular entradas confirmadas. Las de borrador se eliminan.');
+        // También se anula lo que está EN CAMINO (pedido cancelado por el
+        // proveedor, por ejemplo). Como el tránsito nunca sumó stock, la reversa
+        // no encuentra nada que devolver y solo limpia pagos y tesorería.
+        abort_if(!in_array($entrada->estado, [Entrada::ESTADO_CONFIRMADO, Entrada::ESTADO_EN_TRANSITO], true), 422,
+            'Solo se pueden anular entradas confirmadas o en tránsito. Las de borrador se eliminan.');
 
         $data = $request->validate(['motivo' => ['required', 'string', 'min:3', 'max:255']]);
 
@@ -1070,8 +1121,17 @@ class EntradaController extends Controller
             $productos = $entrada->detalles->pluck('producto_id')->unique();
 
             // Vuelve a confirmada (por pagar) ANTES de reconstruir, para que el
-            // recálculo la vuelva a contar en stock/kardex/CxP.
-            $entrada->update(['estado' => 'confirmado', 'estado_pago' => 'pendiente', 'monto_pagado' => 0]);
+            // recálculo la vuelva a contar en stock/kardex/CxP. Si la anulación
+            // ocurrió cuando aún venía en camino, vuelve a tránsito y NO a
+            // confirmada: reactivarla no puede inventar una recepción que nunca
+            // pasó (metería stock de mercadería que sigue sin llegar).
+            $volviaEnTransito = $entrada->fecha_estimada_llegada && !$entrada->fecha_recepcion;
+
+            $entrada->update([
+                'estado'       => $volviaEnTransito ? Entrada::ESTADO_EN_TRANSITO : Entrada::ESTADO_CONFIRMADO,
+                'estado_pago'  => 'pendiente',
+                'monto_pagado' => 0,
+            ]);
 
             $this->reconstruirStockYKardex($entrada->almacen, $productos);
         });
@@ -1081,7 +1141,9 @@ class EntradaController extends Controller
             'correlativo'      => $entrada->correlativo,
         ], $user);
 
-        return redirect()->back()->with('success', 'Entrada reactivada: quedó confirmada y por pagar; stock y kardex re-aplicados.');
+        return redirect()->back()->with('success', $entrada->fresh()->esEnTransito()
+            ? 'Entrada reactivada: vuelve a quedar en camino y por pagar.'
+            : 'Entrada reactivada: quedó confirmada y por pagar; stock y kardex re-aplicados.');
     }
 
     /**

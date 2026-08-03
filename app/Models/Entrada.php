@@ -10,6 +10,20 @@ use Illuminate\Support\Facades\DB;
 
 class Entrada extends Model
 {
+    /**
+     * Ciclo de vida:
+     *   borrador     → no existe para nadie (ni stock, ni kardex, ni finanzas).
+     *   en_transito  → comprada y facturada, pero la mercadería NO llegó. Sigue
+     *                  fuera del stock y del kardex; la deuda al proveedor SÍ
+     *                  cuenta si quedó saldo por pagar (igual que cualquier otra).
+     *   confirmado   → RECIBIDA: el stock entra (EntradaObserver).
+     *   anulada      → revertida.
+     */
+    public const ESTADO_BORRADOR    = 'borrador';
+    public const ESTADO_EN_TRANSITO = 'en_transito';
+    public const ESTADO_CONFIRMADO  = 'confirmado';
+    public const ESTADO_ANULADA     = 'anulada';
+
     protected $fillable = [
         'empresa_id',
         'almacen_id',
@@ -21,6 +35,8 @@ class Entrada extends Model
         'tipo',
         'fecha',
         'estado',
+        'fecha_estimada_llegada',
+        'fecha_recepcion',
         'observacion',
         'total',
         'monto_pagado',
@@ -50,7 +66,9 @@ class Entrada extends Model
     protected function casts(): array
     {
         return [
-            'fecha'        => 'date',
+            'fecha'                  => 'date',
+            'fecha_estimada_llegada' => 'date',
+            'fecha_recepcion'        => 'date',
             'total'        => 'decimal:2',
             'monto_pagado' => 'decimal:2',
             'tipo_cambio'  => 'decimal:6',
@@ -120,6 +138,22 @@ class Entrada extends Model
         return $query->where('estado', 'confirmado');
     }
 
+    public function scopeEnTransito(Builder $query): Builder
+    {
+        return $query->where('estado', self::ESTADO_EN_TRANSITO);
+    }
+
+    /**
+     * Entradas que representan un COMPROMISO real con el proveedor: recibidas
+     * o en camino. Es el filtro de las finanzas (cuentas por pagar, adelantos):
+     * que la mercadería siga en el camión no cambia que el proveedor ya facturó.
+     * Ojo: NO usar para stock/kardex — ahí solo cuenta 'confirmado'.
+     */
+    public function scopeComprometido(Builder $query): Builder
+    {
+        return $query->whereIn('estado', [self::ESTADO_CONFIRMADO, self::ESTADO_EN_TRANSITO]);
+    }
+
     public function scopeDeEmpresa(Builder $query, int $empresaId): Builder
     {
         return $query->where('empresa_id', $empresaId);
@@ -132,13 +166,62 @@ class Entrada extends Model
         return $this->estado === 'borrador';
     }
 
+    public function esEnTransito(): bool
+    {
+        return $this->estado === self::ESTADO_EN_TRANSITO;
+    }
+
+    /** En camino y con la fecha prometida ya vencida. */
+    public function estaAtrasada(): bool
+    {
+        return $this->esEnTransito()
+            && $this->fecha_estimada_llegada
+            && $this->fecha_estimada_llegada->isBefore(now()->startOfDay());
+    }
+
     public function confirmar(): void
     {
         if (!$this->esBorrador()) {
             throw new \LogicException('Solo se puede confirmar una entrada en estado borrador.');
         }
 
-        $this->update(['estado' => 'confirmado']);
+        $this->update(['estado' => self::ESTADO_CONFIRMADO]);
+    }
+
+    /**
+     * Marca la compra como despachada pero no llegada. No mueve stock: el
+     * EntradaObserver solo reacciona a 'confirmado'.
+     */
+    public function marcarEnTransito(?string $fechaEstimada = null): void
+    {
+        if (!$this->esBorrador()) {
+            throw new \LogicException('Solo una entrada en borrador puede pasar a tránsito.');
+        }
+
+        $this->update([
+            'estado'                 => self::ESTADO_EN_TRANSITO,
+            'fecha_estimada_llegada' => $fechaEstimada,
+        ]);
+    }
+
+    /**
+     * La mercadería llegó: pasa a 'confirmado' y ahí el observer suma el stock.
+     *
+     * `fecha` es la de recepción real y NO pisa `fecha` (la de la compra/factura),
+     * que es la que usan el kardex y las finanzas para ubicar el documento en el
+     * tiempo. Si llegó distinto de lo facturado, se edita la entrada antes de
+     * recibir: el flujo de edición ya sabe revertir y reaplicar stock.
+     */
+    public function recibir(?string $fecha = null): void
+    {
+        if (!$this->esEnTransito()) {
+            throw new \LogicException('Solo se puede recibir una entrada que está en tránsito.');
+        }
+
+        $this->update([
+            'estado'          => self::ESTADO_CONFIRMADO,
+            'fecha_recepcion' => $fecha ?: now()->toDateString(),
+        ]);
     }
 
     /**

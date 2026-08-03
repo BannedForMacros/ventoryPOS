@@ -48,6 +48,8 @@ type FormData = {
     retiro_requiere_aprobacion: boolean;
     cierre_pregunta_destino: boolean;
     usa_caja_grande: boolean;
+    usa_mercaderia_transito: boolean;
+    vende_mercaderia_transito: boolean;
     // "Afecta caja" por módulo: solo se persiste el flag activo.
     afecta_caja_config: Record<string, { activo: boolean }>;
     activo: boolean;
@@ -86,6 +88,8 @@ const emptyForm: FormData = {
     retiro_requiere_aprobacion: true,
     cierre_pregunta_destino: false,
     usa_caja_grande: false,
+    usa_mercaderia_transito: false,
+    vende_mercaderia_transito: false,
     afecta_caja_config: {},
     activo: true,
     logo: null,
@@ -138,6 +142,8 @@ export default function Empresas({ empresas }: Props) {
             retiro_requiere_aprobacion: emp.retiro_requiere_aprobacion ?? true,
             cierre_pregunta_destino: emp.cierre_pregunta_destino ?? false,
             usa_caja_grande: emp.usa_caja_grande ?? false,
+            usa_mercaderia_transito: emp.usa_mercaderia_transito ?? false,
+            vende_mercaderia_transito: emp.vende_mercaderia_transito ?? false,
             // Del mapa resuelto (label/disponible/activo) tomamos solo `activo`.
             afecta_caja_config: Object.fromEntries(
                 Object.entries(emp.afecta_caja ?? {}).map(([k, v]) => [k, { activo: v.activo }]),
@@ -643,6 +649,46 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </span>
                         </label>
+                    </div>
+
+                    {/* ── Sección: Mercadería en tránsito (opt-in) ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Mercadería en tránsito</p>
+                        <p className="text-xs -mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                            Para negocios que compran a un almacén central o distribuidor y reciben la mercadería
+                            días después de que se la facturan.
+                        </p>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.usa_mercaderia_transito}
+                                onChange={e => setData('usa_mercaderia_transito', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Registrar compras que aún no llegan</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Agrega el estado "En camino" a las Entradas, con fecha estimada de llegada. El stock
+                                    no entra hasta que marques la recepción, pero la deuda al proveedor ya cuenta si quedó saldo.
+                                </span>
+                            </span>
+                        </label>
+
+                        {data.usa_mercaderia_transito && (
+                            <label className="flex items-start gap-2 cursor-pointer pl-6">
+                                <Checkbox
+                                    checked={data.vende_mercaderia_transito}
+                                    onChange={e => setData('vende_mercaderia_transito', e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Permitir vender lo que viene en camino</span>
+                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        El POS deja vender por encima del stock, pero solo hasta lo que realmente está en
+                                        camino, y la línea queda como entrega pendiente al cliente. Es la alternativa
+                                        controlada a permitir stock negativo en todo el catálogo.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
                     </div>
 
                     {/* ── Sección: "Afecta caja" por módulo (opt-in) ── */}

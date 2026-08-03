@@ -48,6 +48,9 @@ class Empresa extends Model
         'retiro_requiere_aprobacion',
         'cierre_pregunta_destino',
         'usa_caja_grande',
+        // Mercadería en tránsito: comprada/facturada pero que todavía no llega.
+        'usa_mercaderia_transito',
+        'vende_mercaderia_transito',
         // "Afecta caja" configurable por módulo (JSON). Ver App\Support\AfectaCaja.
         'afecta_caja_config',
     ];
@@ -74,6 +77,8 @@ class Empresa extends Model
             'retiro_requiere_aprobacion'      => 'boolean',
             'cierre_pregunta_destino'         => 'boolean',
             'usa_caja_grande'                 => 'boolean',
+            'usa_mercaderia_transito'         => 'boolean',
+            'vende_mercaderia_transito'       => 'boolean',
             'afecta_caja_config'              => 'array',
         ];
     }

@@ -146,8 +146,22 @@ class VentaController extends Controller
         $stockMap = $almacenVentas
             ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)->pluck('cantidad', 'producto_id')
             : collect();
-        $productos->each(function ($p) use ($almacenVentas, $stockMap) {
+
+        // Mercadería en camino (entradas en tránsito) hacia ese mismo almacén.
+        // NO se suma al stock: `stock_disponible` sigue siendo lo que está
+        // físicamente en la tienda. Viaja aparte para que el vendedor sepa qué
+        // contestar ("llegan 10 el 8/8") y, si la empresa lo permite, pueda
+        // vender contra ello dejándolo como entrega pendiente.
+        $transitoSvc  = app(\App\Services\MercaderiaTransitoService::class);
+        $usaTransito  = $transitoSvc->habilitado($user->empresa);
+        $transitoMap  = ($usaTransito && $almacenVentas)
+            ? $transitoSvc->porAlmacen($user->empresa_id, $almacenVentas->id)
+            : [];
+
+        $productos->each(function ($p) use ($almacenVentas, $stockMap, $transitoMap) {
             $p->stock_disponible = $almacenVentas ? (float) ($stockMap[$p->id] ?? 0) : null;
+            $p->stock_en_transito   = (float) ($transitoMap[$p->id]['cantidad'] ?? 0);
+            $p->transito_fecha      = $transitoMap[$p->id]['fecha'] ?? null;
         });
 
         $clientes = Cliente::where('empresa_id', $user->empresa_id)
@@ -375,6 +389,11 @@ class VentaController extends Controller
             'turnoBackdate'      => $turnoBackdate,
             'puedeVender'        => $puedeVender,
             'razonNoVender'      => $razonNoVender,
+            // Mercadería en tránsito: `usaTransito` solo pinta el aviso "llegan N
+            // el D/M"; `vendeTransito` es el que además permite sobrevender hasta
+            // esa cantidad (alternativa fina a abrir stock negativo para todo).
+            'usaTransito'        => $usaTransito,
+            'vendeTransito'      => $transitoSvc->permiteVender($user->empresa),
             // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
             'monedas'            => ['PEN', 'USD'],
             'tipoCambioHoy'      => $this->tipoCambioHoy(),
