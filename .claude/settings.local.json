@@ -196,7 +196,12 @@
       "Bash(npx -y impeccable install)",
       "Bash(npx -y skills add Leonxlnx/taste-skill)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000 --max-time 3)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://ventorypos.test --max-time 3)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://ventorypos.test --max-time 3)",
+      "Bash(git ls-remote *)",
+      "Bash(sips -g pixelWidth -g pixelHeight public/logo.png public/logo-original.png)",
+      "Bash(curl -s -o /dev/null -w \"welcome:%{http_code} \" http://localhost:8000/)",
+      "Bash(curl -s -o /dev/null -w \"favicon32:%{http_code} \" http://localhost:8000/favicon-32.png)",
+      "Bash(curl -s http://localhost:8000/)"
     ]
   },
   "hooks": {

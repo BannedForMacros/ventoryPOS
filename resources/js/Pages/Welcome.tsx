@@ -28,11 +28,10 @@ import {
 } from 'lucide-react';
 import { ReactNode, useEffect, useRef, useState } from 'react';
 
-// Canal para pedir la demo. Cuando exista el número comercial de WhatsApp,
-// cámbialo por `https://wa.me/51XXXXXXXXX?text=...` y el resto de la página
-// no se toca: todos los CTA apuntan aquí.
+// Canal para pedir la demo: WhatsApp comercial con mensaje precargado.
+// Todos los CTA de la página apuntan aquí.
 const DEMO_URL =
-    'mailto:cam27mac@gmail.com?subject=Quiero%20mi%20demo%20gratis%20de%20ventoryPOS&body=Hola%2C%20quiero%20una%20demo%20gratis%20de%20ventoryPOS%20para%20mi%20negocio.';
+    'https://wa.me/51933798089?text=Hola%2C%20quiero%20una%20demo%20gratis%20de%20ventoryPOS%20para%20mi%20negocio.';
 
 const palette = {
     primary: '#2563eb',
