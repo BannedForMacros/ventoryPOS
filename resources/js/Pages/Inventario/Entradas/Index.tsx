@@ -15,11 +15,18 @@ import TableActions from '@/Components/UI/TableActions';
 import { fmtFecha } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 
-/** En camino y con la fecha prometida ya vencida. */
+/**
+ * En camino y con la fecha prometida ya vencida.
+ *
+ * `fecha_estimada_llegada` llega casteada como date de Laravel, o sea ISO
+ * completo ('2026-08-01T00:00:00.000000Z'), no 'YYYY-MM-DD'. Nos quedamos con
+ * los 10 primeros caracteres y comparamos como fecha local: concatenar el ISO
+ * entero con 'T00:00:00' daba Invalid Date y ninguna entrada salía atrasada.
+ */
 function estaAtrasada(e: { estado: string; fecha_estimada_llegada: string | null }): boolean {
     if (e.estado !== 'en_transito' || !e.fecha_estimada_llegada) return false;
     const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-    return new Date(`${e.fecha_estimada_llegada}T00:00:00`) < hoy;
+    return new Date(`${e.fecha_estimada_llegada.slice(0, 10)}T00:00:00`) < hoy;
 }
 
 function estadoLabel(e: { estado: string; fecha_estimada_llegada: string | null }): string {
