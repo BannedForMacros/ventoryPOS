@@ -143,6 +143,10 @@ interface Props extends PageProps {
     // Facturación electrónica (V10). OPCIONAL: si el backend no la envía (o el
     // módulo está apagado) el POS se comporta exactamente como hoy.
     facturacion?:       FacturacionPosConfig | null;
+    // Mercadería en tránsito: `usaTransito` solo muestra qué viene en camino;
+    // `vendeTransito` además habilita prometerlo como entrega pendiente.
+    usaTransito?:       boolean;
+    vendeTransito?:     boolean;
 }
 
 type TipoComprobante = 'ticket' | 'boleta' | 'factura';
@@ -296,7 +300,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion }: Props) {
+export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito }: Props) {
     // Tasa de IGV de la empresa (configurable por tenant). Default 18% si no llega.
     const empresaAuth = usePage().props.auth?.user?.empresa as { tasa_igv?: number | string } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
@@ -336,6 +340,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             precio_original:       it.precio_unitario,
             costo_minimo:          prodCatalogo && uniCatalogo ? costoMinimoDe(prodCatalogo, uniCatalogo) : 0,
             stock_disponible:      prodCatalogo?.stock_disponible ?? null,
+            stock_en_transito:     prodCatalogo?.stock_en_transito ?? 0,
+            transito_fecha:        prodCatalogo?.transito_fecha ?? null,
             factor_conversion:     uniCatalogo ? (parseFloat(uniCatalogo.factor_conversion) || 1) : 1,
             cantidad:              it.cantidad,
             descuento_item:        descuentoItem,
@@ -367,6 +373,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             precio_original:       uni ? parseFloat(uni.precio_venta) : it.precio_unitario,
             costo_minimo:          prod && uni ? costoMinimoDe(prod, uni) : 0,
             stock_disponible:      prod?.stock_disponible ?? null,
+            stock_en_transito:     prod?.stock_en_transito ?? 0,
+            transito_fecha:        prod?.transito_fecha ?? null,
             factor_conversion:     uni ? (parseFloat(uni.factor_conversion) || 1) : 1,
             cantidad:              it.cantidad,
             descuento_item:        it.descuento_item,
@@ -638,6 +646,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 precio_original:      precio,
                 costo_minimo:         costoMinimoDe(producto, unidad),
                 stock_disponible:     producto.stock_disponible ?? null,
+                stock_en_transito:    producto.stock_en_transito ?? 0,
+                transito_fecha:       producto.transito_fecha ?? null,
                 factor_conversion:    parseFloat(unidad.factor_conversion) || 1,
                 cantidad:             1,
                 descuento_item:       0,

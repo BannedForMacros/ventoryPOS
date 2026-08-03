@@ -189,6 +189,10 @@ export interface Producto extends Record<string, unknown> {
     es_retornable: boolean | null;
     // Stock disponible (unidad base) en el almacén de ventas; lo inyecta el POS.
     stock_disponible?: number | null;
+    // Mercadería comprada que aún no llega a este almacén (unidad base) y la
+    // fecha del primer camión. NO está sumada a stock_disponible a propósito.
+    stock_en_transito?: number;
+    transito_fecha?: string | null;
     categoria?: Categoria | null;
     unidades?: ProductoUnidad[];
     unidad_base?: ProductoUnidad | null;

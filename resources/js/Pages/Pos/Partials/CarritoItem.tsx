@@ -32,6 +32,9 @@ export interface LineaCarrito {
     // conversión de la presentación: sirven para mostrar el stock restante en
     // vivo (stock − cantidad×factor). stock_disponible null = desconocido.
     stock_disponible:     number | null;
+    // Comprado pero aún no llegado (unidad base) + fecha del primer camión.
+    stock_en_transito?:   number;
+    transito_fecha?:      string | null;
     factor_conversion:    number;
     cantidad:             number;
     // Descuento por línea. `descuento_item` es SIEMPRE el descuento efectivo en
@@ -546,6 +549,14 @@ export default function CarritoItem({ item, conceptos, historial, onCantidad, on
                                         <span style={{ color: sinStock ? '#fca5a5' : undefined }}>
                                             Quedaría: {stockRestante}
                                         </span>
+                                    </p>
+                                )}
+                                {/* Lo que viene en camino nunca se suma al stock: se
+                                    muestra aparte para que la cajera sepa qué prometer. */}
+                                {!!item.stock_en_transito && item.stock_en_transito > 0 && (
+                                    <p className="text-[10px] leading-tight" style={{ color: '#93c5fd' }}>
+                                        En camino: {item.stock_en_transito}
+                                        {item.transito_fecha ? ` · llega ${item.transito_fecha}` : ''}
                                     </p>
                                 )}
                                 {/* Flechita del tooltip */}
