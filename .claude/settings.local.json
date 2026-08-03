@@ -181,10 +181,8 @@
       "Bash(echo \"=== muestra productos DB 1097 \\(codigo, precio_costo, costo_promedio\\) ===\")",
       "Bash(echo \"=== cuantos productos 1097 tienen precio_costo=0 ===\")",
       "Bash(echo \"=== CEMENTO ROJO MOCHICA en empresa 1097 ===\")",
-<<<<<<< Updated upstream
       "Bash(awk '/CREATE TABLE public.modulos/,/;/' ventoryPOS-servidor.sql)",
-      "Bash(awk '/COPY public.modulos /,/^\\\\\\\\\\\\.$/' ventoryPOS-servidor.sql)"
-=======
+      "Bash(awk '/COPY public.modulos /,/^\\\\\\\\\\\\.$/' ventoryPOS-servidor.sql)",
       "Bash(dotnet build *)",
       "PowerShell(New-Item *)",
       "Bash(/c/MacSoft/ventory-printer/bin/Debug/net8.0-windows/VentoryPrint.exe *)",
@@ -194,8 +192,39 @@
       "Bash(curl -s -X POST http://127.0.0.1:9111/print -H \"Content-Type: application/json\" -d '{\"token\":\"token-prueba-123\",\"items\":[{\"cant\":2,\"desc\":\"Cemento Sol\",\"precio\":28.5,\"importe\":57},{\"cant\":0.5,\"desc\":\"Arena gruesa\",\"unidad\":\"M3\",\"precio\":60,\"importe\":30}],\"totales\":{\"total\":87,\"moneda\":\"PEN\"},\"documento\":{\"numero\":\"V-001\"}}')",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" -X OPTIONS http://127.0.0.1:9111/print)",
       "PowerShell(Remove-Item *)",
-      "Bash(dotnet publish *)"
->>>>>>> Stashed changes
+      "Bash(dotnet publish *)",
+      "Bash(npx -y impeccable install)",
+      "Bash(npx -y skills add Leonxlnx/taste-skill)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000 --max-time 3)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://ventorypos.test --max-time 3)"
     ]
-  }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\" ] || node \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\" ] || node \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\"",
+            "timeout": 30,
+            "statusMessage": "Design deep pass"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "Impeccable design detector: immediate-tier checks after Edit/Write/MultiEdit on UI files, full-rule deep pass on Stop."
 }
