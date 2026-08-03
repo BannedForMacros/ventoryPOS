@@ -6,20 +6,25 @@ import {
     BarChart3,
     Boxes,
     Cat,
+    CheckCircle2,
     Coffee,
     CreditCard,
+    FileCheck2,
     Heart,
     MessageCircle,
+    Percent,
     Pill,
+    Receipt,
+    RotateCcw,
     ShieldCheck,
     ShoppingBag,
-    Smartphone,
     Sparkles,
     Store,
-    Tag,
+    Truck,
+    UserCheck,
     Users,
-    Wifi,
-    Zap,
+    Wallet,
+    Wrench,
 } from 'lucide-react';
 import { ReactNode, useEffect, useRef, useState } from 'react';
 
@@ -43,71 +48,132 @@ const palette = {
     textMuted: '#64748b',
 };
 
-interface Industry {
+/* Todo lo que se afirma abajo existe en el sistema: POS con turnos y arqueo,
+   comprobantes electrónicos, kardex, tesorería, CxC/CxP, reportes, multimoneda,
+   multi-local, roles y auditoría. Si se promociona algo nuevo, primero se
+   construye, después se anuncia. */
+
+interface Rubro {
     icon: typeof Cat;
     label: string;
     desc: string;
 }
 
-interface Feature {
+const rubros: Rubro[] = [
+    { icon: Store, label: 'Bodegas y minimarkets', desc: 'Venta rápida con lector de códigos' },
+    { icon: Wrench, label: 'Ferreterías', desc: 'Unidades múltiples y venta a crédito' },
+    { icon: Pill, label: 'Farmacias', desc: 'Catálogo grande y rotación controlada' },
+    { icon: Cat, label: 'Veterinarias', desc: 'Productos, servicios y citas' },
+    { icon: ShoppingBag, label: 'Retail y boutiques', desc: 'Multi-local con stock por tienda' },
+    { icon: Coffee, label: 'Cafés y restobar', desc: 'Combos, servicios y comandas' },
+    { icon: Truck, label: 'Distribuidoras', desc: 'Cotizaciones, anticipos y CxC' },
+    { icon: Users, label: 'Servicios', desc: 'Vende servicios igual que productos' },
+];
+
+interface Pilar {
+    icon: typeof BarChart3;
+    accent: string;
+    kicker: string;
+    title: string;
+    desc: string;
+    puntos: string[];
+}
+
+const pilares: Pilar[] = [
+    {
+        icon: Receipt,
+        accent: palette.primary,
+        kicker: 'Vende',
+        title: 'Cobra en segundos, con comprobante electrónico',
+        desc: 'El POS está pensado para la cola de las 6 de la tarde: buscas por nombre o código, cobras con varios métodos a la vez y el comprobante sale solo.',
+        puntos: [
+            'Efectivo, tarjeta, Yape, Plin y transferencia en una misma venta, con vuelto automático',
+            'Boleta y factura electrónica emitidas desde la misma pantalla de venta',
+            'Cotizaciones que envías por WhatsApp y conviertes en venta con un clic',
+            'Descuentos por producto o por venta, con registro de quién los autorizó',
+            'Venta a crédito y anticipos de clientes, conectados a cuentas por cobrar',
+        ],
+    },
+    {
+        icon: Boxes,
+        accent: palette.success,
+        kicker: 'Controla',
+        title: 'Tu inventario, movimiento por movimiento',
+        desc: 'Cada entrada, venta, transferencia o ajuste queda en el kardex. Cuando el stock no cuadra, no adivinas: revisas la historia completa del producto.',
+        puntos: [
+            'Stock por local y por almacén, con alertas de stock bajo',
+            'Entradas de mercadería con costos, pagos y deuda al proveedor',
+            'Transferencias entre almacenes y ajustes con motivo',
+            'Kardex trazable: quién movió qué, cuándo y por qué documento',
+            'Cierre de inventario con diferencias valorizadas (faltantes y sobrantes)',
+        ],
+    },
+    {
+        icon: Wallet,
+        accent: palette.warning,
+        kicker: 'Decide',
+        title: 'Caja cuadrada y utilidad real, todos los días',
+        desc: 'Turnos con apertura, cierre y arqueo; tesorería por cuenta; y un balance diario que te dice cuánto vendiste, cuánto gastaste y cuánto ganaste.',
+        puntos: [
+            'Turnos de caja con arqueo y retiros a administración',
+            'Cuentas por cobrar y por pagar, deudas y gastos por categoría',
+            'Balance diario: lo que tienes, lo que te deben y lo que debes',
+            'Utilidad calculada con el costo real de cada venta',
+            '8 reportes: ventas, caja, utilidad, kardex, productos, gastos, devoluciones y auditoría',
+        ],
+    },
+];
+
+interface Detalle {
     icon: typeof BarChart3;
     title: string;
     desc: string;
     accent: string;
 }
 
-const industries: Industry[] = [
-    { icon: Cat, label: 'Veterinarias', desc: 'Productos, servicios y fichas clínicas' },
-    { icon: Pill, label: 'Farmacias', desc: 'Lotes, vencimientos y recetas' },
-    { icon: ShoppingBag, label: 'Retail', desc: 'Tiendas, boutiques y franquicias' },
-    { icon: Store, label: 'Bodegas', desc: 'Minimarkets y tiendas de barrio' },
-    { icon: Coffee, label: 'Cafés & Restobar', desc: 'Mesas, combos y comandas' },
-    { icon: Tag, label: 'Ferreterías', desc: 'Unidades múltiples y crédito' },
-];
-
-const features: Feature[] = [
+const detalles: Detalle[] = [
     {
-        icon: Zap,
-        title: 'POS súper rápido',
-        desc: 'Vende en segundos con atajos de teclado, lector de códigos y multi-pago.',
+        icon: UserCheck,
+        title: 'Clientes en 2 segundos',
+        desc: 'Escribes el DNI o RUC y los datos se completan solos desde el padrón. Nada de tipear nombres.',
         accent: palette.primary,
     },
     {
-        icon: Boxes,
-        title: 'Inventario inteligente',
-        desc: 'Stock por local, kardex trazable, unidades múltiples y alertas de bajo stock.',
+        icon: MessageCircle,
+        title: 'Cotizaciones por WhatsApp',
+        desc: 'Generas la cotización, la compartes por WhatsApp con enlace y PDF, y le das seguimiento hasta la venta.',
         accent: palette.success,
     },
     {
-        icon: BarChart3,
-        title: 'Reportes en tiempo real',
-        desc: 'Ventas, márgenes, utilidad, productos top y rendimiento por cajero.',
-        accent: palette.warning,
-    },
-    {
-        icon: CreditCard,
-        title: 'Todos los métodos de pago',
-        desc: 'Efectivo, tarjetas, Yape, Plin, transferencias y vuelto automático.',
+        icon: Percent,
+        title: 'Descuentos con control',
+        desc: 'Cada descuento tiene concepto, límite y registro. Tú decides quién puede rebajar y cuánto.',
         accent: palette.secondary,
     },
     {
-        icon: Users,
-        title: 'Clientes & crédito',
-        desc: 'Historial de compras, cuentas por cobrar, anticipos y estado de cuenta.',
+        icon: RotateCcw,
+        title: 'Devoluciones ordenadas',
+        desc: 'Con motivo y efecto automático en caja y stock. Sin ventas fantasma ni plata que desaparece.',
         accent: palette.danger,
     },
     {
+        icon: CreditCard,
+        title: 'Soles y dólares',
+        desc: 'Vende y compra en dos monedas con tipo de cambio congelado por operación. Los montos no bailan.',
+        accent: palette.warning,
+    },
+    {
         icon: ShieldCheck,
-        title: 'Auditoría completa',
-        desc: 'Cierre de caja, arqueo, balance diario y trazabilidad de cada movimiento.',
+        title: 'Roles, permisos y auditoría',
+        desc: 'Cada usuario ve solo lo que le toca, y cada acción queda registrada: quién, cuándo y qué cambió.',
         accent: palette.primary,
     },
 ];
 
 const stats = [
-    { value: 3, suffix: ' seg', label: 'para cerrar una venta' },
-    { value: 100, suffix: '%', label: 'de tu caja cuadrada, siempre' },
-    { value: 24, suffix: '/7', label: 'tu negocio en tu bolsillo' },
+    { value: 8, suffix: '', label: 'reportes en tiempo real para decidir con datos' },
+    { value: 2, suffix: '', label: 'monedas: soles y dólares, con tipo de cambio congelado' },
+    { value: 1, suffix: '', label: 'solo sistema para caja, inventario, clientes y finanzas' },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -226,8 +292,8 @@ export default function Welcome({
                 if (!el) return;
                 const y = window.scrollY;
                 const p = Math.min(y / 640, 1);
-                el.style.transform = `translateY(${y * 0.22}px) scale(${1 - p * 0.14})`;
-                el.style.opacity = String(1 - p * 0.6);
+                el.style.transform = `translateY(${y * 0.16}px) scale(${1 - p * 0.12})`;
+                el.style.opacity = String(1 - p * 0.55);
             });
         };
         onScroll();
@@ -240,7 +306,7 @@ export default function Welcome({
 
     return (
         <>
-            <Head title="ventoryPOS — El punto de venta que tu negocio merece" />
+            <Head title="ventoryPOS — El punto de venta para cualquier negocio que vende" />
 
             <div className="relative min-h-screen overflow-x-hidden" style={{ backgroundColor: palette.bg, color: palette.text }}>
                 <style>{`
@@ -277,7 +343,7 @@ export default function Welcome({
                     .float-slow { animation: float 5s ease-in-out infinite; }
                     .cta-demo { animation: glow-pulse 3s ease-in-out infinite; }
                     .marquee-track {
-                        animation: marquee 36s linear infinite;
+                        animation: marquee 40s linear infinite;
                     }
                     .marquee:hover .marquee-track { animation-play-state: paused; }
                     .shimmer-text {
@@ -367,145 +433,148 @@ export default function Welcome({
                     </div>
                 </header>
 
-                {/* Hero */}
-                <section className="relative z-10 mx-auto max-w-7xl px-4 pb-6 pt-24 sm:px-6 sm:pt-28 lg:px-8">
-                    <div
-                        className="mx-auto max-w-3xl text-center"
-                        style={{
-                            opacity: mounted ? 1 : 0,
-                            transform: mounted ? 'none' : 'translateY(24px)',
-                            transition: 'opacity 900ms var(--ease-out-strong), transform 900ms var(--ease-out-strong)',
-                        }}
-                    >
+                {/* Hero — 2 columnas en desktop para que titular + CTA + logo entren
+                    arriba del fold; en móvil, texto y CTA primero, logo después */}
+                <section className="relative z-10 mx-auto max-w-7xl px-4 pb-8 pt-20 sm:px-6 sm:pt-24 lg:px-8 lg:pt-28">
+                    <div className="grid items-center gap-8 lg:grid-cols-[1.1fr_1fr] lg:gap-12">
                         <div
-                            className="mx-auto inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium"
-                            style={{ borderColor: palette.border, backgroundColor: palette.surface, color: palette.textMuted }}
+                            className="text-center lg:text-left"
+                            style={{
+                                opacity: mounted ? 1 : 0,
+                                transform: mounted ? 'none' : 'translateY(24px)',
+                                transition: 'opacity 900ms var(--ease-out-strong), transform 900ms var(--ease-out-strong)',
+                            }}
                         >
-                            <Sparkles size={14} style={{ color: palette.warning }} />
-                            <span>Hecho en Perú para negocios que crecen</span>
-                        </div>
-
-                        <h1 className="mt-6 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-                            Vende más rápido.
-                            <br />
-                            <span className="shimmer-text">Controla todo.</span>
-                        </h1>
-
-                        <p className="mx-auto mt-6 max-w-2xl text-base sm:text-xl" style={{ color: palette.textMuted }}>
-                            El punto de venta todo-en-uno para <strong style={{ color: palette.text }}>veterinarias</strong>,{' '}
-                            <strong style={{ color: palette.text }}>farmacias</strong>,{' '}
-                            <strong style={{ color: palette.text }}>ferreterías</strong> y retail. Caja, inventario, crédito y
-                            reportes en un solo lugar.
-                        </p>
-
-                        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                            {auth?.user ? (
-                                <Link
-                                    href={route('dashboard')}
-                                    className="group inline-flex w-full items-center justify-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-xl transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] sm:w-auto"
-                                    style={{ backgroundColor: palette.primary }}
-                                >
-                                    Ir al Dashboard
-                                    <ArrowRight size={18} className="transition-transform duration-200 group-hover:translate-x-1" />
-                                </Link>
-                            ) : (
-                                <a
-                                    href={DEMO_URL}
-                                    className="cta-demo group inline-flex w-full items-center justify-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] sm:w-auto sm:text-lg"
-                                    style={{ backgroundColor: palette.primary }}
-                                >
-                                    <MessageCircle size={20} />
-                                    Pide tu demo gratis ahora
-                                    <ArrowRight size={18} className="transition-transform duration-200 group-hover:translate-x-1" />
-                                </a>
-                            )}
-                            {canRegister && !auth?.user && (
-                                <Link
-                                    href={route('register')}
-                                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border px-8 py-4 text-base font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.97] sm:w-auto"
-                                    style={{ borderColor: palette.border, backgroundColor: palette.surface }}
-                                >
-                                    Crear cuenta
-                                </Link>
-                            )}
-                        </div>
-
-                        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs" style={{ color: palette.textMuted }}>
-                            <span className="inline-flex items-center gap-1.5">
-                                <BadgeCheck size={14} style={{ color: palette.success }} />
-                                Demo sin compromiso
-                            </span>
-                            <span className="inline-flex items-center gap-1.5">
-                                <Wifi size={14} style={{ color: palette.success }} />
-                                Funciona sin internet
-                            </span>
-                            <span className="inline-flex items-center gap-1.5">
-                                <Smartphone size={14} style={{ color: palette.success }} />
-                                Web, PWA y caja física
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Logo 3D como pieza central del hero, con parallax al scroll */}
-                    <div
-                        className="relative mx-auto mt-6 max-w-3xl sm:mt-8"
-                        style={{
-                            opacity: mounted ? 1 : 0,
-                            transform: mounted ? 'none' : 'translateY(40px) scale(0.97)',
-                            transition: 'opacity 1100ms var(--ease-out-strong) 150ms, transform 1100ms var(--ease-out-strong) 150ms',
-                        }}
-                    >
-                        <div ref={heroLogoRef} className="will-change-transform">
-                            <div aria-hidden="true" className="hero-logo-glow absolute inset-x-0 top-1/2 mx-auto h-[70%] w-[85%] -translate-y-1/2 rounded-full blur-2xl" />
-                            <img
-                                src="/logo.png"
-                                alt="ventoryPOS — venta registrada y verificada"
-                                className="float-slow relative mx-auto w-full max-w-[560px] select-none drop-shadow-2xl"
-                                draggable={false}
-                                loading="eager"
-                            />
-                        </div>
-
-                        {/* chips flotantes alrededor del logo */}
-                        <div
-                            className="absolute left-0 top-8 hidden items-center gap-2 rounded-xl border p-3 shadow-xl sm:flex lg:-left-16"
-                            style={{ backgroundColor: palette.surface, borderColor: palette.border, animation: 'float 6s ease-in-out infinite' }}
-                        >
-                            <div className="flex h-9 w-9 items-center justify-center rounded-lg text-white" style={{ backgroundColor: palette.success }}>
-                                <BarChart3 size={18} />
+                            <div
+                                className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium"
+                                style={{ borderColor: palette.border, backgroundColor: palette.surface, color: palette.textMuted }}
+                            >
+                                <Sparkles size={14} style={{ color: palette.warning }} />
+                                <span>Sistema de punto de venta · Hecho en Perú</span>
                             </div>
-                            <div>
-                                <p className="text-xs" style={{ color: palette.textMuted }}>Ventas hoy</p>
-                                <p className="text-sm font-bold">+ 18.4%</p>
+
+                            <h1 className="mt-5 text-[2.4rem] font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
+                                Vende. Controla.
+                                <br />
+                                <span className="shimmer-text">Crece.</span>
+                            </h1>
+
+                            <p className="mx-auto mt-5 max-w-xl text-base sm:text-lg lg:mx-0" style={{ color: palette.textMuted }}>
+                                ventoryPOS une tu caja, inventario, clientes y finanzas en un solo sistema. Cobras en segundos,
+                                emites boleta o factura electrónica y sabes cuánto ganas cada día. Si tu negocio vende, es para ti.
+                            </p>
+
+                            <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
+                                {auth?.user ? (
+                                    <Link
+                                        href={route('dashboard')}
+                                        className="group inline-flex w-full items-center justify-center gap-2 rounded-full px-8 py-4 text-base font-bold text-white shadow-xl transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] sm:w-auto"
+                                        style={{ backgroundColor: palette.primary }}
+                                    >
+                                        Ir al Dashboard
+                                        <ArrowRight size={18} className="transition-transform duration-200 group-hover:translate-x-1" />
+                                    </Link>
+                                ) : (
+                                    <a
+                                        href={DEMO_URL}
+                                        className="cta-demo group inline-flex w-full items-center justify-center gap-2 rounded-full px-7 py-4 text-base font-bold text-white transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] sm:w-auto"
+                                        style={{ backgroundColor: palette.primary }}
+                                    >
+                                        <MessageCircle size={20} />
+                                        Pide tu demo gratis ahora
+                                        <ArrowRight size={18} className="transition-transform duration-200 group-hover:translate-x-1" />
+                                    </a>
+                                )}
+                                {canRegister && !auth?.user && (
+                                    <Link
+                                        href={route('register')}
+                                        className="inline-flex w-full items-center justify-center gap-2 rounded-full border px-7 py-4 text-base font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.97] sm:w-auto"
+                                        style={{ borderColor: palette.border, backgroundColor: palette.surface }}
+                                    >
+                                        Crear cuenta
+                                    </Link>
+                                )}
+                            </div>
+
+                            <div
+                                className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs lg:justify-start"
+                                style={{ color: palette.textMuted }}
+                            >
+                                <span className="inline-flex items-center gap-1.5">
+                                    <BadgeCheck size={14} style={{ color: palette.success }} />
+                                    Demo sin compromiso
+                                </span>
+                                <span className="inline-flex items-center gap-1.5">
+                                    <FileCheck2 size={14} style={{ color: palette.success }} />
+                                    Boleta y factura electrónica
+                                </span>
+                                <span className="inline-flex items-center gap-1.5">
+                                    <Store size={14} style={{ color: palette.success }} />
+                                    Multi-local y multi-usuario
+                                </span>
                             </div>
                         </div>
+
+                        {/* Logo 3D con parallax al scroll */}
                         <div
-                            className="absolute bottom-10 right-0 hidden items-center gap-2 rounded-xl border p-3 shadow-xl sm:flex lg:-right-16"
-                            style={{ backgroundColor: palette.surface, borderColor: palette.border, animation: 'float 7s ease-in-out infinite reverse' }}
+                            className="relative mx-auto w-full max-w-[300px] sm:max-w-[400px] lg:max-w-[520px]"
+                            style={{
+                                opacity: mounted ? 1 : 0,
+                                transform: mounted ? 'none' : 'translateY(40px) scale(0.97)',
+                                transition: 'opacity 1100ms var(--ease-out-strong) 150ms, transform 1100ms var(--ease-out-strong) 150ms',
+                            }}
                         >
-                            <div className="flex h-9 w-9 items-center justify-center rounded-lg text-white" style={{ backgroundColor: palette.warning }}>
-                                <Boxes size={18} />
+                            <div ref={heroLogoRef} className="will-change-transform">
+                                <div aria-hidden="true" className="hero-logo-glow absolute inset-x-0 top-1/2 mx-auto h-[70%] w-[85%] -translate-y-1/2 rounded-full blur-2xl" />
+                                <img
+                                    src="/logo.png"
+                                    alt="ventoryPOS — venta registrada y verificada"
+                                    className="float-slow relative mx-auto w-full select-none drop-shadow-2xl"
+                                    draggable={false}
+                                    loading="eager"
+                                />
                             </div>
-                            <div>
-                                <p className="text-xs" style={{ color: palette.textMuted }}>Stock bajo</p>
-                                <p className="text-sm font-bold">3 productos</p>
+
+                            {/* chips flotantes alrededor del logo */}
+                            <div
+                                className="absolute -left-6 top-4 hidden items-center gap-2 rounded-xl border p-3 shadow-xl lg:flex"
+                                style={{ backgroundColor: palette.surface, borderColor: palette.border, animation: 'float 6s ease-in-out infinite' }}
+                            >
+                                <div className="flex h-9 w-9 items-center justify-center rounded-lg text-white" style={{ backgroundColor: palette.success }}>
+                                    <FileCheck2 size={18} />
+                                </div>
+                                <div>
+                                    <p className="text-xs" style={{ color: palette.textMuted }}>Factura F001-2841</p>
+                                    <p className="text-sm font-bold">Aceptada</p>
+                                </div>
+                            </div>
+                            <div
+                                className="absolute -right-4 bottom-6 hidden items-center gap-2 rounded-xl border p-3 shadow-xl lg:flex"
+                                style={{ backgroundColor: palette.surface, borderColor: palette.border, animation: 'float 7s ease-in-out infinite reverse' }}
+                            >
+                                <div className="flex h-9 w-9 items-center justify-center rounded-lg text-white" style={{ backgroundColor: palette.warning }}>
+                                    <Boxes size={18} />
+                                </div>
+                                <div>
+                                    <p className="text-xs" style={{ color: palette.textMuted }}>Alerta de stock</p>
+                                    <p className="text-sm font-bold">3 productos</p>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </section>
 
                 {/* Declaración grande, estilo Apple */}
-                <section className="relative z-10 mx-auto max-w-5xl px-4 py-16 text-center sm:px-6 sm:py-24 lg:px-8">
+                <section className="relative z-10 mx-auto max-w-5xl px-4 py-14 text-center sm:px-6 sm:py-20 lg:px-8">
                     <Reveal>
                         <h2 className="text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl">
-                            Menos clics.{' '}
-                            <span style={{ color: palette.primary }}>Más ventas.</span>
+                            Menos clics. <span style={{ color: palette.primary }}>Más ventas.</span>
                             <br />
                             Cero cuadernos.
                         </h2>
                         <p className="mx-auto mt-5 max-w-2xl text-base sm:text-lg" style={{ color: palette.textMuted }}>
                             Diseñado por gente que ha estado detrás de una caja registradora. Sin pantallas confusas, sin pasos de
-                            más: abres, vendes y al final del día tu caja cuadra sola.
+                            más: abres turno, vendes y al cierre comparas lo contado contra lo que dice el sistema.
                         </p>
                     </Reveal>
 
@@ -513,7 +582,7 @@ export default function Welcome({
                         {stats.map((s, i) => (
                             <Reveal key={s.label} delay={i * 120}>
                                 <div
-                                    className="rounded-2xl border p-6"
+                                    className="h-full rounded-2xl border p-6"
                                     style={{ borderColor: palette.border, backgroundColor: palette.surface }}
                                 >
                                     <p className="text-4xl font-extrabold tracking-tight sm:text-5xl" style={{ color: palette.primary }}>
@@ -528,19 +597,68 @@ export default function Welcome({
                     </div>
                 </section>
 
-                {/* Industrias — marquee continuo */}
+                {/* Pilares — lo que el sistema hace de verdad, en detalle */}
+                <section className="relative z-10 mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
+                    <div className="space-y-14 sm:space-y-20">
+                        {pilares.map((p, i) => {
+                            const Icon = p.icon;
+                            const invertido = i % 2 === 1;
+                            return (
+                                <Reveal key={p.kicker}>
+                                    <div className={`grid items-center gap-8 lg:grid-cols-2 lg:gap-14 ${invertido ? 'lg:[&>*:first-child]:order-2' : ''}`}>
+                                        <div>
+                                            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: p.accent }}>
+                                                {p.kicker}
+                                            </p>
+                                            <h3 className="mt-2 text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">
+                                                {p.title}
+                                            </h3>
+                                            <p className="mt-3 text-sm leading-relaxed sm:text-base" style={{ color: palette.textMuted }}>
+                                                {p.desc}
+                                            </p>
+                                        </div>
+                                        <div
+                                            className="rounded-2xl border p-5 shadow-sm sm:p-6"
+                                            style={{ borderColor: palette.border, backgroundColor: palette.surface }}
+                                        >
+                                            <div
+                                                className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl"
+                                                style={{ backgroundColor: `${p.accent}15`, color: p.accent }}
+                                            >
+                                                <Icon size={22} />
+                                            </div>
+                                            <ul className="space-y-2.5">
+                                                {p.puntos.map((punto) => (
+                                                    <li key={punto} className="flex items-start gap-2.5 text-sm leading-relaxed">
+                                                        <CheckCircle2 size={16} className="mt-0.5 shrink-0" style={{ color: p.accent }} />
+                                                        <span style={{ color: palette.textMuted }}>{punto}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </Reveal>
+                            );
+                        })}
+                    </div>
+                </section>
+
+                {/* Rubros — marquee continuo */}
                 <section className="relative z-10 py-10 sm:py-14">
                     <Reveal className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
                         <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: palette.primary }}>
-                            Hecho a tu medida
+                            Sin encasillarte
                         </p>
-                        <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-4xl">Un POS para cada tipo de negocio</h2>
+                        <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-4xl">Un POS que se adapta a tu rubro</h2>
+                        <p className="mx-auto mt-3 max-w-xl text-sm sm:text-base" style={{ color: palette.textMuted }}>
+                            Productos o servicios, mostrador o delivery, un local o varios: si vendes, funciona.
+                        </p>
                     </Reveal>
 
                     <div className="marquee mt-10 overflow-hidden" style={{ maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)' }}>
                         <div className="marquee-track flex w-max gap-4 pr-4">
-                            {[...industries, ...industries].map((ind, i) => {
-                                const Icon = ind.icon;
+                            {[...rubros, ...rubros].map((r, i) => {
+                                const Icon = r.icon;
                                 return (
                                     <div
                                         key={i}
@@ -553,9 +671,9 @@ export default function Welcome({
                                         >
                                             <Icon size={22} />
                                         </div>
-                                        <p className="mt-3 text-sm font-semibold">{ind.label}</p>
+                                        <p className="mt-3 text-sm font-semibold">{r.label}</p>
                                         <p className="mt-0.5 text-xs leading-relaxed" style={{ color: palette.textMuted }}>
-                                            {ind.desc}
+                                            {r.desc}
                                         </p>
                                     </div>
                                 );
@@ -564,20 +682,17 @@ export default function Welcome({
                     </div>
                 </section>
 
-                {/* Features */}
-                <section className="relative z-10 mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+                {/* Detalles que enamoran */}
+                <section className="relative z-10 mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
                     <Reveal className="text-center">
                         <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: palette.primary }}>
-                            Funcionalidades
+                            Los detalles importan
                         </p>
-                        <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-4xl">Todo lo que necesitas para vender mejor</h2>
-                        <p className="mx-auto mt-3 max-w-xl text-sm sm:text-base" style={{ color: palette.textMuted }}>
-                            Caja, inventario, finanzas y reportes trabajando juntos, en tiempo real.
-                        </p>
+                        <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-4xl">Pequeñas cosas que ahorran horas</h2>
                     </Reveal>
 
                     <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-                        {features.map((f, i) => {
+                        {detalles.map((f, i) => {
                             const Icon = f.icon;
                             return (
                                 <Reveal key={f.title} delay={(i % 3) * 110}>
@@ -623,15 +738,16 @@ export default function Welcome({
                                     src="/logo.png"
                                     alt=""
                                     aria-hidden="true"
-                                    className="float-slow mx-auto w-40 select-none drop-shadow-xl sm:w-52"
+                                    className="float-slow mx-auto w-36 select-none drop-shadow-xl sm:w-48"
                                     draggable={false}
                                     loading="lazy"
                                 />
                                 <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-white sm:text-5xl">
-                                    Tu negocio merece este nivel de control
+                                    Míralo funcionando con tus propios productos
                                 </h2>
                                 <p className="mx-auto mt-4 max-w-xl text-white/85 sm:text-lg">
-                                    Te lo mostramos funcionando con tus propios productos. Configuración en minutos, no en días.
+                                    Cuéntanos qué vendes y te mostramos, en vivo, cómo quedaría tu caja, tu inventario y tus
+                                    reportes. Sin compromiso.
                                 </p>
                                 <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
                                     <a
@@ -650,7 +766,7 @@ export default function Welcome({
                                         Ya tengo cuenta
                                     </Link>
                                 </div>
-                                <p className="mt-5 text-xs text-white/70">Sin tarjeta de crédito · Sin compromiso · Respuesta el mismo día</p>
+                                <p className="mt-5 text-xs text-white/70">Demo gratis · Sin compromiso · Configuración en minutos</p>
                             </div>
                         </div>
                     </Reveal>
