@@ -22,6 +22,12 @@ class ProductoRequest extends FormRequest
                 'nullable',
                 Rule::exists('categorias', 'id')->where('empresa_id', $empresaId),
             ],
+            // Acotado a la empresa igual que la categoría: la FK garantiza que
+            // el proveedor exista, pero no que sea nuestro.
+            'proveedor_id' => [
+                'nullable',
+                Rule::exists('proveedores', 'id')->where('empresa_id', $empresaId),
+            ],
             'codigo'       => [
                 'nullable', 'string', 'max:50',
                 Rule::unique('productos', 'codigo')

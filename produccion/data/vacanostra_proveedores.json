@@ -1,0 +1,212 @@
+[
+ {
+  "cod": "4LO",
+  "razon": "FOOD FOR LIFE EMPRESA INDIVIDUAL DE RESPONSABILIDAD LIMITADA - FOOD FOR LIFE E.I.R.L.",
+  "ruc": "20600194977",
+  "dir": "CAL.LUIS GALVANI NRO. 234 URB. INDUSTRIAL SANTA ROSA (PUENTE PEATONAL SANTA ROSA) LIMA - LIMA - ATE"
+ },
+ {
+  "cod": "AGC",
+  "razon": "CARTADO S.A.C",
+  "ruc": "20600249887",
+  "dir": "Jr. Zepita Nro. 548 - ICA"
+ },
+ {
+  "cod": "AVV",
+  "razon": "AGRICOLA VIÑA VIEJA VIÑA STA ISABEL SAC.",
+  "ruc": "20104443819",
+  "dir": "RO. S N CAS. SAN IGNACIO ICA - CHINCHA - SUNAMPE"
+ },
+ {
+  "cod": "BIM",
+  "razon": "PANIFICADORA BIMBO DEL PERU S.A",
+  "ruc": "20348735692",
+  "dir": "JR. JORGE CHAVEZ NRO. 860 PROV. CONST. DEL CALLAO"
+ },
+ {
+  "cod": "C&C",
+  "razon": "CALIFA PROMOTIONS E.I.R.L.",
+  "ruc": "20602143687",
+  "dir": "GONZALES PRADA NRO. 163 DPTO. 201 URB. MOCHICA LIMA - LIMA - BARRANCO"
+ },
+ {
+  "cod": "CAR",
+  "razon": "CARTAPE S.A.C.",
+  "ruc": "20609008106",
+  "dir": "MZA.E LOTE.4 PARQUE INDUSTRIAL LAMBAYEQUE CHICLAYO - PIMENTEL"
+ },
+ {
+  "cod": "COP",
+  "razon": "SOC. IND. E. COPELO S.R.L",
+  "ruc": "20100583250",
+  "dir": "AV. NICOLAS DE AYLLON 209- LIMA"
+ },
+ {
+  "cod": "ESM",
+  "razon": "ESMA IMPORT S.A.C.",
+  "ruc": "20613197037",
+  "dir": "CAL.BOLIVAR NRO. 423 LIMA - LIMA - MIRAFLORES"
+ },
+ {
+  "cod": "EXC",
+  "razon": "INVERSIONES EXCAMBIARE S.A.C",
+  "ruc": "20555457155",
+  "dir": "CALLE CANCHAQUE N 157 - URB. MIGUEL GRAU - ATE"
+ },
+ {
+  "cod": "FDL",
+  "razon": "FOOD FOR LIFE EMPRESA INDIVIDUAL DE RESPONSABILIDAD LIMITADA - FOOD FOR LIFE E.I.R.L.",
+  "ruc": "20600194977",
+  "dir": "CAL.LUIS GALVANI NRO. 234 URB. INDUSTRIAL SANTA ROSA (PUENTE PEATONAL SANTA ROSA) LIMA - LIMA - ATE"
+ },
+ {
+  "cod": "GCC",
+  "razon": "GLOBAL CC PERU SAC",
+  "ruc": "20555659963",
+  "dir": "PJ. TINGUA NRO. 154 LIMA - LIMA - LINCE"
+ },
+ {
+  "cod": "GCP",
+  "razon": "GRILLCORP PERU S.A.C.",
+  "ruc": "20601771854",
+  "dir": "JR.TAHUANTINSUYO 1996 URB.ZARATE"
+ },
+ {
+  "cod": "GKP",
+  "razon": "DISTRIBUIDORA GKPAS S.A.C.",
+  "ruc": "20614084953",
+  "dir": "PRO. PAILLARDELLI NRO. S/N URB. EL RETABLO 1ERA ETAPA LIMA - LIMA - COMAS"
+ },
+ {
+  "cod": "ISM",
+  "razon": "EMBOTELLADORA SAN MIGUEL DEL SUR S.A.C.",
+  "ruc": "20413940568",
+  "dir": "CAL.LA FLORIDA NRO. 204 URB. HUARANGUILLO AREQUIPA"
+ },
+ {
+  "cod": "IWA",
+  "razon": "INVERSIONES WARNER MIC S.R.L",
+  "ruc": "20348624866",
+  "dir": "Cal. Tizon y Bueno Nro. 639"
+ },
+ {
+  "cod": "JEI",
+  "razon": "DISTRIBUIDORA JUAN ELJURI",
+  "ruc": "20511611068",
+  "dir": "CAR. PANAMERICANA SUR KM. 334 (COSTADO MUNICIPALIDAD DIST. OCUCAJE)"
+ },
+ {
+  "cod": "JYA",
+  "razon": "NMP COMPANY S.A.C",
+  "ruc": "20611919663",
+  "dir": "AV. ALFREDO BENAVIDES NRO. 449 URB. MIRAFLORES LIMA - LIMA - LIMA"
+ },
+ {
+  "cod": "K&M",
+  "razon": "CONSORCIO KAR & MA S.A.C",
+  "ruc": "20604899762",
+  "dir": "CAL. EL DORADO 2719 URB. SANTA MARIA - JOSE LEONARDO ORTIZ - CHICLAYO - LAMBAYEQUE"
+ },
+ {
+  "cod": "KLS",
+  "razon": "KAHAN LICORES S.A.",
+  "ruc": "20508783338",
+  "dir": "AV. EL DERBY NRO. 055 INT. A URB. LIMA POLO - SANTIAGO DE SURCO - LIMA"
+ },
+ {
+  "cod": "OCU",
+  "razon": "VIÑA OCUCAJE S.A.",
+  "ruc": "20100048371",
+  "dir": "Pj. Julio Vega Solis Nro. S/n Int. Lt-7 (Avenida Huaylas Cdra 12)"
+ },
+ {
+  "cod": "OTR",
+  "razon": "OTROS",
+  "ruc": "99999999999",
+  "dir": "OTROS"
+ },
+ {
+  "cod": "PAN",
+  "razon": "PANUTS VINOS MEMORABLES S.A.C.",
+  "ruc": "20263512945",
+  "dir": "CAL.NARCISO DE LA COLINA NRO. 320 LIMA - LIMA - MIRAFLORES"
+ },
+ {
+  "cod": "PBA",
+  "razon": "PREMIUM BEERS AUTHORITY S.A.C",
+  "ruc": "20607073407",
+  "dir": "CAL.CATALINO MIRANDA NRO. 163 URB. TEJADA ALTA LIMA"
+ },
+ {
+  "cod": "PFA",
+  "razon": "PERUFARMA S.A.",
+  "ruc": "20100052050",
+  "dir": "JR. STA FRANCISCA ROMANA NRO. 1092 URB. PANDO III ETAPA"
+ },
+ {
+  "cod": "PIC",
+  "razon": "PICCOLI DISTRIBUCIONES S.R.L.",
+  "ruc": "20609802660",
+  "dir": "AV. VICTOR RAUL HAYA DE LA TORRE NRO. 439 LAMBAYEQUE - CHICLAYO - CHICLAYO"
+ },
+ {
+  "cod": "PRE",
+  "razon": "BEBIDAS PREMIUM LIMA S.A.C",
+  "ruc": "20556319058",
+  "dir": "AV. PASEO DE LA REPUBLICA NRO. 3617 - SAN ISIDRO - LIMA"
+ },
+ {
+  "cod": "PRR",
+  "razon": "SALBUR S.A.C.",
+  "ruc": "20607739669",
+  "dir": "AV.PEDRO VENTURA 336 URB.HIGUERETA - LIMA - LIMA. SURCO"
+ },
+ {
+  "cod": "RPD",
+  "razon": "RF LIQUOR DISTRIBUCION S.A.C.",
+  "ruc": "20602992111",
+  "dir": "CAL.SAMIRIA NRO. 121 URB. CALERA DE LA MERCED - LIMA - LIMA - SURQUILLO"
+ },
+ {
+  "cod": "RTD",
+  "razon": "BEBIDAS RTD S.A.C.",
+  "ruc": "20538350746",
+  "dir": "AV. ALFREDO BENAVIDES NRO. 474 INT. 104 LIMA - LIMA"
+ },
+ {
+  "cod": "SAL",
+  "razon": "SALBUR SOCIEDAD ANONIMA CERRADA",
+  "ruc": "20607739669",
+  "dir": "AV. PEDRO VENTURO NRO. 268 URB. RESIDENCIAL HIGUERETA (CASA 101) LIMA - LIMA - SANTIAGO DE SURCO"
+ },
+ {
+  "cod": "SIG",
+  "razon": "BRAEDT S.A. O BRSA",
+  "ruc": "20100067910",
+  "dir": "AV. MICHAEL FARADAY NRO. 111 Z.I. SANTA ROSA LIMA - LIMA - ATE"
+ },
+ {
+  "cod": "SQL",
+  "razon": "SANTIAGO QUEIROLO S.A.C.",
+  "ruc": "20100097746",
+  "dir": "AV. SAN MARTIN NRO. 1062 LIMA - LIMA - PUEBLO LIBRE (MAGDALENA VIEJA)"
+ },
+ {
+  "cod": "TCM",
+  "razon": "VIÑA TACAMA S.A",
+  "ruc": "20216789611",
+  "dir": "NRO. S/N CAMINO REAL ICA - ICA - LA TINGUIÑA"
+ },
+ {
+  "cod": "VDO",
+  "razon": "BODEGAS VIÑAS DE ORO S.A.C.",
+  "ruc": "20107198106",
+  "dir": "CAL.AMADOR MERINO REYNA NRO. 551 LIMA - LIMA - SAN ISIDRO"
+ },
+ {
+  "cod": "YIC",
+  "razon": "G.W. YICHANG & CIA. S.A.",
+  "ruc": "20100030838",
+  "dir": "CAL.CALLE 31 NRO. 125 URB. CORPAC (ALT CDRA 10 AV JOSE GALVEZ BARRENECHEA)"
+ }
+]

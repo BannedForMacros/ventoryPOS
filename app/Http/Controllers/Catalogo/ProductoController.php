@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalogo\ProductoRequest;
 use App\Models\Categoria;
 use App\Models\Producto;
+use App\Models\Proveedor;
 use App\Models\UnidadMedida;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,12 +14,20 @@ use Inertia\Inertia;
 
 class ProductoController extends Controller
 {
+    /** Proveedores activos de la empresa, para los selectores del catálogo. */
+    private function proveedoresDe(int $empresaId)
+    {
+        return Proveedor::deEmpresa($empresaId)->activo()
+            ->orderBy('razon_social')
+            ->get(['id', 'razon_social', 'nombre_comercial']);
+    }
+
     public function index(Request $request)
     {
         $empresaId = $request->user()->empresa_id;
 
         $productos = Producto::deEmpresa($empresaId)
-            ->with(['categoria', 'unidadBase.unidadMedida'])
+            ->with(['categoria', 'proveedor:id,razon_social,nombre_comercial', 'unidadBase.unidadMedida'])
             ->when($request->search, fn($q, $s) =>
                 $q->where(fn($q2) =>
                     $q2->where('nombre', 'ilike', "%{$s}%")
@@ -27,6 +36,7 @@ class ProductoController extends Controller
             )
             ->when($request->tipo, fn($q, $t) => $q->where('tipo', $t))
             ->when($request->categoria_id, fn($q, $c) => $q->where('categoria_id', $c))
+            ->when($request->proveedor_id, fn($q, $pr) => $q->where('proveedor_id', $pr))
             ->orderBy('nombre')
             ->get();
 
@@ -34,9 +44,10 @@ class ProductoController extends Controller
         $unidades   = UnidadMedida::deEmpresa($empresaId)->activo()->orderBy('nombre')->get();
 
         return Inertia::render('Catalogo/Productos', [
-            'productos'  => $productos,
-            'categorias' => $categorias,
-            'unidades'   => $unidades,
+            'productos'   => $productos,
+            'categorias'  => $categorias,
+            'unidades'    => $unidades,
+            'proveedores' => $this->proveedoresDe($empresaId),
         ]);
     }
 
@@ -45,8 +56,9 @@ class ProductoController extends Controller
         $empresaId = $request->user()->empresa_id;
 
         return Inertia::render('Catalogo/Productos/Create', [
-            'categorias' => Categoria::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
-            'unidades'   => UnidadMedida::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
+            'categorias'  => Categoria::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
+            'unidades'    => UnidadMedida::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
+            'proveedores' => $this->proveedoresDe($empresaId),
         ]);
     }
 
@@ -60,6 +72,7 @@ class ProductoController extends Controller
             $producto = Producto::create([
                 'empresa_id'     => $request->user()->empresa_id,
                 'categoria_id'   => $data['categoria_id'] ?? null,
+                'proveedor_id'   => $data['proveedor_id'] ?? null,
                 'codigo'         => $data['codigo'] ?? null,
                 'nombre'         => $data['nombre'],
                 'descripcion'    => $data['descripcion'] ?? null,
@@ -127,16 +140,20 @@ class ProductoController extends Controller
     public function edit(Request $request, Producto $producto)
     {
         $empresaId = $request->user()->empresa_id;
+        abort_if($producto->empresa_id !== $empresaId, 403);
 
         return Inertia::render('Catalogo/Productos/Edit', [
-            'producto'   => $producto->load(['categoria', 'unidades.unidadMedida']),
-            'categorias' => Categoria::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
-            'unidades'   => UnidadMedida::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
+            'producto'    => $producto->load(['categoria', 'proveedor', 'unidades.unidadMedida']),
+            'categorias'  => Categoria::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
+            'unidades'    => UnidadMedida::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
+            'proveedores' => $this->proveedoresDe($empresaId),
         ]);
     }
 
     public function update(ProductoRequest $request, Producto $producto)
     {
+        abort_if($producto->empresa_id !== $request->user()->empresa_id, 403);
+
         $data = $request->validated();
 
         DB::transaction(function () use ($data, $producto) {
@@ -148,6 +165,7 @@ class ProductoController extends Controller
             // producto, descuadrando el balance. Ahora se conserva su valor.
             $producto->update([
                 'categoria_id'   => $data['categoria_id'] ?? null,
+                'proveedor_id'   => $data['proveedor_id'] ?? null,
                 'codigo'         => $data['codigo'] ?? null,
                 'nombre'         => $data['nombre'],
                 'descripcion'    => $data['descripcion'] ?? null,
@@ -213,8 +231,10 @@ class ProductoController extends Controller
             ->with('success', 'Producto actualizado correctamente.');
     }
 
-    public function destroy(Producto $producto)
+    public function destroy(Request $request, Producto $producto)
     {
+        abort_if($producto->empresa_id !== $request->user()->empresa_id, 403);
+
         $producto->update(['activo' => false]);
 
         \App\Services\AuditoriaService::log('producto.eliminado', $producto, [

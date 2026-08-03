@@ -13,6 +13,8 @@ class Producto extends Model
     protected $fillable = [
         'empresa_id',
         'categoria_id',
+        // Proveedor habitual: quién nos vende este producto. Opcional.
+        'proveedor_id',
         'codigo',
         'nombre',
         'descripcion',
@@ -47,6 +49,11 @@ class Producto extends Model
     public function categoria(): BelongsTo
     {
         return $this->belongsTo(Categoria::class);
+    }
+
+    public function proveedor(): BelongsTo
+    {
+        return $this->belongsTo(Proveedor::class);
     }
 
     public function unidades(): HasMany

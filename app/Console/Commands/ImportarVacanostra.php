@@ -101,11 +101,26 @@ class ImportarVacanostra extends Command
             $this->info('Inventario de apertura (queda + retorno)...');
             $apertura = $this->stockInicial($empresa, $almacen, $data, $productos);
 
+            // Materializa el saldo a partir del corte recién escrito. En la
+            // primera corrida deja las 665 de la apertura, que es lo que la
+            // salida del retorno necesita tener disponible para confirmarse; en
+            // las siguientes deja 281, porque la salida ya existe y cuenta.
+            foreach (array_values($productos) as $productoId) {
+                Stock::reconstruir($almacen->id, $productoId);
+            }
+
             $this->info('Retorno a Comercial Lavagna...');
             $this->retorno($empresa, $almacen, $user, $data, $productos, $unidad);
 
             $this->info('Compras en camino...');
             $this->transito($empresa, $almacen, $user, $data, $productos, $provs, $unidad);
+
+            // El saldo se DERIVA de los documentos, no se escribe a mano: es lo
+            // que hace que correr el comando dos veces dé el mismo resultado.
+            $this->info('Recalculando stock desde los documentos...');
+            foreach (array_values($productos) as $productoId) {
+                Stock::reconstruir($almacen->id, $productoId);
+            }
 
             $this->resumen($empresa, $almacen, $apertura);
         });
@@ -116,11 +131,15 @@ class ImportarVacanostra extends Command
     /* ── Proveedores ───────────────────────────────────────────────────────── */
 
     /**
-     * Dos niveles: las dos Comercial Lavagna (que son quienes FACTURAN y a
-     * quienes se devuelve) y los códigos de 3 letras del Excel, que son la
-     * marca/distribuidor de cada producto. Los códigos van con razón social
-     * provisional; cuando lleguen los nombres reales basta un UPDATE del campo
-     * porque las entradas quedan enganchadas por id, no por texto.
+     * Dos niveles: las dos Comercial Lavagna (quienes FACTURAN la mercadería y a
+     * quienes se devuelve) y los proveedores de marca del Excel, identificados
+     * por un código de 3 letras.
+     *
+     * DOS CÓDIGOS PUEDEN SER LA MISMA EMPRESA: 4LO y FDL comparten el RUC de
+     * Food for Life, y PRR y SAL el de Salbur. Como `proveedores` tiene UNIQUE
+     * (empresa_id, numero_documento), se consolidan en un solo registro y ambos
+     * códigos quedan anotados en `observacion` para poder cruzar con el Excel.
+     * Por eso salen 33 proveedores de 35 códigos.
      *
      * @return array<string, int> código => proveedor_id
      */
@@ -135,14 +154,63 @@ class ImportarVacanostra extends Command
             )->id;
         }
 
+        $ruta   = base_path('produccion/data/vacanostra_proveedores.json');
+        $reales = file_exists($ruta) ? json_decode(file_get_contents($ruta), true) : [];
+
+        // Un registro por RUC; los códigos que lo comparten se agrupan.
+        $porRuc = [];
+        foreach ($reales as $p) {
+            $porRuc[$p['ruc']]['datos']    = $p;
+            $porRuc[$p['ruc']]['codigos'][] = $p['cod'];
+        }
+
+        foreach ($porRuc as $ruc => $g) {
+            $p = $g['datos'];
+
+            $proveedor = Proveedor::updateOrCreate(
+                ['empresa_id' => $empresa->id, 'numero_documento' => $ruc],
+                [
+                    'tipo_documento'   => 'RUC',
+                    'razon_social'     => $p['razon'],
+                    'nombre_comercial' => $this->nombreCorto($p['razon']),
+                    'direccion'        => $p['dir'],
+                    'observacion'      => 'Código en Excel: ' . implode(', ', $g['codigos']),
+                    'activo'           => true,
+                ],
+            );
+
+            foreach ($g['codigos'] as $cod) {
+                $out[$cod] = $proveedor->id;
+            }
+        }
+
+        // Códigos que quedaron sin nombre real: se crean con el código como
+        // razón social para no perder la referencia del Excel.
         foreach ($data['proveedores'] as $cod) {
+            if (isset($out[$cod])) continue;
             $out[$cod] = Proveedor::updateOrCreate(
                 ['empresa_id' => $empresa->id, 'razon_social' => $cod],
-                ['nombre_comercial' => $cod, 'activo' => true],
+                ['nombre_comercial' => $cod, 'observacion' => 'Código en Excel: ' . $cod, 'activo' => true],
             )->id;
         }
 
+        // Restos de una carga anterior: los registros cuya razón social seguía
+        // siendo el código de 3 letras y que ahora tienen su nombre real.
+        Proveedor::where('empresa_id', $empresa->id)
+            ->whereIn('razon_social', array_column($reales, 'cod'))
+            ->whereNull('numero_documento')
+            ->delete();
+
+        $this->line('  ' . count($porRuc) . ' proveedores reales (' . count($reales) . ' códigos) + 2 Comercial Lavagna.');
+
         return $out;
+    }
+
+    /** Nombre de pantalla: la razón social hasta antes de la forma societaria. */
+    private function nombreCorto(string $razon): string
+    {
+        $corto = preg_split('/\s+(S\.?A\.?C\.?|S\.?A\.?|E\.?I\.?R\.?L\.?|S\.?R\.?L\.?|SAC|SA|EIRL|SRL|EMPRESA INDIVIDUAL)\b/i', $razon)[0];
+        return trim($corto, " .,-") ?: $razon;
     }
 
     /* ── Catálogo ──────────────────────────────────────────────────────────── */
@@ -206,6 +274,12 @@ class ImportarVacanostra extends Command
      * `stock_iniciales` es el corte: marca que ese conteo YA incluye todo lo
      * anterior, así que ni Recalcular ni la reconstrucción del kardex lo van a
      * duplicar sumando documentos viejos.
+     *
+     * SOLO escribe el corte, nunca toca `stock` directamente. El saldo real lo
+     * deriva `Stock::reconstruir()` al final (apertura − retorno + recibidas),
+     * que es lo que hace idempotente al comando: forzar aquí el stock a la
+     * apertura hacía que una segunda corrida devolviera al almacén las 384
+     * unidades que ya se habían retornado.
      */
     private function stockInicial(Empresa $empresa, Almacen $almacen, array $data, array $productos): float
     {
@@ -230,27 +304,6 @@ class ImportarVacanostra extends Command
                     'updated_at' => now(),
                 ],
             );
-
-            $actual = (float) (Stock::where('almacen_id', $almacen->id)
-                ->where('producto_id', $productoId)->value('cantidad') ?? 0);
-
-            if (abs($actual - $cantidad) > 0.0001) {
-                Stock::ajustar(
-                    almacenId: $almacen->id,
-                    productoId: $productoId,
-                    cantidadBase: $cantidad - $actual,
-                    costoNuevo: (float) $p['costo'],
-                    permitirNegativo: true,
-                    contexto: [
-                        'tipo'            => 'inventario_inicial',
-                        'referencia_tipo' => 'stock_inicial',
-                        'documento'       => 'APERTURA VACANOSTRA',
-                        'fecha'           => $this->fechaApertura,
-                        'user_id'         => null,
-                        'empresa_id'      => $empresa->id,
-                    ],
-                );
-            }
 
             $total += $cantidad;
         }
