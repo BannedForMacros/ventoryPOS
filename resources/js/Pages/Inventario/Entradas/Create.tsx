@@ -40,6 +40,8 @@ interface Props extends PageProps {
     turnoActivoId: number | null;
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
+    /** La empresa habilitó registrar compras que todavía no llegan. */
+    usaTransito: boolean;
 }
 
 interface DetalleRow {
@@ -79,7 +81,10 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
     return String(Math.round((t / q) * 10000) / 10000);
 }
 
-export default function EntradaCreate({ almacenes, productos, proveedores, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaCreate({ almacenes, productos, proveedores, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen, usaTransito }: Props) {
+    // Compra despachada pero que aún no llega: no toca stock hasta que se reciba.
+    const [enTransito, setEnTransito] = useState(false);
+    const [fechaLlegada, setFechaLlegada] = useState('');
     // "Afecta caja a:" — por defecto NO afecta ninguna caja ('' = Sin turno). El
     // pago solo descuenta de una caja si el usuario elige explícitamente su turno.
     // Así una entrada registrada por la cajera no descuadra su caja sin querer.
@@ -287,10 +292,12 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
             mostrarErroresValidacion(errs);
             return;
         }
-        if (confirmar) {
+        // El modal de "esto mueve stock" solo aplica a la confirmación real.
+        // Guardar algo que viene en camino no toca stock, así que va directo.
+        if (confirmar && !enTransito) {
             setShowConfirmModal(true);
         } else {
-            enviar(false);
+            enviar(confirmar);
         }
     }
 
@@ -305,7 +312,9 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
             tipo,
             fecha,
             observacion,
-            confirmar,
+            confirmar: confirmar && !enTransito,
+            en_transito: enTransito,
+            fecha_estimada_llegada: enTransito ? (fechaLlegada || null) : null,
             estado_pago:       estadoPago,
             pagos: estadoPago === 'pendiente' ? [] : pagos.map(p => ({
                 metodo_pago_id: p.metodo_pago_id,
@@ -421,6 +430,33 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                         )}
                         <Input label="Fecha" required type="date" value={fecha} onChange={e => setFecha(e.target.value)} error={errors.fecha} />
                     </div>
+
+                    {/* Compra ya facturada pero que llega días después. Mientras esté
+                        en camino no suma stock: recién entra cuando se marca la
+                        recepción desde el listado de Entradas. */}
+                    {usaTransito && (
+                        <div className="space-y-3">
+                            <Switch
+                                label="La mercadería aún no llega"
+                                description="La compra queda registrada como en camino. El stock no se moverá hasta que marques la recepción, pero la deuda al proveedor cuenta desde ya si dejas saldo pendiente."
+                                checked={enTransito}
+                                onChange={setEnTransito}
+                            />
+                            {enTransito && (
+                                <div className="pl-1 max-w-xs">
+                                    <Input
+                                        label="Fecha estimada de llegada"
+                                        type="date"
+                                        value={fechaLlegada}
+                                        onChange={e => setFechaLlegada(e.target.value)}
+                                    />
+                                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                        Opcional. Si la pones y se pasa sin que llegue, la entrada se marca como atrasada.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Switch: modo factura. Decide dónde aparece el input de nro. documento. */}
                     <Switch
@@ -752,7 +788,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                         Guardar borrador
                     </Button>
                     <Button type="button" loading={processing} onClick={() => intentarGuardar(true)}>
-                        Guardar y confirmar
+                        {enTransito ? 'Guardar como en camino' : 'Guardar y confirmar'}
                     </Button>
                 </div>
             </div>
