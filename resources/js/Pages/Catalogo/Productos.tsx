@@ -26,16 +26,12 @@ interface Producto extends Record<string, unknown> {
     precio_venta: string; activo: boolean;
     imagen: string | null;
     categoria?: Categoria | null;
-    proveedor?: ProveedorOpt | null;
     unidad_base?: ProductoUnidad | null;
 }
-
-interface ProveedorOpt { id: number; razon_social: string; nombre_comercial: string | null; }
 
 interface Props extends PageProps {
     productos: Producto[];
     categorias: Categoria[];
-    proveedores: ProveedorOpt[];
 }
 
 function ProductoThumbnail({ url, alt }: { url: string | null; alt: string }) {
@@ -60,8 +56,7 @@ function ProductoThumbnail({ url, alt }: { url: string | null; alt: string }) {
     );
 }
 
-export default function Productos({ productos, categorias, proveedores }: Props) {
-    const [filtrProv, setFiltrProv] = useState('');
+export default function Productos({ productos, categorias }: Props) {
     const { flash } = usePage<Props>().props;
     const [filtrTipo, setFiltrTipo]     = useState<string>('');
     const [filtrCat, setFiltrCat]       = useState<string>('');
@@ -76,7 +71,6 @@ export default function Productos({ productos, categorias, proveedores }: Props)
     const filtered = productos.filter(p => {
         if (filtrTipo && p.tipo !== filtrTipo) return false;
         if (filtrCat  && p.categoria?.id !== Number(filtrCat)) return false;
-        if (filtrProv && p.proveedor?.id !== Number(filtrProv)) return false;
         if (filtrEstado === 'activos'   && !p.activo) return false;
         if (filtrEstado === 'inactivos' &&  p.activo) return false;
         return true;
@@ -102,12 +96,6 @@ export default function Productos({ productos, categorias, proveedores }: Props)
                     <span className="font-medium">{p.nombre}</span>
                 </div>
             ),
-        },
-        {
-            key: 'proveedor', label: 'Proveedor', sortKey: 'proveedor.razon_social',
-            render: (p) => p.proveedor
-                ? <span>{p.proveedor.nombre_comercial ?? p.proveedor.razon_social}</span>
-                : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
         },
         {
             key: 'categoria', label: 'Categoría', sortKey: 'categoria.nombre',
@@ -196,15 +184,6 @@ export default function Productos({ productos, categorias, proveedores }: Props)
                     options={[
                         { value: '', label: 'Todas las categorías' },
                         ...categorias.map(c => ({ value: c.id, label: c.nombre })),
-                    ]}
-                />
-                <Select
-                    label="Proveedor"
-                    value={filtrProv}
-                    onChange={v => setFiltrProv(String(v))}
-                    options={[
-                        { value: '', label: 'Todos los proveedores' },
-                        ...proveedores.map(pr => ({ value: pr.id, label: pr.nombre_comercial ?? pr.razon_social })),
                     ]}
                 />
                 <Select

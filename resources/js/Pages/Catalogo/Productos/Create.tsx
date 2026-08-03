@@ -26,7 +26,6 @@ type ControlaStockSel = 'heredar' | 'si' | 'no';
 
 interface FormData {
     categoria_id: number | '';
-    proveedor_id: number | '';
     codigo: string;
     nombre: string;
     descripcion: string;
@@ -40,11 +39,8 @@ interface FormData {
     unidades: UnidadRow[];
 }
 
-interface ProveedorOpt { id: number; razon_social: string; nombre_comercial: string | null; }
-
 interface Props extends PageProps {
     categorias: Categoria[];
-    proveedores: ProveedorOpt[];
     unidades: UnidadMedida[];
 }
 
@@ -53,9 +49,9 @@ const emptyUnidad = (): UnidadRow => ({
     tipo_precio: 'fijo', precio_venta: '', activo: true,
 });
 
-export default function Create({ categorias, unidades, proveedores }: Props) {
+export default function Create({ categorias, unidades }: Props) {
     const { data, setData, transform, post, processing, errors } = useForm<FormData>({
-        categoria_id: '', proveedor_id: '', codigo: '', nombre: '', descripcion: '', imagen: '',
+        categoria_id: '', codigo: '', nombre: '', descripcion: '', imagen: '',
         tipo: 'producto', tipo_precio: 'fijo',
         precio_venta: '', activo: true, incluye_igv: false,
         controla_stock: 'heredar',
@@ -133,14 +129,6 @@ export default function Create({ categorias, unidades, proveedores }: Props) {
                             value={data.codigo}
                             onChange={e => setData('codigo', e.target.value)}
                             error={errors.codigo}
-                        />
-                        <Select
-                            label="Proveedor"
-                            placeholder="Sin proveedor"
-                            value={data.proveedor_id}
-                            onChange={v => setData('proveedor_id', v === '' ? '' : Number(v))}
-                            options={proveedores.map(pr => ({ value: pr.id, label: pr.nombre_comercial ?? pr.razon_social }))}
-                            error={errors.proveedor_id}
                         />
                     </div>
 

@@ -26,7 +26,6 @@ interface ProductoUnidadData {
 interface ProductoData {
     id: number;
     categoria_id: number | null;
-    proveedor_id: number | null;
     codigo: string | null;
     nombre: string;
     descripcion: string | null;
@@ -44,7 +43,6 @@ type ControlaStockSel = 'heredar' | 'si' | 'no';
 
 interface FormData {
     categoria_id: number | '';
-    proveedor_id: number | '';
     codigo: string;
     nombre: string;
     descripcion: string;
@@ -58,12 +56,9 @@ interface FormData {
     unidades: ProductoUnidadData[];
 }
 
-interface ProveedorOpt { id: number; razon_social: string; nombre_comercial: string | null; }
-
 interface Props extends PageProps {
     producto: ProductoData;
     categorias: Categoria[];
-    proveedores: ProveedorOpt[];
     unidades: UnidadMedida[];
 }
 
@@ -72,10 +67,9 @@ const emptyUnidad = (): ProductoUnidadData => ({
     tipo_precio: 'fijo', precio_venta: '', activo: true,
 });
 
-export default function Edit({ producto, categorias, unidades, proveedores }: Props) {
+export default function Edit({ producto, categorias, unidades }: Props) {
     const { data, setData, transform, put, processing, errors } = useForm<FormData>({
         categoria_id:  producto.categoria_id ?? '',
-        proveedor_id:  producto.proveedor_id ?? '',
         codigo:        producto.codigo ?? '',
         nombre:        producto.nombre,
         descripcion:   producto.descripcion ?? '',
@@ -161,10 +155,6 @@ export default function Edit({ producto, categorias, unidades, proveedores }: Pr
                             error={errors.categoria_id} />
                         <Input label="Código" placeholder="Código interno o de barras" value={data.codigo}
                             onChange={e => setData('codigo', e.target.value)} error={errors.codigo} />
-                        <Select label="Proveedor" placeholder="Sin proveedor" value={data.proveedor_id}
-                            onChange={v => setData('proveedor_id', v === '' ? '' : Number(v))}
-                            options={proveedores.map(pr => ({ value: pr.id, label: pr.nombre_comercial ?? pr.razon_social }))}
-                            error={errors.proveedor_id} />
                     </div>
 
                     <Input label="Nombre" required value={data.nombre}
