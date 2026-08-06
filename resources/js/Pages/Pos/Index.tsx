@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2,
+    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
@@ -447,6 +447,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [loading, setLoading]             = useState(false);
     const [carritoAbierto, setCarritoAbierto] = useState(false);
     const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null);
+    // Pestaña Productos / Servicios. null = ver todo. Solo se pinta si la
+    // empresa realmente vende servicios, para no estorbar a quien no los usa.
+    const [tipoActivo, setTipoActivo] = useState<'producto' | 'servicio' | null>(null);
     // Token de idempotencia: se genera al abrir el modal de confirmacion y se
     // mantiene mientras siga la misma venta-en-construccion. Se renueva al
     // limpiar el carrito tras un OK exitoso.
@@ -556,6 +559,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         }
     }, [total]);
 
+    const hayServicios = useMemo(() => productos.some(p => p.tipo === 'servicio'), [productos]);
+
     // Categorías únicas
     const categorias = useMemo(() => {
         const cats = new Set<string>();
@@ -567,12 +572,19 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
 
     const productosFiltrados = useMemo(() => {
         let filtrados = productos;
+        const q = busqueda.toLowerCase();
+
+        // La pestaña ordena la NAVEGACIÓN, no la búsqueda: quien escribe el
+        // nombre de un servicio lo quiere encontrar aunque esté parado en
+        // Productos. Por eso el filtro por tipo se salta si hay texto escrito.
+        if (tipoActivo && !q) {
+            filtrados = filtrados.filter(p => p.tipo === tipoActivo);
+        }
 
         if (categoriaActiva) {
             filtrados = filtrados.filter(p => p.categoria?.nombre === categoriaActiva);
         }
 
-        const q = busqueda.toLowerCase();
         if (q) {
             filtrados = filtrados.filter(p =>
                 p.nombre.toLowerCase().includes(q) ||
@@ -581,7 +593,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             );
         }
         return filtrados;
-    }, [busqueda, productos, categoriaActiva]);
+    }, [busqueda, productos, categoriaActiva, tipoActivo]);
 
     /**
      * Enter en el buscador: agrega directo si hay match exacto de codigo
@@ -1353,6 +1365,36 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 </button>
                             )}
                         </div>
+
+                        {/* Pestañas Productos / Servicios. Solo si hay servicios
+                            que separar; con búsqueda activa se atenúan porque en
+                            ese momento se busca en todo el catálogo. */}
+                        {hayServicios && (
+                            <div
+                                className="flex gap-1 p-1 rounded-xl transition-opacity"
+                                style={{ backgroundColor: 'var(--color-bg)', opacity: busqueda ? 0.5 : 1 }}
+                            >
+                                {([
+                                    { val: null,        label: 'Todo',      icon: Layers },
+                                    { val: 'producto',  label: 'Productos', icon: Package },
+                                    { val: 'servicio',  label: 'Servicios', icon: Wrench },
+                                ] as const).map(({ val, label, icon: Icono }) => (
+                                    <button
+                                        key={label}
+                                        onClick={() => setTipoActivo(val)}
+                                        className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-all"
+                                        style={{
+                                            backgroundColor: tipoActivo === val ? 'var(--color-surface)' : 'transparent',
+                                            color: tipoActivo === val ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                            boxShadow: tipoActivo === val ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                                        }}
+                                    >
+                                        <Icono size={13} />
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
 
                         {/* Chips de categorías */}
                         {categorias.length > 0 && (

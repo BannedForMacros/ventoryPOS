@@ -158,10 +158,23 @@ class VentaController extends Controller
             ? $transitoSvc->porAlmacen($user->empresa_id, $almacenVentas->id)
             : [];
 
-        $productos->each(function ($p) use ($almacenVentas, $stockMap, $transitoMap) {
-            $p->stock_disponible = $almacenVentas ? (float) ($stockMap[$p->id] ?? 0) : null;
-            $p->stock_en_transito   = (float) ($transitoMap[$p->id]['cantidad'] ?? 0);
-            $p->transito_fecha      = $transitoMap[$p->id]['fecha'] ?? null;
+        // Un servicio no tiene existencias, y un producto puede tener el control
+        // de stock apagado. Para esos, `stock_disponible` va en NULL —que el POS
+        // ya interpreta como "no aplica"— en vez de 0: con 0, el carrito
+        // calculaba "quedaría -1" y pintaba la alerta roja de sin stock en algo
+        // que nunca se descuenta. `deboDescontarStock` resuelve también el caso
+        // heredado de empresa/local.
+        $configOp    = app(\App\Services\ConfiguracionOperacionService::class);
+        $localVentas = $almacenVentas?->local;
+
+        $productos->each(function ($p) use ($almacenVentas, $stockMap, $transitoMap, $configOp, $localVentas) {
+            $controlaStock = $configOp->deboDescontarStock($p, $localVentas);
+
+            $p->stock_disponible  = ($almacenVentas && $controlaStock)
+                ? (float) ($stockMap[$p->id] ?? 0)
+                : null;
+            $p->stock_en_transito = $controlaStock ? (float) ($transitoMap[$p->id]['cantidad'] ?? 0) : 0;
+            $p->transito_fecha    = $controlaStock ? ($transitoMap[$p->id]['fecha'] ?? null) : null;
         });
 
         $clientes = Cliente::where('empresa_id', $user->empresa_id)

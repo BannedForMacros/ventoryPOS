@@ -71,7 +71,17 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
             if (!auto) toast.error('El agente de impresión no está activo en esta PC (VentoryPrint)');
             return;
         }
-        const ok = await imprimirTicket(ticketImpresion);
+        // Pedir el payload FRESCO al backend: el prop `ticketImpresion` se horneó
+        // al cargar la página, así que si el cliente se editó después (p. ej. le
+        // agregaron el celular) la reimpresión seguía saliendo con datos viejos.
+        let data: TicketPayload;
+        try {
+            ({ data } = await axios.get<TicketPayload>(route('ventas.ticket', venta.id)));
+        } catch {
+            toast.error('No se pudo obtener el ticket actualizado.');
+            return;
+        }
+        const ok = await imprimirTicket(data);
         if (ok) toast.success('Ticket enviado a la impresora');
         else    toast.error('No se pudo imprimir el ticket. Revisa VentoryPrint en esta PC.');
     }

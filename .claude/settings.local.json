@@ -207,7 +207,14 @@
       "Bash(perl -0pi -e 's/\\(\\\\$basePendiente = Entrada::deEmpresa\\\\\\(\\\\$user->empresa_id\\\\\\)\\\\n\\\\s*\\)->confirmado\\\\\\(\\\\\\)/$1->comprometido\\(\\)/' app/Http/Controllers/Finanzas/CuentasPorPagarController.php)",
       "Bash(curl -s -o /dev/null -w \"server:%{http_code}\\\\n\" http://localhost:8000/login)",
       "Bash(sed -n '/public function create/,/^ }/p' app/Http/Controllers/Catalogo/ProductoController.php)",
-      "Bash(sed -n '/public function store/,/DB::transaction/p' app/Http/Controllers/Catalogo/ProductoController.php)"
+      "Bash(sed -n '/public function store/,/DB::transaction/p' app/Http/Controllers/Catalogo/ProductoController.php)",
+      "Bash(ssh -o ConnectTimeout=15 -o BatchMode=yes macsoft \"hostname; whoami; echo '---'; ls -d /var/www/html/*/ 2>/dev/null\")",
+      "Bash(ssh macsoft *)",
+      "Bash(kill %1)",
+      "Bash(pkill -f \"tinker /tmp/cols.php\")",
+      "Bash(sort -o /tmp/local_cols.txt /tmp/local_cols.txt)",
+      "Bash(curl -s -o /dev/null -w \"login: HTTP %{http_code}\\\\n\" http://localhost:8000/login)",
+      "Bash(curl -s -o /dev/null -w \"pos:   HTTP %{http_code}\\\\n\" http://localhost:8000/pos)"
     ]
   },
   "hooks": {
