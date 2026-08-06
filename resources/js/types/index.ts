@@ -5,6 +5,8 @@ export type ModoCierreInventario = 'por_venta' | 'declarado';
 export interface TicketConfig {
     cliente_celular?: boolean;
     cliente_direccion?: boolean;
+    mostrar_ruc?: boolean;
+    logo_escala?: number;
     pie?: string | null;
     lineas_extra?: string[];
 }
