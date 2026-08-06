@@ -6,6 +6,7 @@ use App\Models\Caja;
 use App\Models\ClienteAnticipoAplicacion;
 use App\Models\Cotizacion;
 use App\Models\Empresa;
+use App\Models\Turno;
 use App\Models\Venta;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
@@ -480,5 +481,122 @@ class TicketPrintService
         };
 
         return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+    }
+
+    /**
+     * Arma el payload del reporte de cierre de turno para el agente local.
+     * Contrato: las claves deben coincidir con ShiftClosurePayload en
+     * resources/js/lib/ticketPrinter.ts y con ShiftClosurePayload.cs del agente.
+     */
+    public function payloadDeCierreTurno(Turno $turno): array
+    {
+        $turno->loadMissing([
+            'empresa', 'local', 'caja', 'user', 'userCierre',
+            'ventas' => fn ($q) => $q->where('estado', 'completada')->with('pagos.metodoPago.tipo'),
+            'gastos', 'retiros', 'arqueo', 'arqueoMetodos.metodoPago',
+        ]);
+
+        $empresa = $turno->empresa;
+        $local   = $turno->local;
+        $caja    = $turno->caja;
+        $cfg     = $this->configTicket($empresa);
+
+        // ── Resumen de ventas y desglose por método de pago ─────────────────
+        $metodos = [];
+        $totalVentas = 0.0;
+        $subtotal    = 0.0;
+        $igv         = 0.0;
+        $descuento   = 0.0;
+        $ventasEfectivo = 0.0;
+
+        foreach ($turno->ventas as $venta) {
+            $totalVentas += (float) $venta->total;
+            $subtotal    += (float) $venta->subtotal;
+            $igv         += (float) $venta->igv;
+            $descuento   += (float) $venta->descuento_total;
+
+            foreach ($venta->pagos as $pago) {
+                $nombre = $pago->metodoPago?->nombre ?? 'Otro';
+                $monto  = (float) $pago->monto;
+
+                if (!isset($metodos[$nombre])) {
+                    $metodos[$nombre] = ['monto' => 0.0, 'cantidad' => 0];
+                }
+                $metodos[$nombre]['monto'] += $monto;
+                $metodos[$nombre]['cantidad']++;
+
+                if ($pago->metodoPago?->tipo?->slug === 'efectivo') {
+                    $ventasEfectivo += $monto;
+                }
+            }
+        }
+
+        $metodosPago = collect($metodos)
+            ->map(fn ($m, $nombre) => [
+                'nombre'   => $nombre,
+                'monto'    => round($m['monto'], 2),
+                'cantidad' => $m['cantidad'],
+            ])
+            ->sortByDesc('monto')
+            ->values()
+            ->all();
+
+        // ── Consolidado de caja (efectivo) ──────────────────────────────────
+        $salidas = (float) $turno->retiros()->sum('monto');
+
+        $montoEsperado  = $turno->monto_cierre_esperado !== null
+            ? (float) $turno->monto_cierre_esperado
+            : $turno->calcularMontoEsperado();
+        $montoDeclarado = $turno->monto_cierre_declarado !== null
+            ? (float) $turno->monto_cierre_declarado
+            : null;
+        $diferencia = $turno->diferencia !== null
+            ? (float) $turno->diferencia
+            : null;
+
+        $pie = trim((string) ($cfg['pie'] ?? ''));
+        $pie = $pie !== ''
+            ? $pie . "\nReporte de cierre de turno"
+            : 'Reporte de cierre de turno';
+        $pie = $this->conLineasExtra($cfg, $pie);
+
+        return [
+            'token' => (string) ($caja?->token_impresora ?? ''),
+            'negocio' => [
+                'nombre'    => $empresa?->nombre_comercial ?: $empresa?->razon_social,
+                'ruc'       => $empresa?->ruc,
+                'direccion' => $local?->direccion ?: $empresa?->direccion,
+                'telefono'  => $local?->telefono ?: $empresa?->telefono,
+            ],
+            'turno' => [
+                'id'            => (string) $turno->id,
+                'nombre'        => 'Turno #' . $turno->id,
+                'cajero'        => $turno->user?->name,
+                'caja'          => $caja?->nombre,
+                'fechaApertura' => $turno->fecha_apertura?->format('d/m/Y h:i A'),
+                'fechaCierre'   => $turno->fecha_cierre?->format('d/m/Y h:i A'),
+            ],
+            'resumen' => [
+                'numeroVentas' => $turno->ventas->count(),
+                'subtotal'     => round($subtotal, 2),
+                'igv'          => round($igv, 2),
+                'descuento'    => round($descuento, 2),
+                'total'        => round($totalVentas, 2),
+                'moneda'       => 'PEN',
+            ],
+            'metodosPago' => $metodosPago,
+            'caja' => [
+                'montoApertura'      => (float) $turno->monto_apertura,
+                'ventasEfectivo'     => round($ventasEfectivo, 2),
+                'entradas'           => 0.0,
+                'salidas'            => round($salidas, 2),
+                'efectivoEsperado'   => round($montoEsperado, 2),
+                'efectivoDeclarado'  => $montoDeclarado !== null ? round($montoDeclarado, 2) : null,
+                'diferencia'         => $diferencia !== null ? round($diferencia, 2) : null,
+            ],
+            'pie'    => $pie,
+            'logo'   => $this->logoBase64($empresa),
+            'copias' => 1,
+        ];
     }
 }

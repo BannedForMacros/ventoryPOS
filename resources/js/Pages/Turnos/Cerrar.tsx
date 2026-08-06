@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, router } from '@inertiajs/react';
+import axios from 'axios';
+import toast from 'react-hot-toast';
 import { AlertTriangle, ArrowLeft, ClipboardCheck, Clock, PackageX, ShoppingCart, TrendingDown, Wallet } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
+import { agenteActivo, imprimirCierreTurno, type ShiftClosurePayload } from '@/lib/ticketPrinter';
 import type { MetodoPago, ModoCierreCaja, ModoCierreInventario, Turno } from '@/types';
 
 interface CierreInventarioRef {
@@ -83,6 +86,7 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
     // con stock negativo: "¿deseas cerrar la caja de todas formas?"
     const [modalStockNegativo, setModalStockNegativo] = useState(false);
     const hayStockNegativo = (productosStockNegativo ?? []).length > 0;
+    const autoImpreso = useRef(false);
 
     const totalEfectivo = useMemo(() =>
         form.arqueo.reduce((sum, f) => sum + f.denominacion * f.cantidad, 0),
@@ -159,9 +163,37 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
         }
 
         router.post(route('turnos.cerrar', turno.id), payload as any, {
-            onSuccess: () => { setSaving(false); setModalStockNegativo(false); },
+            onSuccess: () => {
+                setSaving(false);
+                setModalStockNegativo(false);
+                void imprimirCierreAuto();
+            },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); setModalStockNegativo(false); },
         });
+    }
+
+    /** Auto-imprime el reporte de cierre tras cerrar el turno. */
+    async function imprimirCierreAuto() {
+        if (autoImpreso.current) return;
+        autoImpreso.current = true;
+
+        if (!(await agenteActivo())) {
+            toast.error('No se imprimió el cierre: el agente VentoryPrint no está activo en esta PC.');
+            return;
+        }
+
+        try {
+            const { data } = await axios.get<ShiftClosurePayload>(route('turnos.cierre-ticket', turno.id));
+            if (!data?.token) {
+                toast.error('Esta caja no tiene ticketera configurada.');
+                return;
+            }
+            const ok = await imprimirCierreTurno(data);
+            if (ok) toast.success('Reporte de cierre enviado a la impresora');
+            else    toast.error('No se pudo imprimir el cierre. Revisa VentoryPrint en esta PC.');
+        } catch {
+            toast.error('No se pudo obtener el reporte de cierre para imprimir.');
+        }
     }
 
     const cajaLabel: Record<ModoCierreCaja, string> = {
