@@ -37,6 +37,55 @@ export interface TicketPayload {
   origen?: string;
 }
 
+// ---- Payload de cierre de turno (ShiftClosurePayload.cs del agente) ----
+export interface TurnoInfo {
+  id?: string;
+  nombre?: string;
+  cajero?: string;
+  caja?: string;
+  fechaApertura?: string;
+  fechaCierre?: string;
+}
+
+export interface ResumenCierre {
+  numeroVentas?: number;
+  subtotal?: number;
+  igv?: number;
+  descuento?: number;
+  total: number;
+  moneda?: string;
+}
+
+export interface MetodoPagoCierre {
+  nombre: string;
+  monto: number;
+  cantidad?: number;
+}
+
+export interface CajaCierre {
+  montoApertura?: number;
+  ventasEfectivo?: number;
+  entradas?: number;
+  salidas?: number;
+  efectivoEsperado?: number;
+  efectivoDeclarado?: number;
+  diferencia?: number;
+}
+
+export interface ShiftClosurePayload {
+  token?: string;
+  negocio?: { nombre?: string; ruc?: string; direccion?: string; telefono?: string };
+  turno?: TurnoInfo;
+  resumen?: ResumenCierre;
+  metodosPago: MetodoPagoCierre[];
+  caja?: CajaCierre;
+  pie?: string;
+  logo?: string;
+  copias?: number;
+  anchoPapelMm?: number;
+  origen?: string;
+}
+
 /** ¿Está el agente corriendo en esta PC? (timeout corto para no colgar la UI) */
 export async function agenteActivo(timeoutMs = 1200): Promise<boolean> {
   try {
@@ -58,6 +107,21 @@ export async function imprimirTicket(ticket: TicketPayload): Promise<boolean> {
       headers: { 'Content-Type': 'application/json' },
       // origen: le decimos al agente desde qué servidor buscar sus actualizaciones.
       body: JSON.stringify({ ...ticket, origen: ticket.origen ?? window.location.origin }),
+    });
+    const j = await r.json().catch(() => ({}));
+    return r.ok && j?.ok !== false;
+  } catch {
+    return false;
+  }
+}
+
+/** Envía el reporte de cierre de turno al agente para imprimir. */
+export async function imprimirCierreTurno(payload: ShiftClosurePayload): Promise<boolean> {
+  try {
+    const r = await fetch(`${AGENTE_URL}/print-shift-closure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, origen: payload.origen ?? window.location.origin }),
     });
     const j = await r.json().catch(() => ({}));
     return r.ok && j?.ok !== false;

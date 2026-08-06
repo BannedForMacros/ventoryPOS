@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Clock, HandCoins, Plus, ShoppingCart, TrendingDown, Wallet, X } from 'lucide-react';
+import { Clock, HandCoins, Plus, Printer, ShoppingCart, TrendingDown, Wallet, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -9,6 +10,7 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import ModalAbrirTurno from './Partials/ModalAbrirTurno';
 import ModalRetiro from './Partials/ModalRetiro';
+import { imprimirCierreTurno, type ShiftClosurePayload } from '@/lib/ticketPrinter';
 import type { Caja, Gasto, MetodoPago, PageProps, Turno, TurnoRetiro, Venta } from '@/types';
 
 interface CajaDisponible extends Caja {
@@ -48,6 +50,7 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
     const { flash } = usePage<Props>().props;
     const [modalAbrir, setModalAbrir] = useState(false);
     const [modalRetiro, setModalRetiro] = useState(false);
+    const [imprimiendo, setImprimiendo] = useState<number | null>(null);
 
     const retirosTurno = (turnoActivo?.retiros ?? []) as TurnoRetiro[];
     const totalRetirosTurno = retirosTurno.reduce((s, r) => s + parseFloat(r.monto), 0);
@@ -66,6 +69,25 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
     // ── Columnas historial ──
     function verDetalle(turno: Turno) {
         router.visit(route('turnos.show', turno.id));
+    }
+
+    async function imprimir(t: Turno) {
+        setImprimiendo(t.id);
+        const tid = toast.loading(`Obteniendo cierre del turno #${t.id}...`);
+        try {
+            const { data } = await axios.get<ShiftClosurePayload>(route('turnos.cierre-ticket', t.id));
+            if (!data?.token) {
+                toast.error('Esta caja no tiene ticketera configurada.', { id: tid });
+                return;
+            }
+            const ok = await imprimirCierreTurno(data);
+            if (ok) toast.success(`Cierre del turno #${t.id} enviado a la impresora`, { id: tid });
+            else    toast.error('No se pudo imprimir. Revisa VentoryPrint en esta PC.', { id: tid });
+        } catch {
+            toast.error('No se pudo obtener el reporte de cierre.', { id: tid });
+        } finally {
+            setImprimiendo(null);
+        }
     }
 
     const columnasTurnos: Column<Turno>[] = [
@@ -106,9 +128,22 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
         {
             key: 'estado', label: 'Estado', sortable: true,
             render: (t) => (
-                <Badge variant={t.estado === 'abierto' ? 'success' : 'secondary'}>
-                    {t.estado === 'abierto' ? 'Abierto' : 'Cerrado'}
-                </Badge>
+                <div className="flex items-center gap-2">
+                    <Badge variant={t.estado === 'abierto' ? 'success' : 'secondary'}>
+                        {t.estado === 'abierto' ? 'Abierto' : 'Cerrado'}
+                    </Badge>
+                    {t.estado === 'cerrado' && (
+                        <button
+                            onClick={() => imprimir(t)}
+                            disabled={imprimiendo === t.id}
+                            title="Reimprimir cierre de turno"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors hover:opacity-80 disabled:opacity-40"
+                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)' }}
+                        >
+                            <Printer size={14} />
+                        </button>
+                    )}
+                </div>
             ),
         },
         {

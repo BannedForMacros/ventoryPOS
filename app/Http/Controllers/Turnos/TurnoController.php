@@ -221,6 +221,23 @@ class TurnoController extends Controller
         return response()->json($turno);
     }
 
+    /**
+     * Payload JSON del reporte de cierre de turno listo para el agente local
+     * de impresión (VentoryPrint.exe). Se usa tanto para la impresión automática
+     * al cerrar como para la reimpresión desde el historial.
+     */
+    public function cierreTicket(Request $request, Turno $turno)
+    {
+        $user = $request->user();
+        abort_if($turno->empresa_id !== $user->empresa_id, 403);
+        abort_if($turno->estado !== 'cerrado', 422, 'El turno aún no está cerrado.');
+
+        // Admin ve todos los turnos; cajero solo los suyos.
+        abort_if(!$user->rol->es_admin && $turno->user_id !== $user->id, 403);
+
+        return response()->json(app(\App\Services\TicketPrintService::class)->payloadDeCierreTurno($turno));
+    }
+
     public function abrir(AbrirTurnoRequest $request)
     {
         $user = $request->user();
