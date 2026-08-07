@@ -58,6 +58,8 @@ type FormData = {
     // Plantilla del ticket impreso (se guarda como empresas.ticket_config).
     ticket_cliente_celular: boolean;
     ticket_cliente_direccion: boolean;
+    ticket_mostrar_ruc: boolean;
+    ticket_logo_escala: number;
     ticket_pie: string;
     ticket_lineas_extra: string;
 };
@@ -97,6 +99,8 @@ const emptyForm: FormData = {
     logo: null,
     ticket_cliente_celular: true,
     ticket_cliente_direccion: true,
+    ticket_mostrar_ruc: true,
+    ticket_logo_escala: 100,
     ticket_pie: '',
     ticket_lineas_extra: '',
 };
@@ -155,6 +159,8 @@ export default function Empresas({ empresas }: Props) {
             logo: null,
             ticket_cliente_celular: emp.ticket_config?.cliente_celular ?? true,
             ticket_cliente_direccion: emp.ticket_config?.cliente_direccion ?? true,
+            ticket_mostrar_ruc: emp.ticket_config?.mostrar_ruc ?? true,
+            ticket_logo_escala: emp.ticket_config?.logo_escala ?? 100,
             ticket_pie: emp.ticket_config?.pie ?? '',
             ticket_lineas_extra: (emp.ticket_config?.lineas_extra ?? []).join('\n'),
         });
@@ -782,6 +788,35 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </span>
                         </label>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.ticket_mostrar_ruc}
+                                onChange={e => setData('ticket_mostrar_ruc', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Mostrar RUC del negocio en el ticket</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Apagarlo oculta el RUC de la cabecera en todos los tickets de esta empresa.
+                                </span>
+                            </span>
+                        </label>
+
+                        <div>
+                            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>
+                                Escala del logo en el ticket (%)
+                            </label>
+                            <input type="number" min={10} max={200}
+                                value={data.ticket_logo_escala}
+                                onChange={e => setData('ticket_logo_escala', Math.max(10, Math.min(200, Number(e.target.value) || 100)))}
+                                placeholder="100"
+                                className="w-full rounded-xl border px-3 py-2 text-sm"
+                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                100% = ancho máximo del papel. Bajarlo para logos que salen muy grandes.
+                            </p>
+                            {errors.ticket_logo_escala && <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.ticket_logo_escala}</p>}
+                        </div>
 
                         <div>
                             <label className="text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>

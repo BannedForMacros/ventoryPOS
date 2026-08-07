@@ -59,10 +59,15 @@ class EmpresaController extends Controller
         $datos['ticket_config'] = [
             'cliente_celular'   => (bool) ($datos['ticket_cliente_celular'] ?? true),
             'cliente_direccion' => (bool) ($datos['ticket_cliente_direccion'] ?? true),
+            'mostrar_ruc'       => (bool) ($datos['ticket_mostrar_ruc'] ?? true),
+            'logo_escala'       => isset($datos['ticket_logo_escala']) && $datos['ticket_logo_escala'] !== ''
+                ? (int) $datos['ticket_logo_escala']
+                : 100,
             'pie'               => trim((string) ($datos['ticket_pie'] ?? '')) ?: null,
             'lineas_extra'      => $lineasExtra,
         ];
         unset($datos['ticket_cliente_celular'], $datos['ticket_cliente_direccion'],
+              $datos['ticket_mostrar_ruc'], $datos['ticket_logo_escala'],
               $datos['ticket_pie'], $datos['ticket_lineas_extra']);
 
         // "Afecta caja" por módulo: persistimos SOLO el flag `activo` de cada

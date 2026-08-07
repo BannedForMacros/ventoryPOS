@@ -57,6 +57,7 @@ class TicketPrintService
         return array_merge([
             'cliente_celular'   => true,
             'cliente_direccion' => true,
+            'mostrar_ruc'       => true,
             'pie'               => null,
             'lineas_extra'      => [],
         ], is_array($cfg) ? $cfg : []);
@@ -143,10 +144,12 @@ class TicketPrintService
                 ?? ''),
 
             'negocio' => [
-                'nombre'    => $empresa?->nombre_comercial ?: $empresa?->razon_social,
-                'ruc'       => $empresa?->ruc,
-                'direccion' => $local?->direccion ?: $empresa?->direccion,
-                'telefono'  => $local?->telefono ?: $empresa?->telefono,
+                'nombre'      => $empresa?->nombre_comercial ?: $empresa?->razon_social,
+                'ruc'         => $empresa?->ruc,
+                'direccion'   => $local?->direccion ?: $empresa?->direccion,
+                'telefono'    => $local?->telefono ?: $empresa?->telefono,
+                'mostrarRuc'  => (bool) ($cfg['mostrar_ruc'] ?? true),
+                'logoEscala'  => (int) ($cfg['logo_escala'] ?? 100),
             ],
 
             'documento' => [
@@ -243,10 +246,12 @@ class TicketPrintService
             'token' => $token,
 
             'negocio' => [
-                'nombre'    => $empresa?->nombre_comercial ?: $empresa?->razon_social,
-                'ruc'       => $empresa?->ruc,
-                'direccion' => $local?->direccion ?: $empresa?->direccion,
-                'telefono'  => $local?->telefono ?: $empresa?->telefono,
+                'nombre'      => $empresa?->nombre_comercial ?: $empresa?->razon_social,
+                'ruc'         => $empresa?->ruc,
+                'direccion'   => $local?->direccion ?: $empresa?->direccion,
+                'telefono'    => $local?->telefono ?: $empresa?->telefono,
+                'mostrarRuc'  => (bool) ($cfg['mostrar_ruc'] ?? true),
+                'logoEscala'  => (int) ($cfg['logo_escala'] ?? 100),
             ],
 
             'documento' => [
@@ -339,10 +344,12 @@ class TicketPrintService
             'token' => $token,
 
             'negocio' => [
-                'nombre'    => $empresa?->nombre_comercial ?: $empresa?->razon_social,
-                'ruc'       => $empresa?->ruc,
-                'direccion' => $local?->direccion ?: $empresa?->direccion,
-                'telefono'  => $local?->telefono ?: $empresa?->telefono,
+                'nombre'      => $empresa?->nombre_comercial ?: $empresa?->razon_social,
+                'ruc'         => $empresa?->ruc,
+                'direccion'   => $local?->direccion ?: $empresa?->direccion,
+                'telefono'    => $local?->telefono ?: $empresa?->telefono,
+                'mostrarRuc'  => (bool) ($cfg['mostrar_ruc'] ?? true),
+                'logoEscala'  => (int) ($cfg['logo_escala'] ?? 100),
             ],
 
             'documento' => [
@@ -563,10 +570,12 @@ class TicketPrintService
         return [
             'token' => (string) ($caja?->token_impresora ?? ''),
             'negocio' => [
-                'nombre'    => $empresa?->nombre_comercial ?: $empresa?->razon_social,
-                'ruc'       => $empresa?->ruc,
-                'direccion' => $local?->direccion ?: $empresa?->direccion,
-                'telefono'  => $local?->telefono ?: $empresa?->telefono,
+                'nombre'      => $empresa?->nombre_comercial ?: $empresa?->razon_social,
+                'ruc'         => $empresa?->ruc,
+                'direccion'   => $local?->direccion ?: $empresa?->direccion,
+                'telefono'    => $local?->telefono ?: $empresa?->telefono,
+                'mostrarRuc'  => (bool) ($cfg['mostrar_ruc'] ?? true),
+                'logoEscala'  => (int) ($cfg['logo_escala'] ?? 100),
             ],
             'turno' => [
                 'id'            => (string) $turno->id,

@@ -7,6 +7,7 @@ import DynamicIcon from '@/Components/DynamicIcon';
 import { ColorPaletteProvider } from '@/Components/ColorPaletteProvider';
 import ColorPaletteEditor from '@/Components/ColorPaletteEditor';
 import RouterLoadingOverlay from '@/Components/RouterLoadingOverlay';
+import AgenteConfigButton from '@/Components/AgenteConfigButton';
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -440,6 +441,8 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                             <span className="flex-1" />
 
                             <CampanitaCotizaciones />
+
+                            <AgenteConfigButton />
 
                             <UserMenu onLogout={logout} />
                         </div>
