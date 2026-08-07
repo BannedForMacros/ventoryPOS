@@ -23,6 +23,8 @@ export interface Empresa extends Record<string, unknown> {
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
     permite_stock_negativo: boolean;
+    /** Permite agregar el mismo producto/presentación varias veces en una venta. */
+    permite_duplicar_items_venta: boolean;
     modo_cierre_caja: ModoCierreCaja;
     modo_cierre_inventario: ModoCierreInventario;
     cierre_precarga_stock: boolean;

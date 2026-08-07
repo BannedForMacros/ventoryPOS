@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
@@ -301,9 +301,13 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
 }
 
 export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito }: Props) {
-    // Tasa de IGV de la empresa (configurable por tenant). Default 18% si no llega.
-    const empresaAuth = usePage().props.auth?.user?.empresa as { tasa_igv?: number | string } | undefined;
+    // Configuración de la empresa (configurable por tenant).
+    const empresaAuth = usePage().props.auth?.user?.empresa as {
+        tasa_igv?: number | string;
+        permite_duplicar_items_venta?: boolean;
+    } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
+    const permiteDuplicarItems = empresaAuth?.permite_duplicar_items_venta ?? false;
 
     // A15: identificar el Cliente General por la flag `es_cliente_general`
     // (no por DNI mágico). Fallback al DNI legado para compatibilidad si el
@@ -456,6 +460,12 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [idempotencyKey, setIdempotencyKey] = useState<string>(() => generarIdempotencyKey());
     // Producto pendiente de elegir presentacion (cuando tiene 2+ unidades)
     const [productoEnSeleccion, setProductoEnSeleccion] = useState<Producto | null>(null);
+    // Cuando se agrega una línea con precio base 0, guardamos su key para
+    // enfocar automáticamente el input de precio y que la cajera lo cambie al toque.
+    const [nuevaLineaPrecioKey, setNuevaLineaPrecioKey] = useState<string | null>(null);
+    // Advertencia al duplicar un producto: solo la primera vez por producto/unidad
+    // en el carrito actual. Se resetea al limpiar el carrito.
+    const advertenciasDuplicados = useRef<Set<string>>(new Set());
     // Tooltip de producto: solo aparece cuando el nombre de la tarjeta quedó
     // cortado (line-clamp). Un unico tooltip con posicion fija (no lo recorta
     // el scroll del grid) que muestra imagen + nombre completo. La cajera solo
@@ -638,16 +648,32 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
 
     /**
      * Agrega al carrito una linea con la presentacion ya elegida.
-     * Si esa misma presentacion ya esta en el carrito, suma cantidad.
+     *
+     * Comportamiento clásico (default): si la misma presentación ya está en el
+     * carrito, se incrementa la cantidad.
+     *
+     * Si la empresa tiene activa "Permitir duplicar ítems en una venta", cada
+     * toque crea una línea independiente. Esto permite vender el mismo producto
+     * con precios distintos, útil para negocios con precios variables.
      */
     function agregarConPresentacion(producto: Producto, unidad: ProductoUnidad) {
-        const key = `${producto.id}-${unidad.id}`;
-        const existente = carrito.find(i => i.key === key);
+        const baseKey = `${producto.id}-${unidad.id}`;
+        const precio = parseFloat(unidad.precio_venta);
+        const nombreCompleto = unidad.unidad_medida?.nombre
+            ? `${producto.nombre} (${unidad.unidad_medida.nombre})`
+            : producto.nombre;
 
-        if (existente) {
-            cambiarCantidad(key, 1);
-        } else {
-            const precio = parseFloat(unidad.precio_venta);
+        if (permiteDuplicarItems) {
+            const yaExiste = carrito.some(i => i.producto_id === producto.id && i.producto_unidad_id === unidad.id);
+            if (yaExiste && !advertenciasDuplicados.current.has(baseKey)) {
+                advertenciasDuplicados.current.add(baseKey);
+                toast(
+                    `${nombreCompleto} ya está en el carrito. Se agregó como una nueva línea.`,
+                    { icon: '⚠️', duration: 2500 },
+                );
+            }
+
+            const key = `${baseKey}-${Date.now()}-${uid()}`;
             const item: LineaCarrito = {
                 key,
                 producto_id:          producto.id,
@@ -671,11 +697,47 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 incluye_igv:          producto.incluye_igv,
             };
             setCarrito(prev => [...prev, item]);
+
+            // Si el precio base es 0, enfocar el input de precio de la nueva línea
+            // para que la cajera lo cambie inmediatamente.
+            if (precio === 0) {
+                setNuevaLineaPrecioKey(key);
+            }
+
+            toast.success(`${nombreCompleto} agregado`, { duration: 1000 });
+            return;
         }
 
-        const nombreCompleto = unidad.unidad_medida?.nombre
-            ? `${producto.nombre} (${unidad.unidad_medida.nombre})`
-            : producto.nombre;
+        // Comportamiento clásico: sumar cantidad si ya existe.
+        const existente = carrito.find(i => i.key === baseKey);
+        if (existente) {
+            cambiarCantidad(baseKey, 1);
+        } else {
+            const item: LineaCarrito = {
+                key: baseKey,
+                producto_id:          producto.id,
+                producto_unidad_id:   unidad.id,
+                producto_nombre:      producto.nombre,
+                unidad_nombre:        unidad.unidad_medida?.nombre ?? '',
+                precio_unitario:      precio,
+                precio_original:      precio,
+                costo_minimo:         costoMinimoDe(producto, unidad),
+                stock_disponible:     producto.stock_disponible ?? null,
+                stock_en_transito:    producto.stock_en_transito ?? 0,
+                transito_fecha:       producto.transito_fecha ?? null,
+                factor_conversion:    parseFloat(unidad.factor_conversion) || 1,
+                cantidad:             1,
+                descuento_item:       0,
+                descuento_modo:       'pu',
+                descuento_tipo:       'monto',
+                descuento_valor:      0,
+                descuento_concepto_id: null,
+                subtotal:             precio,
+                incluye_igv:          producto.incluye_igv,
+            };
+            setCarrito(prev => [...prev, item]);
+        }
+
         toast.success(`${nombreCompleto} agregado`, { duration: 1000 });
     }
 
@@ -736,6 +798,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         setEntregaPendiente(false);
         setFechaEntrega('');
         setPendientes({});
+        // Resetear advertencias de duplicados para la siguiente venta.
+        advertenciasDuplicados.current.clear();
+        setNuevaLineaPrecioKey(null);
     }
 
     /** Pendiente efectivo de una línea: lo tecleado, recortado a [0, cantidad]. */
@@ -977,6 +1042,9 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         onSetEntregaPendiente: activarPendiente,
         onSetFechaEntrega:     setFechaEntrega,
         onSetPendiente:        setPendienteLinea,
+        // Autofoco del precio en líneas recién agregadas con precio base 0.
+        nuevaLineaPrecioKey,
+        onAutoFocusPrecio:     () => setNuevaLineaPrecioKey(null),
     };
 
     return (
@@ -1891,6 +1959,9 @@ interface CarritoPanelProps {
     onSetEntregaPendiente: (v: boolean) => void;
     onSetFechaEntrega: (v: string) => void;
     onSetPendiente: (key: string, v: number) => void;
+    // Autofoco del precio en líneas recién agregadas con precio base 0.
+    nuevaLineaPrecioKey: string | null;
+    onAutoFocusPrecio: () => void;
 }
 
 function CarritoPanel({
@@ -1904,6 +1975,7 @@ function CarritoPanel({
     esCredito, fechaVencimiento, onSetEsCredito, onSetFechaVencimiento,
     permitirPendiente, entregaPendiente, fechaEntrega, pendienteDe, totalPendientes,
     onSetEntregaPendiente, onSetFechaEntrega, onSetPendiente,
+    nuevaLineaPrecioKey, onAutoFocusPrecio,
 }: CarritoPanelProps) {
     const hayInactivos = inactivosCount > 0;
 
@@ -2034,6 +2106,8 @@ function CarritoPanel({
                                 item={item}
                                 conceptos={conceptosDescuento}
                                 historial={historial[item.producto_id]}
+                                autoFocusPrecio={nuevaLineaPrecioKey === item.key}
+                                onAutoFocusPrecio={onAutoFocusPrecio}
                                 onCantidad={onCambiarCantidad}
                                 onCantidadExacta={onEstablecerCantidad}
                                 onPrecio={onCambiarPrecio}

@@ -60,6 +60,10 @@ interface Props {
     item:               LineaCarrito;
     conceptos:          DescuentoConcepto[];
     historial?:         HistorialPrecioCliente;
+    /** Si es true y el precio base es 0, se enfoca el input de precio al montar. */
+    autoFocusPrecio?:   boolean;
+    /** Se llama después de hacer el autofoco, para que el padre limpie el flag. */
+    onAutoFocusPrecio?: () => void;
     onCantidad:         (key: string, delta: number) => void;
     onCantidadExacta:   (key: string, cantidad: number) => void;
     onPrecio:           (key: string, precio: number) => void;
@@ -67,7 +71,7 @@ interface Props {
     onEliminar:         (key: string) => void;
 }
 
-export default function CarritoItem({ item, conceptos, historial, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar }: Props) {
+export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar }: Props) {
     const [showHistorial, setShowHistorial] = useState(false);
     const [showDescuento, setShowDescuento] = useState((item.descuento_valor || item.descuento_item) > 0);
     const [descuentoVal, setDescuentoVal]   = useState(String(item.descuento_valor || ''));
@@ -175,9 +179,20 @@ export default function CarritoItem({ item, conceptos, historial, onCantidad, on
     const precioNum      = parseFloat(precioVal) || 0;
     const precioBajoCosto = item.costo_minimo > 0 && precioNum > 0 && precioNum < item.costo_minimo - 0.009;
     const clampTimer = useRef<number | null>(null);
+    const precioInputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => () => {
         if (clampTimer.current) window.clearTimeout(clampTimer.current);
+    }, []);
+
+    // Autofoco del precio cuando se agrega una línea con precio base 0.
+    // Se ejecuta una sola vez al montar y notifica al padre para que limpie el flag.
+    useEffect(() => {
+        if (autoFocusPrecio && item.precio_unitario === 0 && precioInputRef.current) {
+            precioInputRef.current.focus();
+            precioInputRef.current.select();
+            onAutoFocusPrecio?.();
+        }
     }, []);
 
     function ajustarAlCosto() {
@@ -301,6 +316,7 @@ export default function CarritoItem({ item, conceptos, historial, onCantidad, on
                                 S/
                             </span>
                             <input
+                                ref={precioInputRef}
                                 type="number"
                                 inputMode="decimal"
                                 // min=0 (NO el costo): si pusiéramos min=costo, las

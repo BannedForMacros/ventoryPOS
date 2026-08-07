@@ -30,6 +30,7 @@ type FormData = {
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
     permite_stock_negativo: boolean;
+    permite_duplicar_items_venta: boolean;
     tasa_igv: number | '';
     modo_cierre_caja: ModoCierre;
     modo_cierre_inventario: ModoInventario;
@@ -71,6 +72,7 @@ const emptyForm: FormData = {
     modo_almacen: 'simple',
     descuenta_stock_en_venta: true,
     permite_stock_negativo: false,
+    permite_duplicar_items_venta: false,
     tasa_igv: 18,
     modo_cierre_caja: 'con_declaraciones',
     modo_cierre_inventario: 'por_venta',
@@ -125,6 +127,7 @@ export default function Empresas({ empresas }: Props) {
             modo_almacen: emp.modo_almacen,
             descuenta_stock_en_venta: emp.descuenta_stock_en_venta ?? true,
             permite_stock_negativo: emp.permite_stock_negativo ?? false,
+            permite_duplicar_items_venta: emp.permite_duplicar_items_venta ?? false,
             tasa_igv: emp.tasa_igv != null ? Number(emp.tasa_igv) : 18,
             modo_cierre_caja: (emp.modo_cierre_caja as ModoCierre) ?? 'con_declaraciones',
             modo_cierre_inventario: (emp.modo_cierre_inventario as ModoInventario) ?? 'por_venta',
@@ -364,6 +367,27 @@ export default function Empresas({ empresas }: Props) {
                         </label>
                         {errors.permite_stock_negativo && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.permite_stock_negativo}</p>
+                        )}
+                    </div>
+
+                    {/* ── Sección: Punto de venta (POS) ── */}
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Punto de venta (POS)</p>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.permite_duplicar_items_venta}
+                                onChange={e => setData('permite_duplicar_items_venta', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Permitir duplicar ítems en una venta</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, al tocar el mismo producto varias veces en el POS se crean líneas separadas en lugar de sumar cantidad. Útil para vender el mismo producto con precios distintos.
+                                </span>
+                            </span>
+                        </label>
+                        {errors.permite_duplicar_items_venta && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.permite_duplicar_items_venta}</p>
                         )}
                     </div>
 
