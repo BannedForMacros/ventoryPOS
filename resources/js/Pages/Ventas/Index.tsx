@@ -332,29 +332,30 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 className="hidden md:block rounded-xl overflow-hidden"
                 style={{ border: '1px solid var(--color-border)' }}
             >
-                <table className="w-full text-sm" style={{ backgroundColor: 'var(--color-surface)' }}>
-                    <thead>
-                        <tr style={{ backgroundColor: 'var(--color-bg)', borderBottom: '2px solid var(--color-border)' }}>
-                            {['N°', 'Fecha', 'Cliente', 'Comprobante', 'Pago', 'Estado', 'Total', ''].map(h => (
-                                <th key={h} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                                    {h}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {ventas.data.map((v, idx) => (
-                            <tr
-                                key={v.id}
-                                className="transition-colors hover:bg-black/[0.02]"
-                                style={{ borderBottom: idx < ventas.data.length - 1 ? '1px solid var(--color-border)' : undefined }}
-                            >
-                                <td className="px-4 py-3">
-                                    <span className="font-mono font-bold text-xs px-2 py-1 rounded-md"
-                                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', color: 'var(--color-primary)' }}>
-                                        {v.numero}
-                                    </span>
-                                </td>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm" style={{ backgroundColor: 'var(--color-surface)' }}>
+                        <thead>
+                            <tr style={{ backgroundColor: 'var(--color-bg)', borderBottom: '2px solid var(--color-border)' }}>
+                                {['N°', 'Fecha', 'Cliente', 'Comprobante', 'Pago', 'Estado', 'Total', ''].map(h => (
+                                    <th key={h} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>
+                                        {h}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {ventas.data.map((v, idx) => (
+                                <tr
+                                    key={v.id}
+                                    className="transition-colors hover:bg-black/[0.02]"
+                                    style={{ borderBottom: idx < ventas.data.length - 1 ? '1px solid var(--color-border)' : undefined }}
+                                >
+                                    <td className="px-4 py-3">
+                                        <span className="font-mono font-bold text-xs px-2 py-1 rounded-md"
+                                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', color: 'var(--color-primary)' }}>
+                                            {v.numero}
+                                        </span>
+                                    </td>
                                 <td className="px-4 py-3" style={{ color: 'var(--color-text)' }}>
                                     <div className="text-xs">
                                         {new Date(v.fecha_venta).toLocaleDateString('es-PE')}
@@ -460,6 +461,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                         )}
                     </tbody>
                 </table>
+                </div>
             </div>
 
             {/* ── Cards móvil ──────────────────────────────────────── */}
