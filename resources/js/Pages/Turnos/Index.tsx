@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Clock, HandCoins, Plus, Printer, ShoppingCart, TrendingDown, Wallet, X } from 'lucide-react';
+import { Clock, HandCoins, Pencil, Plus, Printer, ShoppingCart, TrendingDown, Wallet, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import ModalAbrirTurno from './Partials/ModalAbrirTurno';
+import ModalEditarApertura from './Partials/ModalEditarApertura';
 import ModalRetiro from './Partials/ModalRetiro';
 import { imprimirCierreTurno, type ShiftClosurePayload } from '@/lib/ticketPrinter';
 import type { Caja, Gasto, MetodoPago, PageProps, Turno, TurnoRetiro, Venta } from '@/types';
@@ -49,6 +50,7 @@ interface Props extends PageProps {
 export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosPago, turnoActivo, configFondos, configEfectivo }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalAbrir, setModalAbrir] = useState(false);
+    const [modalEditarApertura, setModalEditarApertura] = useState(false);
     const [modalRetiro, setModalRetiro] = useState(false);
     const [imprimiendo, setImprimiendo] = useState<number | null>(null);
 
@@ -253,6 +255,16 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
                             icon={<Wallet size={18} style={{ color: 'var(--color-success)' }} />}
                             label="Monto apertura"
                             valor={`S/ ${parseFloat(turnoActivo.monto_apertura).toFixed(2)}`}
+                            action={
+                                <button
+                                    onClick={() => setModalEditarApertura(true)}
+                                    title="Editar monto de apertura"
+                                    className="inline-flex items-center justify-center w-6 h-6 rounded-md transition-colors hover:opacity-80"
+                                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)' }}
+                                >
+                                    <Pencil size={12} />
+                                </button>
+                            }
                         />
                         <InfoCard
                             icon={<ShoppingCart size={18} style={{ color: 'var(--color-primary)' }} />}
@@ -400,6 +412,15 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
                 configEfectivo={configEfectivo}
             />
             {turnoActivo && (
+                <ModalEditarApertura
+                    isOpen={modalEditarApertura}
+                    onClose={() => setModalEditarApertura(false)}
+                    turnoId={turnoActivo.id}
+                    montoActual={turnoActivo.monto_apertura}
+                    editable={configEfectivo.apertura_editable}
+                />
+            )}
+            {turnoActivo && (
                 <ModalRetiro
                     isOpen={modalRetiro}
                     onClose={() => setModalRetiro(false)}
@@ -411,13 +432,16 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
     );
 }
 
-function InfoCard({ icon, label, valor }: { icon: React.ReactNode; label: string; valor: string }) {
+function InfoCard({ icon, label, valor, action }: { icon: React.ReactNode; label: string; valor: string; action?: React.ReactNode }) {
     return (
         <div
             className="rounded-xl px-4 py-3 flex flex-col justify-between"
             style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
         >
-            <div className="flex items-center gap-2 mb-1">{icon}<p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p></div>
+            <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">{icon}<p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p></div>
+                {action}
+            </div>
             <p className="font-semibold text-base" style={{ color: 'var(--color-text)' }}>{valor}</p>
         </div>
     );

@@ -3,13 +3,14 @@ import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
     AlertTriangle, ArrowLeft, ArrowRight, Clock, HandCoins, Lock,
-    RotateCcw, ShoppingCart, TrendingDown, Wallet,
+    Pencil, RotateCcw, ShoppingCart, TrendingDown, Wallet,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
+import ModalEditarApertura from './Partials/ModalEditarApertura';
 import type { PageProps, Turno, TurnoRetiro } from '@/types';
 
 interface Props extends PageProps {
@@ -18,15 +19,24 @@ interface Props extends PageProps {
     totalVentas:      number;
     totalGastos:      number;
     esAdmin:          boolean;
+    configEfectivo?:  {
+        modo_apertura_caja: 'libre' | 'arrastre' | 'fondo_fijo';
+        apertura_editable:  boolean;
+    };
 }
 
-export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: Props) {
-    const { flash } = usePage<Props>().props;
+export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin, configEfectivo }: Props) {
+    const { flash, auth } = usePage<Props>().props;
     const [modalReabrir, setModalReabrir] = useState(false);
+    const [modalEditarApertura, setModalEditarApertura] = useState(false);
     const [reabriendo, setReabriendo]     = useState(false);
     // A8: motivo obligatorio. El backend exige min 10 chars; bloqueamos el
     // submit aqui mismo para feedback inmediato sin viajar al server.
     const [motivoReabrir, setMotivoReabrir] = useState('');
+
+    const user = auth.user as { id: number; rol?: { es_admin?: boolean } } | undefined;
+    const puedeEditarApertura = turno.estado === 'abierto' &&
+        (esAdmin || user?.id === turno.user_id);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -134,6 +144,18 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
                     icon={<Wallet size={16} style={{ color: 'var(--color-success)' }} />}
                     label="Monto apertura"
                     valor={`S/ ${parseFloat(turno.monto_apertura).toFixed(2)}`}
+                    action={
+                        puedeEditarApertura && (
+                            <button
+                                onClick={() => setModalEditarApertura(true)}
+                                title="Editar monto de apertura"
+                                className="inline-flex items-center justify-center w-6 h-6 rounded-md transition-colors hover:opacity-80"
+                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)' }}
+                            >
+                                <Pencil size={12} />
+                            </button>
+                        )
+                    }
                 />
                 <InfoCard
                     icon={<ShoppingCart size={16} style={{ color: 'var(--color-primary)' }} />}
@@ -584,6 +606,14 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin }: 
                     </div>
                 </div>
             </Modal>
+
+            <ModalEditarApertura
+                isOpen={modalEditarApertura}
+                onClose={() => setModalEditarApertura(false)}
+                turnoId={turno.id}
+                montoActual={turno.monto_apertura}
+                editable={configEfectivo?.apertura_editable ?? true}
+            />
         </AppLayout>
     );
 }
@@ -605,15 +635,18 @@ function Section({ title, children, action }: { title: string; children: React.R
     );
 }
 
-function InfoCard({ icon, label, valor, subvalor }: { icon: React.ReactNode; label: string; valor: string; subvalor?: string }) {
+function InfoCard({ icon, label, valor, subvalor, action }: { icon: React.ReactNode; label: string; valor: string; subvalor?: string; action?: React.ReactNode }) {
     return (
         <div
             className="rounded-xl px-4 py-3"
             style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
         >
-            <div className="flex items-center gap-2 mb-1">
-                {icon}
-                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                    {icon}
+                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+                </div>
+                {action}
             </div>
             <p className="font-semibold text-sm" style={{ color: 'var(--color-text)' }}>{valor}</p>
             {subvalor && <p className="text-xs mt-0.5 font-medium" style={{ color: 'var(--color-primary)' }}>{subvalor}</p>}

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Turnos;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Turnos\AbrirTurnoRequest;
+use App\Http\Requests\Turnos\ActualizarAperturaRequest;
 use App\Http\Requests\Turnos\CerrarTurnoRequest;
 use App\Http\Requests\Turnos\ReabrirTurnoRequest;
 use App\Models\Caja;
@@ -132,12 +133,18 @@ class TurnoController extends Controller
 
         $totalGastos = $turno->gastos->sum(fn($g) => (float) $g->monto);
 
+        $empresa = $turno->empresa;
+
         return Inertia::render('Turnos/Show', [
             'turno'           => $turno,
             'ventasPorMetodo' => $ventasPorMetodo,
             'totalVentas'     => $totalVentas,
             'totalGastos'     => $totalGastos,
             'esAdmin'         => $esAdmin,
+            'configEfectivo'  => [
+                'modo_apertura_caja' => $empresa?->modo_apertura_caja ?? 'libre',
+                'apertura_editable'  => (bool) ($empresa?->apertura_editable ?? true),
+            ],
         ]);
     }
 
@@ -287,6 +294,47 @@ class TurnoController extends Controller
         }
 
         return redirect()->back()->with('success', 'Turno abierto correctamente.');
+    }
+
+    public function actualizarApertura(ActualizarAperturaRequest $request, Turno $turno)
+    {
+        $user = $request->user();
+
+        // Solo la dueña del turno o un admin de la empresa pueden corregir.
+        abort_if($turno->user_id !== $user->id
+            && !($user->rol->es_admin && $turno->empresa_id === $user->empresa_id), 403);
+
+        // No tiene sentido editar un turno ya cerrado; para eso esta la reapertura.
+        abort_if($turno->estado !== 'abierto', 422, 'Solo se puede editar la apertura de un turno abierto.');
+
+        // Respetar configuracion de empresa: si bloqueo la edicion de apertura,
+        // no se permite corregir el monto posteriormente.
+        $empresa = $turno->empresa;
+        if (!($empresa?->apertura_editable ?? true)) {
+            return back()->withErrors([
+                'monto_apertura' => 'La empresa no permite editar el monto de apertura.',
+            ]);
+        }
+
+        $montoAnterior = (float) $turno->monto_apertura;
+        $montoNuevo    = (float) $request->validated('monto_apertura');
+        $motivo        = $request->validated('motivo');
+
+        if (abs($montoNuevo - $montoAnterior) < 0.01) {
+            return back()->with('success', 'El monto ingresado es igual al actual; no se realizaron cambios.');
+        }
+
+        $turno->update(['monto_apertura' => $montoNuevo]);
+
+        \App\Services\AuditoriaService::log('turno.apertura_editada', $turno, [
+            'caja'           => $turno->caja?->nombre,
+            'monto_anterior' => $montoAnterior,
+            'monto_nuevo'    => $montoNuevo,
+            'diferencia'     => round($montoNuevo - $montoAnterior, 2),
+            'motivo'         => $motivo,
+        ], $user);
+
+        return redirect()->back()->with('success', 'Monto de apertura actualizado correctamente.');
     }
 
     public function cerrarPage(Request $request, Turno $turno)

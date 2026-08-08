@@ -314,6 +314,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:turnos,ver')->get('/', [TurnoController::class, 'index'])->name('index');
         Route::middleware('permiso:turnos,ver')->get('/activo', [TurnoController::class, 'turnoActivo'])->name('activo');
         Route::middleware('permiso:turnos,crear')->post('/abrir', [TurnoController::class, 'abrir'])->name('abrir');
+        Route::middleware('permiso:turnos,editar')->patch('/{turno}/apertura', [TurnoController::class, 'actualizarApertura'])->name('apertura.update');
         Route::middleware('permiso:turnos,ver')->get('/{turno}', [TurnoController::class, 'show'])->name('show');
         Route::middleware('permiso:turnos,ver')->get('/{turno}/cierre-ticket', [TurnoController::class, 'cierreTicket'])->name('cierre-ticket');
         Route::middleware('permiso:turnos,editar')->get('/{turno}/cerrar', [TurnoController::class, 'cerrarPage'])->name('cerrar.page');
