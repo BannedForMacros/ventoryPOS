@@ -46,6 +46,8 @@ export interface Empresa extends Record<string, unknown> {
     usa_caja_grande: boolean;
     /* ── Manejo de ventas (configurable por empresa) ── */
     venta_edicion_minutos: number;
+    venta_edicion_con_contador: boolean;
+    cajera_puede_editar: boolean;
     cajera_puede_anular: boolean;
     /** Mercadería comprada que aún no llega: estado "En camino" en Entradas. */
     usa_mercaderia_transito: boolean;

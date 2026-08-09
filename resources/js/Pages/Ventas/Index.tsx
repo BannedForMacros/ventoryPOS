@@ -97,8 +97,15 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
     const { auth } = usePage<Props>().props;
     const esAdmin  = auth.user.rol?.es_admin ?? false;
 
-    // Configuración de empresa: minutos de edición y si la cajera puede anular.
-    const empresa = auth.user.empresa as { venta_edicion_minutos?: number; cajera_puede_anular?: boolean } | undefined;
+    // Configuración de empresa: permisos de edición/anulación de cajeras.
+    const empresa = auth.user.empresa as {
+        cajera_puede_editar?: boolean;
+        venta_edicion_con_contador?: boolean;
+        venta_edicion_minutos?: number;
+        cajera_puede_anular?: boolean;
+    } | undefined;
+    const cajeraPuedeEditar = empresa?.cajera_puede_editar ?? true;
+    const edicionConContador = empresa?.venta_edicion_con_contador ?? true;
     const editWindowMs = (Number(empresa?.venta_edicion_minutos ?? 3) || 0) * 60 * 1000;
     const cajeraPuedeAnular = empresa?.cajera_puede_anular ?? true;
 
@@ -138,14 +145,18 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
-    // ¿La venta sigue dentro del plazo de edición configurable desde Empresa?
+    // ¿La venta sigue dentro del plazo de edición configurable de la empresa?
+    // Solo aplica cuando la empresa usa contador.
     function dentroPlazo(v: Venta): boolean {
-        if (editWindowMs <= 0) return false;
+        if (!edicionConContador || editWindowMs <= 0) return false;
         return ahora - new Date(v.created_at).getTime() < editWindowMs;
     }
-    // El admin edita/anula sin límite; la cajera solo dentro del plazo configurado.
+    // El admin edita/anula sin límite; la cajera solo si la empresa se lo permite.
     function puedeEditar(v: Venta): boolean {
-        return v.estado === 'completada' && (esAdmin || dentroPlazo(v));
+        if (v.estado !== 'completada') return false;
+        if (esAdmin) return true;
+        if (!cajeraPuedeEditar) return false;
+        return !edicionConContador || dentroPlazo(v);
     }
     // ¿Puede anular esta venta? Admin siempre; cajera según config y plazo.
     function puedeAnular(v: Venta): boolean {

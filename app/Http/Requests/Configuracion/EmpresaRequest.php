@@ -69,6 +69,8 @@ class EmpresaRequest extends FormRequest
             'usa_caja_grande'                 => 'boolean',
             // Ventas: comportamiento de edición/anulación por cajeras.
             'venta_edicion_minutos'           => 'required|integer|min:0|max:120',
+            'venta_edicion_con_contador'      => 'boolean',
+            'cajera_puede_editar'             => 'boolean',
             'cajera_puede_anular'             => 'boolean',
             // Mercadería en tránsito (comprada/facturada pero que aún no llega).
             // `vende_` solo tiene efecto si `usa_` está activo — lo resuelve
@@ -81,5 +83,16 @@ class EmpresaRequest extends FormRequest
             'afecta_caja_config'              => ['nullable', 'array'],
             'afecta_caja_config.*.activo'     => ['boolean'],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $conContador = filter_var($this->input('venta_edicion_con_contador'), FILTER_VALIDATE_BOOLEAN);
+            $minutos = $this->input('venta_edicion_minutos');
+            if ($conContador && ($minutos === null || $minutos === '' || (int) $minutos < 1)) {
+                $validator->errors()->add('venta_edicion_minutos', 'Si el contador de edición está activo, debes indicar al menos 1 minuto.');
+            }
+        });
     }
 }

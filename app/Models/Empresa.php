@@ -44,6 +44,8 @@ class Empresa extends Model
         'agenda_sujeto_requerido',
         // Manejo de ventas (configurable por empresa)
         'venta_edicion_minutos',
+        'venta_edicion_con_contador',
+        'cajera_puede_editar',
         'cajera_puede_anular',
         // Manejo de efectivo (todo opt-in; defaults = comportamiento clásico)
         'modo_apertura_caja',
@@ -78,6 +80,8 @@ class Empresa extends Model
             'usa_agenda'                      => 'boolean',
             'agenda_sujeto_requerido'         => 'boolean',
             'venta_edicion_minutos'           => 'integer',
+            'venta_edicion_con_contador'      => 'boolean',
+            'cajera_puede_editar'             => 'boolean',
             'cajera_puede_anular'             => 'boolean',
             'apertura_editable'               => 'boolean',
             'usa_retiros_caja'                => 'boolean',

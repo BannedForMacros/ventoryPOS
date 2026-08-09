@@ -32,16 +32,34 @@ class VentaController extends Controller
         private CitaService       $citaService,
     ) {}
 
+    /** true si la cajera (no admin) puede editar ventas según la empresa. */
+    private function cajeraPuedeEditar(Empresa $empresa): bool
+    {
+        return (bool) ($empresa->cajera_puede_editar ?? true);
+    }
+
+    /** true si la empresa limita la edición de ventas por tiempo. */
+    private function edicionConContador(Empresa $empresa): bool
+    {
+        return (bool) ($empresa->venta_edicion_con_contador ?? true);
+    }
+
     /** Minutos configurados en la empresa para editar una venta sin autorización. */
     private function minutosEdicionVenta(Empresa $empresa): int
     {
         return (int) ($empresa->venta_edicion_minutos ?? 3);
     }
 
-    /** true si la venta aún está dentro del plazo de edición configurable de la empresa. */
+    /**
+     * true si la venta aún está dentro del plazo de edición configurable de la empresa.
+     * Si la empresa no usa contador, se considera siempre dentro del plazo (la edición
+     * no está limitada por tiempo, solo por el permiso cajera_puede_editar).
+     */
     private function dentroPlazoEdicion(Venta $venta, ?Empresa $empresa = null): bool
     {
         $empresa ??= $venta->empresa;
+        if (!$this->edicionConContador($empresa)) return true;
+
         $minutos = $this->minutosEdicionVenta($empresa);
         if ($minutos <= 0) return false;
 
@@ -100,7 +118,7 @@ class VentaController extends Controller
                 ->first();
         }
         $puedeEditarVenta = $ventaObjetivo && $ventaObjetivo->estado === 'completada'
-            && ($user->rol->es_admin || $this->dentroPlazoEdicion($ventaObjetivo));
+            && ($user->rol->es_admin || ($this->cajeraPuedeEditar($user->empresa) && $this->dentroPlazoEdicion($ventaObjetivo, $user->empresa)));
 
         // Turno del POS: el propio activo; y si estamos editando sin turno propio,
         // se toma el turno de la venta (así el admin puede editar sin abrir caja).
@@ -354,7 +372,7 @@ class VentaController extends Controller
                     'descuento_concepto_id' => $v->descuento_concepto_id,
                     'moneda'                => $v->moneda ?? 'PEN',
                     'es_admin'              => (bool) $user->rol->es_admin,
-                    'expira_en'             => $puedeEditarVenta
+                    'expira_en'             => $puedeEditarVenta && $this->edicionConContador($user->empresa)
                         ? $v->created_at?->addSeconds($this->minutosEdicionVenta($user->empresa) * 60)->toIso8601String()
                         : null,
                     'cliente'               => $v->cliente,

@@ -43,6 +43,8 @@ type FormData = {
     requiere_aprobacion_devolucion: boolean;
     restock_default: boolean;
     // Manejo de ventas
+    cajera_puede_editar: boolean;
+    venta_edicion_con_contador: boolean;
     venta_edicion_minutos: number | '';
     cajera_puede_anular: boolean;
     // Manejo de efectivo (opt-in por empresa)
@@ -89,6 +91,8 @@ const emptyForm: FormData = {
     dias_max_devolucion: 0,
     requiere_aprobacion_devolucion: false,
     restock_default: true,
+    cajera_puede_editar: true,
+    venta_edicion_con_contador: true,
     venta_edicion_minutos: 3,
     cajera_puede_anular: true,
     modo_apertura_caja: 'libre',
@@ -148,6 +152,8 @@ export default function Empresas({ empresas }: Props) {
             dias_max_devolucion: emp.dias_max_devolucion ?? 0,
             requiere_aprobacion_devolucion: emp.requiere_aprobacion_devolucion ?? false,
             restock_default: emp.restock_default ?? true,
+            cajera_puede_editar: emp.cajera_puede_editar ?? true,
+            venta_edicion_con_contador: emp.venta_edicion_con_contador ?? true,
             venta_edicion_minutos: emp.venta_edicion_minutos ?? 3,
             cajera_puede_anular: emp.cajera_puede_anular ?? true,
             modo_apertura_caja: (emp.modo_apertura_caja as ModoApertura) ?? 'libre',
@@ -590,32 +596,65 @@ export default function Empresas({ empresas }: Props) {
                     <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
                         <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Ventas</p>
 
-                        <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
-                                Minutos para editar una venta
-                            </label>
-                            <div className="flex items-center gap-3">
-                                <Input
-                                    type="number"
-                                    min={0}
-                                    max={120}
-                                    step={1}
-                                    value={data.venta_edicion_minutos}
-                                    onChange={e => setData('venta_edicion_minutos', e.target.value === '' ? '' : Number(e.target.value))}
-                                    className="w-28"
-                                />
-                                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                                    minutos
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.cajera_puede_editar}
+                                onChange={e => {
+                                    setData('cajera_puede_editar', e.target.checked);
+                                    if (!e.target.checked) {
+                                        // Si desactiva la edición, podemos mantener
+                                        // el contador desactivado visualmente.
+                                        setData('venta_edicion_con_contador', false);
+                                    }
+                                }}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cajera puede editar ventas</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si se desactiva, la cajera no verá el botón Editar. El administrador siempre puede editar.
                                 </span>
+                            </span>
+                        </label>
+
+                        {data.cajera_puede_editar && (
+                            <label className="flex items-start gap-2 cursor-pointer pl-6">
+                                <Checkbox
+                                    checked={data.venta_edicion_con_contador}
+                                    onChange={e => setData('venta_edicion_con_contador', e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Limitar edición por tiempo (contador)</span>
+                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        Si está activo, la cajera solo podrá editar dentro de los minutos indicados. Si se desactiva, el botón Editar siempre estará visible.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
+
+                        {data.cajera_puede_editar && data.venta_edicion_con_contador && (
+                            <div className="pl-6">
+                                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                                    Minutos para editar una venta
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        max={120}
+                                        step={1}
+                                        value={data.venta_edicion_minutos}
+                                        onChange={e => setData('venta_edicion_minutos', e.target.value === '' ? '' : Number(e.target.value))}
+                                        className="w-28"
+                                    />
+                                    <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                        minutos
+                                    </span>
+                                </div>
+                                {errors.venta_edicion_minutos && (
+                                    <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.venta_edicion_minutos}</p>
+                                )}
                             </div>
-                            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                                Tiempo desde que se registra la venta durante el cual la cajera puede editarla sin autorización.
-                                0 significa que no puede editar (solo el administrador).
-                            </p>
-                            {errors.venta_edicion_minutos && (
-                                <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.venta_edicion_minutos}</p>
-                            )}
-                        </div>
+                        )}
 
                         <label className="flex items-start gap-2 cursor-pointer">
                             <Checkbox
