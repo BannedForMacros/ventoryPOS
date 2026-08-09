@@ -5,12 +5,13 @@ import toast from 'react-hot-toast';
 import {
     ArrowLeft, XCircle, Receipt, User, ShoppingBag,
     CreditCard, Percent, Calendar, Store, UserCheck, Printer,
-    FileCheck2, Download, RefreshCw,
+    FileCheck2, Download, RefreshCw, KeyRound, AlertTriangle,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
+import Modal from '@/Components/UI/Modal';
 import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import {
     rutaComprobante, metaEstado, estadoEnCurso, puedeReintentar, etiquetaTipoSunat,
@@ -56,6 +57,16 @@ function InfoRow({ label, value, muted }: { label: string; value: React.ReactNod
 export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
     const { auth } = usePage<Props>().props;
     const esAdmin  = auth.user.rol?.es_admin ?? false;
+    const empresa  = auth.user.empresa as { venta_edicion_minutos?: number; cajera_puede_anular?: boolean } | undefined;
+    const editWindowMs = (Number(empresa?.venta_edicion_minutos ?? 3) || 0) * 60 * 1000;
+    const cajeraPuedeAnular = empresa?.cajera_puede_anular ?? true;
+
+    // Estados para anular desde el detalle.
+    const [modalAnular, setModalAnular] = useState(false);
+    const [motivoAnular, setMotivoAnular] = useState('');
+    const [codigoAnular, setCodigoAnular] = useState('');
+    const [errAnular, setErrAnular] = useState<Record<string, string>>({});
+    const [anulando, setAnulando] = useState(false);
 
     // Evita doble impresión por re-render / StrictMode
     const autoImpreso = useRef(false);
@@ -64,6 +75,41 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    function dentroPlazo(): boolean {
+        if (editWindowMs <= 0) return false;
+        return Date.now() - new Date(venta.created_at).getTime() < editWindowMs;
+    }
+
+    function puedeAnular(): boolean {
+        if (venta.estado !== 'completada') return false;
+        if (esAdmin) return true;
+        return cajeraPuedeAnular;
+    }
+
+    function requiereCodigo(): boolean {
+        return !esAdmin && cajeraPuedeAnular && !dentroPlazo();
+    }
+
+    function abrirAnular() {
+        setMotivoAnular('');
+        setCodigoAnular('');
+        setErrAnular({});
+        setModalAnular(true);
+    }
+
+    function confirmarAnular() {
+        setAnulando(true);
+        setErrAnular({});
+        router.post(route('ventas.anular', venta.id), {
+            motivo: motivoAnular,
+            codigo_autorizacion: requiereCodigo() ? codigoAnular : undefined,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => { setAnulando(false); setModalAnular(false); },
+            onError:   (errs) => { setAnulando(false); setErrAnular(errs as Record<string, string>); },
+        });
+    }
 
     async function imprimir(auto = false) {
         if (!ticketImpresion) return;
@@ -97,8 +143,12 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
     }, []);
 
     function anular() {
+        if (requiereCodigo()) {
+            abrirAnular();
+            return;
+        }
         if (!confirm('¿Confirmas la anulación de esta venta? Esta acción restaurará el stock.')) return;
-        router.post(route('ventas.anular', venta.id));
+        confirmarAnular();
     }
 
     const items    = (venta.items   ?? []) as VentaItem[];
@@ -164,7 +214,7 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                         >
                             <span className="hidden sm:inline">Imprimir ticket</span>
                         </Button>
-                        {esAdmin && venta.estado !== 'anulada' && (
+                        {puedeAnular() && venta.estado !== 'anulada' && (
                             <Button variant="danger" size="sm" startContent={<XCircle size={15} />} onClick={anular}>
                                 <span className="hidden sm:inline">Anular</span>
                             </Button>
@@ -390,6 +440,71 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                     )}
                 </div>
             </div>
+
+            <Modal
+                isOpen={modalAnular}
+                onClose={() => { if (!anulando) setModalAnular(false); }}
+                title={`Anular venta ${venta.numero}`}
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setModalAnular(false)} disabled={anulando}>Cancelar</Button>
+                        <Button variant="danger" onClick={confirmarAnular} loading={anulando}>Anular venta</Button>
+                    </>
+                }
+            >
+                <div className="space-y-3">
+                    <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
+                        style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                        <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
+                        <p style={{ color: 'var(--color-text)' }}>
+                            Anular revierte el stock y el dinero de esta venta. Es una acción irreversible.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                            Motivo de la anulación <span style={{ color: 'var(--color-danger)' }}>*</span>
+                        </label>
+                        <textarea
+                            rows={2}
+                            value={motivoAnular}
+                            onChange={e => setMotivoAnular(e.target.value)}
+                            disabled={anulando}
+                            placeholder="Describe por qué se anula"
+                            className="w-full rounded-xl px-3 py-2 text-sm resize-none"
+                            style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                        />
+                        {errAnular.motivo && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errAnular.motivo}</p>}
+                    </div>
+
+                    {requiereCodigo() && (
+                        <div>
+                            <label className="flex items-center gap-1.5 text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                                <KeyRound size={14} style={{ color: 'var(--color-warning)' }} />
+                                Código de autorización
+                            </label>
+                            <p className="text-xs mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                                {editWindowMs > 0
+                                    ? `Pasaron más de ${Math.round(editWindowMs / 60000)} minutos. Pide a un administrador su código de autorización para anular.`
+                                    : 'La empresa no permite a las cajeras anular ventas sin autorización. Pide a un administrador su código.'}
+                            </p>
+                            <input
+                                type="password"
+                                value={codigoAnular}
+                                onChange={e => setCodigoAnular(e.target.value)}
+                                disabled={anulando}
+                                placeholder="Código / clave de administrador"
+                                className="w-full rounded-xl px-3 py-2 text-sm"
+                                style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                            />
+                            {errAnular.codigo_autorizacion && (
+                                <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errAnular.codigo_autorizacion}</p>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </Modal>
         </AppLayout>
     );
 }

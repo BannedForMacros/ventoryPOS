@@ -67,6 +67,9 @@ class EmpresaRequest extends FormRequest
             'retiro_requiere_aprobacion'      => 'boolean',
             'cierre_pregunta_destino'         => 'boolean',
             'usa_caja_grande'                 => 'boolean',
+            // Ventas: comportamiento de edición/anulación por cajeras.
+            'venta_edicion_minutos'           => 'required|integer|min:0|max:120',
+            'cajera_puede_anular'             => 'boolean',
             // Mercadería en tránsito (comprada/facturada pero que aún no llega).
             // `vende_` solo tiene efecto si `usa_` está activo — lo resuelve
             // MercaderiaTransitoService, no hace falta validación cruzada.

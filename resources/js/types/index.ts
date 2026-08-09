@@ -44,6 +44,9 @@ export interface Empresa extends Record<string, unknown> {
     retiro_requiere_aprobacion: boolean;
     cierre_pregunta_destino: boolean;
     usa_caja_grande: boolean;
+    /* ── Manejo de ventas (configurable por empresa) ── */
+    venta_edicion_minutos: number;
+    cajera_puede_anular: boolean;
     /** Mercadería comprada que aún no llega: estado "En camino" en Entradas. */
     usa_mercaderia_transito: boolean;
     /** Permite sobrevender en el POS, pero solo hasta lo que está en tránsito. */

@@ -18,7 +18,8 @@ class AnularVentaRequest extends FormRequest
         return [
             'motivo' => ['required', 'string', 'min:10', 'max:500'],
             // Código de autorización (clave de un admin) que la cajera debe
-            // ingresar para anular fuera del plazo de 3 min. El admin no lo usa.
+            // ingresar para anular fuera del plazo configurable de la empresa.
+            // El admin no lo usa.
             'codigo_autorizacion' => ['nullable', 'string', 'max:100'],
         ];
     }

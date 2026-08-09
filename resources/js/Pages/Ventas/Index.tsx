@@ -20,9 +20,6 @@ import {
 } from '@/lib/comprobanteElectronico';
 import type { ComprobanteElectronico, Local, PageProps, Venta } from '@/types';
 
-// Ventana de edición (debe coincidir con VentaController::EDIT_WINDOW_SECONDS).
-const EDIT_WINDOW_MS = 3 * 60 * 1000;
-
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
 interface Filters {
@@ -100,7 +97,12 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
     const { auth } = usePage<Props>().props;
     const esAdmin  = auth.user.rol?.es_admin ?? false;
 
-    // Reloj para que el gate de 3 min se actualice en vivo (edición desaparece).
+    // Configuración de empresa: minutos de edición y si la cajera puede anular.
+    const empresa = auth.user.empresa as { venta_edicion_minutos?: number; cajera_puede_anular?: boolean } | undefined;
+    const editWindowMs = (Number(empresa?.venta_edicion_minutos ?? 3) || 0) * 60 * 1000;
+    const cajeraPuedeAnular = empresa?.cajera_puede_anular ?? true;
+
+    // Reloj para que el gate de edición se actualice en vivo (edición desaparece).
     const [ahora, setAhora] = useState(() => Date.now());
     useEffect(() => {
         const t = setInterval(() => setAhora(Date.now()), 15000);
@@ -136,17 +138,24 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
-    // ¿La venta sigue dentro del plazo de 3 min desde su creación?
+    // ¿La venta sigue dentro del plazo de edición configurable desde Empresa?
     function dentroPlazo(v: Venta): boolean {
-        return ahora - new Date(v.created_at).getTime() < EDIT_WINDOW_MS;
+        if (editWindowMs <= 0) return false;
+        return ahora - new Date(v.created_at).getTime() < editWindowMs;
     }
-    // El admin edita/anula sin límite; la cajera solo dentro de los 3 min.
+    // El admin edita/anula sin límite; la cajera solo dentro del plazo configurado.
     function puedeEditar(v: Venta): boolean {
         return v.estado === 'completada' && (esAdmin || dentroPlazo(v));
     }
-    // La cajera necesita código de admin para anular pasado el plazo.
+    // ¿Puede anular esta venta? Admin siempre; cajera según config y plazo.
+    function puedeAnular(v: Venta): boolean {
+        if (v.estado !== 'completada') return false;
+        if (esAdmin) return true;
+        return cajeraPuedeAnular;
+    }
+    // La cajera necesita código de admin para anular fuera del plazo de edición.
     function requiereCodigo(v: Venta): boolean {
-        return !esAdmin && !dentroPlazo(v);
+        return !esAdmin && cajeraPuedeAnular && !dentroPlazo(v);
     }
 
     function abrirAnular(v: Venta) {
@@ -437,7 +446,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                                 <Pencil size={14} />
                                             </Link>
                                         )}
-                                        {v.estado === 'completada' && (
+                                        {puedeAnular(v) && (
                                             <button
                                                 onClick={() => abrirAnular(v)}
                                                 title={requiereCodigo(v) ? 'Anular (requiere código de admin)' : 'Anular venta'}
@@ -555,9 +564,10 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     <Pencil size={14} /> Editar
                                 </Link>
                             )}
-                            {v.estado === 'completada' && (
+                            {puedeAnular(v) && (
                                 <button
                                     onClick={() => abrirAnular(v)}
+                                    title={requiereCodigo(v) ? 'Anular (requiere código de admin)' : 'Anular venta'}
                                     className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg"
                                     style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, transparent)', color: 'var(--color-danger)' }}
                                 >
@@ -656,7 +666,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                             {errAnular.motivo && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errAnular.motivo}</p>}
                         </div>
 
-                        {/* Código de admin: solo cuando la cajera anula fuera del plazo de 3 min */}
+                        {/* Código de admin: solo cuando la cajera anula fuera del plazo de edición */}
                         {requiereCodigo(anular) && (
                             <div>
                                 <label className="flex items-center gap-1.5 text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
@@ -664,7 +674,9 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     Código de autorización
                                 </label>
                                 <p className="text-xs mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Pasaron más de 3 minutos. Pide a un administrador su código de autorización para anular.
+                                    {editWindowMs > 0
+                                        ? `Pasaron más de ${Math.round(editWindowMs / 60000)} minutos. Pide a un administrador su código de autorización para anular.`
+                                        : 'La empresa no permite a las cajeras anular ventas sin autorización. Pide a un administrador su código.'}
                                     <span className="italic"> (Envío por WhatsApp: pendiente de implementar; por ahora es la clave de un admin.)</span>
                                 </p>
                                 <input

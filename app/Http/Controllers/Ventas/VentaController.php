@@ -8,6 +8,7 @@ use App\Http\Requests\Ventas\StoreVentaRequest;
 use App\Jobs\EmitirComprobanteElectronico;
 use App\Models\Cliente;
 use App\Models\DescuentoConcepto;
+use App\Models\Empresa;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\Turno;
@@ -25,22 +26,33 @@ use Inertia\Inertia;
 
 class VentaController extends Controller
 {
-    // Ventana de edición: una venta se puede editar libremente dentro de este
-    // lapso desde su creación. Pasado el plazo, editar se bloquea y anular
-    // requiere código de autorización de un administrador.
-    private const EDIT_WINDOW_SECONDS = 180; // 3 minutos
-
     public function __construct(
         private VentaService      $ventaService,
         private LocalScopeService $scope,
         private CitaService       $citaService,
     ) {}
 
-    /** true si la venta aún está dentro de los 3 min de edición desde su creación. */
-    private function dentroPlazoEdicion(Venta $venta): bool
+    /** Minutos configurados en la empresa para editar una venta sin autorización. */
+    private function minutosEdicionVenta(Empresa $empresa): int
     {
+        return (int) ($empresa->venta_edicion_minutos ?? 3);
+    }
+
+    /** true si la venta aún está dentro del plazo de edición configurable de la empresa. */
+    private function dentroPlazoEdicion(Venta $venta, ?Empresa $empresa = null): bool
+    {
+        $empresa ??= $venta->empresa;
+        $minutos = $this->minutosEdicionVenta($empresa);
+        if ($minutos <= 0) return false;
+
         return $venta->created_at
-            && abs($venta->created_at->diffInSeconds(now())) <= self::EDIT_WINDOW_SECONDS;
+            && abs($venta->created_at->diffInSeconds(now())) <= $minutos * 60;
+    }
+
+    /** true si la cajera (no admin) puede anular ventas según la empresa. */
+    private function cajeraPuedeAnular(Empresa $empresa): bool
+    {
+        return (bool) ($empresa->cajera_puede_anular ?? true);
     }
 
     /**
@@ -342,7 +354,9 @@ class VentaController extends Controller
                     'descuento_concepto_id' => $v->descuento_concepto_id,
                     'moneda'                => $v->moneda ?? 'PEN',
                     'es_admin'              => (bool) $user->rol->es_admin,
-                    'expira_en'             => $v->created_at?->addSeconds(self::EDIT_WINDOW_SECONDS)->toIso8601String(),
+                    'expira_en'             => $puedeEditarVenta
+                        ? $v->created_at?->addSeconds($this->minutosEdicionVenta($user->empresa) * 60)->toIso8601String()
+                        : null,
                     'cliente'               => $v->cliente,
                     // Crédito: hay que devolverlo para que el toggle cargue marcado al
                     // editar (antes salía siempre desmarcado). fecha_vencimiento solo
@@ -1143,22 +1157,33 @@ class VentaController extends Controller
             return back()->withErrors(['venta' => 'La venta ya está anulada.']);
         }
 
-        // El admin anula sin restricción. Para la cajera, pasados 3 min anular
-        // exige código de autorización de un administrador. (El envío del código
-        // por WhatsApp/Telegram se implementará después; por ahora el código es
-        // la clave de un admin activo de la empresa.)
-        if (!$request->user()->rol->es_admin && !$this->dentroPlazoEdicion($venta)) {
+        $user    = $request->user();
+        $empresa = $user->empresa;
+        $minutos = $this->minutosEdicionVenta($empresa);
+
+        // Cajera: solo puede anular si la empresa lo permite.
+        if (!$user->rol->es_admin && !$this->cajeraPuedeAnular($empresa)) {
+            return back()->withErrors([
+                'venta' => 'La empresa no permite que las cajeras anulen ventas. Solicita a un administrador.',
+            ]);
+        }
+
+        // Admin anula sin restriccón. Cajera: dentro del plazo de edición anula
+        // libremente; fuera del plazo requiere código de autorización de admin.
+        if (!$user->rol->es_admin && !$this->dentroPlazoEdicion($venta, $empresa)) {
             $codigo = (string) $request->input('codigo_autorizacion', '');
-            if (!$this->codigoAdminValido($request->user()->empresa_id, $codigo)) {
+            if (!$this->codigoAdminValido($user->empresa_id, $codigo)) {
                 return back()->withErrors([
-                    'codigo_autorizacion' => 'Pasaron más de 3 minutos: anular requiere el código de autorización de un administrador.',
+                    'codigo_autorizacion' => $minutos > 0
+                        ? "Pasaron más de {$minutos} minutos: anular requiere el código de autorización de un administrador."
+                        : 'Anular ventas requiere el código de autorización de un administrador.',
                 ]);
             }
         }
 
         $this->ventaService->anular(
             $venta,
-            $request->user(),
+            $user,
             $request->validated('motivo'),
         );
 

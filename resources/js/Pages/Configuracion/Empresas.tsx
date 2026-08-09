@@ -42,6 +42,9 @@ type FormData = {
     dias_max_devolucion: number | '';
     requiere_aprobacion_devolucion: boolean;
     restock_default: boolean;
+    // Manejo de ventas
+    venta_edicion_minutos: number | '';
+    cajera_puede_anular: boolean;
     // Manejo de efectivo (opt-in por empresa)
     modo_apertura_caja: ModoApertura;
     apertura_editable: boolean;
@@ -86,6 +89,8 @@ const emptyForm: FormData = {
     dias_max_devolucion: 0,
     requiere_aprobacion_devolucion: false,
     restock_default: true,
+    venta_edicion_minutos: 3,
+    cajera_puede_anular: true,
     modo_apertura_caja: 'libre',
     apertura_editable: true,
     usa_retiros_caja: false,
@@ -143,6 +148,8 @@ export default function Empresas({ empresas }: Props) {
             dias_max_devolucion: emp.dias_max_devolucion ?? 0,
             requiere_aprobacion_devolucion: emp.requiere_aprobacion_devolucion ?? false,
             restock_default: emp.restock_default ?? true,
+            venta_edicion_minutos: emp.venta_edicion_minutos ?? 3,
+            cajera_puede_anular: emp.cajera_puede_anular ?? true,
             modo_apertura_caja: (emp.modo_apertura_caja as ModoApertura) ?? 'libre',
             apertura_editable: emp.apertura_editable ?? true,
             usa_retiros_caja: emp.usa_retiros_caja ?? false,
@@ -577,6 +584,51 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </label>
                         )}
+                    </div>
+
+                    {/* ── Sección: Ventas ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Ventas</p>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                                Minutos para editar una venta
+                            </label>
+                            <div className="flex items-center gap-3">
+                                <Input
+                                    type="number"
+                                    min={0}
+                                    max={120}
+                                    step={1}
+                                    value={data.venta_edicion_minutos}
+                                    onChange={e => setData('venta_edicion_minutos', e.target.value === '' ? '' : Number(e.target.value))}
+                                    className="w-28"
+                                />
+                                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                    minutos
+                                </span>
+                            </div>
+                            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                Tiempo desde que se registra la venta durante el cual la cajera puede editarla sin autorización.
+                                0 significa que no puede editar (solo el administrador).
+                            </p>
+                            {errors.venta_edicion_minutos && (
+                                <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.venta_edicion_minutos}</p>
+                            )}
+                        </div>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.cajera_puede_anular}
+                                onChange={e => setData('cajera_puede_anular', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cajera puede anular ventas</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si se desactiva, solo un administrador podrá anular ventas. Si está activo, la cajera puede anular dentro del plazo configurado; fuera de él requiere código de admin.
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     {/* ── Sección: Manejo de efectivo ── */}
