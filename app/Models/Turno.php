@@ -64,7 +64,14 @@ class Turno extends Model
      */
     public function calcularMontoEsperado(): float
     {
-        $gastosEfectivo = (float) $this->gastos()->sum('monto');
+        // Gastos del turno pagados con EFECTIVO: solo estos descuentan el cajón.
+        // Si el gasto no tiene cuenta_id, se asume efectivo (compatibilidad con
+        // registros anteriores). Si tiene cuenta_id, debe marcar es_efectivo.
+        $gastosEfectivo = (float) $this->gastos()
+            ->where(fn($q) =>
+                $q->whereNull('cuenta_id')
+                  ->orWhereHas('cuenta', fn($c) => $c->where('es_efectivo', true))
+            )->sum('monto');
 
         $ventasEfectivo = (float) \App\Models\VentaPago::whereHas('venta', fn($q) =>
             $q->where('turno_id', $this->id)->where('estado', 'completada')
