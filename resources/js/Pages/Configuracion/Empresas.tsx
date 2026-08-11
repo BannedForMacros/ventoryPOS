@@ -64,6 +64,8 @@ type FormData = {
     ticket_cliente_celular: boolean;
     ticket_cliente_direccion: boolean;
     ticket_mostrar_ruc: boolean;
+    ticket_mostrar_igv: boolean;
+    ticket_mostrar_igv_cierre: boolean;
     ticket_logo_escala: number;
     ticket_pie: string;
     ticket_lineas_extra: string;
@@ -109,6 +111,8 @@ const emptyForm: FormData = {
     ticket_cliente_celular: true,
     ticket_cliente_direccion: true,
     ticket_mostrar_ruc: true,
+    ticket_mostrar_igv: false,
+    ticket_mostrar_igv_cierre: false,
     ticket_logo_escala: 100,
     ticket_pie: '',
     ticket_lineas_extra: '',
@@ -173,6 +177,8 @@ export default function Empresas({ empresas }: Props) {
             ticket_cliente_celular: emp.ticket_config?.cliente_celular ?? true,
             ticket_cliente_direccion: emp.ticket_config?.cliente_direccion ?? true,
             ticket_mostrar_ruc: emp.ticket_config?.mostrar_ruc ?? true,
+            ticket_mostrar_igv: emp.ticket_config?.mostrar_igv ?? false,
+            ticket_mostrar_igv_cierre: emp.ticket_config?.mostrar_igv_cierre ?? false,
             ticket_logo_escala: emp.ticket_config?.logo_escala ?? 100,
             ticket_pie: emp.ticket_config?.pie ?? '',
             ticket_lineas_extra: (emp.ticket_config?.lineas_extra ?? []).join('\n'),
@@ -889,6 +895,32 @@ export default function Empresas({ empresas }: Props) {
                                 <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Mostrar RUC del negocio en el ticket</span>
                                 <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                     Apagarlo oculta el RUC de la cabecera en todos los tickets de esta empresa.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.ticket_mostrar_igv}
+                                onChange={e => setData('ticket_mostrar_igv', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Mostrar desglose de IGV en ticket de venta</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, se imprimen las líneas de SUBTOTAL e IGV en el ticket de venta. Si está apagado, solo se muestra el TOTAL.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.ticket_mostrar_igv_cierre}
+                                onChange={e => setData('ticket_mostrar_igv_cierre', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Mostrar desglose de IGV en cierre de turno</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, el resumen del cierre de turno incluye SUBTOTAL e IGV. Si está apagado, solo # Ventas, Descuento y TOTAL.
                                 </span>
                             </span>
                         </label>

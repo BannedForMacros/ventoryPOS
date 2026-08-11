@@ -31,6 +31,8 @@ class EmpresaRequest extends FormRequest
             'ticket_cliente_celular'   => 'boolean',
             'ticket_cliente_direccion' => 'boolean',
             'ticket_mostrar_ruc'       => 'boolean',
+            'ticket_mostrar_igv'       => 'boolean',
+            'ticket_mostrar_igv_cierre'=> 'boolean',
             'ticket_logo_escala'       => 'nullable|integer|min:10|max:200',
             'ticket_pie'               => 'nullable|string|max:500',
             // Líneas libres al final del ticket, una por renglón (Yape, redes...).

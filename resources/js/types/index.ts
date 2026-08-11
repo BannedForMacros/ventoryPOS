@@ -6,6 +6,8 @@ export interface TicketConfig {
     cliente_celular?: boolean;
     cliente_direccion?: boolean;
     mostrar_ruc?: boolean;
+    mostrar_igv?: boolean;
+    mostrar_igv_cierre?: boolean;
     logo_escala?: number;
     pie?: string | null;
     lineas_extra?: string[];

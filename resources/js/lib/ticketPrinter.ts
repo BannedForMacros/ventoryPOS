@@ -43,7 +43,7 @@ export interface TicketItem {
 export interface TicketPayload {
   /** Token de la caja (columna token_impresora) que valida el agente local. */
   token?: string;
-  negocio?: { nombre?: string; ruc?: string; direccion?: string; telefono?: string; mostrarRuc?: boolean; logoEscala?: number };
+  negocio?: { nombre?: string; ruc?: string; direccion?: string; telefono?: string; mostrarRuc?: boolean; mostrarIgv?: boolean; logoEscala?: number };
   documento?: { tipo?: string; serie?: string; numero?: string; fecha?: string; vendedor?: string; caja?: string };
   cliente?: { nombre?: string; doc?: string; direccion?: string; telefono?: string };
   items: TicketItem[];
@@ -97,7 +97,7 @@ export interface CajaCierre {
 
 export interface ShiftClosurePayload {
   token?: string;
-  negocio?: { nombre?: string; ruc?: string; direccion?: string; telefono?: string; mostrarRuc?: boolean; logoEscala?: number };
+  negocio?: { nombre?: string; ruc?: string; direccion?: string; telefono?: string; mostrarRuc?: boolean; mostrarIgv?: boolean; logoEscala?: number };
   turno?: TurnoInfo;
   resumen?: ResumenCierre;
   metodosPago: MetodoPagoCierre[];

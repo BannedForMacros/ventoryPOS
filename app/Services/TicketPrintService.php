@@ -58,6 +58,8 @@ class TicketPrintService
             'cliente_celular'   => true,
             'cliente_direccion' => true,
             'mostrar_ruc'       => true,
+            'mostrar_igv'       => false,
+            'mostrar_igv_cierre'=> false,
             'pie'               => null,
             'lineas_extra'      => [],
         ], is_array($cfg) ? $cfg : []);
@@ -149,6 +151,7 @@ class TicketPrintService
                 'direccion'   => $local?->direccion ?: $empresa?->direccion,
                 'telefono'    => $local?->telefono ?: $empresa?->telefono,
                 'mostrarRuc'  => (bool) ($cfg['mostrar_ruc'] ?? true),
+                'mostrarIgv'  => (bool) ($cfg['mostrar_igv'] ?? false),
                 'logoEscala'  => (int) ($cfg['logo_escala'] ?? 100),
             ],
 
@@ -575,6 +578,7 @@ class TicketPrintService
                 'direccion'   => $local?->direccion ?: $empresa?->direccion,
                 'telefono'    => $local?->telefono ?: $empresa?->telefono,
                 'mostrarRuc'  => (bool) ($cfg['mostrar_ruc'] ?? true),
+                'mostrarIgv'  => (bool) ($cfg['mostrar_igv_cierre'] ?? false),
                 'logoEscala'  => (int) ($cfg['logo_escala'] ?? 100),
             ],
             'turno' => [

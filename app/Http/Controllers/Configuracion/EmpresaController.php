@@ -60,6 +60,8 @@ class EmpresaController extends Controller
             'cliente_celular'   => (bool) ($datos['ticket_cliente_celular'] ?? true),
             'cliente_direccion' => (bool) ($datos['ticket_cliente_direccion'] ?? true),
             'mostrar_ruc'       => (bool) ($datos['ticket_mostrar_ruc'] ?? true),
+            'mostrar_igv'       => (bool) ($datos['ticket_mostrar_igv'] ?? false),
+            'mostrar_igv_cierre'=> (bool) ($datos['ticket_mostrar_igv_cierre'] ?? false),
             'logo_escala'       => isset($datos['ticket_logo_escala']) && $datos['ticket_logo_escala'] !== ''
                 ? (int) $datos['ticket_logo_escala']
                 : 100,
@@ -67,7 +69,8 @@ class EmpresaController extends Controller
             'lineas_extra'      => $lineasExtra,
         ];
         unset($datos['ticket_cliente_celular'], $datos['ticket_cliente_direccion'],
-              $datos['ticket_mostrar_ruc'], $datos['ticket_logo_escala'],
+              $datos['ticket_mostrar_ruc'], $datos['ticket_mostrar_igv'], $datos['ticket_mostrar_igv_cierre'],
+              $datos['ticket_logo_escala'],
               $datos['ticket_pie'], $datos['ticket_lineas_extra']);
 
         // "Afecta caja" por módulo: persistimos SOLO el flag `activo` de cada
