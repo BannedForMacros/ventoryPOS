@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import { Toaster } from 'react-hot-toast';
-import { Bell, ChevronDown, ChevronRight, LogOut, Menu, User, X } from 'lucide-react';
+import { Bell, ChevronDown, ChevronRight, LogOut, Menu, Printer, User, X } from 'lucide-react';
 import type { PageProps, ModuloMenu } from '@/types';
 import DynamicIcon from '@/Components/DynamicIcon';
 import { ColorPaletteProvider } from '@/Components/ColorPaletteProvider';
 import ColorPaletteEditor from '@/Components/ColorPaletteEditor';
 import RouterLoadingOverlay from '@/Components/RouterLoadingOverlay';
-import AgenteConfigButton from '@/Components/AgenteConfigButton';
+import AgenteConfigModal from '@/Components/AgenteConfigModal';
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -191,6 +191,7 @@ function HamburgerButton({ open, onClick }: { open: boolean; onClick: () => void
 function UserMenu({ onLogout }: { onLogout: () => void }) {
     const { auth } = usePage<PageProps>().props;
     const [open, setOpen] = useState(false);
+    const [printerOpen, setPrinterOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -282,6 +283,17 @@ function UserMenu({ onLogout }: { onLogout: () => void }) {
                     <button
                         onClick={() => {
                             setOpen(false);
+                            setPrinterOpen(true);
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors duration-150 hover:bg-black/5"
+                        style={{ color: 'var(--color-text)' }}
+                    >
+                        <Printer size={15} />
+                        Configurar impresora
+                    </button>
+                    <button
+                        onClick={() => {
+                            setOpen(false);
                             onLogout();
                         }}
                         className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors duration-150 hover:bg-black/5"
@@ -292,6 +304,8 @@ function UserMenu({ onLogout }: { onLogout: () => void }) {
                     </button>
                 </div>
             </div>
+
+            <AgenteConfigModal open={printerOpen} onClose={() => setPrinterOpen(false)} />
         </div>
     );
 }
@@ -441,8 +455,6 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                             <span className="flex-1" />
 
                             <CampanitaCotizaciones />
-
-                            <AgenteConfigButton />
 
                             <UserMenu onLogout={logout} />
                         </div>

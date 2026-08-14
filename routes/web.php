@@ -10,6 +10,7 @@ use App\Http\Controllers\Configuracion\AlmacenController;
 use App\Http\Controllers\Configuracion\CajaController;
 use App\Http\Controllers\Configuracion\EmpresaController;
 use App\Http\Controllers\Configuracion\FacturacionElectronicaController;
+use App\Http\Controllers\Configuracion\ImpresionController;
 use App\Http\Controllers\Configuracion\LocalController;
 use App\Http\Controllers\Configuracion\CuentaController;
 use App\Http\Controllers\Configuracion\MetodoPagoController;
@@ -97,6 +98,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // ── CONFIGURACIÓN ─────────────────────────────────────────────────────
     Route::prefix('configuracion')->name('configuracion.')->group(function () {
+        // PIN maestro para cambiar la URL del agente de impresión (VentoryPrint).
+        // Accesible para cualquier usuario autenticado porque la URL se guarda por dispositivo.
+        Route::post('impresion/verificar-pin', [ImpresionController::class, 'verificarPin'])
+            ->name('impresion.verificar-pin');
+
         Route::middleware('permiso:config.empresas')->group(function () {
             Route::resource('empresas', EmpresaController::class)->except(['show', 'create', 'edit']);
         });

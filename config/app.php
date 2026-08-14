@@ -56,6 +56,14 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | PIN de protección para configurar el agente de impresión (VentoryPrint).
+    | Si está vacío, no se requiere PIN y cualquier usuario puede cambiar la URL.
+    |--------------------------------------------------------------------------
+    */
+    'print_pin' => env('VENTORY_PRINT_PIN', ''),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
