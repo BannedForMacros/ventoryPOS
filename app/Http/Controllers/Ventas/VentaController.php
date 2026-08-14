@@ -176,6 +176,9 @@ class VentaController extends Controller
         $stockMap = $almacenVentas
             ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)->pluck('cantidad', 'producto_id')
             : collect();
+        $stockCostoMap = $almacenVentas
+            ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)->pluck('costo_promedio', 'producto_id')
+            : collect();
 
         // Mercadería en camino (entradas en tránsito) hacia ese mismo almacén.
         // NO se suma al stock: `stock_disponible` sigue siendo lo que está
@@ -197,11 +200,16 @@ class VentaController extends Controller
         $configOp    = app(\App\Services\ConfiguracionOperacionService::class);
         $localVentas = $almacenVentas?->local;
 
-        $productos->each(function ($p) use ($almacenVentas, $stockMap, $transitoMap, $configOp, $localVentas) {
+        $productos->each(function ($p) use ($almacenVentas, $stockMap, $stockCostoMap, $transitoMap, $configOp, $localVentas) {
             $controlaStock = $configOp->deboDescontarStock($p, $localVentas);
 
             $p->stock_disponible  = ($almacenVentas && $controlaStock)
                 ? (float) ($stockMap[$p->id] ?? 0)
+                : null;
+            // Costo promedio real del stock en el almacén de ventas. Lo usa el
+            // frontend como piso de precio (con fallback a productos.precio_costo).
+            $p->stock_costo_promedio = ($almacenVentas && $controlaStock)
+                ? (float) ($stockCostoMap[$p->id] ?? 0)
                 : null;
             $p->stock_en_transito = $controlaStock ? (float) ($transitoMap[$p->id]['cantidad'] ?? 0) : 0;
             $p->transito_fecha    = $controlaStock ? ($transitoMap[$p->id]['fecha'] ?? null) : null;

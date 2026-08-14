@@ -200,6 +200,9 @@ export interface Producto extends Record<string, unknown> {
     es_retornable: boolean | null;
     // Stock disponible (unidad base) en el almacén de ventas; lo inyecta el POS.
     stock_disponible?: number | null;
+    // Costo promedio del stock en el almacén de ventas; lo inyecta el POS.
+    // Se usa como piso de precio real (fallback a productos.precio_costo).
+    stock_costo_promedio?: number | null;
     // Mercadería comprada que aún no llega a este almacén (unidad base) y la
     // fecha del primer camión. NO está sumada a stock_disponible a propósito.
     stock_en_transito?: number;

@@ -7,6 +7,7 @@ use App\Models\Empresa;
 use App\Models\MetodoPago;
 use App\Models\ProductoUnidad;
 use App\Services\Facturacion\FacturacionEmpresa;
+use App\Services\LocalScopeService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -371,6 +372,18 @@ class StoreVentaRequest extends FormRequest
             ->get()
             ->keyBy('id');
 
+        // Costo promedio real del stock en el almacén de ventas del usuario.
+        // Se usa como piso de precio antes que el campo estático productos.precio_costo,
+        // porque este último no se actualiza automáticamente y queda desfasado.
+        $almacenVentas = app(LocalScopeService::class)->almacenParaVentas($this->user());
+        $productoIds   = $unidades->pluck('producto_id')->unique()->all();
+        $stockCostos   = ($almacenVentas && !empty($productoIds))
+            ? DB::table('stock')
+                ->where('almacen_id', $almacenVentas->id)
+                ->whereIn('producto_id', $productoIds)
+                ->pluck('costo_promedio', 'producto_id')
+            : collect();
+
         foreach ($this->input('items', []) as $index => $item) {
             $unidadId   = $item['producto_unidad_id'] ?? null;
             $productoId = $item['producto_id']        ?? null;
@@ -414,13 +427,25 @@ class StoreVentaRequest extends FormRequest
             }
 
             // Piso de precio: el POS permite editar el precio de venta por linea,
-            // pero nunca por debajo del costo de la presentacion. Espejo de la
-            // validacion del frontend (costo de la unidad, o costo base del
-            // producto x factor de conversion). Costo 0/null = sin piso.
-            $costoUnidad = (float) ($unidad->precio_costo ?? 0);
-            $costoMinimo = $costoUnidad > 0
-                ? $costoUnidad
-                : round((float) ($unidad->producto->precio_costo ?? 0) * (float) $unidad->factor_conversion, 2);
+            // pero nunca por debajo del costo real de la mercaderia. Orden de
+            // prioridad:
+            //   1) costo propio de la presentacion (producto_unidades.precio_costo)
+            //   2) costo promedio del stock del almacen de ventas × factor_conversion
+            //   3) fallback al costo base del producto (productos.precio_costo)
+            // Costo 0/null = sin piso.
+            $factor         = (float) $unidad->factor_conversion;
+            $costoUnidad    = (float) ($unidad->precio_costo ?? 0);
+            $costoStock     = (float) ($stockCostos[$unidad->producto_id] ?? 0);
+            $costoProducto  = (float) ($unidad->producto->precio_costo ?? 0);
+
+            $costoMinimo = 0.0;
+            if ($costoUnidad > 0) {
+                $costoMinimo = $costoUnidad;
+            } elseif ($costoStock > 0 && $factor > 0) {
+                $costoMinimo = round($costoStock * $factor, 2);
+            } elseif ($costoProducto > 0 && $factor > 0) {
+                $costoMinimo = round($costoProducto * $factor, 2);
+            }
 
             $precio = (float) ($item['precio_unitario'] ?? 0);
             if ($costoMinimo > 0 && $precio < $costoMinimo - 0.009) {

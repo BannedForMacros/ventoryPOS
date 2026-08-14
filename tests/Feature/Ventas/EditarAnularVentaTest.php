@@ -111,6 +111,25 @@ it('el admin SÍ puede editar pasados 3 min', function () {
     expect((float) $venta->fresh()->load('items')->items->first()->cantidad)->toBe(3.0);
 });
 
+it('el admin SÍ puede editar pasados 3 min cuando cajera_puede_editar está desactivado', function () {
+    $this->env->empresa->update([
+        'cajera_puede_editar' => false,
+        'venta_edicion_con_contador' => false,
+        'venta_edicion_minutos' => 3,
+    ]);
+
+    $turnoCajera = $this->env->abrirTurno($this->cajera);
+    $venta = ventaBase($this->cajera, $turnoCajera, 2);
+    \App\Models\Venta::where('id', $venta->id)->update(['created_at' => now()->subMinutes(10)]); $venta->refresh();
+
+    // El admin sin turno propio edita a 5 unidades
+    $this->actingAs($this->env->admin)
+        ->put(route('ventas.update', $venta), payloadEdicion(5))
+        ->assertRedirect(route('ventas.show', $venta));
+
+    expect((float) $venta->fresh()->load('items')->items->first()->cantidad)->toBe(5.0);
+});
+
 it('la cajera anula dentro de 3 min sin código y se restaura stock', function () {
     $turno = $this->env->abrirTurno($this->cajera);
     $venta = ventaBase($this->cajera, $turno, 2); // stock 98
