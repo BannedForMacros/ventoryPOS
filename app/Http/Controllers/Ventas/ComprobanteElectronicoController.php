@@ -107,11 +107,14 @@ class ComprobanteElectronicoController extends Controller
                 // `emitible` le dice al POS si vale la pena seguir preguntando:
                 // un ticket nunca va a tener comprobante, y con el módulo apagado
                 // tampoco lo va a tener ninguna venta.
-                'emitible' => $venta->tipo_comprobante !== 'ticket' && $this->comprobantesDisponibles($venta->empresa_id),
+                'emitible' => !in_array($venta->tipo_comprobante, ['ticket', 'boleta_externa', 'factura_externa'], true)
+                    && $this->comprobantesDisponibles($venta->empresa_id),
                 'estado'   => null,
                 'mensaje'  => $venta->tipo_comprobante === 'ticket'
                     ? 'Nota de venta interna: no se informa a SUNAT.'
-                    : 'La emisión está en cola.',
+                    : (in_array($venta->tipo_comprobante, ['boleta_externa', 'factura_externa'], true)
+                        ? 'Comprobante electrónico registrado externamente.'
+                        : 'La emisión está en cola.'),
             ]);
         }
 
@@ -169,8 +172,8 @@ class ComprobanteElectronicoController extends Controller
     public function reintentar(Request $request, Venta $venta)
     {
         abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
-        abort_if($venta->tipo_comprobante === 'ticket', 422,
-            'Un ticket es una nota de venta interna: no se emite ante SUNAT.');
+        abort_if(in_array($venta->tipo_comprobante, ['ticket', 'boleta_externa', 'factura_externa'], true), 422,
+            'Este tipo de comprobante no se emite ante SUNAT desde el sistema.');
         // Misma guarda que el resto: apagado o sin migrar, ni se consulta la tabla.
         abort_unless($this->comprobantesDisponibles($venta->empresa_id), 422,
             'La facturación electrónica de esta empresa está desactivada.');

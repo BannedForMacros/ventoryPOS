@@ -5,6 +5,7 @@ import Button from '@/Components/UI/Button';
 import type { Cliente, DescuentoConcepto, MetodoPago } from '@/types';
 import type { LineaCarrito } from './CarritoItem';
 import type { LineaPago } from './PanelPago';
+import { etiquetaComprobante } from '@/lib/comprobanteElectronico';
 
 interface Props {
     isOpen:              boolean;
@@ -18,6 +19,7 @@ interface Props {
     descuentoTotal:      number;
     descuentoConceptoId: number | null;
     tipoComprobante:     string;
+    numeroComprobante?:  string;
     subtotal:            number;
     igv:                 number;
     total:               number;
@@ -42,7 +44,7 @@ function SectionLabel({ icon: Icon, label }: { icon: React.ElementType; label: s
 
 export default function ModalConfirmacionVenta({
     isOpen, onClose, onConfirmar, loading,
-    items, pagos, cliente, descuentoTotal, descuentoConceptoId, tipoComprobante,
+    items, pagos, cliente, descuentoTotal, descuentoConceptoId, tipoComprobante, numeroComprobante = '',
     subtotal, igv, total, metodosPago, conceptos,
     entregaPendiente, pendienteDe, fechaEntrega,
 }: Props) {
@@ -135,7 +137,12 @@ export default function ModalConfirmacionVenta({
                                 </span>
                                 <span className="text-sm font-semibold capitalize flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}>
                                     <Receipt size={13} style={{ color: 'var(--color-primary)' }} />
-                                    {tipoComprobante}
+                                    {etiquetaComprobante(tipoComprobante as any)}
+                                    {numeroComprobante && (
+                                        <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>
+                                            ({numeroComprobante})
+                                        </span>
+                                    )}
                                 </span>
                             </div>
                         </div>
@@ -151,8 +158,13 @@ export default function ModalConfirmacionVenta({
                         <Receipt size={13} style={{ color: 'var(--color-primary)' }} />
                         Comprobante
                     </span>
-                    <span className="font-semibold capitalize" style={{ color: 'var(--color-text)' }}>
-                        {tipoComprobante}
+                    <span className="font-semibold" style={{ color: 'var(--color-text)' }}>
+                        {etiquetaComprobante(tipoComprobante as any)}
+                        {numeroComprobante && (
+                            <span className="text-xs font-normal ml-1" style={{ color: 'var(--color-text-muted)' }}>
+                                ({numeroComprobante})
+                            </span>
+                        )}
                     </span>
                 </div>
 

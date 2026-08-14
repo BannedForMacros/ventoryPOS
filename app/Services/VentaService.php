@@ -120,6 +120,7 @@ class VentaService
                         'numero'                => Venta::generarNumero($turno->id),
                         'idempotency_key'       => $idempotencyKey,
                         'tipo_comprobante'      => $data['tipo_comprobante'],
+                        'numero_comprobante'    => $data['numero_comprobante'] ?? null,
                         'subtotal'              => 0,
                         'descuento_total'       => round((float) ($data['descuento_total'] ?? 0) * $factor, 2),
                         'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
@@ -505,6 +506,7 @@ class VentaService
             $venta->update([
                 'cliente_id'            => $clienteId,
                 'tipo_comprobante'      => $data['tipo_comprobante'] ?? $venta->tipo_comprobante,
+                'numero_comprobante'    => $data['numero_comprobante'] ?? $venta->numero_comprobante,
                 'descuento_total'       => round((float) ($data['descuento_total'] ?? 0) * $factor, 2),
                 'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
                 'observacion'           => $data['observacion'] ?? null,

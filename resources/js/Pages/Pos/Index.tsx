@@ -19,7 +19,7 @@ import ModalConfirmacionVenta from './Partials/ModalConfirmacionVenta';
 import ModalSelectorPresentacion from './Partials/ModalSelectorPresentacion';
 import {
     validarComprobante, etiquetaComprobante, metaEstado, avisoModoEmision,
-    UMBRAL_BOLETA_IDENTIFICADA, type BloqueoComprobante,
+    UMBRAL_BOLETA_IDENTIFICADA, type BloqueoComprobante, type TipoComprobantePos,
 } from '@/lib/comprobanteElectronico';
 import type {
     Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, ProductoUnidad,
@@ -92,6 +92,7 @@ interface VentaEnEdicion {
     id:                    number;
     numero:                string;
     tipo_comprobante:      TipoComprobante;
+    numero_comprobante:    string | null;
     descuento_total:       number;
     descuento_concepto_id: number | null;
     moneda:                'PEN' | 'USD';
@@ -149,7 +150,7 @@ interface Props extends PageProps {
     vendeTransito?:     boolean;
 }
 
-type TipoComprobante = 'ticket' | 'boleta' | 'factura';
+type TipoComprobante = TipoComprobantePos;
 
 function uid() { return Math.random().toString(36).slice(2); }
 
@@ -427,6 +428,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     const [descuentoTotal, setDescuentoTotal]       = useState(ventaEnEdicion?.descuento_total ?? 0);
     const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(ventaEnEdicion?.descuento_concepto_id ?? null);
     const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>(ventaEnEdicion?.tipo_comprobante ?? 'ticket');
+    const [numeroComprobante, setNumeroComprobante] = useState(ventaEnEdicion?.numero_comprobante ?? '');
     // Multimoneda: moneda de la venta. En USD los precios/pagos se ingresan en
     // dólares y el backend los convierte a soles al TC del día (congelado).
     const [moneda, setMoneda]                       = useState<'PEN' | 'USD'>(ventaEnEdicion?.moneda ?? 'PEN');
@@ -799,6 +801,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         setDescuentoTotal(0);
         setDescuentoConceptoId(null);
         setTipoComprobante('ticket');
+        setNumeroComprobante('');
         // La venta a crédito no debe "heredarse" a la siguiente venta.
         setEsCredito(false);
         setFechaVencimiento('');
@@ -842,7 +845,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // StoreVentaRequest las aplica igual aunque el módulo esté apagado, y un 422
     // después de cobrar es justo lo que V10 existe para evitar.
     const feActiva  = !!facturacion?.enabled;
-    const emiteCPE  = tipoComprobante !== 'ticket';
+    const esComprobanteExterno = tipoComprobante === 'boleta_externa' || tipoComprobante === 'factura_externa';
+    const emiteCPE  = tipoComprobante !== 'ticket' && !esComprobanteExterno;
     // El umbral bueno lo dicta el EMISOR (§7). El 700 de la constante es el
     // default de último recurso, no una configuración del POS.
     const umbralCPE = facturacion?.umbral_boleta_identificada ?? UMBRAL_BOLETA_IDENTIFICADA;
@@ -850,7 +854,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // de /api/v1/configuracion). El POS no la manda al emitir —la numeración es
     // del emisor— pero enseñarla en caja es lo que habría hecho visible, antes de
     // cobrar, la boleta de prueba que salió por la serie fiscal real B001.
-    const serieCPE  = !feActiva ? null
+    const serieCPE  = !feActiva || esComprobanteExterno ? null
         : tipoComprobante === 'factura' ? (facturacion?.series?.factura ?? null)
         : tipoComprobante === 'boleta'  ? (facturacion?.series?.boleta  ?? null)
         : null;
@@ -949,6 +953,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         const payload = {
             cliente_id:            cliente?.id ?? null,
             tipo_comprobante:      tipoComprobante,
+            numero_comprobante:    esComprobanteExterno ? (numeroComprobante.trim() || null) : null,
             // Solo el POST de creación lo usa; en edición se ignora (no auto-imprime).
             imprimir,
             descuento_total:       descuentoTotal,
@@ -1236,9 +1241,28 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                             className="text-xs bg-white/15 border-0 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-white/30"
                         >
                             <option value="ticket" className="text-gray-900">Sin comprobante</option>
-                            <option value="boleta" className="text-gray-900">Boleta</option>
-                            <option value="factura" className="text-gray-900">Factura</option>
+                            {feActiva ? (
+                                <>
+                                    <option value="boleta" className="text-gray-900">Boleta</option>
+                                    <option value="factura" className="text-gray-900">Factura</option>
+                                </>
+                            ) : (
+                                <>
+                                    <option value="boleta_externa" className="text-gray-900">Boleta electrónica externa</option>
+                                    <option value="factura_externa" className="text-gray-900">Factura electrónica externa</option>
+                                </>
+                            )}
                         </select>
+                        {esComprobanteExterno && (
+                            <input
+                                type="text"
+                                value={numeroComprobante}
+                                onChange={e => setNumeroComprobante(e.target.value.toUpperCase())}
+                                placeholder="N° comprobante"
+                                maxLength={30}
+                                className="text-xs bg-white/15 border-0 rounded-lg px-2 py-1.5 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 w-32"
+                            />
+                        )}
                         {/* Serie que se usará / motivo de bloqueo, junto al selector. */}
                         <PistaComprobante
                             visible={emiteCPE}
@@ -1332,9 +1356,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                     color: '#fff',
                                 }}
                             >
-                                {feActiva
-                                    ? etiquetaComprobante(tipoComprobante)
-                                    : (tipoComprobante === 'factura' ? 'Factura' : 'Boleta')}
+                                {etiquetaComprobante(tipoComprobante)}
                             </span>
                             {serieCPE && (
                                 <span style={{ color: 'var(--color-text-muted)' }}>
@@ -1345,11 +1367,15 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>
                                     {bloqueoComprobante.motivo}
                                 </span>
-                            ) : feActiva && (
+                            ) : feActiva && !esComprobanteExterno ? (
                                 <span className="text-xs opacity-80" style={{ color: 'var(--color-text-muted)' }}>
                                     · Se emitirá a SUNAT al cerrar la venta
                                 </span>
-                            )}
+                            ) : esComprobanteExterno ? (
+                                <span className="text-xs opacity-80" style={{ color: 'var(--color-text-muted)' }}>
+                                    · Se registra sin emitir desde el sistema
+                                </span>
+                            ) : null}
                         </div>
                         <div className="flex items-center gap-3 flex-shrink-0">
                             {bloqueoComprobante?.requiereCliente && (
@@ -1608,8 +1634,17 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
                             >
                                 <option value="ticket">Sin comprobante</option>
-                                <option value="boleta">Boleta</option>
-                                <option value="factura">Factura</option>
+                                {feActiva ? (
+                                    <>
+                                        <option value="boleta">Boleta</option>
+                                        <option value="factura">Factura</option>
+                                    </>
+                                ) : (
+                                    <>
+                                        <option value="boleta_externa">Boleta electrónica externa</option>
+                                        <option value="factura_externa">Factura electrónica externa</option>
+                                    </>
+                                )}
                             </select>
                             {/* Misma pista que en la barra superior (misma lógica, sin duplicar). */}
                             <PistaComprobante
@@ -1618,6 +1653,17 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                 bloqueo={bloqueoComprobante}
                             />
                         </div>
+                        {esComprobanteExterno && (
+                            <input
+                                type="text"
+                                value={numeroComprobante}
+                                onChange={e => setNumeroComprobante(e.target.value.toUpperCase())}
+                                placeholder="N° comprobante (opcional)"
+                                maxLength={30}
+                                className="mt-1.5 w-full text-xs border rounded-lg px-2 py-1.5"
+                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                            />
+                        )}
                         {emiteCPE && bloqueoComprobante && (
                             <button
                                 onClick={() => bloqueoComprobante.requiereCliente ? setModalCliente(true) : setTipoComprobante('ticket')}
@@ -1821,6 +1867,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                 descuentoTotal={descuentoTotal}
                 descuentoConceptoId={descuentoConceptoId}
                 tipoComprobante={tipoComprobante}
+                numeroComprobante={numeroComprobante}
                 subtotal={subtotal}
                 igv={igv}
                 total={total}

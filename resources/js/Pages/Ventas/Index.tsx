@@ -16,7 +16,7 @@ import FiltrosCard from '@/Components/UI/FiltrosCard';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import {
     rutaComprobante, metaEstado, estadoEnCurso, comprobanteEmitido, comprobanteConProblema,
-    etiquetaTipoSunat, type EstadoComprobanteResp,
+    etiquetaTipoSunat, etiquetaComprobante, type EstadoComprobanteResp,
 } from '@/lib/comprobanteElectronico';
 import type { ComprobanteElectronico, Local, PageProps, Venta } from '@/types';
 
@@ -391,8 +391,13 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                 </td>
                                 <td className="px-4 py-3">
                                     <span className="capitalize text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                        {v.tipo_comprobante}
+                                        {etiquetaComprobante(v.tipo_comprobante as any)}
                                     </span>
+                                    {v.numero_comprobante && (
+                                        <span className="block text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                            {v.numero_comprobante}
+                                        </span>
+                                    )}
                                     {/* El sello solo aparece si hay CPE: un `ticket` se ve igual que siempre. */}
                                     <SelloComprobante ce={ce(v)} />
                                 </td>
@@ -515,7 +520,10 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                         <Calendar size={11} />
                                         {new Date(v.fecha_venta).toLocaleDateString('es-PE')}
                                     </span>
-                                    <span className="capitalize">{v.tipo_comprobante}</span>
+                                    <span className="capitalize">{etiquetaComprobante(v.tipo_comprobante as any)}</span>
+                                    {v.numero_comprobante && (
+                                        <span> · {v.numero_comprobante}</span>
+                                    )}
                                 </div>
                                 {/* Mismo sello que en la tabla: la cajera de tablet ve lo mismo. */}
                                 <SelloComprobante ce={ce(v)} />

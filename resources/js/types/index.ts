@@ -450,7 +450,8 @@ export interface Venta extends Record<string, unknown> {
     user_id:               number;
     cliente_id:            number | null;
     numero:                string;
-    tipo_comprobante:      'ticket' | 'boleta' | 'factura';
+    tipo_comprobante:      'ticket' | 'boleta' | 'factura' | 'boleta_externa' | 'factura_externa';
+    numero_comprobante:    string | null;
     subtotal:              string;
     descuento_total:       string;
     descuento_concepto_id: number | null;

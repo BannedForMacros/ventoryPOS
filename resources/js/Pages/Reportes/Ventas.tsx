@@ -65,7 +65,13 @@ interface Props extends PageProps {
     filters:         Filters;
 }
 
-const COMPROBANTE_LABEL: Record<string, string> = { ticket: 'Ticket', boleta: 'Boleta', factura: 'Factura' };
+const COMPROBANTE_LABEL: Record<string, string> = {
+    ticket:           'Ticket',
+    boleta:           'Boleta',
+    factura:          'Factura',
+    boleta_externa:   'Boleta electrónica externa',
+    factura_externa:  'Factura electrónica externa',
+};
 
 const nombreCliente = (v: Venta) =>
     (v.cliente as any)?.razon_social
@@ -145,6 +151,8 @@ export default function ReportesVentas({
                         { value: 'ticket', label: 'Ticket' },
                         { value: 'boleta', label: 'Boleta' },
                         { value: 'factura', label: 'Factura' },
+                        { value: 'boleta_externa', label: 'Boleta electrónica externa' },
+                        { value: 'factura_externa', label: 'Factura electrónica externa' },
                     ]} />
                 <div className="col-span-2 sm:col-span-1">
                     <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>

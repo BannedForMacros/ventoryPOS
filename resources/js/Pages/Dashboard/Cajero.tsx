@@ -5,6 +5,7 @@ import {
     PlayCircle, Receipt, ShoppingCart, Undo2, Wallet,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
+import { etiquetaComprobante } from '@/lib/comprobanteElectronico';
 import type { PageProps } from '@/types';
 
 interface MetodoRow { nombre: string; tipo: string; total: string; }
@@ -301,7 +302,7 @@ export default function DashboardCajero({
                                                     className="text-xs font-normal capitalize ml-1 rounded px-1.5 py-0.5"
                                                     style={{ backgroundColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}
                                                 >
-                                                    {v.tipo_comprobante}
+                                                    {etiquetaComprobante(v.tipo_comprobante as any)}
                                                 </span>
                                             </p>
                                             <p className="text-xs truncate mt-0.5" style={{ color: 'var(--color-text-muted)' }}>

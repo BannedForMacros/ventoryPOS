@@ -13,7 +13,7 @@ class Venta extends Model
 {
     protected $fillable = [
         'empresa_id', 'local_id', 'turno_id', 'caja_id', 'user_id', 'cliente_id',
-        'numero', 'idempotency_key', 'tipo_comprobante',
+        'numero', 'idempotency_key', 'tipo_comprobante', 'numero_comprobante',
         'subtotal', 'descuento_total', 'descuento_concepto_id', 'igv', 'total',
         'estado', 'observacion', 'fecha_venta',
         'es_credito', 'monto_pagado', 'saldo_pendiente', 'fecha_vencimiento',

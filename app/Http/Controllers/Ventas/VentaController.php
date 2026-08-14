@@ -1068,7 +1068,8 @@ class VentaController extends Controller
         // implica que la venta NO tenía comprobante informado a SUNAT: la
         // guarda de VentaService::actualizar() aborta ese caso (solo cabe Nota
         // de Crédito). Aun así el job revalida con esEmitido() antes de emitir.
-        if ($venta->tipo_comprobante !== 'ticket') {
+        // Los comprobantes externos nunca se emiten por este canal.
+        if (!in_array($venta->tipo_comprobante, ['ticket', 'boleta_externa', 'factura_externa'], true)) {
             EmitirComprobanteElectronico::dispatch($venta)->afterCommit();
         }
 
@@ -1161,7 +1162,9 @@ class VentaController extends Controller
         // tarda o está caído, el cajero no puede quedarse esperando con la cola
         // de clientes delante. `afterCommit` garantiza que el worker no lea la
         // venta antes de que exista. El `ticket` es nota interna: no se emite.
-        if ($venta->tipo_comprobante !== 'ticket') {
+        // Los comprobantes "externos" tampoco se emiten: son boletas/facturas
+        // electrónicas que el cliente genera por su cuenta en otro sistema.
+        if (!in_array($venta->tipo_comprobante, ['ticket', 'boleta_externa', 'factura_externa'], true)) {
             EmitirComprobanteElectronico::dispatch($venta)->afterCommit();
         }
 

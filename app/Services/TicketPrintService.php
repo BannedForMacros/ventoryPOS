@@ -23,9 +23,11 @@ class TicketPrintService
 {
     /** Etiqueta imprimible por tipo de comprobante del POS. */
     private const TIPOS_DOCUMENTO = [
-        'ticket'  => 'NOTA DE VENTA',
-        'boleta'  => 'BOLETA DE VENTA',
-        'factura' => 'FACTURA',
+        'ticket'          => 'NOTA DE VENTA',
+        'boleta'          => 'BOLETA DE VENTA',
+        'factura'         => 'FACTURA',
+        'boleta_externa'  => 'BOLETA ELECTRONICA EXTERNA',
+        'factura_externa' => 'FACTURA ELECTRONICA EXTERNA',
     ];
 
     /**

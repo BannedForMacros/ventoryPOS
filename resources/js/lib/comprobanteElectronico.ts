@@ -12,7 +12,10 @@
 import type { Cliente, ComprobanteEstado, ModoFacturacion } from '@/types';
 
 /** Tipos de comprobante del POS (ventas.tipo_comprobante). */
-export type TipoComprobantePos = 'ticket' | 'boleta' | 'factura';
+export type TipoComprobantePos = 'ticket' | 'boleta' | 'factura' | 'boleta_externa' | 'factura_externa';
+
+/** Comprobantes que no se emiten electrónicamente por el sistema. */
+export const COMPROBANTES_SIN_EMISION: TipoComprobantePos[] = ['ticket', 'boleta_externa', 'factura_externa'];
 
 /**
  * Umbral SUNAT: desde este importe una boleta exige adquirente identificado.
@@ -203,8 +206,8 @@ export function validarComprobante({
     // pantalla sin respaldo, o peor, un 422 tras cobrar.
     if (! emisionActiva) return null;
 
-    // Nota de venta interna: no se emite nada a SUNAT. Cero validaciones.
-    if (tipoComprobante === 'ticket') return null;
+    // Nota de venta interna o comprobantes externos: no se emite nada a SUNAT.
+    if (tipoComprobante === 'ticket' || tipoComprobante === 'boleta_externa' || tipoComprobante === 'factura_externa') return null;
 
     // G12 — v1 emite siempre en soles (es lo que la venta contabiliza).
     if (moneda === 'USD') {
@@ -242,8 +245,10 @@ export function validarComprobante({
 
 /** Etiqueta larga del comprobante que se va a emitir. */
 export function etiquetaComprobante(tipo: TipoComprobantePos): string {
-    if (tipo === 'factura') return 'Factura electrónica';
-    if (tipo === 'boleta')  return 'Boleta de venta electrónica';
+    if (tipo === 'factura')         return 'Factura electrónica';
+    if (tipo === 'factura_externa') return 'Factura electrónica externa';
+    if (tipo === 'boleta')          return 'Boleta de venta electrónica';
+    if (tipo === 'boleta_externa')  return 'Boleta de venta electrónica externa';
     return 'Nota de venta interna';
 }
 

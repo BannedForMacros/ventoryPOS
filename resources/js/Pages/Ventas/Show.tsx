@@ -14,7 +14,7 @@ import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import {
-    rutaComprobante, metaEstado, estadoEnCurso, puedeReintentar, etiquetaTipoSunat,
+    rutaComprobante, metaEstado, estadoEnCurso, puedeReintentar, etiquetaTipoSunat, etiquetaComprobante,
     type EstadoComprobanteResp,
 } from '@/lib/comprobanteElectronico';
 import type { PageProps, Venta, VentaItem, VentaPago, DescuentoLog, ComprobanteElectronico } from '@/types';
@@ -237,7 +237,16 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                                     {new Date(venta.fecha_venta).toLocaleString('es-PE')}
                                 </span>
                             } />
-                            <InfoRow label="Comprobante" value={<span className="capitalize">{venta.tipo_comprobante}</span>} />
+                            <InfoRow label="Comprobante" value={
+                                <span className="capitalize">
+                                    {etiquetaComprobante(venta.tipo_comprobante as any)}
+                                    {venta.numero_comprobante && (
+                                        <span className="block text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>
+                                            {venta.numero_comprobante}
+                                        </span>
+                                    )}
+                                </span>
+                            } />
                             <InfoRow label="Cliente" value={
                                 <span className="flex items-center gap-1">
                                     <User size={12} className="opacity-50" />
@@ -371,7 +380,7 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
 
                     {/* V11 — Comprobante electrónico. Las ventas `ticket` son notas
                         de venta internas: no se consulta nada y no se pinta nada. */}
-                    {venta.tipo_comprobante !== 'ticket' && (
+                    {venta.tipo_comprobante !== 'ticket' && !['boleta_externa', 'factura_externa'].includes(venta.tipo_comprobante) && (
                         <BloqueComprobanteElectronico
                             ventaId={venta.id}
                             inicial={venta.comprobante_electronico ?? null}

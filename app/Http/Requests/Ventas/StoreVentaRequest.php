@@ -28,8 +28,8 @@ class StoreVentaRequest extends FormRequest
                     ->where('empresa_id', $empresaId)
                     ->where('activo', true),
             ],
-            'tipo_comprobante'       => ['required', Rule::in(['ticket', 'boleta', 'factura'])],
-            'observacion'            => ['nullable', 'string', 'max:500'],
+            'tipo_comprobante'       => ['required', Rule::in(['ticket', 'boleta', 'factura', 'boleta_externa', 'factura_externa'])],
+            'numero_comprobante'     => ['nullable', 'string', 'max:30'],            'observacion'            => ['nullable', 'string', 'max:500'],
             // Multimoneda: moneda de la venta y TC del día (soles por 1 USD).
             // Los precios/pagos vienen EN esa moneda; el backend convierte a soles.
             'moneda'                 => ['nullable', Rule::in(['PEN', 'USD'])],
@@ -172,7 +172,7 @@ class StoreVentaRequest extends FormRequest
 
         $tipo = $this->input('tipo_comprobante');
         if (!in_array($tipo, ['boleta', 'factura'], true)) {
-            return; // ticket: nota de venta interna, sin reglas SUNAT
+            return; // ticket o comprobantes externos: no aplican reglas SUNAT
         }
 
         // G12 — La venta puede cobrarse en USD, pero ventoryPOS contabiliza
