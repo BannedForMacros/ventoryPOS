@@ -434,6 +434,17 @@ class VentaService
                 abort(422, 'Esta venta tiene entregas de mercadería pendiente ya registradas. Para corregirla, anúlala y regístrala de nuevo.');
             }
 
+            // V15 — Una venta con devoluciones ya registradas no se puede editar
+            // borrando sus ítems: devoluciones_detalle referencia venta_item_id.
+            // El bloqueo es temprano para no dejar caer un error de FK.
+            $tieneDevoluciones = DB::table('devoluciones_detalle')
+                ->join('devoluciones', 'devoluciones.id', '=', 'devoluciones_detalle.devolucion_id')
+                ->whereIn('devoluciones_detalle.venta_item_id', $venta->items->pluck('id'))
+                ->exists();
+            if ($tieneDevoluciones) {
+                abort(422, 'Esta venta tiene devoluciones registradas. Para corregirla, anúlala y regístrala de nuevo.');
+            }
+
             $anticiposPendientes = $venta->anticipos()->where('estado', 'activo')->with('items')->get();
 
             $venta->loadMissing('items', 'local', 'turno.local');
