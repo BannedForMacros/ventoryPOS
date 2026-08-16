@@ -93,6 +93,7 @@ it('no permite editar otra empresa ni eliminar empresas desde el panel', functio
         'modo_almacen' => 'simple',
         'modo_cierre_caja' => 'con_declaraciones',
         'modo_cierre_inventario' => 'por_venta',
+        'venta_edicion_minutos' => 3,
     ])->assertForbidden();
 
     $this->delete(route('configuracion.empresas.destroy', $this->env->empresa))->assertForbidden();

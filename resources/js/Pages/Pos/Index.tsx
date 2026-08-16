@@ -125,7 +125,11 @@ interface TurnoBackdate {
 interface Props extends PageProps {
     turno:              Turno;
     productos:          Producto[];
-    clientes:           Cliente[];
+    productosHasMore: boolean;
+    productosCursor:    string | null;
+    clienteGeneral:     Cliente | null;
+    categorias:         string[];
+    hayServicios:       boolean;
     metodosPago:        MetodoPagoConCuentas[];
     conceptosDescuento: DescuentoConcepto[];
     citaPrellenada?:    CitaPrellenada | null;
@@ -309,7 +313,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, clientes, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito }: Props) {
+export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito }: Props) {
     // Configuración de la empresa (configurable por tenant).
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
@@ -317,14 +321,6 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
     const permiteDuplicarItems = empresaAuth?.permite_duplicar_items_venta ?? false;
-
-    // A15: identificar el Cliente General por la flag `es_cliente_general`
-    // (no por DNI mágico). Fallback al DNI legado para compatibilidad si el
-    // backend no envía la flag por alguna razón.
-    const clienteGeneral =
-        clientes.find(c => (c as Cliente & { es_cliente_general?: boolean }).es_cliente_general)
-        ?? clientes.find(c => c.numero_documento === '99999999')
-        ?? null;
 
     // Si venimos desde una cita O una cotización, prellenar carrito y cliente
     // automaticamente. Cada linea propaga su flag `inactivo` para que
@@ -484,6 +480,109 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
     // Refresco del catálogo (solo la lista de productos) sin perder el carrito.
     const [refrescando, setRefrescando] = useState(false);
 
+    // ── Búsqueda server-side de productos (scroll infinito) ───────────────
+    // El POS ya no carga TODOS los productos de la empresa; solo los 40 más
+    // vendidos y búsquedas paginadas. `listaProductos` es el catalogo actual.
+    const [listaProductos, setListaProductos] = useState<Producto[]>(productos);
+    const [hasMoreProductos, setHasMoreProductos] = useState(productosHasMore);
+    const [cursorProductos, setCursorProductos] = useState<string | null>(productosCursor);
+    const [cargandoProductos, setCargandoProductos] = useState(false);
+    const [productosQuery, setProductosQuery] = useState('');
+    const productosAbortRef = useRef<AbortController | null>(null);
+    const productosTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const gridRef = useRef<HTMLDivElement>(null);
+    const sentinelRef = useRef<HTMLDivElement>(null);
+    const paramsProductosRef = useRef({ q: '', categoria: null as string | null, tipo: null as 'producto' | 'servicio' | null });
+    const productosInicialRef = useRef(true);
+
+    paramsProductosRef.current = { q: productosQuery, categoria: categoriaActiva, tipo: tipoActivo };
+
+    function mergeProductosUnicos(base: Producto[], nuevos: Producto[]): Producto[] {
+        const vistos = new Set(base.map(p => p.id));
+        return [...base, ...nuevos.filter(p => !vistos.has(p.id))];
+    }
+
+    async function fetchProductos({
+        q = productosQuery,
+        categoria = categoriaActiva,
+        tipo = tipoActivo,
+        cursor = null,
+        append = false,
+        onFinally,
+    }: {
+        q?: string;
+        categoria?: string | null;
+        tipo?: 'producto' | 'servicio' | null;
+        cursor?: string | null;
+        append?: boolean;
+        onFinally?: () => void;
+    }) {
+        if (cargandoProductos) { onFinally?.(); return; }
+        setCargandoProductos(true);
+        productosAbortRef.current?.abort();
+        const ctrl = new AbortController();
+        productosAbortRef.current = ctrl;
+        try {
+            const params: Record<string, any> = {
+                q: q.trim(),
+                categoria_id: categoria,
+                tipo,
+            };
+            if (cursor) params.cursor = cursor;
+            if (ventaEnEdicion?.id) params.venta_id = ventaEnEdicion.id;
+            const { data } = await axios.get<{
+                productos: Producto[];
+                has_more: boolean;
+                cursor: string | null;
+            }>(route('pos.productos'), { params, signal: ctrl.signal });
+            setHasMoreProductos(data.has_more);
+            setCursorProductos(data.cursor ?? null);
+            setListaProductos(prev => append ? mergeProductosUnicos(prev, data.productos) : data.productos);
+        } catch (e: any) {
+            if (!axios.isCancel(e)) {
+                toast.error(e?.response?.data?.message || 'Error al cargar productos');
+            }
+        } finally {
+            setCargandoProductos(false);
+            onFinally?.();
+        }
+    }
+
+    // Debounce de la búsqueda y fetch automático cuando cambian filtros.
+    useEffect(() => {
+        productosTimerRef.current && clearTimeout(productosTimerRef.current);
+        productosTimerRef.current = setTimeout(() => setProductosQuery(busqueda), 250);
+        return () => { productosTimerRef.current && clearTimeout(productosTimerRef.current); };
+    }, [busqueda]);
+
+    useEffect(() => {
+        // Saltar la primera ejecución si ya tenemos los productos iniciales.
+        if (productosInicialRef.current && productosQuery === '' && !categoriaActiva && !tipoActivo) {
+            productosInicialRef.current = false;
+            return;
+        }
+        productosInicialRef.current = false;
+        fetchProductos({ q: productosQuery, cursor: null, append: false });
+    }, [productosQuery, categoriaActiva, tipoActivo]);
+
+    // Scroll infinito: observar el sentinel dentro del grid de productos.
+    useEffect(() => {
+        const grid = gridRef.current;
+        const sentinel = sentinelRef.current;
+        if (!grid || !sentinel) return;
+        const obs = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && hasMoreProductos && !cargandoProductos) {
+                    const p = paramsProductosRef.current;
+                    fetchProductos({ ...p, cursor: cursorProductos, append: true });
+                }
+            },
+            { root: grid, rootMargin: '0px 0px 120px 0px', threshold: 0 },
+        );
+        obs.observe(sentinel);
+        return () => obs.disconnect();
+    }, [hasMoreProductos, cargandoProductos, cursorProductos]);
+
     function mostrarTooltipSiCortado(e: React.MouseEvent<HTMLButtonElement>, producto: Producto) {
         const nombreEl = e.currentTarget.querySelector('[data-nombre]') as HTMLElement | null;
         // scrollHeight > clientHeight => el texto no cupo y se truncó con "..."
@@ -497,20 +596,19 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
-    // Refrescar SOLO el catálogo de productos (recarga parcial de Inertia) sin
-    // perder el carrito, moneda ni cliente. Se dispara SOLO con el botón manual
-    // "Actualizar" (no automático): antes se hacía al volver a la pestaña, pero
-    // eso disparaba el overlay de carga en bucle. Ahora es 100% a demanda.
+    // Refrescar catálogo de productos vía búsqueda server-side. Al resetear
+    // filtros y consultar, se actualiza la lista sin perder el carrito.
     function refrescarCatalogo() {
         if (refrescando) return;
         setRefrescando(true);
-        // reload() de Inertia 2 preserva estado y scroll por defecto (no se
-        // pierde el carrito). `only` recarga únicamente la lista de productos.
-        router.reload({
-            only: ['productos'],
-            onFinish: () => setRefrescando(false),
-        });
+        setBusqueda('');
+        setCategoriaActiva(null);
+        setTipoActivo(null);
+        fetchProductos({ q: '', categoria: null, tipo: null, cursor: null, append: false, onFinally: () => setRefrescando(false) });
     }
+
+    // Cancelar búsquedas pendientes al desmontar el POS.
+    useEffect(() => () => { productosAbortRef.current?.abort(); }, []);
 
     // Aviso inmediato al cajero cuando se abre el POS desde una cita o una
     // cotización con items desactivados. Solo se dispara una vez al montar;
@@ -579,41 +677,8 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
         }
     }, [total]);
 
-    const hayServicios = useMemo(() => productos.some(p => p.tipo === 'servicio'), [productos]);
-
-    // Categorías únicas
-    const categorias = useMemo(() => {
-        const cats = new Set<string>();
-        productos.forEach(p => {
-            if (p.categoria?.nombre) cats.add(p.categoria.nombre);
-        });
-        return Array.from(cats).sort();
-    }, [productos]);
-
-    const productosFiltrados = useMemo(() => {
-        let filtrados = productos;
-        const q = busqueda.toLowerCase();
-
-        // La pestaña ordena la NAVEGACIÓN, no la búsqueda: quien escribe el
-        // nombre de un servicio lo quiere encontrar aunque esté parado en
-        // Productos. Por eso el filtro por tipo se salta si hay texto escrito.
-        if (tipoActivo && !q) {
-            filtrados = filtrados.filter(p => p.tipo === tipoActivo);
-        }
-
-        if (categoriaActiva) {
-            filtrados = filtrados.filter(p => p.categoria?.nombre === categoriaActiva);
-        }
-
-        if (q) {
-            filtrados = filtrados.filter(p =>
-                p.nombre.toLowerCase().includes(q) ||
-                (p.codigo ?? '').toLowerCase().includes(q) ||
-                (p.categoria?.nombre ?? '').toLowerCase().includes(q)
-            );
-        }
-        return filtrados;
-    }, [busqueda, productos, categoriaActiva, tipoActivo]);
+    // El catálogo visible es ahora el resultado de búsquedas server-side.
+    const productosFiltrados = listaProductos;
 
     /**
      * Enter en el buscador: agrega directo si hay match exacto de codigo
@@ -623,14 +688,50 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
      */
     function onBusquedaKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
         if (e.key !== 'Enter') return;
-        const q = busqueda.trim().toLowerCase();
+        const qRaw = busqueda.trim();
+        const q = qRaw.toLowerCase();
         if (!q) return;
-        const exacto    = productos.find(p => (p.codigo ?? '').toLowerCase() === q);
-        const candidato = exacto ?? (productosFiltrados.length === 1 ? productosFiltrados[0] : null);
-        if (candidato) {
-            agregarProducto(candidato);
+        // Cancelar el debounce pendiente y buscar inmediatamente en el servidor.
+        productosTimerRef.current && clearTimeout(productosTimerRef.current);
+        const exactoLocal = productosFiltrados.find(p => (p.codigo ?? '').toLowerCase() === q);
+        if (exactoLocal) {
+            agregarProducto(exactoLocal);
             setBusqueda('');
+            return;
         }
+        // Consulta directa al servidor; si hay un único resultado o match exacto,
+        // se agrega automáticamente (flujo escáner de código de barras).
+        productosAbortRef.current?.abort();
+        const ctrl = new AbortController();
+        productosAbortRef.current = ctrl;
+        setCargandoProductos(true);
+        axios.get<{ productos: Producto[]; has_more: boolean; cursor: string | null }>(
+            route('pos.productos'),
+            {
+                params: { q: qRaw, categoria_id: categoriaActiva, tipo: tipoActivo, venta_id: ventaEnEdicion?.id },
+                signal: ctrl.signal,
+            },
+        ).then(({ data }) => {
+            const items = data.productos;
+            const exacto = items.find(p => (p.codigo ?? '').toLowerCase() === q);
+            const candidato = exacto ?? (items.length === 1 ? items[0] : null);
+            if (candidato) {
+                agregarProducto(candidato);
+                setBusqueda('');
+                // Limpiar la lista para que el debounce posterior vuelva a vaciar.
+                setProductosQuery('');
+            } else {
+                setBusqueda(qRaw);
+                setProductosQuery(qRaw);
+            }
+            setHasMoreProductos(data.has_more);
+            setCursorProductos(data.cursor ?? null);
+            setListaProductos(items);
+        }).catch((err: any) => {
+            if (!axios.isCancel(err)) {
+                toast.error(err?.response?.data?.message || 'Error al buscar producto');
+            }
+        }).finally(() => setCargandoProductos(false));
     }
 
     /**
@@ -1533,6 +1634,7 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
 
                     {/* Grid de productos */}
                     <div
+                        ref={gridRef}
                         className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 pb-[calc(96px+env(safe-area-inset-bottom,0px))] lg:pb-3"
                         style={{ overscrollBehavior: 'contain' }}
                     >
@@ -1618,6 +1720,16 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
                                             Limpiar filtros
                                         </button>
                                     )}
+                                </div>
+                            )}
+                            {/* Sentinel + loader para scroll infinito. */}
+                            {(hasMoreProductos || cargandoProductos) && productosFiltrados.length > 0 && (
+                                <div
+                                    ref={sentinelRef}
+                                    className="col-span-full flex items-center justify-center py-4"
+                                    style={{ color: 'var(--color-text-muted)' }}
+                                >
+                                    {cargandoProductos && <RefreshCw size={16} className="animate-spin" />}
                                 </div>
                             )}
                         </div>
@@ -1839,7 +1951,6 @@ export default function PosIndex({ turno, productos, clientes, metodosPago, conc
             <ModalClienteRapido
                 isOpen={modalCliente}
                 onClose={() => setModalCliente(false)}
-                clientes={clientes}
                 selected={cliente}
                 onSelect={setCliente}
                 onCrearNuevo={() => { setModalCliente(false); setModalCrearCliente(true); }}

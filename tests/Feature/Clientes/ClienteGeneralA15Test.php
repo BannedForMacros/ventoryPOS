@@ -117,6 +117,7 @@ it('EmpresaController bloquea crear empresas desde el panel', function () {
         'dias_max_devolucion'             => 30,
         'requiere_aprobacion_devolucion'  => false,
         'restock_default'                 => true,
+        'venta_edicion_minutos'           => 3,
     ];
 
     $this->post(route('configuracion.empresas.store'), $payload)->assertForbidden();

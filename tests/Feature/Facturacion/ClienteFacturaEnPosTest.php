@@ -8,7 +8,7 @@ use Tests\Support\TestEnv;
  *
  * ─── El fallo que esto cierra ────────────────────────────────────────────────
  *
- * `VentaController::index()` mandaba los clientes con un SELECT recortado que no
+ * `VentaController::pos()` mandaba los clientes con un SELECT recortado que no
  * incluía `direccion` ni `es_cliente_general`. Pero `validarComprobante()` (en
  * resources/js/lib/comprobanteElectronico.ts) exige exactamente esos dos:
  *
@@ -30,9 +30,9 @@ use Tests\Support\TestEnv;
  *
  * ─── Cómo se comprueba ───────────────────────────────────────────────────────
  *
- * Se afirma la presencia de las claves en las props de Inertia, no el bloqueo en
- * sí: el bloqueo vive en TypeScript. Lo que este test protege es el CONTRATO entre
- * backend y frontend, que es donde estuvo el fallo.
+ * Ahora el POS no carga toda la lista de clientes; recibe `clienteGeneral` como
+ * prop y consulta el resto por el endpoint `pos.clientes`. El test protege que
+ * ambas fuentes incluyan `direccion` y `es_cliente_general`.
  */
 beforeEach(function () {
     $this->env = TestEnv::crear(['modo_cierre_caja' => 'rapido']);
@@ -42,7 +42,7 @@ beforeEach(function () {
     $this->env->abrirTurno($this->env->admin);
 });
 
-it('el POS recibe direccion y es_cliente_general de cada cliente', function () {
+it('el POS recibe direccion y es_cliente_general del cliente general', function () {
     $cliente = App\Models\Cliente::create([
         'empresa_id'         => $this->env->empresa->id,
         'tipo_documento'     => 'RUC',
@@ -56,19 +56,23 @@ it('el POS recibe direccion y es_cliente_general de cada cliente', function () {
     $this->get(route('pos.index'))
         ->assertOk()
         ->assertInertia(function ($page) use ($cliente) {
-            $clientes = collect($page->toArray()['props']['clientes']);
-            $fila     = $clientes->firstWhere('id', $cliente->id);
+            $general = $page->toArray()['props']['clienteGeneral'];
 
-            expect($fila)->not->toBeNull('El cliente no llegó al POS.');
+            expect($general)->not->toBeNull('El cliente general no llegó al POS.');
 
-            // Las dos claves que decidían el bloqueo, y que faltaban.
-            expect($fila)->toHaveKeys(['direccion', 'es_cliente_general']);
-
-            // Y con su valor real, no en null: un `direccion => null` daría
-            // exactamente el mismo bloqueo que no mandar la clave.
-            expect($fila['direccion'])->toBe('CAL. MANUEL SEOANE NRO 600 URB. LA VICTORIA');
-            expect($fila['es_cliente_general'])->toBeFalse();
+            // El cliente general debe traer la información mínima para validar
+            // comprobantes (dirección solo importa para facturas con RUC, no para
+            // el general, pero la flag es obligatoria para identificarlo).
+            expect($general)->toHaveKeys(['direccion', 'es_cliente_general']);
         });
+
+    // El endpoint de búsqueda de clientes SÍ debe devolver cualquier cliente
+    // activo con los campos completos que el POS necesita para validar facturas.
+    $this->getJson(route('pos.clientes', ['q' => 'SOMAVAP']))
+        ->assertOk()
+        ->assertJsonPath('clientes.0.id', $cliente->id)
+        ->assertJsonPath('clientes.0.direccion', 'CAL. MANUEL SEOANE NRO 600 URB. LA VICTORIA')
+        ->assertJsonPath('clientes.0.es_cliente_general', false);
 });
 
 it('el cliente general llega marcado como tal, sin depender del 99999999', function () {
@@ -94,9 +98,10 @@ it('el cliente general llega marcado como tal, sin depender del 99999999', funct
     $this->get(route('pos.index'))
         ->assertOk()
         ->assertInertia(function ($page) use ($general) {
-            $fila = collect($page->toArray()['props']['clientes'])->firstWhere('id', $general->id);
+            $fila = $page->toArray()['props']['clienteGeneral'];
 
             expect($fila)->not->toBeNull()
+                ->and($fila['id'])->toBe($general->id)
                 ->and($fila['es_cliente_general'])->toBeTrue();
         });
 });

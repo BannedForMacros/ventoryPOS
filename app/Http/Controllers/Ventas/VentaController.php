@@ -11,6 +11,7 @@ use App\Models\DescuentoConcepto;
 use App\Models\Empresa;
 use App\Models\MetodoPago;
 use App\Models\Producto;
+use App\Models\Categoria;
 use App\Models\Turno;
 use App\Models\User;
 use App\Models\Venta;
@@ -20,6 +21,8 @@ use App\Services\LocalScopeService;
 use App\Services\TicketPrintService;
 use App\Services\VentaService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
@@ -155,24 +158,8 @@ class VentaController extends Controller
                 ->with('error', 'Debes tener un turno activo para acceder al POS.');
         }
 
-        $productos = Producto::deEmpresa($user->empresa_id)
-            ->activo()
-            ->select([
-                'id', 'empresa_id', 'categoria_id', 'codigo', 'nombre', 'tipo',
-                'precio_venta', 'precio_costo', 'imagen',
-                'incluye_igv', 'controla_stock',
-            ])
-            ->with([
-                'unidades' => fn($q) => $q
-                    ->select('id', 'producto_id', 'unidad_medida_id', 'es_base', 'factor_conversion', 'precio_venta', 'precio_costo', 'activo')
-                    ->with(['unidadMedida:id,nombre']),
-                'unidadBase' => fn($q) => $q
-                    ->select('id', 'producto_id', 'unidad_medida_id', 'es_base', 'factor_conversion', 'precio_venta', 'precio_costo')
-                    ->with(['unidadMedida:id,nombre']),
-                'categoria:id,nombre',
-            ])
-            ->orderBy('nombre')
-            ->get();
+        $iniciales = $this->productosInicialesPos($user->empresa_id, 40);
+        $productos = $iniciales['productos'];
 
         // Stock disponible (en unidad base) y costo promedio por producto, en una
         // sola query. Antes eran dos `pluck` distintos sobre la misma tabla.
@@ -212,48 +199,24 @@ class VentaController extends Controller
         $configOp    = app(\App\Services\ConfiguracionOperacionService::class);
         $localVentas = $almacenVentas?->local;
 
-        $productos->each(function ($p) use ($almacenVentas, $stockMap, $transitoMap, $configOp, $localVentas) {
-            $controlaStock = $configOp->deboDescontarStock($p, $localVentas);
-            $stockFila = $stockMap[$p->id] ?? null;
+        $aplicarStockPos = function ($items) use ($almacenVentas, $stockMap, $transitoMap, $configOp, $localVentas) {
+            $items->each(function ($p) use ($almacenVentas, $stockMap, $transitoMap, $configOp, $localVentas) {
+                $controlaStock = $configOp->deboDescontarStock($p, $localVentas);
+                $stockFila = $stockMap[$p->id] ?? null;
 
-            $p->stock_disponible  = ($almacenVentas && $controlaStock && $stockFila)
-                ? (float) $stockFila->cantidad
-                : null;
-            // Costo promedio real del stock en el almacén de ventas. Lo usa el
-            // frontend como piso de precio (con fallback a productos.precio_costo).
-            $p->stock_costo_promedio = ($almacenVentas && $controlaStock && $stockFila)
-                ? (float) $stockFila->costo_promedio
-                : null;
-            $p->stock_en_transito = $controlaStock ? (float) ($transitoMap[$p->id]['cantidad'] ?? 0) : 0;
-            $p->transito_fecha    = $controlaStock ? ($transitoMap[$p->id]['fecha'] ?? null) : null;
-        });
-
-        $clientes = Cliente::where('empresa_id', $user->empresa_id)
-            ->activo()
-            ->orderBy('nombres')
-            // `direccion` y `es_cliente_general` NO son decorativos: son los dos
-            // campos con los que `validarComprobante()` decide si una factura puede
-            // emitirse. Al no venir en el SELECT llegaban como `undefined`, así que
-            // `tieneDireccion` era siempre false y el POS bloqueaba TODA factura con
-            // «Una factura requiere cliente con RUC y dirección» aunque el cliente
-            // tuviera las dos cosas en la base.
-            //
-            // Lo peor era la asimetría: `StoreVentaRequest` relee el cliente de la
-            // base, así que el backend SÍ habría aceptado esa venta. La pantalla
-            // frenaba algo que el servidor admitía, y sin salida posible para la
-            // cajera: no hay nada que corregir en un cliente que ya está completo.
-            //
-            // Solo se notaba con clientes YA EXISTENTES: el que se crea desde el modal
-            // vuelve como modelo completo y por eso funcionaba.
-            //
-            // `es_cliente_general` evita además que `esClienteGeneral()` caiga en su
-            // respaldo legado —comparar el documento con '99999999'—, que es un número
-            // mágico que deja de valer en cuanto una empresa cambia su cliente genérico.
-            ->get([
-                'id', 'nombres', 'apellidos', 'razon_social',
-                'tipo_documento', 'numero_documento', 'telefono',
-                'direccion', 'es_cliente_general',
-            ]);
+                $p->stock_disponible  = ($almacenVentas && $controlaStock && $stockFila)
+                    ? (float) $stockFila->cantidad
+                    : null;
+                // Costo promedio real del stock en el almacén de ventas. Lo usa el
+                // frontend como piso de precio (con fallback a productos.precio_costo).
+                $p->stock_costo_promedio = ($almacenVentas && $controlaStock && $stockFila)
+                    ? (float) $stockFila->costo_promedio
+                    : null;
+                $p->stock_en_transito = $controlaStock ? (float) ($transitoMap[$p->id]['cantidad'] ?? 0) : 0;
+                $p->transito_fecha    = $controlaStock ? ($transitoMap[$p->id]['fecha'] ?? null) : null;
+            });
+        };
+        $aplicarStockPos($productos);
 
         $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
             ->activo()
@@ -389,6 +352,7 @@ class VentaController extends Controller
                     'id'                    => $v->id,
                     'numero'                => $v->numero,
                     'tipo_comprobante'      => $v->tipo_comprobante,
+                    'numero_comprobante'    => $v->numero_comprobante,
                     'descuento_total'       => $factor > 0 ? round((float) $v->descuento_total / $factor, 2) : (float) $v->descuento_total,
                     'descuento_concepto_id' => $v->descuento_concepto_id,
                     'moneda'                => $v->moneda ?? 'PEN',
@@ -427,6 +391,32 @@ class VentaController extends Controller
             }
         }
 
+        // Asegurar que los productos de ítems prellenados (cita, cotización o
+        // venta en edición) estén en el catálogo inicial, aunque no estén entre
+        // los 40 más vendidos. Sin esto el frontend no tendría costo/stock para
+        // esas líneas y podría vender bajo costo sin aviso.
+        $idsPrellenados = collect();
+        if ($citaPrellenada) {
+            $idsPrellenados = $idsPrellenados->merge(collect($citaPrellenada['items'])->pluck('producto_id'));
+        }
+        if ($cotizacionPrellenada) {
+            $idsPrellenados = $idsPrellenados->merge(collect($cotizacionPrellenada['items'])->pluck('producto_id'));
+        }
+        if ($ventaEnEdicion) {
+            $idsPrellenados = $idsPrellenados->merge(collect($ventaEnEdicion['items'])->pluck('producto_id'));
+        }
+        $idsFaltantes = $idsPrellenados->unique()->filter()->diff($productos->pluck('id'))->values()->all();
+        if (!empty($idsFaltantes)) {
+            $faltantes = $this->productosPosSelect(
+                Producto::deEmpresa($user->empresa_id)->activo()->whereIn('id', $idsFaltantes)
+            )->get();
+            $aplicarStockPos($faltantes);
+            $productos = $faltantes->merge($productos)->values();
+        }
+        // resoluble (típicamente admin sin local_id en modo central_y_local).
+        // Cargar el POS, llenar el carrito e intentar cobrar al final daba un
+        // 422 sorpresa. Ahora el frontend recibe esta bandera y deshabilita el
+        // botón "Cobrar" con un mensaje claro desde el primer momento.
         // A14 — Bloquear el POS cuando el usuario no tiene un almacén de ventas
         // resoluble (típicamente admin sin local_id en modo central_y_local).
         // Cargar el POS, llenar el carrito e intentar cobrar al final daba un
@@ -443,10 +433,35 @@ class VentaController extends Controller
                 : 'No hay almacén de ventas configurado para tu local. Contacta al administrador.';
         }
 
+        // Categorías activas con productos activos: chips del POS. Se calculan
+        // aparte para no depender de la carga inicial paginada de 40 productos.
+        $categorias = Categoria::deEmpresa($user->empresa_id)->activo()
+            ->whereHas('productos', fn($q) => $q->activo())
+            ->orderBy('nombre')
+            ->pluck('nombre')
+            ->values()
+            ->all();
+
+        // Bandera para mostrar la pestaña Servicios en el POS.
+        $hayServicios = Producto::deEmpresa($user->empresa_id)->activo()->where('tipo', 'servicio')->exists();
+
+        // Cliente General: un único objeto, no toda la lista. Si no existe la
+        // flag, se usa el fallback del DNI mágico por compatibilidad.
+        $clienteGeneral = Cliente::deEmpresa($user->empresa_id)->activo()
+            ->where('es_cliente_general', true)
+            ->first()
+            ?? Cliente::deEmpresa($user->empresa_id)->activo()
+                ->where('numero_documento', '99999999')
+                ->first();
+
         return Inertia::render('Pos/Index', [
             'turno'              => $turno,
             'productos'          => $productos,
-            'clientes'           => $clientes,
+            'productosHasMore' => $iniciales['productos_has_more'],
+            'productosCursor'    => $iniciales['productos_cursor'],
+            'clienteGeneral'     => $clienteGeneral,
+            'categorias'         => $categorias,
+            'hayServicios'       => $hayServicios,
             'metodosPago'        => $metodosPago,
             'conceptosDescuento' => $conceptosDescuento,
             'citaPrellenada'     => $citaPrellenada,
@@ -1230,5 +1245,248 @@ class VentaController extends Controller
         );
 
         return redirect()->back()->with('success', "Venta {$venta->numero} anulada correctamente.");
+    }
+
+    // ── Búsqueda server-side para el POS ─────────────────────────────────────────
+
+    /**
+     * Productos para el POS: carga inicial (render Inertia) o búsqueda/scroll
+     * posterior (JSON). Cursor pagination por (nombre, id) para evitar OFFSET.
+     */
+    private function productosPosSelect(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query
+            ->select([
+                'id', 'empresa_id', 'categoria_id', 'codigo', 'nombre', 'tipo',
+                'precio_venta', 'precio_costo', 'imagen',
+                'incluye_igv', 'controla_stock',
+            ])
+            ->with([
+                'unidades' => fn($q) => $q
+                    ->select('id', 'producto_id', 'unidad_medida_id', 'es_base', 'factor_conversion', 'precio_venta', 'precio_costo', 'activo')
+                    ->with(['unidadMedida:id,nombre']),
+                'unidadBase' => fn($q) => $q
+                    ->select('id', 'producto_id', 'unidad_medida_id', 'es_base', 'factor_conversion', 'precio_venta', 'precio_costo')
+                    ->with(['unidadMedida:id,nombre']),
+                'categoria:id,nombre',
+            ]);
+    }
+
+    private function decodificarCursor(?string $cursor): ?array
+    {
+        if (!$cursor) return null;
+        try {
+            $data = json_decode(base64_decode($cursor), true);
+            if (!is_array($data) || !isset($data['n'], $data['id'])) return null;
+            return ['n' => (string) $data['n'], 'id' => (int) $data['id']];
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function codificarCursor(string $nombre, int $id): string
+    {
+        return base64_encode(json_encode(['n' => $nombre, 'id' => $id]));
+    }
+
+    /**
+     * Top de productos vendidos en los últimos 30 días. Se cachea 15 min porque
+     * la agregación de venta_items puede ser cara con muchas ventas.
+     */
+    private function topProductosIds(int $empresaId, int $limite = 40): \Illuminate\Support\Collection
+    {
+        $desde = Carbon::now()->subDays(30)->toDateString();
+
+        return Cache::remember("pos_top_productos:{$empresaId}", 900, function () use ($empresaId, $desde, $limite) {
+            return DB::table('venta_items')
+                ->join('ventas', 'ventas.id', '=', 'venta_items.venta_id')
+                ->where('ventas.empresa_id', $empresaId)
+                ->where('ventas.estado', 'completada')
+                ->whereDate('ventas.fecha_venta', '>=', $desde)
+                ->select('venta_items.producto_id')
+                ->selectRaw('SUM(venta_items.cantidad) as total_vendido')
+                ->groupBy('venta_items.producto_id')
+                ->orderByDesc('total_vendido')
+                ->limit($limite)
+                ->pluck('producto_id');
+        });
+    }
+
+    /**
+     * Productos iniciales del POS: top vendidos + completar con los primeros por
+     * nombre hasta alcanzar el límite. Devuelve array para Inertia.
+     */
+    private function productosInicialesPos(int $empresaId, int $limite = 40): array
+    {
+        $topIds = $this->topProductosIds($empresaId, $limite);
+
+        $top = collect();
+        if ($topIds->isNotEmpty()) {
+            $top = $this->productosPosSelect(
+                Producto::deEmpresa($empresaId)->activo()->whereIn('id', $topIds)
+            )->get()->sortBy(fn($p) => $topIds->search($p->id));
+        }
+
+        $faltan = max(0, $limite + 1 - $top->count());
+
+        $resto = collect();
+        if ($faltan > 0) {
+            $excluirIds = $top->pluck('id')->toArray();
+            $resto = $this->productosPosSelect(
+                Producto::deEmpresa($empresaId)->activo()
+                    ->when($excluirIds, fn($q) => $q->whereNotIn('id', $excluirIds))
+            )->orderBy('nombre')->orderBy('id')->limit($faltan)->get();
+        }
+
+        $productos = $top->merge($resto)->values();
+        $hasMore   = $productos->count() > $limite;
+        $productos = $productos->take($limite);
+        $nextCursor = $hasMore && $productos->last()
+            ? $this->codificarCursor((string) $productos->last()->nombre, (int) $productos->last()->id)
+            : null;
+
+        return [
+            'productos'    => $productos,
+            'productos_has_more' => $hasMore,
+            'productos_cursor'   => $nextCursor,
+        ];
+    }
+
+    public function buscarProductos(Request $request)
+    {
+        $user = $request->user();
+        $empresaId = $user->empresa_id;
+        $limite = 40;
+
+        $cursor   = $this->decodificarCursor($request->input('cursor'));
+        $busqueda = trim((string) $request->input('q'));
+        $categoriaId = $request->input('categoria_id');
+        $tipo     = $request->input('tipo');
+
+        $query = $this->productosPosSelect(
+            Producto::deEmpresa($empresaId)->activo()
+        );
+
+        if ($cursor) {
+            $query->where(function ($q) use ($cursor) {
+                $q->where('nombre', '>', $cursor['n'])
+                  ->orWhere(fn($q) => $q->where('nombre', $cursor['n'])->where('id', '>', $cursor['id']));
+            });
+        }
+
+        $query->orderBy('nombre')->orderBy('id');
+
+        if ($busqueda !== '') {
+            $query->where(function ($q) use ($busqueda) {
+                $q->where('nombre', 'ILIKE', "%{$busqueda}%")
+                  ->orWhere('codigo', 'ILIKE', "%{$busqueda}%");
+            });
+        }
+
+        if ($categoriaId) {
+            $query->where('categoria_id', (int) $categoriaId);
+        }
+
+        if ($tipo) {
+            $query->where('tipo', $tipo);
+        }
+
+        $productos = $query->limit($limite + 1)->get();
+        $hasMore   = $productos->count() > $limite;
+        $productos = $productos->take($limite);
+
+        // Stock y tránsito para el almacén que corresponda: modo edición usa el
+        // local de la venta; venta normal usa el almacén de ventas del usuario.
+        $ventaId = $request->query('venta_id');
+        $ventaObjetivo = $ventaId ? Venta::where('id', $ventaId)->where('empresa_id', $empresaId)->first() : null;
+        $almacenVentas = $ventaObjetivo
+            ? $this->scope->almacenVentasDeLocal($ventaObjetivo->empresa_id, $ventaObjetivo->local_id)
+            : $this->scope->almacenParaVentas($user);
+        $stockMap = $almacenVentas
+            ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)
+                ->select('producto_id', 'cantidad', 'costo_promedio')
+                ->get()
+                ->keyBy('producto_id')
+            : collect();
+        $transitoSvc = app(\App\Services\MercaderiaTransitoService::class);
+        $transitoMap = ($transitoSvc->habilitado($user->empresa) && $almacenVentas)
+            ? $transitoSvc->porAlmacen($user->empresa_id, $almacenVentas->id)
+            : [];
+        $configOp    = app(\App\Services\ConfiguracionOperacionService::class);
+        $localVentas = $almacenVentas?->local;
+        $productos->each(function ($p) use ($almacenVentas, $stockMap, $transitoMap, $configOp, $localVentas) {
+            $controlaStock = $configOp->deboDescontarStock($p, $localVentas);
+            $stockFila = $stockMap[$p->id] ?? null;
+            $p->stock_disponible  = ($almacenVentas && $controlaStock && $stockFila)
+                ? (float) $stockFila->cantidad
+                : null;
+            $p->stock_costo_promedio = ($almacenVentas && $controlaStock && $stockFila)
+                ? (float) $stockFila->costo_promedio
+                : null;
+            $p->stock_en_transito = $controlaStock ? (float) ($transitoMap[$p->id]['cantidad'] ?? 0) : 0;
+            $p->transito_fecha    = $controlaStock ? ($transitoMap[$p->id]['fecha'] ?? null) : null;
+        });
+
+        $nextCursor = $hasMore && $productos->last()
+            ? $this->codificarCursor((string) $productos->last()->nombre, (int) $productos->last()->id)
+            : null;
+
+        return response()->json([
+            'productos' => $productos,
+            'has_more'  => $hasMore,
+            'cursor'    => $nextCursor,
+        ]);
+    }
+
+    public function buscarClientes(Request $request)
+    {
+        $user = $request->user();
+        $empresaId = $user->empresa_id;
+        $limite = 20;
+
+        $busqueda = trim((string) $request->input('q'));
+        $cursor   = $this->decodificarCursor($request->input('cursor'));
+
+        $query = Cliente::where('empresa_id', $empresaId)
+            ->activo()
+            ->select([
+                'id', 'nombres', 'apellidos', 'razon_social',
+                'tipo_documento', 'numero_documento', 'telefono',
+                'direccion', 'es_cliente_general',
+            ])
+            // Cliente General siempre primero para que el cajero lo encuentre sin
+            // buscar; el resto queda ordenado alfabéticamente.
+            ->orderByRaw('CASE WHEN es_cliente_general = true THEN 0 ELSE 1 END')
+            ->orderBy('nombres')
+            ->orderBy('id');
+
+        if ($cursor) {
+            $query->where(function ($q) use ($cursor) {
+                $q->where('nombres', '>', $cursor['n'])
+                  ->orWhere(fn($q) => $q->where('nombres', $cursor['n'])->where('id', '>', $cursor['id']));
+            });
+        }
+
+        if ($busqueda !== '') {
+            $query->where(function ($q) use ($busqueda) {
+                $q->where('nombres', 'ILIKE', "%{$busqueda}%")
+                  ->orWhere('apellidos', 'ILIKE', "%{$busqueda}%")
+                  ->orWhere('razon_social', 'ILIKE', "%{$busqueda}%")
+                  ->orWhere('numero_documento', 'ILIKE', "%{$busqueda}%");
+            });
+        }
+
+        $clientes = $query->limit($limite + 1)->get();
+        $hasMore  = $clientes->count() > $limite;
+        $clientes = $clientes->take($limite);
+        $nextCursor = $hasMore && $clientes->last()
+            ? $this->codificarCursor((string) ($clientes->last()->nombres ?? ''), (int) $clientes->last()->id)
+            : null;
+
+        return response()->json([
+            'clientes' => $clientes,
+            'has_more' => $hasMore,
+            'cursor'   => $nextCursor,
+        ]);
     }
 }
