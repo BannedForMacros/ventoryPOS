@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\TipoCambio;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Tipo de cambio (PEN base). Regla: el TC se CONGELA el día del registro.
@@ -32,41 +33,47 @@ class TipoCambioService
             return 1.0;
         }
 
-        $key = "{$fecha}:{$moneda}";
+        $key      = "{$fecha}:{$moneda}";
+        $cacheKey = "tipo_cambio:{$fecha}:{$moneda}";
+
         if (isset($this->cache[$key])) {
             return $this->cache[$key];
         }
 
-        // 1) ¿ya está guardado ese día?
-        $fila = TipoCambio::where('fecha', $fecha)->where('moneda', $moneda)->first();
-        if ($fila) {
-            return $this->cache[$key] = (float) $fila->tasa;
-        }
-
-        // 2) traerlo de la SBS y persistirlo
-        try {
-            $r = $this->decolecta->tipoCambioSbs($moneda, $fecha);
-            if (($r['tasa'] ?? 0) > 0) {
-                $fila = TipoCambio::firstOrCreate(
-                    ['fecha' => $fecha, 'moneda' => $moneda],
-                    ['tasa' => $r['tasa'], 'fuente' => 'decolecta_sbs_accounting', 'raw' => $r['raw']],
-                );
-                return $this->cache[$key] = (float) $fila->tasa;
+        $tasa = Cache::remember($cacheKey, 86400, function () use ($fecha, $moneda) {
+            // 1) ¿ya está guardado ese día?
+            $fila = TipoCambio::where('fecha', $fecha)->where('moneda', $moneda)->first();
+            if ($fila) {
+                return (float) $fila->tasa;
             }
-        } catch (\Throwable $e) {
-            // cae al fallback (SBS sin publicación ese día)
-        }
 
-        // 3) fallback: último TC previo publicado
-        $previo = TipoCambio::where('moneda', $moneda)
-            ->where('fecha', '<=', $fecha)
-            ->orderByDesc('fecha')
-            ->first();
-        if ($previo) {
-            return $this->cache[$key] = (float) $previo->tasa;
-        }
+            // 2) traerlo de la SBS y persistirlo
+            try {
+                $r = $this->decolecta->tipoCambioSbs($moneda, $fecha);
+                if (($r['tasa'] ?? 0) > 0) {
+                    $fila = TipoCambio::firstOrCreate(
+                        ['fecha' => $fecha, 'moneda' => $moneda],
+                        ['tasa' => $r['tasa'], 'fuente' => 'decolecta_sbs_accounting', 'raw' => $r['raw']],
+                    );
+                    return (float) $fila->tasa;
+                }
+            } catch (\Throwable $e) {
+                // cae al fallback (SBS sin publicación ese día)
+            }
 
-        throw new \RuntimeException("No se pudo obtener tipo de cambio {$moneda} para {$fecha}.");
+            // 3) fallback: último TC previo publicado
+            $previo = TipoCambio::where('moneda', $moneda)
+                ->where('fecha', '<=', $fecha)
+                ->orderByDesc('fecha')
+                ->first();
+            if ($previo) {
+                return (float) $previo->tasa;
+            }
+
+            throw new \RuntimeException("No se pudo obtener tipo de cambio {$moneda} para {$fecha}.");
+        });
+
+        return $this->cache[$key] = (float) $tasa;
     }
 
     /** Tasa de hoy (para el POS). */

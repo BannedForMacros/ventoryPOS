@@ -157,13 +157,25 @@ class VentaController extends Controller
 
         $productos = Producto::deEmpresa($user->empresa_id)
             ->activo()
-            ->with(['unidades.unidadMedida', 'unidadBase', 'categoria'])
+            ->select([
+                'id', 'empresa_id', 'categoria_id', 'codigo', 'nombre', 'tipo',
+                'precio_venta', 'precio_costo', 'imagen',
+                'incluye_igv', 'controla_stock',
+            ])
+            ->with([
+                'unidades' => fn($q) => $q
+                    ->select('id', 'producto_id', 'unidad_medida_id', 'es_base', 'factor_conversion', 'precio_venta', 'precio_costo', 'activo')
+                    ->with(['unidadMedida:id,nombre']),
+                'unidadBase' => fn($q) => $q
+                    ->select('id', 'producto_id', 'unidad_medida_id', 'es_base', 'factor_conversion', 'precio_venta', 'precio_costo')
+                    ->with(['unidadMedida:id,nombre']),
+                'categoria:id,nombre',
+            ])
             ->orderBy('nombre')
             ->get();
 
-        // Stock disponible (en unidad base) por producto. Se toma del almacén del
-        // local DE LA VENTA cuando estamos editando (para que el admin vea el stock
-        // correcto aunque no tenga local); si no, del almacén del propio usuario.
+        // Stock disponible (en unidad base) y costo promedio por producto, en una
+        // sola query. Antes eran dos `pluck` distintos sobre la misma tabla.
         $almacenVentas = ($puedeEditarVenta
             ? $this->scope->almacenVentasDeLocal($ventaObjetivo->empresa_id, $ventaObjetivo->local_id)
             : null)
@@ -174,10 +186,10 @@ class VentaController extends Controller
                 : null)
             ?? $this->scope->almacenParaVentas($user);
         $stockMap = $almacenVentas
-            ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)->pluck('cantidad', 'producto_id')
-            : collect();
-        $stockCostoMap = $almacenVentas
-            ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)->pluck('costo_promedio', 'producto_id')
+            ? \App\Models\Stock::where('almacen_id', $almacenVentas->id)
+                ->select('producto_id', 'cantidad', 'costo_promedio')
+                ->get()
+                ->keyBy('producto_id')
             : collect();
 
         // Mercadería en camino (entradas en tránsito) hacia ese mismo almacén.
@@ -200,16 +212,17 @@ class VentaController extends Controller
         $configOp    = app(\App\Services\ConfiguracionOperacionService::class);
         $localVentas = $almacenVentas?->local;
 
-        $productos->each(function ($p) use ($almacenVentas, $stockMap, $stockCostoMap, $transitoMap, $configOp, $localVentas) {
+        $productos->each(function ($p) use ($almacenVentas, $stockMap, $transitoMap, $configOp, $localVentas) {
             $controlaStock = $configOp->deboDescontarStock($p, $localVentas);
+            $stockFila = $stockMap[$p->id] ?? null;
 
-            $p->stock_disponible  = ($almacenVentas && $controlaStock)
-                ? (float) ($stockMap[$p->id] ?? 0)
+            $p->stock_disponible  = ($almacenVentas && $controlaStock && $stockFila)
+                ? (float) $stockFila->cantidad
                 : null;
             // Costo promedio real del stock en el almacén de ventas. Lo usa el
             // frontend como piso de precio (con fallback a productos.precio_costo).
-            $p->stock_costo_promedio = ($almacenVentas && $controlaStock)
-                ? (float) ($stockCostoMap[$p->id] ?? 0)
+            $p->stock_costo_promedio = ($almacenVentas && $controlaStock && $stockFila)
+                ? (float) $stockFila->costo_promedio
                 : null;
             $p->stock_en_transito = $controlaStock ? (float) ($transitoMap[$p->id]['cantidad'] ?? 0) : 0;
             $p->transito_fecha    = $controlaStock ? ($transitoMap[$p->id]['fecha'] ?? null) : null;
