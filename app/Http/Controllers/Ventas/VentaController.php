@@ -1377,9 +1377,29 @@ class VentaController extends Controller
         $query->orderBy('nombre')->orderBy('id');
 
         if ($busqueda !== '') {
-            $query->where(function ($q) use ($busqueda) {
-                $q->where('nombre', 'ILIKE', "%{$busqueda}%")
-                  ->orWhere('codigo', 'ILIKE', "%{$busqueda}%");
+            $terminos = $this->terminosBusqueda($busqueda);
+            if (mb_strlen($busqueda) >= 3) {
+                $this->ajustarUmbralTrgm();
+            }
+            $query->where(function ($q) use ($busqueda, $terminos) {
+                // Match exacto/prefijo del código de barras (sin normalizar).
+                $q->where('codigo', 'ILIKE', "%{$busqueda}%");
+
+                if (!empty($terminos)) {
+                    // Búsqueda multi-palabra sin tildes: "biffe chorizo" encuentra
+                    // "biffe de chorizo", "chorizo biffe", etc. Cada término debe
+                    // aparecer en el nombre, sin importar el orden.
+                    $q->orWhere(function ($q2) use ($terminos) {
+                        foreach ($terminos as $term) {
+                            $q2->whereRaw('public.unaccent_immutable(nombre) ILIKE public.unaccent_immutable(?)', ["%{$term}%"]);
+                        }
+                    });
+                }
+
+                // Fallback difuso (pg_trgm): tolera faltas de letra y typos.
+                if (mb_strlen($busqueda) >= 3) {
+                    $q->orWhereRaw('public.unaccent_immutable(nombre) % public.unaccent_immutable(?)', [$busqueda]);
+                }
             });
         }
 
@@ -1468,11 +1488,27 @@ class VentaController extends Controller
         }
 
         if ($busqueda !== '') {
-            $query->where(function ($q) use ($busqueda) {
-                $q->where('nombres', 'ILIKE', "%{$busqueda}%")
-                  ->orWhere('apellidos', 'ILIKE', "%{$busqueda}%")
-                  ->orWhere('razon_social', 'ILIKE', "%{$busqueda}%")
-                  ->orWhere('numero_documento', 'ILIKE', "%{$busqueda}%");
+            $terminos = $this->terminosBusqueda($busqueda);
+            if (mb_strlen($busqueda) >= 3) {
+                $this->ajustarUmbralTrgm();
+            }
+            $query->where(function ($q) use ($busqueda, $terminos) {
+                // Documento exacto/prefijo.
+                $q->where('numero_documento', 'ILIKE', "%{$busqueda}%");
+
+                if (!empty($terminos)) {
+                    $q->orWhere(function ($q2) use ($terminos) {
+                        $textoCliente = "coalesce(nombres, '') || ' ' || coalesce(apellidos, '') || ' ' || coalesce(razon_social, '')";
+                        foreach ($terminos as $term) {
+                            $q2->whereRaw("public.unaccent_immutable({$textoCliente}) ILIKE public.unaccent_immutable(?)", ["%{$term}%"]);
+                        }
+                    });
+                }
+
+                // Fallback difuso para nombres completos.
+                if (mb_strlen($busqueda) >= 3) {
+                    $q->orWhereRaw("public.unaccent_immutable(coalesce(nombres, '') || ' ' || coalesce(apellidos, '') || ' ' || coalesce(razon_social, '')) % public.unaccent_immutable(?)", [$busqueda]);
+                }
             });
         }
 
@@ -1488,5 +1524,30 @@ class VentaController extends Controller
             'has_more' => $hasMore,
             'cursor'   => $nextCursor,
         ]);
+    }
+
+    /**
+     * Divide una búsqueda en términos útiles, ignorando espacios duplicados y
+     * artículos/preposiciones cortas. Permite que "biffe de chorizo" encuentre
+     * "biffe chorizo" y viceversa.
+     */
+    private function terminosBusqueda(string $q): array
+    {
+        $q = mb_strtolower(trim(preg_replace('/\s+/', ' ', $q)));
+        if ($q === '') {
+            return [];
+        }
+
+        $stopwords = ['de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'unos', 'unas', 'con', 'por', 'para', 'en', 'y', 'e', 'o', 'a', 'al', 'que', 'lo', 'contra', 'sin', 'sobre', 'entre', 'hacia', 'desde', 'hasta'];
+
+        return array_values(array_filter(
+            explode(' ', $q),
+            fn ($t) => $t !== '' && ! in_array($t, $stopwords, true) && mb_strlen($t) >= 2,
+        ));
+    }
+
+    private function ajustarUmbralTrgm(): void
+    {
+        DB::statement('SET pg_trgm.similarity_threshold = 0.15');
     }
 }

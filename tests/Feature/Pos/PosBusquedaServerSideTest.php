@@ -54,6 +54,28 @@ it('pos.productos filtra por nombre y por código', function () {
         ->assertJsonPath('productos.0.nombre', 'Clavo');
 });
 
+it('pos.productos ignora artículos, tildes y orden al buscar por nombre', function () {
+    $this->env->crearProducto(['nombre' => 'Biffe de chorizo', 'codigo' => 'BIFE-01']);
+
+    $this->getJson(route('pos.productos', ['q' => 'biffe chorizo']))
+        ->assertOk()
+        ->assertJsonCount(1, 'productos')
+        ->assertJsonPath('productos.0.nombre', 'Biffe de chorizo');
+
+    $this->getJson(route('pos.productos', ['q' => 'chorizo biffe']))
+        ->assertOk()
+        ->assertJsonCount(1, 'productos');
+
+    $this->getJson(route('pos.productos', ['q' => 'bifé chorizo']))
+        ->assertOk()
+        ->assertJsonCount(1, 'productos');
+
+    // Typo: "bife" en vez de "biffe".
+    $this->getJson(route('pos.productos', ['q' => 'bife chorizo']))
+        ->assertOk()
+        ->assertJsonCount(1, 'productos');
+});
+
 it('pos.productos pagina por cursor', function () {
     // Crear suficientes productos para superar el límite por defecto de 40.
     for ($i = 1; $i <= 41; $i++) {
@@ -115,10 +137,36 @@ it('pos.clientes filtra por nombre, apellidos y número de documento', function 
         ->assertJsonCount(1, 'clientes')
         ->assertJsonPath('clientes.0.nombres', 'Juan');
 
+    $this->getJson(route('pos.clientes', ['q' => 'perez juan']))
+        ->assertOk()
+        ->assertJsonCount(1, 'clientes')
+        ->assertJsonPath('clientes.0.apellidos', 'Perez');
+
     $this->getJson(route('pos.clientes', ['q' => '20612792439']))
         ->assertOk()
         ->assertJsonCount(1, 'clientes')
         ->assertJsonPath('clientes.0.razon_social', 'Empresa ABC');
+});
+
+it('pos.clientes ignora tildes y permite palabras en desorden', function () {
+    App\Models\Cliente::create([
+        'empresa_id'         => $this->env->empresa->id,
+        'tipo_documento'     => 'DNI',
+        'numero_documento'   => '12345679',
+        'nombres'            => 'María',
+        'apellidos'          => 'García López',
+        'es_cliente_general' => false,
+        'activo'             => true,
+    ]);
+
+    $this->getJson(route('pos.clientes', ['q' => 'maria garcia']))
+        ->assertOk()
+        ->assertJsonCount(1, 'clientes')
+        ->assertJsonPath('clientes.0.apellidos', 'García López');
+
+    $this->getJson(route('pos.clientes', ['q' => 'lopez garcia']))
+        ->assertOk()
+        ->assertJsonCount(1, 'clientes');
 });
 
 it('un usuario sin permiso de POS no puede consultar los endpoints', function () {
