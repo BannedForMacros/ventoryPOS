@@ -21,6 +21,7 @@ interface VentaItem {
     unidad_nombre: string;
     cantidad: number;
     precio_unitario: number;
+    descuento_item: number;
     subtotal: number;
     es_retornable: boolean;
     cantidad_devuelta: number;
@@ -138,7 +139,7 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
         const it = venta?.items.find(v => v.id === i.venta_item_id);
         if (!it) return sum;
         const cant = parseFloat(i.cantidad) || 0;
-        return sum + cant * it.precio_unitario;
+        return sum + cant * (it.precio_unitario - (it.descuento_item ?? 0));
     }, 0);
 
     const totalReembolso = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
@@ -156,6 +157,20 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
         if (!motivoId) {
             toast.error('Selecciona un motivo.');
             return;
+        }
+
+        // Prevalidación: formas de reembolso con dinero deben tener pagos válidos
+        // que sumen exactamente el monto a devolver.
+        if (requierePagos) {
+            const pagosValidos = pagos.filter(p => p.metodo_pago_id && parseFloat(p.monto) > 0);
+            if (pagosValidos.length === 0) {
+                toast.error('Debes agregar al menos un pago para esta forma de reembolso.');
+                return;
+            }
+            if (Math.abs(totalReembolso - totalDevolucion) > 0.01) {
+                toast.error(`El total del reembolso (S/ ${totalReembolso.toFixed(2)}) debe coincidir con el monto a devolver (S/ ${totalDevolucion.toFixed(2)}).`);
+                return;
+            }
         }
 
         setProcessing(true);

@@ -239,7 +239,8 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
 
     // Venta al crédito con saldo pendiente (cuenta por cobrar).
     const saldo = (v: Venta) => Number((v as any).saldo_pendiente ?? 0);
-    const esCredito = (v: Venta) => Boolean((v as any).es_credito) && saldo(v) > 0;
+    const montoPagado = (v: Venta) => Number((v as any).monto_pagado ?? 0);
+    const esCredito = (v: Venta) => Boolean((v as any).es_credito);
 
     // Con qué pagó: nombres únicos de los métodos de los pagos de la venta.
     function metodosDePago(v: Venta): string[] {
@@ -414,10 +415,23 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                         S/ {parseFloat(v.total).toFixed(2)}
                                     </span>
                                     {esCredito(v) && (
-                                        <div className="mt-1">
-                                            <Badge variant="warning">
-                                                Por cobrar S/ {saldo(v).toFixed(2)}
-                                            </Badge>
+                                        <div className="mt-1 flex flex-col gap-1">
+                                            {saldo(v) > 0.01 ? (
+                                                <>
+                                                    {montoPagado(v) > 0.01 && (
+                                                        <Badge variant="primary">
+                                                            Pagada parcialmente
+                                                        </Badge>
+                                                    )}
+                                                    <Badge variant="warning">
+                                                        Por cobrar S/ {saldo(v).toFixed(2)}
+                                                    </Badge>
+                                                </>
+                                            ) : (
+                                                <Badge variant="success">
+                                                    Pagada totalmente
+                                                </Badge>
+                                            )}
                                         </div>
                                     )}
                                 </td>
@@ -536,8 +550,17 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     S/ {parseFloat(v.total).toFixed(2)}
                                 </p>
                                 {esCredito(v) && (
-                                    <div className="mt-1 flex justify-end">
-                                        <Badge variant="warning">Por cobrar S/ {saldo(v).toFixed(2)}</Badge>
+                                    <div className="mt-1 flex flex-col items-end gap-1">
+                                        {saldo(v) > 0.01 ? (
+                                            <>
+                                                {montoPagado(v) > 0.01 && (
+                                                    <Badge variant="primary">Pagada parcialmente</Badge>
+                                                )}
+                                                <Badge variant="warning">Por cobrar S/ {saldo(v).toFixed(2)}</Badge>
+                                            </>
+                                        ) : (
+                                            <Badge variant="success">Pagada totalmente</Badge>
+                                        )}
                                     </div>
                                 )}
                                 <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Devoluciones;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Devoluciones\StoreDevolucionRequest;
 use App\Models\Devolucion;
 use App\Models\DevolucionMotivo;
 use App\Models\MetodoPago;
@@ -185,39 +186,10 @@ class DevolucionController extends Controller
         ]);
     }
 
-    public function store(Request $request)
+    public function store(StoreDevolucionRequest $request)
     {
-        $data = $request->validate([
-            'venta_id'        => 'required|exists:ventas,id',
-            'motivo_id'       => 'required|exists:devolucion_motivos,id',
-            'forma_reembolso' => 'required|in:efectivo,mismo_metodo,vale_credito,cambio_producto,sin_reembolso',
-            'observacion'     => 'nullable|string|max:500',
-            'items'           => 'required|array|min:1',
-            'items.*.venta_item_id'   => 'required|exists:venta_items,id',
-            'items.*.cantidad'        => 'required|numeric|min:0.0001',
-            'items.*.estado_producto' => 'nullable|in:bueno,defectuoso,vencido,dañado',
-            'items.*.restock'         => 'nullable|boolean',
-            'items.*.motivo_id'       => 'nullable|exists:devolucion_motivos,id',
-            'items.*.observacion'     => 'nullable|string',
-            'pagos'                   => 'nullable|array',
-            'pagos.*.metodo_pago_id'  => 'required_with:pagos|exists:metodos_pago,id',
-            // Cuenta obligatoria si el método tiene cuentas (1 se autoselecciona; 2+ elige).
-            'pagos.*.cuenta_metodo_pago_id' => ['nullable', 'integer',
-                function ($attr, $value, $fail) use ($request) {
-                    if ($value) return;
-                    preg_match('/pagos\.(\d+)\./', $attr, $m);
-                    if (isset($m[1]) && \App\Support\PagoCuenta::requiere((int) $request->input("pagos.{$m[1]}.metodo_pago_id"))) {
-                        $fail('Debes seleccionar la cuenta para este método de pago.');
-                    }
-                },
-            ],
-            'pagos.*.monto'           => 'required_with:pagos|numeric|min:0',
-            'pagos.*.referencia'      => 'nullable|string|max:100',
-            // "Afecta caja a:" — turno al que se imputa la devolución (opcional).
-            'turno_id'                => 'nullable|integer|exists:turnos,id',
-        ]);
-
-        $user  = $request->user();
+        $data = $request->validated();
+        $user = $request->user();
 
         // Turno destino, gateado por config (módulo 'devoluciones', modo forzado:
         // el admin elige; el cajero se imputa a su turno activo). Si la empresa
@@ -227,12 +199,14 @@ class DevolucionController extends Controller
             !empty($data['turno_id']) ? (int) $data['turno_id'] : null,
             'forzado',
         );
+
         $turno = null;
         if ($turnoId) {
             $turno = Turno::where('id', $turnoId)
                 ->where('empresa_id', $user->empresa_id)
                 ->where('estado', 'abierto')
                 ->first();
+
             if (!$turno && !empty($data['turno_id'])) {
                 return back()->withErrors(['turno_id' => 'El turno indicado no está abierto.'])->withInput();
             }

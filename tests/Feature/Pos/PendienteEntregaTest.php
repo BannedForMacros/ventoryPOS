@@ -199,6 +199,102 @@ it('editar la venta puede QUITAR el pendiente por completo (todo entregado) devo
     expect(ClienteAnticipo::where('venta_id', $venta->id)->where('estado', 'activo')->exists())->toBeFalse();
 });
 
+it('una venta a crédito SIN saldar no puede marcarse como pendiente por entregar', function () {
+    $fierro = $this->env->crearProducto(['precio_venta' => 20, 'stock_inicial' => 50]);
+
+    // Venta a crédito: total 200, pago inicial 50 → saldo 150.
+    $venta = $this->service->crear([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $this->cliente->id,
+        'es_credito'       => true,
+        'items' => [[
+            'producto_id'        => $fierro->id,
+            'producto_unidad_id' => $fierro->unidadBase->id,
+            'cantidad'           => 10,
+            'precio_unitario'    => 20,
+        ]],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 50]],
+    ], $this->env->admin, $this->turno);
+
+    expect((float) $venta->saldo_pendiente)->toBe(150.0);
+
+    // Intentar editar y marcar pendiente por entregar → debe fallar.
+    $response = $this->from(route('pos.index', ['venta_id' => $venta->id]))
+        ->put(route('ventas.update', $venta->id), [
+            'tipo_comprobante'       => 'ticket',
+            'cliente_id'             => $this->cliente->id,
+            'es_credito'             => true,
+            'entrega_pendiente'      => true,
+            'fecha_entrega_estimada' => now()->addDays(3)->toDateString(),
+            'items' => [[
+                'producto_id'        => $fierro->id,
+                'producto_unidad_id' => $fierro->unidadBase->id,
+                'cantidad'           => 10,
+                'precio_unitario'    => 20,
+                'cantidad_pendiente' => 7,
+            ]],
+            'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 50]],
+        ]);
+
+    $response->assertSessionHasErrors('entrega_pendiente');
+});
+
+it('una venta a crédito SALDADA sí puede marcarse como pendiente por entregar', function () {
+    $fierro = $this->env->crearProducto(['precio_venta' => 20, 'stock_inicial' => 50]);
+
+    // Venta a crédito: total 200, pago inicial 100 → saldo 100.
+    $venta = $this->service->crear([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $this->cliente->id,
+        'es_credito'       => true,
+        'items' => [[
+            'producto_id'        => $fierro->id,
+            'producto_unidad_id' => $fierro->unidadBase->id,
+            'cantidad'           => 10,
+            'precio_unitario'    => 20,
+        ]],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 100]],
+    ], $this->env->admin, $this->turno);
+
+    // Abonar los 100 restantes para saldarla.
+    $this->post(route('finanzas.cxc.abonar', $venta->id), [
+        'monto'          => 100,
+        'fecha'          => now()->toDateString(),
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+        'turno_id'       => $this->turno->id,
+    ])->assertSessionHasNoErrors();
+
+    $venta->refresh();
+    expect((float) $venta->saldo_pendiente)->toBe(0.0);
+
+    // Editar y marcar pendiente por entregar → debe permitir.
+    $response = $this->from(route('pos.index', ['venta_id' => $venta->id]))
+        ->put(route('ventas.update', $venta->id), [
+            'tipo_comprobante'       => 'ticket',
+            'cliente_id'             => $this->cliente->id,
+            'es_credito'             => true,
+            'entrega_pendiente'      => true,
+            'fecha_entrega_estimada' => now()->addDays(3)->toDateString(),
+            'items' => [[
+                'producto_id'        => $fierro->id,
+                'producto_unidad_id' => $fierro->unidadBase->id,
+                'cantidad'           => 10,
+                'precio_unitario'    => 20,
+                'cantidad_pendiente' => 7,
+            ]],
+            'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 100]],
+        ]);
+
+    $response->assertSessionHasNoErrors();
+    $response->assertRedirect();
+
+    // Se creó el anticipo material y solo salieron 3 unidades del stock.
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->where('estado', 'activo')->first();
+    expect($anticipo)->not->toBeNull();
+    expect((float) $anticipo->monto)->toBe(140.0); // 7 × 20
+    expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(47.0); // 50 - 3
+});
+
 it('bloquea editar una venta cuyo pendiente ya tiene entregas registradas', function () {
     [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
     $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();

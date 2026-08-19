@@ -102,6 +102,10 @@ interface VentaEnEdicion {
     // Crédito guardado en la venta — para recargar el toggle al editar.
     es_credito?:           boolean;
     fecha_vencimiento?:    string | null;
+    // Estado de pago del crédito: decide si se permite marcar pendiente por entregar.
+    monto_pagado?:         number;
+    saldo_pendiente?:      number;
+    total?:                number;
     // Pendiente por entregar existente (prellenado del panel). Si ya hubo
     // entregas registradas, la edición está bloqueada en el backend.
     entrega_pendiente?:      boolean;
@@ -1000,8 +1004,11 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         const totalPagado = pagos.reduce((s, p) => s + p.monto, 0);
 
         if (entregaPendiente) {
-            if (esCredito) {
-                toast.error('No puedes combinar "Pendiente por entregar" con venta a crédito: el pendiente exige que la venta esté pagada.');
+            if (esCredito && !creditoYaPagado) {
+                const msg = (ventaEnEdicion?.es_credito && (ventaEnEdicion?.saldo_pendiente ?? 0) > 0.0001)
+                    ? 'No puedes marcar pendiente por entregar: la venta a crédito aún tiene saldo pendiente. Salda el crédito primero.'
+                    : 'No puedes combinar "Pendiente por entregar" con venta a crédito: el pendiente exige que la venta esté pagada.';
+                toast.error(msg);
                 return;
             }
             if (esClienteGeneralSel) {
@@ -1131,15 +1138,35 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
 
     const cantidadItems = carrito.reduce((s, i) => s + i.cantidad, 0);
 
-    // Crédito y pendiente-por-entregar son excluyentes: el pendiente asume que
-    // la venta se pagó completa; el crédito, que se llevó todo sin pagar.
+    // Crédito y pendiente-por-entregar son excluyentes POR DEFECTO, pero si
+    // la venta a crédito YA FUE PAGADA (saldo_pendiente == 0), sí se permite
+    // marcar pendiente por entregar: el dinero cubre la mercadería.
+    const saldoPendienteEdicion = ventaEnEdicion?.saldo_pendiente ?? 0;
+    const creditoYaPagado = ventaEnEdicion?.es_credito === true && saldoPendienteEdicion <= 0.0001;
+    const creditoBloqueadoEnEdicion = !!ventaEnEdicion?.es_credito;
+
     function activarCredito(v: boolean) {
+        // En edición, no se permite cambiar el flag de crédito: afecta abonos,
+        // saldo por cobrar y trazabilidad. El backend lo conserva igual.
+        if (creditoBloqueadoEnEdicion && !v) {
+            toast.error('No puedes quitar "Venta a crédito" al editar una venta que ya estaba a crédito.');
+            return;
+        }
         setEsCredito(v);
         if (v) setEntregaPendiente(false);
     }
     function activarPendiente(v: boolean) {
+        if (v && esCredito && !creditoYaPagado) {
+            const msg = saldoPendienteEdicion > 0
+                ? 'No puedes marcar pendiente por entregar: la venta a crédito aún tiene saldo pendiente. Salda el crédito primero.'
+                : 'No puedes combinar "Pendiente por entregar" con venta a crédito.';
+            toast.error(msg);
+            return;
+        }
         setEntregaPendiente(v);
-        if (v) setEsCredito(false);
+        // Solo desmarcamos crédito si la venta NO estaba a crédito originalmente.
+        // Una venta a crédito ya pagada puede mantener el flag por trazabilidad.
+        if (v && !creditoBloqueadoEnEdicion) setEsCredito(false);
     }
     function setPendienteLinea(key: string, valor: number) {
         setPendientes(prev => ({ ...prev, [key]: valor }));

@@ -247,8 +247,9 @@ class StoreVentaRequest extends FormRequest
      *
      *  - Requiere cliente identificado (no Cliente General): sin nombre no hay
      *    a quién apuntarle la mercadería pendiente.
-     *  - Incompatible con venta a crédito: el anticipo material asume que el
-     *    dinero YA ingresó completo; mezclar ambos rompería la contabilidad.
+     *  - Incompatible con venta a crédito SALVO que la venta ya esté saldada
+     *    (monto_pagado >= total). En ese caso el anticipo material sí representa
+     *    dinero recibido y no distorsiona la contabilidad.
      *  - Cada cantidad_pendiente debe ser <= a la cantidad de su línea, y al
      *    menos una línea debe dejar algo pendiente (si no, es venta normal).
      */
@@ -257,10 +258,17 @@ class StoreVentaRequest extends FormRequest
         if (!$this->boolean('entrega_pendiente')) return;
 
         if ($this->boolean('es_credito')) {
-            $validator->errors()->add(
-                'entrega_pendiente',
-                'No se puede combinar "Pendiente por entregar" con venta a crédito: el pendiente exige que la venta esté pagada.',
-            );
+            $venta = $this->route('venta');
+            $estaSaldada = $venta instanceof \App\Models\Venta
+                && (float) $venta->total > 0
+                && (float) $venta->saldo_pendiente <= 0.0001;
+
+            if (!$estaSaldada) {
+                $validator->errors()->add(
+                    'entrega_pendiente',
+                    'No se puede combinar "Pendiente por entregar" con venta a crédito salvo que el crédito ya esté totalmente pagado.',
+                );
+            }
         }
 
         $clienteId = $this->input('cliente_id');

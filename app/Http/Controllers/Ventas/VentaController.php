@@ -366,6 +366,10 @@ class VentaController extends Controller
                     // aplica si es crédito.
                     'es_credito'            => (bool) $v->es_credito,
                     'fecha_vencimiento'     => $v->fecha_vencimiento?->toDateString(),
+                    // Datos de pago/crédito para decisiones de edición en el frontend.
+                    'monto_pagado'          => (float) $v->monto_pagado,
+                    'saldo_pendiente'       => (float) $v->saldo_pendiente,
+                    'total'                 => (float) $v->total,
                     'entrega_pendiente'     => $anticiposPend->isNotEmpty(),
                     'fecha_entrega_estimada'=> $anticiposPend->first()?->fecha_entrega_estimada?->toDateString(),
                     'pendiente_bloqueado'   => $pendienteBloqueado,

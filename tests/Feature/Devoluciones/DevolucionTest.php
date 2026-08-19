@@ -205,3 +205,103 @@ it('anular una devolución completada revierte el restock', function () {
     expect($devolucion->fresh()->estado)->toBe('anulada');
     expect((float) Stock::where('producto_id', $producto->id)->first()->cantidad)->toBe(45.0); // revertido
 });
+
+it('rechaza una devolución en efectivo sin pagos', function () {
+    [$venta] = ventaConProducto($this->env, $this->turno, precio: 10, cantidad: 5);
+
+    $response = $this->from(route('devoluciones.create'))
+        ->post(route('devoluciones.store'), [
+            'venta_id'        => $venta->id,
+            'motivo_id'       => $this->env->motivo('producto_equivocado')->id,
+            'forma_reembolso' => 'efectivo',
+            'items' => [[
+                'venta_item_id'   => $venta->items->first()->id,
+                'cantidad'        => 5,
+                'estado_producto' => 'bueno',
+                'restock'         => true,
+            ]],
+            'pagos' => [],
+            'turno_id' => $this->turno->id,
+        ]);
+
+    $response->assertSessionHasErrors('pagos');
+});
+
+it('rechaza una devolución en efectivo cuando el total de pagos no coincide con el monto a devolver', function () {
+    [$venta] = ventaConProducto($this->env, $this->turno, precio: 10, cantidad: 5);
+
+    $response = $this->from(route('devoluciones.create'))
+        ->post(route('devoluciones.store'), [
+            'venta_id'        => $venta->id,
+            'motivo_id'       => $this->env->motivo('producto_equivocado')->id,
+            'forma_reembolso' => 'efectivo',
+            'items' => [[
+                'venta_item_id'   => $venta->items->first()->id,
+                'cantidad'        => 5,
+                'estado_producto' => 'bueno',
+                'restock'         => true,
+            ]],
+            'pagos' => [[
+                'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+                'monto'          => 30, // debería ser 50
+            ]],
+            'turno_id' => $this->turno->id,
+        ]);
+
+    $response->assertSessionHasErrors('pagos');
+});
+
+it('permite una devolución sin reembolso sin pagos', function () {
+    [$venta, $producto] = ventaConProducto($this->env, $this->turno, precio: 10, cantidad: 5);
+
+    $response = $this->from(route('devoluciones.create'))
+        ->post(route('devoluciones.store'), [
+            'venta_id'        => $venta->id,
+            'motivo_id'       => $this->env->motivo('producto_equivocado')->id,
+            'forma_reembolso' => 'sin_reembolso',
+            'items' => [[
+                'venta_item_id'   => $venta->items->first()->id,
+                'cantidad'        => 5,
+                'estado_producto' => 'bueno',
+                'restock'         => true,
+            ]],
+            'pagos' => [],
+            'turno_id' => $this->turno->id,
+        ]);
+
+    $response->assertRedirect();
+    expect((float) Stock::where('producto_id', $producto->id)->first()->cantidad)->toBe(50.0);
+});
+
+it('una devolución en efectivo con pagos correctos registra el reembolso y afecta el cálculo del turno', function () {
+    [$venta, $producto] = ventaConProducto($this->env, $this->turno, precio: 10, cantidad: 5);
+
+    $response = $this->from(route('devoluciones.create'))
+        ->post(route('devoluciones.store'), [
+            'venta_id'        => $venta->id,
+            'motivo_id'       => $this->env->motivo('producto_equivocado')->id,
+            'forma_reembolso' => 'efectivo',
+            'items' => [[
+                'venta_item_id'   => $venta->items->first()->id,
+                'cantidad'        => 5,
+                'estado_producto' => 'bueno',
+                'restock'         => true,
+            ]],
+            'pagos' => [[
+                'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+                'monto'          => 50,
+            ]],
+            'turno_id' => $this->turno->id,
+        ]);
+
+    $response->assertRedirect();
+
+    $devolucion = \App\Models\Devolucion::where('venta_id', $venta->id)->latest('id')->first();
+    expect($devolucion)->not->toBeNull();
+    expect((float) $devolucion->monto_reembolso)->toBe(50.0);
+    expect($devolucion->turno_id)->toBe($this->turno->id);
+
+    // Verifica que el cálculo del turno descuente el reembolso en efectivo
+    $esperado = $this->turno->fresh()->calcularMontoEsperado();
+    expect((float) $esperado)->toBe((float) $this->turno->monto_apertura); // solo apertura, venta y devolución se anulan
+});
