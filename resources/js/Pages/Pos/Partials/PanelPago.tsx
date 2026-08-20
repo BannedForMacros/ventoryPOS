@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2, CreditCard, Banknote, Wallet } from 'lucide-react';
+import { Plus, Trash2, CreditCard, Banknote, Wallet, PiggyBank } from 'lucide-react';
 import type { Cuenta, MetodoPago } from '@/types';
 
 export interface LineaPago {
@@ -24,6 +24,7 @@ interface Props {
     pagos:          LineaPago[];
     metodosPago:    MetodoPagoConCuentas[];
     total:          number;
+    anticipoMonto?: number;
     onChange:       (pagos: LineaPago[]) => void;
 }
 
@@ -56,10 +57,11 @@ function MetodoIcon({ tipo }: { tipo: string }) {
     return <Wallet size={size} />;
 }
 
-export default function PanelPago({ pagos, metodosPago, total, onChange }: Props) {
+export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0, onChange }: Props) {
     const totalPagado  = pagos.reduce((s, p) => s + p.monto, 0);
+    const totalCuberto = totalPagado + anticipoMonto;
     // Lo pendiente por cubrir se usa como monto sugerido al agregar una línea.
-    const pendiente    = Math.max(0, total - totalPagado);
+    const pendiente    = Math.max(0, total - totalCuberto);
 
     function addPago() {
         const metodo = metodosPago[0];
@@ -99,6 +101,31 @@ export default function PanelPago({ pagos, metodosPago, total, onChange }: Props
 
     return (
         <div className="flex flex-col gap-2">
+            {anticipoMonto > 0.009 && (
+                <div
+                    className="rounded-xl p-2 space-y-1.5"
+                    style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-warning) 10%, var(--color-surface))',
+                        border: '1px solid var(--color-border)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                    }}
+                >
+                    <div className="flex gap-2 items-center">
+                        <span className="flex-shrink-0" style={{ color: 'var(--color-warning)' }}>
+                            <PiggyBank size={14} />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>
+                                Anticipo de cliente
+                            </p>
+                        </div>
+                        <span className="text-sm font-bold w-28 text-right flex-shrink-0" style={{ color: 'var(--color-warning)' }}>
+                            S/ {anticipoMonto.toFixed(2)}
+                        </span>
+                    </div>
+                </div>
+            )}
+
             {pagos.map(pago => {
                 const metodo      = metodosPago.find(m => m.id === pago.metodo_pago_id);
                 const cuentas     = metodo?.cuentas ?? [];

@@ -485,6 +485,16 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const [anticiposCliente, setAnticiposCliente] = useState<{ id: number; fecha: string; monto: number; saldo: number; observacion: string | null }[]>([]);
     const [anticipoSeleccionado, setAnticipoSeleccionado] = useState<number | null>(null);
     const [cargandoAnticipos, setCargandoAnticipos] = useState(false);
+
+    // Totales de la venta (disponibles temprano para efectos y validaciones).
+    const { subtotal, igv, total, baseGravada, baseExonerada } = calcularTotales(carrito, descuentoTotal, tasaIgv);
+
+    // Anticipo de efectivo aplicado a la venta (si el usuario lo activó).
+    const anticipoActivo = anticiposCliente.find(a => a.id === anticipoSeleccionado);
+    const saldoAnticipo = anticipoActivo ? anticipoActivo.saldo : 0;
+    const montoAnticipoUsado = Math.min(total, saldoAnticipo);
+    const totalPagadoConAnticipo = (pagos.reduce((s, p) => s + p.monto, 0)) + montoAnticipoUsado;
+
     // Refresco del catálogo (solo la lista de productos) sin perder el carrito.
     const [refrescando, setRefrescando] = useState(false);
 
@@ -640,8 +650,6 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         }
     }, []);
 
-    const { subtotal, igv, total, baseGravada, baseExonerada } = calcularTotales(carrito, descuentoTotal, tasaIgv);
-
     // Auto-agregar pago en efectivo por defecto cuando hay items y no hay pagos.
     // Historial de precios del cliente: se recarga al cambiar de cliente. Para el
     // cliente general (sin identificar) no tiene sentido, así que se limpia.
@@ -679,6 +687,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const efectivo = metodosPago.find(m => m.tipo?.slug === 'efectivo');
     useEffect(() => {
         if (esCredito) return; // en crédito el pago inicial es opcional y manual
+        // Si el anticipo cubre el total, no agregar efectivo automático.
+        if (anticipoSeleccionado && montoAnticipoUsado >= total - 0.009) return;
         if (carrito.length > 0 && pagos.length === 0 && efectivo) {
             setPagos([{
                 key:                   uid(),
@@ -694,12 +704,14 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
 
     // Auto-actualizar monto del pago si es el único y admite vuelto (efectivo
     // por defecto). Si no admite vuelto el monto debe ser exacto, lo dejamos.
+    // Si hay anticipo seleccionado, ajustar al resto por pagar (no al total).
     useEffect(() => {
         if (esCredito) return; // no forzar el monto al total: puede ser pago parcial
         if (pagos.length === 1 && pagos[0].admite_vuelto && total > 0) {
-            setPagos(prev => [{ ...prev[0], monto: parseFloat(total.toFixed(2)) }]);
+            const resto = Math.max(0, total - montoAnticipoUsado);
+            setPagos(prev => [{ ...prev[0], monto: parseFloat(resto.toFixed(2)) }]);
         }
-    }, [total]);
+    }, [total, anticipoSeleccionado, montoAnticipoUsado]);
 
     // El catálogo visible es ahora el resultado de búsquedas server-side.
     const productosFiltrados = listaProductos;
@@ -1001,12 +1013,6 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
 
     // Badge del comprobante recién emitido (lo trae el flash de la venta anterior).
     const comprobanteFlash = flash?.comprobante ?? null;
-
-    // Anticipo de efectivo aplicado a la venta (si el usuario lo activó).
-    const anticipoActivo = anticiposCliente.find(a => a.id === anticipoSeleccionado);
-    const saldoAnticipo = anticipoActivo ? anticipoActivo.saldo : 0;
-    const montoAnticipoUsado = Math.min(total, saldoAnticipo);
-    const totalPagadoConAnticipo = (pagos.reduce((s, p) => s + p.monto, 0)) + montoAnticipoUsado;
 
     function confirmarVenta() {
         // V10 — avisar ANTES de cobrar, no después de emitir mal.
@@ -1952,6 +1958,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                         fechaVencimiento={fechaVencimiento}
                         onSetEsCredito={activarCredito}
                         onSetFechaVencimiento={setFechaVencimiento}
+                        anticipoSeleccionado={anticipoSeleccionado}
+                        montoAnticipoUsado={montoAnticipoUsado}
                         {...propsPendiente}
                     />
                 </div>
@@ -2026,6 +2034,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                                 fechaVencimiento={fechaVencimiento}
                                 onSetEsCredito={activarCredito}
                                 onSetFechaVencimiento={setFechaVencimiento}
+                                anticipoSeleccionado={anticipoSeleccionado}
+                                montoAnticipoUsado={montoAnticipoUsado}
                                 {...propsPendiente}
                             />
                         </div>
@@ -2252,6 +2262,9 @@ interface CarritoPanelProps {
     // Autofoco del precio en líneas recién agregadas con precio base 0.
     nuevaLineaPrecioKey: string | null;
     onAutoFocusPrecio: () => void;
+    // Anticipo de efectivo aplicado a la venta.
+    anticipoSeleccionado: number | null;
+    montoAnticipoUsado: number;
 }
 
 function CarritoPanel({
@@ -2266,6 +2279,7 @@ function CarritoPanel({
     permitirPendiente, entregaPendiente, fechaEntrega, pendienteDe, totalPendientes,
     onSetEntregaPendiente, onSetFechaEntrega, onSetPendiente,
     nuevaLineaPrecioKey, onAutoFocusPrecio,
+    anticipoSeleccionado, montoAnticipoUsado,
 }: CarritoPanelProps) {
     const hayInactivos = inactivosCount > 0;
 
@@ -2581,6 +2595,7 @@ function CarritoPanel({
                                 pagos={pagos}
                                 metodosPago={metodosPago}
                                 total={total}
+                                anticipoMonto={montoAnticipoUsado}
                                 onChange={onSetPagos}
                             />
                         </div>
@@ -2634,8 +2649,9 @@ function CarritoPanel({
             >
                 {/* Estado del pago SIEMPRE visible: el cajero ve cuánto falta
                     o cuánto es el vuelto sin buscar entre las líneas de pago. */}
-                {carrito.length > 0 && (pagos.length > 0 || esCredito) && (() => {
-                    const totalPagado = pagos.reduce((s, p) => s + p.monto, 0);
+                {carrito.length > 0 && (pagos.length > 0 || esCredito || anticipoSeleccionado) && (() => {
+                    const totalPagadoMetodos = pagos.reduce((s, p) => s + p.monto, 0);
+                    const totalPagado = totalPagadoMetodos + montoAnticipoUsado;
                     const falta  = Math.max(0, total - totalPagado);
                     const vuelto = pagos.some(p => p.admite_vuelto) ? Math.max(0, totalPagado - total) : 0;
                     return (
@@ -2643,6 +2659,11 @@ function CarritoPanel({
                             <span style={{ color: 'var(--color-text-muted)' }}>
                                 {esCredito ? 'Pago inicial' : 'Pagado'}{' '}
                                 <span className="font-bold" style={{ color: 'var(--color-text)' }}>S/ {totalPagado.toFixed(2)}</span>
+                                {anticipoSeleccionado && (
+                                    <span style={{ color: 'var(--color-warning)' }}>
+                                        {' '}<span className="font-semibold">(anticipo S/ {montoAnticipoUsado.toFixed(2)})</span>
+                                    </span>
+                                )}
                             </span>
                             {esCredito ? (
                                 <span className="font-bold" style={{ color: 'var(--color-primary)' }}>
