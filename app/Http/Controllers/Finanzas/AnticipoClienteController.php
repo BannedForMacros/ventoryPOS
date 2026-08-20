@@ -6,11 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\ClienteAnticipo;
 use App\Models\ClienteAnticipoAplicacion;
+use App\Models\ClienteAnticipoItem;
 use App\Models\Cuenta;
 use App\Services\TicketPrintService;
 use Illuminate\Support\Facades\Storage;
 use App\Models\MetodoPago;
 use App\Models\Producto;
+use App\Models\ProductoUnidad;
 use App\Models\Stock;
 use App\Models\Turno;
 use App\Services\AuditoriaService;
@@ -600,6 +602,94 @@ class AnticipoClienteController extends Controller
         });
 
         return back()->with('success', 'Entrega registrada: el stock entregado salió del almacén y el pendiente se actualizó.');
+    }
+
+    /**
+     * Cambia el producto de una línea pendiente de un anticipo material (POS).
+     * Útil cuando el cliente pagó N unidades de un producto y, antes de entregarlas,
+     * decide recibir parte en otro producto/marca. El precio congelado de la venta
+     * se respeta. NO mueve stock: lo pendiente sigue sin salir del almacén.
+     */
+    public function cambiarProductoItem(Request $request, ClienteAnticipo $anticipo, ClienteAnticipoItem $item)
+    {
+        $user = $request->user();
+        abort_if($anticipo->empresa_id !== $user->empresa_id, 403);
+        abort_if($item->cliente_anticipo_id !== $anticipo->id, 403);
+        abort_unless($anticipo->tipo_valorizacion === 'material' && $anticipo->venta_id, 422,
+            'Solo se puede cambiar producto en anticipos materiales del POS.');
+        abort_unless(in_array($anticipo->estado, ['activo'], true), 422, 'El anticipo no está activo.');
+
+        $data = $request->validate([
+            'cantidad'          => ['required', 'numeric', 'min:0.01'],
+            'nuevo_producto_id' => ['required', 'integer', Rule::exists('productos', 'id')->where('empresa_id', $user->empresa_id)],
+            'nueva_unidad_id'   => ['nullable', 'integer', Rule::exists('producto_unidades', 'id')],
+            'motivo'            => ['required', 'string', 'min:5', 'max:500'],
+        ]);
+
+        $cantidad = round((float) $data['cantidad'], 4);
+        $pendiente = (float) $item->cantidad_pendiente;
+
+        if ($cantidad > $pendiente + 0.00009) {
+            throw ValidationException::withMessages([
+                'cantidad' => "Solo quedan pendientes {$pendiente} por cambiar de «{$item->producto_nombre}».",
+            ]);
+        }
+
+        $nuevoProducto = Producto::deEmpresa($user->empresa_id)->findOrFail($data['nuevo_producto_id']);
+        abort_unless($nuevoProducto->activo && $nuevoProducto->esProductoFisico(), 422, 'El producto destino debe ser un producto físico activo.');
+
+        // Resolver unidad destino: la elegida, la base del producto, o la primera.
+        if (!empty($data['nueva_unidad_id'])) {
+            $nuevaUnidad = $nuevoProducto->unidades()->where('id', $data['nueva_unidad_id'])->firstOrFail();
+        } else {
+            $nuevaUnidad = $nuevoProducto->unidades()->where('es_base', true)->first()
+                ?? $nuevoProducto->unidades()->orderBy('es_base', 'desc')->first();
+        }
+
+        abort_if($nuevaUnidad === null, 422, 'El producto destino no tiene unidades configuradas.');
+
+        DB::transaction(function () use ($anticipo, $item, $user, $cantidad, $nuevoProducto, $nuevaUnidad, $data) {
+            // Reducir la línea original.
+            $item->update([
+                'cantidad'           => max(0, round((float) $item->cantidad - $cantidad, 4)),
+                'cantidad_pendiente' => max(0, round((float) $item->cantidad_pendiente - $cantidad, 4)),
+            ]);
+
+            // Crear la nueva línea pendiente con el producto destino.
+            $anticipo->items()->create([
+                'venta_item_id'      => null, // Es una sustitución, no viene de un ítem de venta original.
+                'producto_id'        => $nuevoProducto->id,
+                'producto_unidad_id' => $nuevaUnidad->id,
+                'producto_nombre'    => $nuevoProducto->nombre,
+                'unidad_nombre'      => optional($nuevaUnidad->unidadMedida)->nombre ?? 'und',
+                'cantidad'           => $cantidad,
+                'cantidad_pendiente' => $cantidad,
+                'factor_conversion'  => (float) $nuevaUnidad->factor_conversion,
+                'precio_unitario'    => (float) $item->precio_unitario, // Respeta precio congelado.
+            ]);
+
+            // Reconstruir el saldo del anticipo a valor pagado (cantidad total pendiente × precio).
+            $anticipo->load('items');
+            $nuevoSaldo = round($anticipo->items->sum(fn ($i) => (float) $i->cantidad_pendiente * (float) $i->precio_unitario), 2);
+
+            $anticipo->update([
+                'saldo'              => $nuevoSaldo,
+                'cantidad_pendiente' => round($anticipo->items->sum(fn ($i) => (float) $i->cantidad_pendiente), 4),
+                'estado'             => $nuevoSaldo <= 0.01 ? 'aplicado' : 'activo',
+            ]);
+
+            AuditoriaService::log('anticipo_cliente.cambio_producto', $anticipo, [
+                'item_id'             => $item->id,
+                'producto_origen'     => $item->producto_nombre,
+                'cantidad'            => $cantidad,
+                'producto_destino'    => $nuevoProducto->nombre,
+                'unidad_destino'      => optional($nuevaUnidad->unidadMedida)->nombre,
+                'motivo'              => $data['motivo'],
+                'saldo'               => $nuevoSaldo,
+            ], $user);
+        });
+
+        return back()->with('success', 'Producto cambiado: ahora el cliente tiene pendiente ' . rtrim(rtrim(number_format($cantidad, 4, '.', ''), '0'), '.') . ' de «' . $nuevoProducto->nombre . '».');
     }
 
     /**

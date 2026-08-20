@@ -159,6 +159,34 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     const [formEntrega, setFormEntrega]         = useState({ monto: '', fecha: hoy(), observacion: '', metodo_pago_id: '', cuenta_id: '' });
     const [motivoEntrega, setMotivoEntrega]     = useState('');
 
+    // Cambiar producto de una línea pendiente (anticipo material del POS).
+    const [cambiandoItem, setCambiandoItem] = useState<{ anticipo: Anticipo; item: AnticipoItem } | null>(null);
+    const [formCambiar, setFormCambiar] = useState({ producto_id: '', cantidad: '', motivo: '' });
+
+    function abrirCambiarProducto(anticipo: Anticipo, item: AnticipoItem) {
+        setCambiandoItem({ anticipo, item });
+        setFormCambiar({ producto_id: '', cantidad: String(Number(item.cantidad_pendiente)), motivo: '' });
+        setErrors({});
+    }
+
+    function submitCambiarProducto() {
+        if (!cambiandoItem) return;
+        setSaving(true);
+        router.post(route('finanzas.anticipos.items.cambiar-producto', [cambiandoItem.anticipo.id, cambiandoItem.item.id]), {
+            nuevo_producto_id: formCambiar.producto_id || null,
+            cantidad: formCambiar.cantidad,
+            motivo: formCambiar.motivo,
+        } as any, {
+            onSuccess: () => {
+                setCambiandoItem(null);
+                setFormCambiar({ producto_id: '', cantidad: '', motivo: '' });
+                setSaving(false);
+                setDetalle(null);
+            },
+            onError: (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
     // Cliente general ("Clientes varios"): para anticipos/depósitos sin dueño identificado.
     const clienteGeneral = useMemo(
         () => clientes.find(c => c.es_cliente_general) ?? null,
@@ -901,7 +929,16 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                                     {it.producto_nombre} <span style={{ color: 'var(--color-text-muted)' }}>× {Number(it.cantidad)} {it.unidad_nombre || 'und'}</span>
                                                 </span>
                                                 {pendiente > 0.0001 ? (
-                                                    <Badge variant="warning">quedan {pendiente}</Badge>
+                                                    <div className="flex items-center gap-2">
+                                                        <Badge variant="warning">quedan {pendiente}</Badge>
+                                                        {puede?.editar && detalle.estado === 'activo' && (
+                                                            <button onClick={() => abrirCambiarProducto(detalle, it)} title="Cambiar producto de esta línea pendiente"
+                                                                className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-medium border transition-colors hover:bg-black/5"
+                                                                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
+                                                                <Pencil size={10} /> Cambiar producto
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 ) : (
                                                     <Badge variant="success">entregado</Badge>
                                                 )}
@@ -1029,6 +1066,40 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                     <Input label="Motivo" required value={motivoEntrega}
                         onChange={e => setMotivoEntrega(e.target.value)} error={errors.motivo || errors.entrega} />
                 </div>
+            </Modal>
+
+            {/* Modal CAMBIAR PRODUCTO de línea pendiente (anticipo material del POS). */}
+            <Modal isOpen={cambiandoItem !== null} onClose={() => setCambiandoItem(null)}
+                title={cambiandoItem ? `Cambiar producto — ${cambiandoItem.item.producto_nombre}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setCambiandoItem(null)}>Cancelar</Button>
+                        <Button onClick={submitCambiarProducto} disabled={saving}>{saving ? 'Guardando...' : 'Guardar cambio'}</Button>
+                    </>
+                }
+            >
+                {cambiandoItem && (
+                    <div className="space-y-4">
+                        <Callout variant="info">
+                            El cliente pagó <strong>{Number(cambiandoItem.item.cantidad_pendiente)} {cambiandoItem.item.unidad_nombre || 'und'}</strong> pendientes de <strong>{cambiandoItem.item.producto_nombre}</strong>. Aquí puedes indicar que una parte se entregará con otro producto/marca.
+                        </Callout>
+                        <SearchableSelect label="Nuevo producto" required
+                            options={productos.map(p => ({ value: String(p.id), label: `${p.nombre} (venta: ${money(p.precio_venta)})` }))}
+                            value={formCambiar.producto_id}
+                            onChange={v => setFormCambiar(f => ({ ...f, producto_id: String(v) }))}
+                            placeholder="— Seleccionar producto destino —"
+                            searchPlaceholder="Buscar producto..."
+                            error={errors.nuevo_producto_id}
+                        />
+                        <Input label="Cantidad a cambiar" required type="number" min="0.0001" step="any"
+                            value={formCambiar.cantidad}
+                            onChange={e => setFormCambiar(f => ({ ...f, cantidad: e.target.value }))}
+                            error={errors.cantidad}
+                        />
+                        <Input label="Motivo" required value={formCambiar.motivo}
+                            onChange={e => setFormCambiar(f => ({ ...f, motivo: e.target.value }))} error={errors.motivo} />
+                    </div>
+                )}
             </Modal>
 
             {/* Alta de cliente sin salir del anticipo (reutiliza el modal del POS).

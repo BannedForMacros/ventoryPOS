@@ -452,6 +452,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.anticipos,crear')->post('anticipos', [AnticipoClienteController::class, 'store'])->name('anticipos.store');
         Route::middleware('permiso:finanzas.anticipos,editar')->put('anticipos/{anticipo}', [AnticipoClienteController::class, 'update'])->name('anticipos.update');
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/aplicar', [AnticipoClienteController::class, 'aplicar'])->name('anticipos.aplicar');
+        // Cambiar producto de una línea pendiente (anticipo material del POS) sin tocar lo ya entregado.
+        Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/items/{item}/cambiar-producto', [AnticipoClienteController::class, 'cambiarProductoItem'])->name('anticipos.items.cambiar-producto');
         // Editar / anular una ENTREGA ya registrada (solo anticipos en dinero).
         Route::middleware('permiso:finanzas.anticipos,editar')->put('anticipos/entregas/{entrega}', [AnticipoClienteController::class, 'editarEntrega'])->name('anticipos.entrega.editar');
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/entregas/{entrega}/anular', [AnticipoClienteController::class, 'anularEntrega'])->name('anticipos.entrega.anular');

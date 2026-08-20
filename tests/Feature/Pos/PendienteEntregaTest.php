@@ -319,6 +319,46 @@ it('bloquea editar una venta cuyo pendiente ya tiene entregas registradas', func
     ], $this->env->admin);
 })->throws(Symfony\Component\HttpKernel\Exception\HttpException::class);
 
+it('puede cambiar el producto de una línea pendiente sin tocar lo ya entregado', function () {
+    [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $ladrillo = $this->env->crearProducto(['precio_venta' => 25, 'stock_inicial' => 100]);
+
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $itemFierro = $anticipo->items->first();
+
+    // Cambiar 3 de los 7 fierros pendientes por 3 ladrillos.
+    $this->post(route('finanzas.anticipos.items.cambiar-producto', [$anticipo, $itemFierro]), [
+        'nuevo_producto_id' => $ladrillo->id,
+        'cantidad'          => 3,
+        'motivo'            => 'El cliente pidió cambiar marca',
+    ])->assertSessionHasNoErrors();
+
+    $anticipo->refresh()->load('items');
+
+    // El ítem original se reduce y aparece el nuevo con el mismo precio congelado.
+    $itemOriginal = $anticipo->items->firstWhere('id', $itemFierro->id);
+    $itemNuevo    = $anticipo->items->firstWhere('producto_id', $ladrillo->id);
+
+    expect((float) $itemOriginal->cantidad_pendiente)->toBe(4.0);
+    expect((float) $itemOriginal->cantidad)->toBe(4.0);
+    expect($itemNuevo)->not->toBeNull();
+    expect((float) $itemNuevo->cantidad_pendiente)->toBe(3.0);
+    expect((float) $itemNuevo->precio_unitario)->toBe(20.0); // respeta precio pagado
+
+    // El pasivo total no cambia: 7 unidades × 20.
+    expect((float) $anticipo->saldo)->toBe(140.0);
+    expect($anticipo->estado)->toBe('activo');
+
+    // Se puede entregar la nueva línea y saldrá stock de ladrillo.
+    $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
+        'fecha' => now()->toDateString(),
+        'items' => [['id' => $itemNuevo->id, 'cantidad' => 3]],
+    ])->assertSessionHasNoErrors();
+
+    expect((float) Stock::where('producto_id', $ladrillo->id)->first()->cantidad)->toBe(97.0);
+    expect($anticipo->fresh()->items->firstWhere('id', $itemNuevo->id)->cantidad_pendiente)->toBe('0.0000');
+});
+
 it('la venta sin flag entrega_pendiente ignora cantidad_pendiente y no crea anticipo', function () {
     $fierro = $this->env->crearProducto(['precio_venta' => 20, 'stock_inicial' => 50]);
 
