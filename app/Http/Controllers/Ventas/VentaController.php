@@ -1052,6 +1052,38 @@ class VentaController extends Controller
         return response()->json($map);
     }
 
+    /**
+     * Anticipos de efectivo activos de un cliente para usar en el POS.
+     * Solo anticipos tipo 'monto' (dinero) y sin venta_id asociada.
+     */
+    public function anticiposCliente(Request $request, Cliente $cliente)
+    {
+        $user = $request->user();
+        abort_if($cliente->empresa_id !== $user->empresa_id, 403);
+
+        $anticipos = \App\Models\ClienteAnticipo::deEmpresa($user->empresa_id)
+            ->where('cliente_id', $cliente->id)
+            ->where('tipo_valorizacion', 'monto')
+            ->where('estado', 'activo')
+            ->where('saldo', '>', 0)
+            ->orderBy('fecha')
+            ->orderBy('id')
+            ->get(['id', 'fecha', 'monto', 'saldo', 'observacion']);
+
+        $total = round((float) $anticipos->sum('saldo'), 2);
+
+        return response()->json([
+            'anticipos' => $anticipos->map(fn ($a) => [
+                'id'          => $a->id,
+                'fecha'       => $a->fecha?->toDateString(),
+                'monto'       => (float) $a->monto,
+                'saldo'       => (float) $a->saldo,
+                'observacion' => $a->observacion,
+            ])->values(),
+            'total' => $total,
+        ]);
+    }
+
     /** Payload de impresión de una venta (para imprimir desde la lista sin abrir el detalle). */
     public function ticket(Request $request, Venta $venta)
     {

@@ -64,6 +64,8 @@ class StoreVentaRequest extends FormRequest
             'cita_id'                => ['nullable', 'integer', Rule::exists('citas', 'id')->where('empresa_id', $empresaId)],
             // Si la venta nace de una cotización prellenada en el POS. Opcional.
             'cotizacion_id'          => ['nullable', 'integer', Rule::exists('cotizaciones', 'id')->where('empresa_id', $empresaId)],
+            // Anticipo de cliente (efectivo) con el que se pagará parte o todo de la venta.
+            'anticipo_id'            => ['nullable', 'integer', Rule::exists('cliente_anticipos', 'id')->where('empresa_id', $empresaId)],
             'descuento_concepto_id'  => [
                 'nullable', 'integer',
                 Rule::exists('descuento_conceptos', 'id')
@@ -123,6 +125,7 @@ class StoreVentaRequest extends FormRequest
             $this->validarItems($validator, $empresaId);
             $this->validarPagosPertenencia($validator, $empresaId);
             $this->validarDescuentoYTope($validator); // M20
+            $this->validarAnticipo($validator, $empresaId);
 
             $total = $this->calcularTotalEsperado($empresaId);
 
@@ -553,6 +556,63 @@ class StoreVentaRequest extends FormRequest
     }
 
     /**
+     * Valida el anticipo de efectivo indicado para pagar la venta.
+     * Debe ser activo, tipo 'monto', pertenecer al cliente seleccionado y
+     * pertenecer a la empresa. No se permite combinar con venta a crédito.
+     */
+    private function validarAnticipo($validator, int $empresaId): void
+    {
+        $anticipoId = $this->input('anticipo_id');
+        if (!$anticipoId) return;
+
+        $clienteId = $this->input('cliente_id');
+        if (!$clienteId) {
+            $validator->errors()->add('anticipo_id', 'Para usar un anticipo debes seleccionar un cliente.');
+            return;
+        }
+
+        if ($this->boolean('es_credito')) {
+            $validator->errors()->add('anticipo_id', 'No se puede usar un anticipo en una venta a crédito.');
+            return;
+        }
+
+        $anticipo = \App\Models\ClienteAnticipo::where('id', $anticipoId)
+            ->where('empresa_id', $empresaId)
+            ->where('cliente_id', $clienteId)
+            ->where('tipo_valorizacion', 'monto')
+            ->where('estado', 'activo')
+            ->first();
+
+        if (!$anticipo) {
+            $validator->errors()->add('anticipo_id', 'El anticipo no existe, no pertenece al cliente o no está activo.');
+            return;
+        }
+
+        if ((float) $anticipo->saldo <= 0.009) {
+            $validator->errors()->add('anticipo_id', 'El anticipo seleccionado no tiene saldo disponible.');
+        }
+    }
+
+    /**
+     * Monto usable del anticipo para esta venta (mínimo entre saldo y total).
+     * Devuelve 0 si no hay anticipo o no es válido.
+     */
+    private function montoAnticipoUsable(float $total): float
+    {
+        $anticipoId = $this->input('anticipo_id');
+        if (!$anticipoId) return 0.0;
+
+        $anticipo = \App\Models\ClienteAnticipo::where('id', $anticipoId)
+            ->where('tipo_valorizacion', 'monto')
+            ->where('estado', 'activo')
+            ->first();
+
+        if (!$anticipo) return 0.0;
+
+        return min((float) $anticipo->saldo, $total);
+    }
+
+    /**
      * Calculo espejo de Venta::calcularTotales: separa base gravada (afecta IGV)
      * de base exonerada (no afecta IGV) y prorrateamos el descuento_total entre
      * ambas. Tasa de IGV se lee de la empresa.
@@ -647,6 +707,7 @@ class StoreVentaRequest extends FormRequest
     private function validarTotalCubierto($validator, float $total): void
     {
         $totalPagado = round(collect($this->input('pagos', []))->sum(fn($p) => (float) ($p['monto'] ?? 0)), 2);
+        $totalPagado += $this->montoAnticipoUsable($total);
 
         if ($totalPagado < $total - 0.01) {
             $validator->errors()->add(

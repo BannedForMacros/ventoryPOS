@@ -29,7 +29,11 @@ interface Props {
     entregaPendiente?:   boolean;
     pendienteDe?:        (item: LineaCarrito) => number;
     fechaEntrega?:       string;
+    // Monto cubierto con anticipo de efectivo del cliente.
+    anticipoMonto?:      number;
 }
+
+function money(n: number) { return `S/ ${n.toFixed(2)}`; }
 
 function SectionLabel({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
     return (
@@ -47,6 +51,7 @@ export default function ModalConfirmacionVenta({
     items, pagos, cliente, descuentoTotal, descuentoConceptoId, tipoComprobante, numeroComprobante = '',
     subtotal, igv, total, metodosPago, conceptos,
     entregaPendiente, pendienteDe, fechaEntrega,
+    anticipoMonto = 0,
 }: Props) {
     const pendientes = entregaPendiente && pendienteDe
         ? items.map(i => ({ item: i, pendiente: pendienteDe(i) })).filter(p => p.pendiente > 0)
@@ -272,6 +277,15 @@ export default function ModalConfirmacionVenta({
                 <div>
                     <SectionLabel icon={CreditCard} label="Métodos de pago" />
                     <div className="space-y-1.5">
+                        {anticipoMonto > 0.009 && (
+                            <div
+                                className="flex justify-between text-xs px-3 py-2 rounded-lg"
+                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-warning) 8%, var(--color-bg))', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                            >
+                                <span className="font-medium">Anticipo de cliente</span>
+                                <span className="font-bold" style={{ color: 'var(--color-warning)' }}>{money(anticipoMonto)}</span>
+                            </div>
+                        )}
                         {pagos.map(p => {
                             const metodo = metodosPago.find(m => m.id === p.metodo_pago_id);
                             return (

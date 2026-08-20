@@ -50,6 +50,7 @@ class Venta extends Model
     public function descuentosLog(): HasMany     { return $this->hasMany(DescuentoLog::class); }
     /** Anticipos "pendiente por entregar" creados por esta venta desde el POS. */
     public function anticipos(): HasMany         { return $this->hasMany(ClienteAnticipo::class, 'venta_id'); }
+    public function aplicacionesAnticipo(): HasMany { return $this->hasMany(ClienteAnticipoAplicacion::class, 'venta_id'); }
 
     /**
      * Comprobante electrónico SUNAT de esta venta (integración FacturaMac).

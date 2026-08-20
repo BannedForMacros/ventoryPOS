@@ -481,6 +481,10 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // el scroll del grid) que muestra imagen + nombre completo. La cajera solo
     // pasa el mouse; no tiene que hacer clic en nada.
     const [tooltipProd, setTooltipProd] = useState<{ producto: Producto; top: number; bottom: number; left: number } | null>(null);
+    // Anticipos de efectivo del cliente seleccionado.
+    const [anticiposCliente, setAnticiposCliente] = useState<{ id: number; fecha: string; monto: number; saldo: number; observacion: string | null }[]>([]);
+    const [anticipoSeleccionado, setAnticipoSeleccionado] = useState<number | null>(null);
+    const [cargandoAnticipos, setCargandoAnticipos] = useState(false);
     // Refresco del catálogo (solo la lista de productos) sin perder el carrito.
     const [refrescando, setRefrescando] = useState(false);
 
@@ -641,16 +645,32 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // Auto-agregar pago en efectivo por defecto cuando hay items y no hay pagos.
     // Historial de precios del cliente: se recarga al cambiar de cliente. Para el
     // cliente general (sin identificar) no tiene sentido, así que se limpia.
+    // También consultamos anticipos de efectivo activos del cliente.
     useEffect(() => {
         const id = cliente?.id;
         const esGeneral = !cliente
             || (cliente as Cliente & { es_cliente_general?: boolean }).es_cliente_general
             || cliente.numero_documento === '99999999';
-        if (!id || esGeneral) { setHistorialCliente({}); return; }
+        if (!id || esGeneral) {
+            setHistorialCliente({});
+            setAnticiposCliente([]);
+            setAnticipoSeleccionado(null);
+            return;
+        }
         let vivo = true;
         axios.get(route('pos.historial-precios'), { params: { cliente_id: id } })
             .then(r => { if (vivo) setHistorialCliente(r.data ?? {}); })
             .catch(() => { if (vivo) setHistorialCliente({}); });
+
+        setCargandoAnticipos(true);
+        axios.get<{ anticipos: { id: number; fecha: string; monto: number; saldo: number; observacion: string | null }[]; total: number }>(route('pos.clientes.anticipos', id))
+            .then(r => {
+                if (!vivo) return;
+                setAnticiposCliente(r.data.anticipos);
+                if (r.data.anticipos.length === 0) setAnticipoSeleccionado(null);
+            })
+            .catch(() => { if (vivo) setAnticiposCliente([]); })
+            .finally(() => { if (vivo) setCargandoAnticipos(false); });
         return () => { vivo = false; };
     }, [cliente?.id]);
 
@@ -982,6 +1002,12 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // Badge del comprobante recién emitido (lo trae el flash de la venta anterior).
     const comprobanteFlash = flash?.comprobante ?? null;
 
+    // Anticipo de efectivo aplicado a la venta (si el usuario lo activó).
+    const anticipoActivo = anticiposCliente.find(a => a.id === anticipoSeleccionado);
+    const saldoAnticipo = anticipoActivo ? anticipoActivo.saldo : 0;
+    const montoAnticipoUsado = Math.min(total, saldoAnticipo);
+    const totalPagadoConAnticipo = (pagos.reduce((s, p) => s + p.monto, 0)) + montoAnticipoUsado;
+
     function confirmarVenta() {
         // V10 — avisar ANTES de cobrar, no después de emitir mal.
         if (bloqueoComprobante) {
@@ -1001,7 +1027,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             toast.error(`Hay precios por debajo del costo: ${bajoCosto.map(i => i.producto_nombre).join(', ')}. Corrígelos antes de cobrar.`);
             return;
         }
-        const totalPagado = pagos.reduce((s, p) => s + p.monto, 0);
+        const totalPagado = totalPagadoConAnticipo;
 
         if (entregaPendiente) {
             if (esCredito && !creditoYaPagado) {
@@ -1026,6 +1052,10 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 toast.error('Una venta a crédito requiere seleccionar un cliente identificado.');
                 return;
             }
+            if (anticipoSeleccionado) {
+                toast.error('No se puede usar anticipo en una venta a crédito.');
+                return;
+            }
             if (totalPagado >= total - 0.009 && totalPagado > 0) {
                 toast.error('El pago inicial cubre el total: desactiva "Venta a crédito" y cóbrala al contado.');
                 return;
@@ -1035,7 +1065,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 return;
             }
         } else {
-            if (pagos.length === 0) { toast.error('Agrega al menos un método de pago.'); return; }
+            if (pagos.length === 0 && !anticipoSeleccionado) { toast.error('Agrega al menos un método de pago o selecciona un anticipo.'); return; }
             if (totalPagado < total - 0.009) { toast.error(`Faltan S/ ${(total - totalPagado).toFixed(2)} por cubrir.`); return; }
         }
         // Cuenta obligatoria: si un método tiene 2+ cuentas hay que elegir cuál
@@ -1083,6 +1113,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             // Si vino de una cotización, el backend la marca 'convertida' y
             // le guarda el venta_id.
             cotizacion_id:         cotizacionPrellenada?.id ?? null,
+            // Anticipo de efectivo del cliente con el que se pagará la venta.
+            anticipo_id:           anticipoSeleccionado,
             items: carrito.map(i => ({
                 producto_id:           i.producto_id,
                 producto_unidad_id:    i.producto_unidad_id,
@@ -1444,6 +1476,70 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                     </button>
                 </div>
             </div>
+
+            {/* ── Anticipo de efectivo del cliente ─────────────────────────
+                Si el cliente tiene anticipos de efectivo activos, ofrece usar
+                uno para descontar de la venta. El anticipo actúa como pago sin
+                generar movimiento de caja (el dinero ya entró al registrarlo). */}
+            {!!cliente && anticiposCliente.length > 0 && !esCredito && (
+                <div
+                    className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 text-sm border-b flex-shrink-0"
+                    style={{
+                        backgroundColor: anticipoSeleccionado
+                            ? 'color-mix(in srgb, var(--color-success) 12%, var(--color-bg))'
+                            : 'color-mix(in srgb, var(--color-warning) 12%, var(--color-bg))',
+                        borderColor: anticipoSeleccionado ? 'var(--color-success)' : 'var(--color-warning)',
+                        color: 'var(--color-text)',
+                    }}
+                >
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                            style={{ backgroundColor: anticipoSeleccionado ? 'var(--color-success)' : 'var(--color-warning)', color: '#fff' }}>
+                            {anticipoSeleccionado ? 'Anticipo activo' : 'Anticipo disponible'}
+                        </span>
+                        <span className="truncate">
+                            {anticipoSeleccionado
+                                ? `Se descontará S/ ${montoAnticipoUsado.toFixed(2)} de los anticipos del cliente.`
+                                : `Este cliente tiene S/ ${anticiposCliente.reduce((s, a) => s + a.saldo, 0).toFixed(2)} en anticipos de efectivo.`}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        {anticiposCliente.length > 1 && (
+                            <select
+                                value={anticipoSeleccionado ?? ''}
+                                onChange={e => setAnticipoSeleccionado(e.target.value ? Number(e.target.value) : null)}
+                                disabled={cargandoAnticipos}
+                                className="text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2"
+                                style={{
+                                    borderColor: 'var(--color-border)',
+                                    backgroundColor: 'var(--color-bg)',
+                                    color: 'var(--color-text)',
+                                }}
+                            >
+                                <option value="">— Elegir anticipo —</option>
+                                {anticiposCliente.map(a => (
+                                    <option key={a.id} value={a.id}>
+                                        S/ {a.saldo.toFixed(2)} {a.observacion ? `(${a.observacion})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
+                        <button
+                            onClick={() => setAnticipoSeleccionado(anticipoSeleccionado ? null : anticiposCliente[0]?.id ?? null)}
+                            disabled={cargandoAnticipos}
+                            className="text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors hover:opacity-90"
+                            style={{
+                                backgroundColor: anticipoSeleccionado
+                                    ? 'color-mix(in srgb, var(--color-danger) 12%, transparent)'
+                                    : 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
+                                color: anticipoSeleccionado ? 'var(--color-danger)' : 'var(--color-primary)',
+                            }}
+                        >
+                            {anticipoSeleccionado ? 'No usar' : 'Usar anticipo'}
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* ── V10 · Aviso de comprobante electrónico ─────────────────
                 Franja permanente mientras el comprobante NO sea "ticket": qué
@@ -2014,6 +2110,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 entregaPendiente={entregaPendiente}
                 pendienteDe={pendienteDe}
                 fechaEntrega={fechaEntrega}
+                anticipoMonto={montoAnticipoUsado}
             />
 
             <ModalSelectorPresentacion

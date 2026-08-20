@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Cliente;
+use App\Models\ClienteAnticipo;
+use App\Models\ClienteAnticipoAplicacion;
 use App\Models\DescuentoLog;
 use App\Services\LocalScopeService;
 use App\Models\Producto;
@@ -358,7 +360,17 @@ class VentaService
         // Pagado 0 / saldo completo y "reaparecía" como crédito, con la transferencia
         // del abono sobrando en caja. (En creación no hay abonos → suma 0, sin efecto.)
         $abonosPrevios   = round((float) $venta->abonos()->sum('monto'), 2);
-        $montoPagadoReal = round($totalPagado - $vueltoGlobal + $abonosPrevios, 2);
+
+        // ── Anticipo de efectivo aplicado a la venta ──────────────────────
+        // El dinero ya entró a caja cuando se creó el anticipo; aquí solo se
+        // descuenta el saldo y se vincula la aplicación a esta venta. No se
+        // registra ingreso de tesorería nuevo.
+        $montoAnticipo = 0.0;
+        if (!empty($data['anticipo_id'])) {
+            $montoAnticipo = $this->aplicarAnticipoAVenta($venta, $data['anticipo_id'], $user);
+        }
+
+        $montoPagadoReal = round($totalPagado - $vueltoGlobal + $abonosPrevios + $montoAnticipo, 2);
         $venta->update([
             'monto_pagado'    => $esCredito ? $montoPagadoReal : (float) $venta->total,
             'saldo_pendiente' => $esCredito ? max(0, round((float) $venta->total - $montoPagadoReal, 2)) : 0,
@@ -402,6 +414,59 @@ class VentaService
     }
 
     /**
+     * Aplica un anticipo de efectivo (tipo 'monto') a la venta: crea la aplicación,
+     * descuenta el saldo del anticipo y devuelve el monto efectivamente usado.
+     * No genera movimiento de tesorería porque el dinero ya entró al crear el anticipo.
+     */
+    private function aplicarAnticipoAVenta(Venta $venta, int $anticipoId, User $user): float
+    {
+        $anticipo = ClienteAnticipo::where('id', $anticipoId)
+            ->where('empresa_id', $venta->empresa_id)
+            ->where('cliente_id', $venta->cliente_id)
+            ->where('tipo_valorizacion', 'monto')
+            ->where('estado', 'activo')
+            ->lockForUpdate()
+            ->first();
+
+        if (!$anticipo) {
+            abort(422, 'El anticipo no está disponible para este cliente.');
+        }
+
+        $saldo = (float) $anticipo->saldo;
+        if ($saldo <= 0.009) {
+            abort(422, 'El anticipo seleccionado no tiene saldo disponible.');
+        }
+
+        $total = round((float) $venta->total, 2);
+        $montoUsado = min($saldo, $total);
+
+        $anticipo->aplicaciones()->create([
+            'empresa_id'  => $venta->empresa_id,
+            'numero'      => ClienteAnticipoAplicacion::generarNumero($venta->empresa_id),
+            'venta_id'    => $venta->id,
+            'user_id'     => $user->id,
+            'fecha'       => $venta->fecha_venta?->toDateString() ?? now()->toDateString(),
+            'monto'       => $montoUsado,
+            'observacion' => "Aplicado a venta {$venta->numero}",
+        ]);
+
+        $nuevoSaldo = round($saldo - $montoUsado, 2);
+        $anticipo->update([
+            'saldo'  => max(0, $nuevoSaldo),
+            'estado' => $nuevoSaldo <= 0.01 ? 'aplicado' : 'activo',
+        ]);
+
+        \App\Services\AuditoriaService::log('anticipo_cliente.aplicado', $anticipo, [
+            'venta_id'    => $venta->id,
+            'monto'       => $montoUsado,
+            'saldo'       => (float) $anticipo->saldo,
+            'origen'      => 'pos_pago_venta',
+        ], $user);
+
+        return $montoUsado;
+    }
+
+    /**
      * Edita una venta COMPLETA dentro de los 3 min de creada (el guard de tiempo
      * lo aplica el controlador). Revierte por completo la versión anterior
      * (stock, tesorería, items, pagos, logs) y vuelve a aplicar el detalle nuevo,
@@ -418,6 +483,11 @@ class VentaService
             if ($venta->estado === 'anulada') {
                 abort(422, 'No se puede editar una venta anulada.');
             }
+
+            // Revertir anticipos de efectito aplicados a esta venta antes de
+            // recalcular: así el saldo queda disponible y se re-aplica según
+            // el nuevo payload (si viene anticipo_id).
+            $this->revertirAnticiposDeVenta($venta, $user);
 
             // Pendiente por entregar en edición:
             //  - Si ya hubo ENTREGAS registradas (aplicaciones del anticipo),
@@ -616,6 +686,11 @@ class VentaService
                 $this->tesoreria->revertir('venta_abono', (int) $abonoId);
             }
 
+            // Revertir anticipos de efectivo aplicados a esta venta: se borra la
+            // aplicación y se restaura el saldo del anticipo para que quede
+            // disponible nuevamente.
+            $this->revertirAnticiposDeVenta($venta, $user);
+
             \App\Services\AuditoriaService::log('venta.anulada', $venta, [
                 'numero'           => $venta->numero,
                 'total'            => (float) $venta->total,
@@ -625,6 +700,40 @@ class VentaService
                 'motivo'           => $motivo,
             ], $user);
         });
+    }
+
+    /**
+     * Al anular una venta, las aplicaciones de anticipo de efectito vinculadas a ella
+     * se eliminan y el saldo del anticipo se restaura, quedando disponible de nuevo.
+     */
+    private function revertirAnticiposDeVenta(Venta $venta, User $user): void
+    {
+        $aplicaciones = ClienteAnticipoAplicacion::where('venta_id', $venta->id)
+            ->whereHas('anticipo', fn ($q) => $q->where('tipo_valorizacion', 'monto'))
+            ->with('anticipo')
+            ->get();
+
+        foreach ($aplicaciones as $aplicacion) {
+            $anticipo = $aplicacion->anticipo;
+            if (!$anticipo) continue;
+
+            $monto = (float) $aplicacion->monto;
+            $nuevoSaldo = round((float) $anticipo->saldo + $monto, 2);
+            $anticipo->update([
+                'saldo'  => $nuevoSaldo,
+                'estado' => 'activo',
+            ]);
+
+            \App\Services\AuditoriaService::log('anticipo_cliente.reactivado', $anticipo, [
+                'motivo'      => "Anulación de la venta {$venta->numero}",
+                'monto'       => $monto,
+                'saldo'       => $nuevoSaldo,
+                'venta_id'    => $venta->id,
+                'aplicacion_id' => $aplicacion->id,
+            ], $user);
+
+            $aplicacion->delete();
+        }
     }
 
     /**

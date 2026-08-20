@@ -140,3 +140,96 @@ it('numera las ventas correlativamente por turno (V-0001, V-0002, ...)', functio
 
     expect([$v1->numero, $v2->numero, $v3->numero])->toBe(['V-0001', 'V-0002', 'V-0003']);
 });
+
+it('puede pagar una venta con un anticipo de efectivo del cliente', function () {
+    $producto = $this->env->crearProducto(['precio_venta' => 50, 'stock_inicial' => 50]);
+
+    $cliente = \App\Models\Cliente::create([
+        'empresa_id'       => $this->env->empresa->id,
+        'tipo_documento'   => 'DNI',
+        'numero_documento' => '12345678',
+        'nombres'          => 'Juan',
+        'apellidos'        => 'Pérez',
+        'activo'           => true,
+    ]);
+
+    $anticipo = \App\Models\ClienteAnticipo::create([
+        'empresa_id'        => $this->env->empresa->id,
+        'cliente_id'        => $cliente->id,
+        'user_id'           => $this->env->admin->id,
+        'fecha'             => now()->toDateString(),
+        'monto'             => 100.00,
+        'saldo'             => 100.00,
+        'tipo_valorizacion' => 'monto',
+        'estado'            => 'activo',
+    ]);
+
+    $venta = $this->service->crear([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $cliente->id,
+        'anticipo_id'      => $anticipo->id,
+        'items' => [[
+            'producto_id'        => $producto->id,
+            'producto_unidad_id' => $producto->unidadBase->id,
+            'cantidad'           => 1,
+            'precio_unitario'    => 50,
+        ]],
+        'pagos' => [],
+    ], $this->env->admin, $this->turno);
+
+    expect($venta->estado)->toBe('completada');
+    expect((float) $venta->total)->toBe(50.0);
+    expect((float) $venta->monto_pagado)->toBe(50.0);
+
+    $anticipo->refresh();
+    expect((float) $anticipo->saldo)->toBe(50.0);
+    expect($anticipo->estado)->toBe('activo');
+
+    $aplicacion = \App\Models\ClienteAnticipoAplicacion::where('venta_id', $venta->id)->first();
+    expect($aplicacion)->not->toBeNull();
+    expect((float) $aplicacion->monto)->toBe(50.0);
+});
+
+it('restaura el saldo del anticipo al anular una venta pagada con anticipo', function () {
+    $producto = $this->env->crearProducto(['precio_venta' => 50, 'stock_inicial' => 50]);
+
+    $cliente = \App\Models\Cliente::create([
+        'empresa_id'       => $this->env->empresa->id,
+        'tipo_documento'   => 'DNI',
+        'numero_documento' => '12345678',
+        'nombres'          => 'Juan',
+        'apellidos'        => 'Pérez',
+        'activo'           => true,
+    ]);
+
+    $anticipo = \App\Models\ClienteAnticipo::create([
+        'empresa_id'        => $this->env->empresa->id,
+        'cliente_id'        => $cliente->id,
+        'user_id'           => $this->env->admin->id,
+        'fecha'             => now()->toDateString(),
+        'monto'             => 100.00,
+        'saldo'             => 100.00,
+        'tipo_valorizacion' => 'monto',
+        'estado'            => 'activo',
+    ]);
+
+    $venta = $this->service->crear([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $cliente->id,
+        'anticipo_id'      => $anticipo->id,
+        'items' => [[
+            'producto_id'        => $producto->id,
+            'producto_unidad_id' => $producto->unidadBase->id,
+            'cantidad'           => 1,
+            'precio_unitario'    => 50,
+        ]],
+        'pagos' => [],
+    ], $this->env->admin, $this->turno);
+
+    $this->service->anular($venta, $this->env->admin);
+
+    $anticipo->refresh();
+    expect((float) $anticipo->saldo)->toBe(100.0);
+    expect($anticipo->estado)->toBe('activo');
+    expect(\App\Models\ClienteAnticipoAplicacion::where('venta_id', $venta->id)->count())->toBe(0);
+});
