@@ -571,11 +571,6 @@ class StoreVentaRequest extends FormRequest
             return;
         }
 
-        if ($this->boolean('es_credito')) {
-            $validator->errors()->add('anticipo_id', 'No se puede usar un anticipo en una venta a crédito.');
-            return;
-        }
-
         $anticipo = \App\Models\ClienteAnticipo::where('id', $anticipoId)
             ->where('empresa_id', $empresaId)
             ->where('cliente_id', $clienteId)
@@ -689,17 +684,12 @@ class StoreVentaRequest extends FormRequest
         }
 
         // El pago inicial no puede exceder el total (eso no sería crédito).
-        $totalPagado = round(collect($this->input('pagos', []))->sum(fn($p) => (float) ($p['monto'] ?? 0)), 2);
+        // El anticipo del cliente cuenta como pago inicial.
+        $totalPagado = round(collect($this->input('pagos', []))->sum(fn($p) => (float) ($p['monto'] ?? 0)) + $this->montoAnticipoUsable($total), 2);
         if ($totalPagado > $total + 0.01) {
             $validator->errors()->add(
                 'pagos',
                 "En una venta a crédito el pago inicial ({$totalPagado}) no puede exceder el total ({$total}).",
-            );
-        }
-        if ($totalPagado >= $total - 0.01 && $totalPagado > 0) {
-            $validator->errors()->add(
-                'es_credito',
-                'El pago inicial cubre el total: registra la venta como contado, no como crédito.',
             );
         }
     }

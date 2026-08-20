@@ -1058,14 +1058,6 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 toast.error('Una venta a crédito requiere seleccionar un cliente identificado.');
                 return;
             }
-            if (anticipoSeleccionado) {
-                toast.error('No se puede usar anticipo en una venta a crédito.');
-                return;
-            }
-            if (totalPagado >= total - 0.009 && totalPagado > 0) {
-                toast.error('El pago inicial cubre el total: desactiva "Venta a crédito" y cóbrala al contado.');
-                return;
-            }
             if (totalPagado > total + 0.009) {
                 toast.error('En una venta a crédito el pago inicial no puede exceder el total.');
                 return;
@@ -1487,7 +1479,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 Si el cliente tiene anticipos de efectivo activos, ofrece usar
                 uno para descontar de la venta. El anticipo actúa como pago sin
                 generar movimiento de caja (el dinero ya entró al registrarlo). */}
-            {!!cliente && anticiposCliente.length > 0 && !esCredito && (
+            {!!cliente && anticiposCliente.length > 0 && (
                 <div
                     className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 text-sm border-b flex-shrink-0"
                     style={{
