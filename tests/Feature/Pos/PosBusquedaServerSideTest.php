@@ -55,25 +55,46 @@ it('pos.productos filtra por nombre y por código', function () {
 });
 
 it('pos.productos ignora artículos, tildes y orden al buscar por nombre', function () {
-    $this->env->crearProducto(['nombre' => 'Biffe de chorizo', 'codigo' => 'BIFE-01']);
+    $this->env->crearProducto(['nombre' => 'Bife de chorizo', 'codigo' => 'BIFE-01']);
 
-    $this->getJson(route('pos.productos', ['q' => 'biffe chorizo']))
+    $this->getJson(route('pos.productos', ['q' => 'bife chorizo']))
         ->assertOk()
         ->assertJsonCount(1, 'productos')
-        ->assertJsonPath('productos.0.nombre', 'Biffe de chorizo');
+        ->assertJsonPath('productos.0.nombre', 'Bife de chorizo');
 
-    $this->getJson(route('pos.productos', ['q' => 'chorizo biffe']))
+    $this->getJson(route('pos.productos', ['q' => 'chorizo bife']))
         ->assertOk()
         ->assertJsonCount(1, 'productos');
 
     $this->getJson(route('pos.productos', ['q' => 'bifé chorizo']))
         ->assertOk()
         ->assertJsonCount(1, 'productos');
+});
 
-    // Typo: "bife" en vez de "biffe".
-    $this->getJson(route('pos.productos', ['q' => 'bife chorizo']))
+it('pos.productos tolera typos solo en búsquedas de una sola palabra', function () {
+    $this->env->crearProducto(['nombre' => 'Martillo', 'codigo' => 'MART-01']);
+
+    $this->getJson(route('pos.productos', ['q' => 'martilo']))
         ->assertOk()
-        ->assertJsonCount(1, 'productos');
+        ->assertJsonCount(1, 'productos')
+        ->assertJsonPath('productos.0.nombre', 'Martillo');
+});
+
+it('pos.productos en búsqueda multi-palabra exige que TODAS las palabras estén en el nombre', function () {
+    $this->env->crearProducto(['nombre' => 'Ladrillo King Rojo', 'codigo' => 'LKR-01']);
+    $this->env->crearProducto(['nombre' => 'Ladrillo King Kong', 'codigo' => 'LKK-01']);
+    $this->env->crearProducto(['nombre' => 'Ladrillo Rojo', 'codigo' => 'LR-01']);
+
+    // Tres palabras reales: solo debe coincidir el que tiene las tres.
+    $this->getJson(route('pos.productos', ['q' => 'ladrillo king kong']))
+        ->assertOk()
+        ->assertJsonCount(1, 'productos')
+        ->assertJsonPath('productos.0.codigo', 'LKK-01');
+
+    // Dos palabras: requiere ambas.
+    $this->getJson(route('pos.productos', ['q' => 'ladrillo rojo']))
+        ->assertOk()
+        ->assertJsonCount(2, 'productos');
 });
 
 it('pos.productos pagina por cursor', function () {

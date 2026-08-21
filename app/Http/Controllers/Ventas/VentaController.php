@@ -1422,19 +1422,20 @@ class VentaController extends Controller
                 $q->where('codigo', 'ILIKE', "%{$busqueda}%");
 
                 if (!empty($terminos)) {
-                    // Búsqueda multi-palabra sin tildes: "biffe chorizo" encuentra
-                    // "biffe de chorizo", "chorizo biffe", etc. Cada término debe
-                    // aparecer en el nombre, sin importar el orden.
+                    // Búsqueda multi-palabra sin tildes: cada TÉRMINO debe aparecer
+                    // en el nombre, sin importar el orden. Con 2+ palabras se
+                    // desactiva el fallback difuso para evitar resultados que solo
+                    // coincidan con una palabra suelta.
                     $q->orWhere(function ($q2) use ($terminos) {
                         foreach ($terminos as $term) {
                             $q2->whereRaw('public.unaccent_immutable(nombre) ILIKE public.unaccent_immutable(?)', ["%{$term}%"]);
                         }
                     });
-                }
 
-                // Fallback difuso (pg_trgm): tolera faltas de letra y typos.
-                if (mb_strlen($busqueda) >= 3) {
-                    $q->orWhereRaw('public.unaccent_immutable(nombre) % public.unaccent_immutable(?)', [$busqueda]);
+                    // Fallback difuso (pg_trgm) SOLO para búsquedas de una palabra.
+                    if (count($terminos) === 1 && mb_strlen($busqueda) >= 3) {
+                        $q->orWhereRaw('public.unaccent_immutable(nombre) % public.unaccent_immutable(?)', [$busqueda]);
+                    }
                 }
             });
         }
