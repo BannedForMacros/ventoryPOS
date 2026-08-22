@@ -205,3 +205,92 @@ it('el admin anula pasados 3 min sin código', function () {
 
     expect($venta->fresh()->estado)->toBe('anulada');
 });
+
+it('en edición se puede cambiar una venta de contado a crédito respetando el pago inicial', function () {
+    $cliente = \App\Models\Cliente::create([
+        'empresa_id'       => $this->env->empresa->id,
+        'nombres'          => 'Juan', 'apellidos' => 'Perez',
+        'tipo_documento'   => 'DNI', 'numero_documento' => '12345678',
+        'activo'           => true,
+    ]);
+    $turno = $this->env->abrirTurno($this->env->admin);
+    $venta = $this->service->crear([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $cliente->id,
+        'items' => [[
+            'producto_id'        => $this->producto->id,
+            'producto_unidad_id' => $this->producto->unidadBase->id,
+            'cantidad'           => 2,
+            'precio_unitario'    => 10,
+        ]],
+        'pagos' => [[ 'metodo_pago_id' => $this->efectivo->id, 'monto' => 20 ]],
+    ], $this->env->admin, $turno); // total 20, pagado 20, contado
+
+    expect($venta->es_credito)->toBeFalse();
+    expect((float) $venta->saldo_pendiente)->toBe(0.0);
+
+    $this->actingAs($this->env->admin)
+        ->put(route('ventas.update', $venta), [
+            'tipo_comprobante' => 'ticket',
+            'cliente_id'       => $cliente->id,
+            'es_credito'       => true,
+            'items' => [[
+                'producto_id'        => $this->producto->id,
+                'producto_unidad_id' => $this->producto->unidadBase->id,
+                'cantidad'           => 2,
+                'precio_unitario'    => 10,
+                'incluye_igv'        => true,
+            ]],
+            'pagos' => [[ 'metodo_pago_id' => $this->efectivo->id, 'monto' => 20 ]],
+        ])
+        ->assertRedirect(route('ventas.show', $venta));
+
+    $venta->refresh();
+    expect($venta->es_credito)->toBeTrue();
+    expect((float) $venta->total)->toBe(20.0);
+    expect((float) $venta->monto_pagado)->toBe(20.0);
+    expect((float) $venta->saldo_pendiente)->toBe(0.0);
+});
+
+it('en edición NO se puede quitar el crédito a una venta que ya estaba a crédito', function () {
+    $turno = $this->env->abrirTurno($this->env->admin);
+    $cliente = \App\Models\Cliente::create([
+        'empresa_id'       => $this->env->empresa->id,
+        'nombres'          => 'Juan', 'apellidos' => 'Perez',
+        'tipo_documento'   => 'DNI', 'numero_documento' => '12345678',
+        'activo'           => true,
+    ]);
+
+    $venta = $this->service->crear([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $cliente->id,
+        'es_credito'       => true,
+        'items' => [[
+            'producto_id'        => $this->producto->id,
+            'producto_unidad_id' => $this->producto->unidadBase->id,
+            'cantidad'           => 2,
+            'precio_unitario'    => 10,
+        ]],
+        'pagos' => [],
+    ], $this->env->admin, $turno);
+
+    expect($venta->es_credito)->toBeTrue();
+
+    $this->actingAs($this->env->admin)
+        ->put(route('ventas.update', $venta), [
+            'tipo_comprobante' => 'ticket',
+            'cliente_id'       => $cliente->id,
+            'es_credito'       => false,
+            'items' => [[
+                'producto_id'        => $this->producto->id,
+                'producto_unidad_id' => $this->producto->unidadBase->id,
+                'cantidad'           => 2,
+                'precio_unitario'    => 10,
+                'incluye_igv'        => true,
+            ]],
+            'pagos' => [[ 'metodo_pago_id' => $this->efectivo->id, 'monto' => 20 ]],
+        ])
+        ->assertSessionHasErrors('es_credito');
+
+    expect($venta->fresh()->es_credito)->toBeTrue();
+});

@@ -1176,8 +1176,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const creditoBloqueadoEnEdicion = !!ventaEnEdicion?.es_credito;
 
     function activarCredito(v: boolean) {
-        // En edición, no se permite cambiar el flag de crédito: afecta abonos,
-        // saldo por cobrar y trazabilidad. El backend lo conserva igual.
+        // Solo se bloquea quitar el crédito a una venta que ya lo era (afecta
+        // abonos, saldo por cobrar y trazabilidad). Activar crédito en una venta
+        // que estaba de contado sí está permitido y el backend lo respeta.
         if (creditoBloqueadoEnEdicion && !v) {
             toast.error('No puedes quitar "Venta a crédito" al editar una venta que ya estaba a crédito.');
             return;

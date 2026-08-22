@@ -17,6 +17,7 @@ use App\Models\VentaItem;
 use App\Models\VentaPago;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class VentaService
 {
@@ -472,8 +473,9 @@ class VentaService
      * (stock, tesorería, items, pagos, logs) y vuelve a aplicar el detalle nuevo,
      * conservando número, turno, caja, usuario y fecha originales.
      *
-     * Para acotar el alcance, la edición NO cambia la moneda ni el flag de
-     * crédito: se conservan los de la venta original.
+     * Para acotar el alcance, la edición NO cambia la moneda. El flag de crédito
+     * solo puede ACTIVARSE en una venta que originalmente no lo era; nunca se
+     * puede quitar el crédito a una venta que ya lo tenía (afecta abonos y CxC).
      */
     public function actualizar(Venta $venta, array $data, User $user): Venta
     {
@@ -582,7 +584,16 @@ class VentaService
             $moneda     = strtoupper($venta->moneda ?? 'PEN') ?: 'PEN';
             $tipoCambio = $venta->tipo_cambio ? (float) $venta->tipo_cambio : null;
             $factor     = ($moneda !== 'PEN' && $tipoCambio) ? $tipoCambio : 1.0;
-            $esCredito  = (bool) $venta->es_credito;
+
+            // El crédito puede ACTIVARSE en edición (contado → crédito), pero no
+            // puede quitarse porque ya podría tener abonos registrados.
+            $esCreditoOriginal = (bool) $venta->es_credito;
+            $esCreditoNuevo    = isset($data['es_credito']) ? (bool) $data['es_credito'] : $esCreditoOriginal;
+            if ($esCreditoOriginal && !$esCreditoNuevo) {
+                throw ValidationException::withMessages([
+                    'es_credito' => 'No se puede quitar la condición de crédito a una venta que ya estaba a crédito.',
+                ]);
+            }
 
             $venta->update([
                 'cliente_id'            => $clienteId,
@@ -591,13 +602,14 @@ class VentaService
                 'descuento_total'       => round((float) ($data['descuento_total'] ?? 0) * $factor, 2),
                 'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
                 'observacion'           => $data['observacion'] ?? null,
+                'es_credito'            => $esCreditoNuevo,
                 'subtotal'              => 0,
                 'igv'                   => 0,
                 'total'                 => 0,
             ]);
 
             // 3) Re-aplicar detalle nuevo
-            $this->aplicarItemsPagos($venta, $data, $user, $turno, $almacen, $moneda, $tipoCambio, $factor, $esCredito, (int) $clienteId, $permitirStockNegativo);
+            $this->aplicarItemsPagos($venta, $data, $user, $turno, $almacen, $moneda, $tipoCambio, $factor, $esCreditoNuevo, (int) $clienteId, $permitirStockNegativo);
 
             \App\Services\AuditoriaService::log('venta.editada', $venta, [
                 'numero' => $venta->numero,
