@@ -58,7 +58,7 @@ class Deuda extends Model
         }
 
         $incrementos = (float) $this->pagos()->where('tipo', 'incremento')->sum('monto');
-        $amortizaciones = (float) $this->pagos()->where('tipo', 'amortizacion')->sum('monto');
+        $amortizaciones = (float) $this->pagos()->whereIn('tipo', ['amortizacion', 'compensacion'])->sum('monto');
         $nuevo = max(0, (float) $this->monto_original + $incrementos - $amortizaciones);
 
         $this->update([

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, RotateCcw, CalendarClock } from 'lucide-react';
+import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, RotateCcw, CalendarClock, Scale } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -17,12 +17,13 @@ import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
 import AfectaCajaSelect, { TurnoLite } from '@/Components/AfectaCajaSelect';
+import SearchableSelect from '@/Components/UI/SearchableSelect';
 import type { PageProps } from '@/types';
 
 interface Pago {
     id: number;
     fecha: string;
-    tipo: 'amortizacion' | 'incremento';
+    tipo: 'amortizacion' | 'incremento' | 'compensacion';
     monto: string;
     observacion: string | null;
     metodo_pago_id?: number | null;
@@ -31,6 +32,7 @@ interface Pago {
     cuenta?: { id: number; nombre: string } | null;
     turno_id?: number | null;
     user?: { name: string } | null;
+    compensacion_deuda?: { id: number; nombre: string } | null;
     eliminado?: boolean;
     deleted_at?: string | null;
 }
@@ -60,7 +62,7 @@ interface Props extends PageProps {
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
     turnos: TurnoLite[];
-    puede: { editar: boolean; eliminar: boolean };
+    puede: { editar: boolean; eliminar: boolean; compensar: boolean };
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -112,6 +114,21 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     const [verEliminados, setVerEliminados] = useState(false);
     const [movimientosExtra, setMovimientosExtra] = useState<Pago[]>([]);
     const [cargandoMovimientos, setCargandoMovimientos] = useState(false);
+
+    // Compensación entre deudas por pagar y por cobrar.
+    const [compensando, setCompensando] = useState(false);
+    const [cargandoOpciones, setCargandoOpciones] = useState(false);
+    const [opcionesPorPagar, setOpcionesPorPagar] = useState<{ value: string | number; label: string }[]>([]);
+    const [opcionesPorCobrar, setOpcionesPorCobrar] = useState<{ value: string | number; label: string }[]>([]);
+    const [formCompensar, setFormCompensar] = useState({
+        deuda_por_pagar_id: '' as string | number,
+        deuda_por_cobrar_id: '' as string | number,
+        fecha: hoy(),
+        monto: '',
+        observacion: '',
+    });
+    const [maximoCompensar, setMaximoCompensar] = useState<number | null>(null);
+
 
     function abrirEditar(d: Deuda) {
         setErrors({});
@@ -166,6 +183,55 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             onSuccess: () => { setEliminandoPago(null); setMotivo(''); setDetalle(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         } as any);
+    }
+
+    /** Carga hasta 100 deudas activas por dirección para el select de compensación. */
+    function cargarOpcionesCompensacion() {
+        setCargandoOpciones(true);
+        Promise.all([
+            axios.get<{ id: number; nombre: string; saldo: string }[]>(route('finanzas.deudas.activas'), { params: { direccion: 'por_pagar' } }),
+            axios.get<{ id: number; nombre: string; saldo: string }[]>(route('finanzas.deudas.activas'), { params: { direccion: 'por_cobrar' } }),
+        ])
+            .then(([pp, pc]) => {
+                setOpcionesPorPagar(pp.data.map(d => ({ value: d.id, label: `${d.nombre} — ${money(d.saldo)}` })));
+                setOpcionesPorCobrar(pc.data.map(d => ({ value: d.id, label: `${d.nombre} — ${money(d.saldo)}` })));
+            })
+            .catch(() => toast.error('No se pudieron cargar las deudas activas'))
+            .finally(() => setCargandoOpciones(false));
+    }
+
+    function abrirCompensar() {
+        setErrors({});
+        setFormCompensar({ deuda_por_pagar_id: '', deuda_por_cobrar_id: '', fecha: hoy(), monto: '', observacion: '' });
+        setMaximoCompensar(null);
+        setCompensando(true);
+        cargarOpcionesCompensacion();
+    }
+
+    function calcularMaximoCompensacion(ppId: string | number, pcId: string | number) {
+        const pp = opcionesPorPagar.find(o => o.value == ppId);
+        const pc = opcionesPorCobrar.find(o => o.value == pcId);
+        if (!pp || !pc) {
+            setMaximoCompensar(null);
+            return;
+        }
+        const saldoPp = Number((pp.label.match(/S\/\s*([\d,.]+)/)?.[1] ?? '0').replace(/,/g, ''));
+        const saldoPc = Number((pc.label.match(/S\/\s*([\d,.]+)/)?.[1] ?? '0').replace(/,/g, ''));
+        const max = Math.min(saldoPp, saldoPc);
+        setMaximoCompensar(max > 0 ? max : null);
+        setFormCompensar(f => ({ ...f, monto: max > 0 ? String(max.toFixed(2)) : '' }));
+    }
+
+    function submitCompensar() {
+        setSaving(true);
+        router.post(route('finanzas.deudas.compensar'), {
+            ...formCompensar,
+            monto: formCompensar.monto || null,
+            observacion: formCompensar.observacion || null,
+        } as any, {
+            onSuccess: () => { setCompensando(false); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
     }
 
     useEffect(() => {
@@ -225,6 +291,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     }
 
     function abrirEditarPago(p: Pago) {
+        if (p.tipo === 'compensacion') return;
         setErrors({});
         setFormEditarPago({
             tipo: p.tipo,
@@ -357,9 +424,16 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 title="Deudas y préstamos"
                 subtitle="Deudas bancarias, personales, al personal y préstamos otorgados"
                 actions={
-                    <Button onClick={() => { setErrors({}); setForm(emptyForm()); setModalNuevo(true); }}>
-                        <Plus size={15} className="mr-1 flex-shrink-0" />Nueva deuda
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        {puede.compensar && (
+                            <Button variant="secondary" onClick={abrirCompensar}>
+                                <Scale size={15} className="mr-1 flex-shrink-0" />Compensar
+                            </Button>
+                        )}
+                        <Button onClick={() => { setErrors({}); setForm(emptyForm()); setModalNuevo(true); }}>
+                            <Plus size={15} className="mr-1 flex-shrink-0" />Nueva deuda
+                        </Button>
+                    </div>
                 }
             />
 
@@ -501,6 +575,55 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                             </div>
                         )}
                     </div>
+                </div>
+            </Modal>
+
+            {/* Modal compensar deudas */}
+            <Modal isOpen={compensando} onClose={() => setCompensando(false)} title="Compensar deudas" size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setCompensando(false)}>Cancelar</Button>
+                        <Button onClick={submitCompensar} disabled={saving || !formCompensar.deuda_por_pagar_id || !formCompensar.deuda_por_cobrar_id}>
+                            {saving ? 'Guardando...' : 'Compensar'}
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <Callout variant="info">
+                        Crea un movimiento tipo <strong>compensación</strong> en ambas deudas. No mueve dinero en caja; reduce ambos saldos por el mismo monto.
+                    </Callout>
+                    {cargandoOpciones ? (
+                        <p className="text-sm text-center py-4" style={{ color: 'var(--color-text-muted)' }}>Cargando deudas activas…</p>
+                    ) : (
+                        <>
+                            <SearchableSelect label="Deuda por pagar (debemos)" required placeholder="Buscar deuda…"
+                                options={opcionesPorPagar}
+                                value={formCompensar.deuda_por_pagar_id}
+                                onChange={v => { setFormCompensar(f => ({ ...f, deuda_por_pagar_id: v })); calcularMaximoCompensacion(v, formCompensar.deuda_por_cobrar_id); }}
+                                error={errors.deuda_por_pagar_id}
+                            />
+                            <SearchableSelect label="Deuda por cobrar (nos deben)" required placeholder="Buscar deuda…"
+                                options={opcionesPorCobrar}
+                                value={formCompensar.deuda_por_cobrar_id}
+                                onChange={v => { setFormCompensar(f => ({ ...f, deuda_por_cobrar_id: v })); calcularMaximoCompensacion(formCompensar.deuda_por_pagar_id, v); }}
+                                error={errors.deuda_por_cobrar_id}
+                            />
+                            {maximoCompensar !== null && (
+                                <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                    Monto máximo sugerido: <strong>{money(maximoCompensar)}</strong>
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3">
+                                <Input label="Fecha" required type="date" value={formCompensar.fecha}
+                                    onChange={e => setFormCompensar(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                                <Input label="Monto" required type="number" min="0.01" step="0.01" value={formCompensar.monto}
+                                    onChange={e => setFormCompensar(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                            </div>
+                            <Input label="Observación" value={formCompensar.observacion}
+                                onChange={e => setFormCompensar(f => ({ ...f, observacion: e.target.value }))} error={errors.observacion} />
+                        </>
+                    )}
                 </div>
             </Modal>
 
@@ -680,8 +803,8 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                                 backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
                                                 opacity: p.eliminado ? 0.55 : 1,
                                             }}>
-                                            <Badge variant={p.tipo === 'amortizacion' ? 'success' : 'warning'}>
-                                                {p.tipo === 'amortizacion' ? 'Amortización' : 'Incremento'}
+                                            <Badge variant={p.tipo === 'amortizacion' ? 'success' : p.tipo === 'compensacion' ? 'info' : 'warning'}>
+                                                {p.tipo === 'amortizacion' ? 'Amortización' : p.tipo === 'compensacion' ? 'Compensación' : 'Incremento'}
                                             </Badge>
                                             {p.eliminado && (
                                                 <Badge variant="secondary">Eliminado</Badge>
@@ -690,7 +813,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                                 <p className="font-medium" style={{ color: 'var(--color-text)', textDecoration: p.eliminado ? 'line-through' : undefined }}>
                                                     {new Date(p.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')}
                                                     <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
-                                                        {[p.metodo_pago?.nombre, p.cuenta?.nombre].filter(Boolean).join(' · ') || '—'}
+                                                        {[p.tipo === 'compensacion' ? `Con ${p.compensacion_deuda?.nombre ?? '—'}` : p.metodo_pago?.nombre, p.cuenta?.nombre].filter(Boolean).join(' · ') || '—'}
                                                     </span>
                                                 </p>
                                                 {(p.observacion || p.user?.name || p.deleted_at) && (
@@ -704,16 +827,18 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                                 )}
                                             </div>
                                             <span className="font-bold text-sm whitespace-nowrap"
-                                                style={{ color: p.tipo === 'amortizacion' ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                                {p.tipo === 'amortizacion' ? '−' : '+'}{money(p.monto)}
+                                                style={{ color: p.tipo === 'amortizacion' ? 'var(--color-success)' : p.tipo === 'compensacion' ? 'var(--color-primary)' : 'var(--color-danger)' }}>
+                                                {p.tipo === 'incremento' ? '+' : '−'}{money(p.monto)}
                                             </span>
                                             {!p.eliminado && (
                                                 <div className="flex items-center gap-1">
-                                                    <button onClick={() => abrirEditarPago(p)}
-                                                        className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Editar movimiento"
-                                                        style={{ color: 'var(--color-primary)' }}>
-                                                        <Pencil size={14} />
-                                                    </button>
+                                                    {p.tipo !== 'compensacion' && (
+                                                        <button onClick={() => abrirEditarPago(p)}
+                                                            className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Editar movimiento"
+                                                            style={{ color: 'var(--color-primary)' }}>
+                                                            <Pencil size={14} />
+                                                        </button>
+                                                    )}
                                                     <button onClick={() => { setErrors({}); setMotivo(''); setEliminandoPago(p); }}
                                                         className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Eliminar movimiento"
                                                         style={{ color: 'var(--color-danger)' }}>
@@ -751,9 +876,11 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                 fecha: new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
                                 badge: p.tipo === 'amortizacion'
                                     ? { texto: 'Amortización', variant: 'success' as const }
-                                    : { texto: 'Incremento', variant: 'warning' as const },
-                                tipo: p.tipo === 'amortizacion' ? 'ingreso' as const : 'egreso' as const,
-                                detalle: [p.metodo_pago?.nombre, p.cuenta?.nombre, p.observacion].filter(Boolean).join(' · ') || undefined,
+                                    : p.tipo === 'compensacion'
+                                        ? { texto: 'Compensación', variant: 'info' as const }
+                                        : { texto: 'Incremento', variant: 'warning' as const },
+                                tipo: p.tipo === 'incremento' ? 'egreso' as const : 'ingreso' as const,
+                                detalle: [p.tipo === 'compensacion' ? `Con ${p.compensacion_deuda?.nombre ?? '—'}` : p.metodo_pago?.nombre, p.cuenta?.nombre, p.observacion].filter(Boolean).join(' · ') || undefined,
                                 user: p.user?.name,
                                 monto: Number(p.monto),
                             })),
@@ -882,7 +1009,9 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 {eliminandoPago && (
                     <div className="space-y-3">
                         <Callout variant="warning">
-                            Se revierte su efecto en tesorería y el saldo de la deuda se recalcula.
+                            {eliminandoPago?.tipo === 'compensacion'
+                                ? 'Se elimina el par de compensación y se restauran los saldos de ambas deudas.'
+                                : 'Se revierte su efecto en tesorería y el saldo de la deuda se recalcula.'}
                         </Callout>
                         <Input label="Motivo (mínimo 5 caracteres)" required value={motivo}
                             onChange={e => setMotivo(e.target.value)}

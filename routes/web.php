@@ -480,8 +480,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Deudas y préstamos
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas', [DeudaController::class, 'index'])->name('deudas.index');
+        Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/activas', [DeudaController::class, 'activas'])->name('deudas.activas');
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/{deuda}/movimientos', [DeudaController::class, 'movimientos'])->name('deudas.movimientos');
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/exportar', [DeudaController::class, 'exportar'])->name('deudas.exportar');
+        Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/compensar', [DeudaController::class, 'compensar'])->name('deudas.compensar');
         Route::middleware('permiso:finanzas.deudas,editar')->put('deudas/pagos/{pago}', [DeudaController::class, 'editarPago'])->name('deudas.pagos.update');
         Route::middleware('permiso:finanzas.deudas,crear')->post('deudas', [DeudaController::class, 'store'])->name('deudas.store');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/pago', [DeudaController::class, 'registrarPago'])->name('deudas.pago');

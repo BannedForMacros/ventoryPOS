@@ -15,6 +15,8 @@ class DeudaPago extends Model
         'fecha', 'tipo', 'monto', 'observacion',
         // "Afecta caja": turno cuya caja movió el efectivo de esta cuota.
         'turno_id',
+        // Vínculo de una compensación entre una deuda por pagar y otra por cobrar.
+        'compensacion_grupo_id', 'compensacion_deuda_id',
     ];
 
     protected function casts(): array
@@ -30,4 +32,5 @@ class DeudaPago extends Model
     public function metodoPago(): BelongsTo { return $this->belongsTo(MetodoPago::class, 'metodo_pago_id'); }
     public function cuenta(): BelongsTo     { return $this->belongsTo(Cuenta::class); }
     public function turno(): BelongsTo      { return $this->belongsTo(Turno::class); }
+    public function compensacionDeuda(): BelongsTo { return $this->belongsTo(Deuda::class, 'compensacion_deuda_id'); }
 }

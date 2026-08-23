@@ -14,6 +14,7 @@ use App\Support\AfectaCaja;
 use App\Support\ExigeCuentaDePago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -78,8 +79,9 @@ class DeudaController extends Controller
             // Acciones visibles según la matriz de permisos del rol (nada
             // hardcodeado a es_admin: se otorgan desde Configuración → Roles).
             'puede'       => [
-                'editar'   => $user->tienePermiso('finanzas.deudas', 'editar'),
-                'eliminar' => $user->tienePermiso('finanzas.deudas', 'eliminar'),
+                'editar'     => $user->tienePermiso('finanzas.deudas', 'editar'),
+                'eliminar'   => $user->tienePermiso('finanzas.deudas', 'eliminar'),
+                'compensar'  => $user->tienePermiso('finanzas.deudas', 'editar'),
             ],
             'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
             'cuentas'     => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
@@ -163,6 +165,125 @@ class DeudaController extends Controller
     {
         $escaped = str_replace('"', '""', $value);
         return '"' . $escaped . '"';
+    }
+
+    /**
+     * Devuelve las deudas ACTIVAS para poblar selects de compensación u otros
+     * formularios. Filtro opcional por dirección y búsqueda por nombre/observación.
+     */
+    public function activas(Request $request)
+    {
+        $user = $request->user();
+        $direccion = $request->input('direccion');
+        $buscar = trim($request->input('buscar', ''));
+
+        $query = Deuda::deEmpresa($user->empresa_id)
+            ->activa()
+            ->when(in_array($direccion, ['por_pagar', 'por_cobrar']), fn ($q) => $q->where('direccion', $direccion))
+            ->when($buscar !== '', fn ($q) => $q->where(fn ($sub) => $sub
+                ->where('nombre', 'ilike', "%{$buscar}%")
+                ->orWhere('observacion', 'ilike', "%{$buscar}%")));
+
+        return response()->json($query->orderBy('nombre')->limit(100)->get([
+            'id', 'nombre', 'direccion', 'saldo',
+        ]));
+    }
+
+    /**
+     * Compensa una deuda por pagar contra una por cobrar. Crea un movimiento
+     * tipo "compensacion" en cada deuda (sin mover caja), reduce ambos saldos
+     * y cierra la(s) que quede(n) en cero.
+     */
+    public function compensar(Request $request)
+    {
+        $user = $request->user();
+        abort_if(!$user->tienePermiso('finanzas.deudas', 'editar'), 403);
+
+        $data = $request->validate([
+            'deuda_por_pagar_id'  => ['required', 'integer', 'exists:deudas,id'],
+            'deuda_por_cobrar_id' => ['required', 'integer', 'exists:deudas,id'],
+            'fecha'               => ['required', 'date'],
+            'monto'               => ['required', 'numeric', 'min:0.01'],
+            'observacion'         => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $porPagar  = Deuda::deEmpresa($user->empresa_id)->find($data['deuda_por_pagar_id']);
+        $porCobrar = Deuda::deEmpresa($user->empresa_id)->find($data['deuda_por_cobrar_id']);
+
+        $validator = \Illuminate\Support\Facades\Validator::make($data, []);
+        $validator->after(function ($v) use ($porPagar, $porCobrar) {
+            if (!$porPagar || $porPagar->direccion !== Deuda::DIRECCION_POR_PAGAR) {
+                $v->errors()->add('deuda_por_pagar_id', 'La deuda seleccionada no es una deuda por pagar.');
+            }
+            if (!$porCobrar || $porCobrar->direccion !== Deuda::DIRECCION_POR_COBRAR) {
+                $v->errors()->add('deuda_por_cobrar_id', 'La deuda seleccionada no es una deuda por cobrar.');
+            }
+            if ($porPagar && $porCobrar && $porPagar->id === $porCobrar->id) {
+                $v->errors()->add('deuda_por_cobrar_id', 'No se puede compensar una deuda consigo misma.');
+            }
+            if ($porPagar && $porPagar->estado !== 'activa') {
+                $v->errors()->add('deuda_por_pagar_id', 'La deuda por pagar no está activa.');
+            }
+            if ($porCobrar && $porCobrar->estado !== 'activa') {
+                $v->errors()->add('deuda_por_cobrar_id', 'La deuda por cobrar no está activa.');
+            }
+
+            if ($porPagar && $porCobrar && $porPagar->estado === 'activa' && $porCobrar->estado === 'activa') {
+                $maximo = min((float) $porPagar->saldo, (float) $porCobrar->saldo);
+                if ($maximo < 0.01) {
+                    $v->errors()->add('monto', 'Ambas deudas deben tener saldo positivo para compensar.');
+                }
+            }
+        });
+
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        $maximo = min((float) $porPagar->saldo, (float) $porCobrar->saldo);
+        $montoSolicitado = (float) $data['monto'];
+        if ($montoSolicitado < 0.01 || $montoSolicitado > $maximo + 0.001) {
+            return back()->withErrors(['monto' => 'El monto no puede superar el saldo menor (máximo S/ ' . number_format($maximo, 2) . ').'])->withInput();
+        }
+
+        $grupoId = Str::uuid()->toString();
+        $observacion = $data['observacion'] ?? null;
+        $monto = $montoSolicitado;
+
+        DB::transaction(function () use ($user, $porPagar, $porCobrar, $data, $monto, $grupoId, $observacion) {
+            $porPagar->pagos()->create([
+                'user_id'               => $user->id,
+                'fecha'                 => $data['fecha'],
+                'tipo'                  => 'compensacion',
+                'monto'                 => $monto,
+                'observacion'           => $observacion,
+                'compensacion_grupo_id' => $grupoId,
+                'compensacion_deuda_id' => $porCobrar->id,
+            ]);
+
+            $porCobrar->pagos()->create([
+                'user_id'               => $user->id,
+                'fecha'                 => $data['fecha'],
+                'tipo'                  => 'compensacion',
+                'monto'                 => $monto,
+                'observacion'           => $observacion,
+                'compensacion_grupo_id' => $grupoId,
+                'compensacion_deuda_id' => $porPagar->id,
+            ]);
+
+            $porPagar->recalcularSaldo();
+            $porCobrar->recalcularSaldo();
+
+            AuditoriaService::log('deuda.compensacion_creada', $porPagar, [
+                'grupo_id'            => $grupoId,
+                'monto'               => $monto,
+                'deuda_por_pagar_id'  => $porPagar->id,
+                'deuda_por_cobrar_id' => $porCobrar->id,
+                'observacion'         => $observacion,
+            ], $user);
+        });
+
+        return back()->with('success', 'Compensación registrada correctamente.');
     }
 
     public function store(Request $request)
@@ -569,10 +690,30 @@ class DeudaController extends Controller
         ]);
 
         DB::transaction(function () use ($pago, $deuda, $user, $data) {
+            // Si es una compensación, eliminamos el par de movimientos.
+            if ($pago->tipo === 'compensacion' && $pago->compensacion_grupo_id) {
+                $grupoId = $pago->compensacion_grupo_id;
+                $companions = DeudaPago::where('compensacion_grupo_id', $grupoId)->get();
+                $deudaIds   = $companions->pluck('deuda_id')->unique()->all();
+
+                foreach ($companions as $comp) {
+                    $comp->delete();
+                }
+
+                foreach ($deudaIds as $did) {
+                    Deuda::find($did)?->recalcularSaldo();
+                }
+
+                AuditoriaService::log('deuda.compensacion_eliminada', $deuda, [
+                    'motivo'   => $data['motivo'],
+                    'grupo_id' => $grupoId,
+                ], $user);
+
+                return;
+            }
+
             $this->tesoreria->revertir('deuda_pago', $pago->id);
-
             $pago->delete();
-
             $deuda->recalcularSaldo();
 
             AuditoriaService::log('deuda.movimiento_eliminado', $deuda, [
@@ -600,7 +741,7 @@ class DeudaController extends Controller
         $todos = $request->boolean('todos');
 
         $pagos = $deuda->pagos()
-            ->with(['metodoPago:id,nombre', 'cuenta:id,nombre', 'user:id,name'])
+            ->with(['metodoPago:id,nombre', 'cuenta:id,nombre', 'user:id,name', 'compensacionDeuda:id,nombre'])
             ->when($todos, fn ($q) => $q->withTrashed())
             ->orderBy('fecha', 'desc')
             ->orderBy('id', 'desc')
@@ -614,6 +755,7 @@ class DeudaController extends Controller
                 'metodo_pago'  => $p->metodoPago ? ['nombre' => $p->metodoPago->nombre] : null,
                 'cuenta'       => $p->cuenta ? ['nombre' => $p->cuenta->nombre] : null,
                 'user'         => $p->user ? ['name' => $p->user->name] : null,
+                'compensacion_deuda' => $p->compensacionDeuda ? ['id' => $p->compensacionDeuda->id, 'nombre' => $p->compensacionDeuda->nombre] : null,
                 'eliminado'    => ! is_null($p->deleted_at),
                 'deleted_at'   => $p->deleted_at?->format('d/m/Y H:i'),
             ]);

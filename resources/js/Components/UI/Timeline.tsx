@@ -13,7 +13,7 @@ import Badge from '@/Components/UI/Badge';
 export interface TimelineItem {
     fecha: string;                 // ya formateada (d/m/Y)
     titulo?: React.ReactNode;      // texto principal (opcional si basta el badge)
-    badge?: { texto: string; variant: 'primary' | 'success' | 'danger' | 'warning' | 'secondary' };
+    badge?: { texto: string; variant: 'primary' | 'success' | 'danger' | 'warning' | 'secondary' | 'info' };
     detalle?: React.ReactNode;     // método · cuenta · referencia...
     user?: string | null;
     monto?: number;
