@@ -64,8 +64,11 @@ class AnticipoClienteController extends Controller
             ->with([
                 'cliente', 'producto', 'metodoPago', 'cuenta', 'venta:id,numero',
                 'items.producto:id,nombre,precio_venta', 'items.unidad:id,precio_venta',
+                'items.cancelaciones',
                 'aplicaciones.venta', 'aplicaciones.user', 'aplicaciones.items.item:id,producto_nombre,unidad_nombre,cantidad_pendiente',
                 'aplicaciones.metodoPago:id,nombre', 'aplicaciones.cuenta:id,nombre',
+                'cancelaciones.turno:id,fecha_apertura', 'cancelaciones.caja:id,nombre',
+                'cancelaciones.metodoPago:id,nombre', 'cancelaciones.cuenta:id,nombre',
             ])
             ->when($request->input('cliente_id'), fn ($q, $v) => $q->where('cliente_id', $v))
             // Búsqueda server-side sobre TODA la base (no solo la página visible).

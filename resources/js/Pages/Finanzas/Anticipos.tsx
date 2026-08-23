@@ -44,6 +44,19 @@ interface Aplicacion {
     cuenta?: { nombre: string } | null;
 }
 
+interface Cancelacion {
+    id: number;
+    fecha: string;
+    cantidad: string;
+    monto: string;
+    motivo: string;
+    observacion: string | null;
+    turno?: { id: number; fecha_apertura?: string } | null;
+    caja?: { id: number; nombre?: string } | null;
+    metodo_pago?: { nombre: string } | null;
+    cuenta?: { nombre: string } | null;
+}
+
 /** Ítem de un anticipo multi-producto (pendiente por entregar del POS). */
 interface AnticipoItem {
     id: number;
@@ -78,6 +91,7 @@ interface Anticipo extends Record<string, unknown> {
     cuenta?: { nombre: string } | null;
     aplicaciones: Aplicacion[];
     items?: AnticipoItem[];
+    cancelaciones?: Cancelacion[];
 }
 
 interface Paginado<T> { data: T[]; total: number; }
@@ -164,6 +178,53 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     // Cambiar producto de una línea pendiente (anticipo material del POS).
     const [cambiandoItem, setCambiandoItem] = useState<{ anticipo: Anticipo; item: AnticipoItem } | null>(null);
     const [formCambiar, setFormCambiar] = useState({ producto_id: '', cantidad: '', motivo: '' });
+
+    // Cancelar pendiente de una línea (anticipo material del POS).
+    const [cancelandoItem, setCancelandoItem] = useState<{ anticipo: Anticipo; item: AnticipoItem } | null>(null);
+    const [formCancelar, setFormCancelar] = useState({
+        cantidad: '', motivo: '', fecha: hoy(), observacion: '',
+        metodo_pago_id: '', cuenta_id: '', turno_id: '',
+    });
+
+    function abrirCancelarPendiente(anticipo: Anticipo, item: AnticipoItem) {
+        setCancelandoItem({ anticipo, item });
+        setFormCancelar({
+            cantidad: String(Number(item.cantidad_pendiente)),
+            motivo: '',
+            fecha: hoy(),
+            observacion: '',
+            metodo_pago_id: anticipo.metodo_pago_id ? String(anticipo.metodo_pago_id) : '',
+            cuenta_id: anticipo.cuenta_id ? String(anticipo.cuenta_id) : '',
+            turno_id: turnoActivoId ? String(turnoActivoId) : '',
+        });
+        setErrors({});
+    }
+
+    function submitCancelarPendiente() {
+        if (!cancelandoItem) return;
+        setSaving(true);
+        router.post(
+            route('finanzas.anticipos.items.cancelar-pendiente', [cancelandoItem.anticipo.id, cancelandoItem.item.id]),
+            {
+                cantidad: formCancelar.cantidad,
+                motivo: formCancelar.motivo,
+                fecha: formCancelar.fecha,
+                observacion: formCancelar.observacion || null,
+                metodo_pago_id: formCancelar.metodo_pago_id || null,
+                cuenta_id: formCancelar.cuenta_id || null,
+                turno_id: formCancelar.turno_id || null,
+            } as any,
+            {
+                onSuccess: () => {
+                    setCancelandoItem(null);
+                    setFormCancelar({ cantidad: '', motivo: '', fecha: hoy(), observacion: '', metodo_pago_id: '', cuenta_id: '', turno_id: '' });
+                    setSaving(false);
+                    setDetalle(null);
+                },
+                onError: (errs: any) => { setErrors(errs); setSaving(false); },
+            },
+        );
+    }
 
     function abrirCambiarProducto(anticipo: Anticipo, item: AnticipoItem) {
         setCambiandoItem({ anticipo, item });
@@ -964,13 +1025,20 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                                 {pendiente > 0.0001 ? (
                                                     <div className="flex items-center gap-2">
                                                         <Badge variant="warning">quedan {pendiente}</Badge>
-                                                        {puede?.editar && detalle.estado === 'activo' && (
+                                                    {puede?.editar && detalle.estado === 'activo' && (
+                                                        <>
                                                             <button onClick={() => abrirCambiarProducto(detalle, it)} title="Cambiar producto de esta línea pendiente"
                                                                 className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-medium border transition-colors hover:bg-black/5"
                                                                 style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
                                                                 <Pencil size={10} /> Cambiar producto
                                                             </button>
-                                                        )}
+                                                            <button onClick={() => abrirCancelarPendiente(detalle, it)} title="Cancelar el pendiente de esta línea"
+                                                                className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-medium border transition-colors hover:bg-black/5"
+                                                                style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)' }}>
+                                                                <Ban size={10} /> Cancelar pendiente
+                                                            </button>
+                                                        </>
+                                                    )}
                                                     </div>
                                                 ) : (
                                                     <Badge variant="success">entregado</Badge>

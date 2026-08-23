@@ -112,6 +112,7 @@ class BalanceDiarioController extends Controller
             'venta_abono'                   => 'Cobros de créditos (CxC)',
             'cliente_anticipo'              => 'Anticipos de clientes',
             'cliente_anticipo_devolucion'   => 'Devolución de anticipos',
+            'anticipo_cancelacion'          => 'Cancelaciones de pendiente de anticipo',
             'gasto'                         => 'Gastos del día',
             'entrada_pago'                  => 'Pagos a proveedores',
             'entrada'                       => 'Pagos a proveedores',

@@ -454,6 +454,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/aplicar', [AnticipoClienteController::class, 'aplicar'])->name('anticipos.aplicar');
         // Cambiar producto de una línea pendiente (anticipo material del POS) sin tocar lo ya entregado.
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/items/{item}/cambiar-producto', [AnticipoClienteController::class, 'cambiarProductoItem'])->name('anticipos.items.cambiar-producto');
+        // Cancelar pendiente de una línea (devuelve dinero en contado / reduce deuda en crédito).
+        Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/items/{item}/cancelar-pendiente', [AnticipoClienteController::class, 'cancelarPendienteItem'])->name('anticipos.items.cancelar-pendiente');
         // Editar / anular una ENTREGA ya registrada (solo anticipos en dinero).
         Route::middleware('permiso:finanzas.anticipos,editar')->put('anticipos/entregas/{entrega}', [AnticipoClienteController::class, 'editarEntrega'])->name('anticipos.entrega.editar');
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/entregas/{entrega}/anular', [AnticipoClienteController::class, 'anularEntrega'])->name('anticipos.entrega.anular');
