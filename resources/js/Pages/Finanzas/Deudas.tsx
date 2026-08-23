@@ -25,8 +25,11 @@ interface Pago {
     tipo: 'amortizacion' | 'incremento';
     monto: string;
     observacion: string | null;
-    metodo_pago?: { nombre: string } | null;
-    cuenta?: { nombre: string } | null;
+    metodo_pago_id?: number | null;
+    metodo_pago?: { id: number; nombre: string } | null;
+    cuenta_id?: number | null;
+    cuenta?: { id: number; nombre: string } | null;
+    turno_id?: number | null;
     user?: { name: string } | null;
     eliminado?: boolean;
     deleted_at?: string | null;
@@ -95,6 +98,16 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     const [eliminando, setEliminando]     = useState<Deuda | null>(null);
     const [reactivando, setReactivando]   = useState<Deuda | null>(null);
     const [eliminandoPago, setEliminandoPago] = useState<Pago | null>(null);
+    const [editandoPago, setEditandoPago] = useState<Pago | null>(null);
+    const [formEditarPago, setFormEditarPago] = useState({
+        tipo: 'amortizacion' as 'amortizacion' | 'incremento',
+        fecha: hoy(),
+        monto: '',
+        metodo_pago_id: '',
+        cuenta_id: '',
+        observacion: '',
+        turno_afecta: '' as number | '',
+    });
     const [motivo, setMotivo]             = useState('');
     const [verEliminados, setVerEliminados] = useState(false);
     const [movimientosExtra, setMovimientosExtra] = useState<Pago[]>([]);
@@ -207,6 +220,34 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             turno_id:       formPago.turno_afecta || null,
         } as any, {
             onSuccess: () => { setPagando(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    function abrirEditarPago(p: Pago) {
+        setErrors({});
+        setFormEditarPago({
+            tipo: p.tipo,
+            fecha: p.fecha.slice(0, 10),
+            monto: String(Number(p.monto)),
+            metodo_pago_id: p.metodo_pago_id ? String(p.metodo_pago_id) : '',
+            cuenta_id: p.cuenta_id ? String(p.cuenta_id) : '',
+            observacion: p.observacion ?? '',
+            turno_afecta: p.turno_id ?? '',
+        });
+        setEditandoPago(p);
+    }
+
+    function submitEditarPago() {
+        if (!editandoPago) return;
+        setSaving(true);
+        router.put(route('finanzas.deudas.pagos.update', editandoPago.id), {
+            ...formEditarPago,
+            metodo_pago_id: formEditarPago.metodo_pago_id || null,
+            cuenta_id:      formEditarPago.cuenta_id || null,
+            turno_id:       formEditarPago.turno_afecta || null,
+        } as any, {
+            onSuccess: () => { setEditandoPago(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         });
     }
@@ -526,6 +567,69 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 )}
             </Modal>
 
+            {/* Modal editar movimiento */}
+            <Modal isOpen={editandoPago !== null} onClose={() => setEditandoPago(null)}
+                title={editandoPago ? `Editar movimiento — ${detalle?.nombre ?? ''}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEditandoPago(null)}>Cancelar</Button>
+                        <Button onClick={submitEditarPago} disabled={saving}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button>
+                    </>
+                }
+            >
+                {editandoPago && detalle && (
+                    <div className="space-y-4">
+                        <StatGrid stats={[
+                            { label: 'Saldo actual', valor: money(detalle.saldo), destacado: true },
+                        ]} />
+                        <Select label="Tipo de movimiento" required
+                            options={[
+                                { value: 'amortizacion', label: detalle.direccion === 'por_pagar' ? 'Pago de cuota (baja el saldo)' : 'Nos abonaron (baja el saldo)' },
+                                { value: 'incremento',   label: 'Incremento (sube el saldo)' },
+                            ]}
+                            value={formEditarPago.tipo}
+                            onChange={v => setFormEditarPago(f => ({ ...f, tipo: String(v) as 'amortizacion' | 'incremento' }))}
+                        />
+                        <div className="grid grid-cols-2 gap-3">
+                            <Input label="Fecha" required type="date" value={formEditarPago.fecha}
+                                onChange={e => setFormEditarPago(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                            <Input label="Monto" required type="number" min="0.01" step="0.01" value={formEditarPago.monto}
+                                onChange={e => setFormEditarPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                        </div>
+                        <Select label="Método de pago"
+                            options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
+                            value={formEditarPago.metodo_pago_id}
+                            onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormEditarPago(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
+                            placeholder="— Seleccionar —"
+                        />
+                        {cuentasDeMetodo(formEditarPago.metodo_pago_id).length > 0 ? (
+                            <Select label="Cuenta" required
+                                options={cuentasDeMetodo(formEditarPago.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                                value={formEditarPago.cuenta_id}
+                                onChange={v => setFormEditarPago(f => ({ ...f, cuenta_id: String(v) }))}
+                                placeholder="— Selecciona una cuenta —"
+                                error={errors.cuenta_id}
+                            />
+                        ) : (
+                            <Callout variant="info">
+                                El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === formEditarPago.metodo_pago_id)?.nombre}»</strong>,
+                                que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
+                            </Callout>
+                        )}
+                        <AfectaCajaSelect
+                            modulo="deuda"
+                            turnos={turnos}
+                            value={formEditarPago.turno_afecta}
+                            onChange={v => setFormEditarPago(f => ({ ...f, turno_afecta: v }))}
+                            error={errors.turno_id}
+                            hint='La cuota en efectivo entra/sale de la caja de este turno. "Sin turno" solo la registra.'
+                        />
+                        <Input label="Observación" value={formEditarPago.observacion}
+                            onChange={e => setFormEditarPago(f => ({ ...f, observacion: e.target.value }))} />
+                    </div>
+                )}
+            </Modal>
+
             {/* Modal anular */}
             <Modal isOpen={anulando !== null} onClose={() => setAnulando(null)}
                 title={anulando ? `Anular — ${anulando.nombre}` : ''} size="sm"
@@ -604,11 +708,18 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                                 {p.tipo === 'amortizacion' ? '−' : '+'}{money(p.monto)}
                                             </span>
                                             {!p.eliminado && (
-                                                <button onClick={() => { setErrors({}); setMotivo(''); setEliminandoPago(p); }}
-                                                    className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Eliminar movimiento"
-                                                    style={{ color: 'var(--color-danger)' }}>
-                                                    <Trash2 size={14} />
-                                                </button>
+                                                <div className="flex items-center gap-1">
+                                                    <button onClick={() => abrirEditarPago(p)}
+                                                        className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Editar movimiento"
+                                                        style={{ color: 'var(--color-primary)' }}>
+                                                        <Pencil size={14} />
+                                                    </button>
+                                                    <button onClick={() => { setErrors({}); setMotivo(''); setEliminandoPago(p); }}
+                                                        className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Eliminar movimiento"
+                                                        style={{ color: 'var(--color-danger)' }}>
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                     ))}

@@ -482,6 +482,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas', [DeudaController::class, 'index'])->name('deudas.index');
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/{deuda}/movimientos', [DeudaController::class, 'movimientos'])->name('deudas.movimientos');
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/exportar', [DeudaController::class, 'exportar'])->name('deudas.exportar');
+        Route::middleware('permiso:finanzas.deudas,editar')->put('deudas/pagos/{pago}', [DeudaController::class, 'editarPago'])->name('deudas.pagos.update');
         Route::middleware('permiso:finanzas.deudas,crear')->post('deudas', [DeudaController::class, 'store'])->name('deudas.store');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/pago', [DeudaController::class, 'registrarPago'])->name('deudas.pago');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/anular', [DeudaController::class, 'anular'])->name('deudas.anular');

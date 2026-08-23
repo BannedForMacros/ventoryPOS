@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Cuenta;
 use App\Models\CuentaMovimiento;
 use App\Models\Deuda;
+use App\Models\DeudaPago;
 use App\Models\MetodoPago;
 use App\Services\AuditoriaService;
 use App\Services\TesoreriaService;
@@ -32,7 +33,10 @@ class DeudaController extends Controller
         $user = $request->user();
 
         $query = Deuda::deEmpresa($user->empresa_id)
-            ->with(['pagos.metodoPago', 'pagos.cuenta', 'pagos.user', 'desembolso.cuenta'])
+            ->with([
+                'pagos' => fn ($q) => $q->with(['metodoPago:id,nombre', 'cuenta:id,nombre', 'user:id,name', 'turno:id'])->orderBy('fecha', 'desc')->orderBy('id', 'desc'),
+                'desembolso.cuenta',
+            ])
             ->when($request->input('direccion'), fn ($q, $v) => $q->where('direccion', $v))
             ->when($request->input('tipo'), fn ($q, $v) => $q->where('tipo', $v))
             // Búsqueda server-side sobre TODA la base (no solo la página visible).
@@ -302,6 +306,84 @@ class DeudaController extends Controller
         });
 
         return back()->with('success', 'Movimiento registrado correctamente.');
+    }
+
+    /**
+     * Edita un movimiento ya registrado de una deuda (fecha, tipo, monto,
+     * método/cuenta u observación). Revierte el asiento anterior en tesorería,
+     * actualiza el pago, recalcula el saldo y registra el nuevo asiento.
+     */
+    public function editarPago(Request $request, DeudaPago $pago)
+    {
+        $user  = $request->user();
+        $deuda = $pago->deuda;
+        abort_if(!$deuda || $deuda->empresa_id !== $user->empresa_id, 403);
+        abort_unless($deuda->estado === 'activa', 422, 'La deuda no está activa.');
+
+        // Límite para amortizaciones: no puede hacer que el saldo quede negativo.
+        $incrementosOtros = (float) $deuda->pagos()->where('tipo', 'incremento')->where('id', '!=', $pago->id)->sum('monto');
+        $amortizacionesOtros = (float) $deuda->pagos()->where('tipo', 'amortizacion')->where('id', '!=', $pago->id)->sum('monto');
+        $maxAmortizacion = max(0, (float) $deuda->monto_original + $incrementosOtros - $amortizacionesOtros);
+
+        $rules = [
+            'tipo'           => ['required', Rule::in(['amortizacion', 'incremento'])],
+            'fecha'          => ['required', 'date'],
+            'monto'          => ['required', 'numeric', 'min:0.01'],
+            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
+            'observacion'    => ['nullable', 'string', 'max:500'],
+            'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
+        ];
+
+        if ($request->input('tipo') === 'amortizacion') {
+            $rules['monto'][] = 'max:' . $maxAmortizacion;
+        }
+
+        $data = $request->validate($rules);
+        $data['turno_id'] = AfectaCaja::resolverTurno($user, 'deuda', $data['turno_id'] ?? null);
+
+        DB::transaction(function () use ($pago, $deuda, $user, $data) {
+            $this->tesoreria->revertir('deuda_pago', $pago->id);
+
+            $pago->update([
+                'tipo'           => $data['tipo'],
+                'fecha'          => $data['fecha'],
+                'monto'          => $data['monto'],
+                'metodo_pago_id' => $data['metodo_pago_id'] ?? null,
+                'cuenta_id'      => $data['cuenta_id'] ?? null,
+                'observacion'    => $data['observacion'] ?? null,
+                'turno_id'       => $data['turno_id'] ?? null,
+                'user_id'        => $user->id,
+            ]);
+
+            $esIngreso = ($deuda->direccion === Deuda::DIRECCION_POR_PAGAR) === ($data['tipo'] === 'incremento');
+            $verbo     = $data['tipo'] === 'amortizacion' ? 'Cuota' : 'Incremento';
+            $this->tesoreria->registrar(
+                $user->empresa_id,
+                $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                $user,
+                $data['fecha'],
+                $esIngreso ? 'ingreso' : 'egreso',
+                (float) $data['monto'],
+                "{$verbo} de deuda — {$deuda->nombre}",
+                'deuda_pago',
+                $pago->id,
+            );
+
+            $deuda->recalcularSaldo();
+
+            AuditoriaService::log('deuda.movimiento_editado', $deuda, [
+                'movimiento_id' => $pago->id,
+                'nuevo' => [
+                    'tipo'  => $data['tipo'],
+                    'fecha' => $data['fecha'],
+                    'monto' => (float) $data['monto'],
+                ],
+                'saldo' => (float) $deuda->saldo,
+            ], $user);
+        });
+
+        return back()->with('success', 'Movimiento editado correctamente.');
     }
 
     /**
