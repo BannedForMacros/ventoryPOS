@@ -84,7 +84,7 @@ interface Anticipo extends Record<string, unknown> {
     valor_pasivo?: number;
     cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string; es_cliente_general?: boolean } | null;
     producto?: { id: number; nombre: string; precio_venta: string } | null;
-    venta?: { id: number; numero: string } | null;
+    venta?: { id: number; numero: string; es_credito?: boolean } | null;
     metodo_pago_id?: number | null;
     cuenta_id?: number | null;
     metodo_pago?: { nombre: string } | null;
@@ -1050,6 +1050,40 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                             </div>
                         )}
 
+                        {detalle.cancelaciones && detalle.cancelaciones.length > 0 && (
+                            <div>
+                                <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Cancelaciones registradas
+                                </p>
+                                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                    {detalle.cancelaciones.map((c, idx) => (
+                                        <div key={c.id} className="flex flex-col gap-1 px-3 py-2 text-xs"
+                                            style={{
+                                                borderBottom: idx < (detalle.cancelaciones!.length - 1) ? '1px solid var(--color-border)' : undefined,
+                                                backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
+                                            }}>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span style={{ color: 'var(--color-text)' }}>
+                                                    {new Date(c.fecha + 'T00:00:00').toLocaleDateString('es-PE')} · {Number(c.cantidad)} und
+                                                </span>
+                                                <span className="font-medium" style={{ color: 'var(--color-danger)' }}>{money(c.monto)}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between gap-2" style={{ color: 'var(--color-text-muted)' }}>
+                                                <span className="truncate">{c.motivo}</span>
+                                                <span className="flex-shrink-0">{c.turno ? `#T${c.turno.id}${c.caja?.nombre ? ` · ${c.caja.nombre}` : ''}` : 'Sin turno'}</span>
+                                            </div>
+                                            {(c.metodo_pago || c.cuenta) && (
+                                                <div style={{ color: 'var(--color-text-muted)' }}>
+                                                    {c.metodo_pago?.nombre ?? '—'}{c.cuenta ? ` · ${c.cuenta.nombre}` : ''}
+                                                </div>
+                                            )}
+                                            {c.observacion && <div style={{ color: 'var(--color-text-muted)' }}>{c.observacion}</div>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         <Timeline
                             emptyMessage="Sin aplicaciones registradas"
                             items={detalle.aplicaciones.map(ap => {
@@ -1263,6 +1297,84 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         />
                         <Input label="Motivo" required value={formCambiar.motivo}
                             onChange={e => setFormCambiar(f => ({ ...f, motivo: e.target.value }))} error={errors.motivo} />
+                    </div>
+                )}
+            </Modal>
+
+            {/* Modal CANCELAR PENDIENTE de línea (anticipo material del POS). */}
+            <Modal isOpen={cancelandoItem !== null} onClose={() => setCancelandoItem(null)}
+                title={cancelandoItem ? `Cancelar pendiente — ${cancelandoItem.item.producto_nombre}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setCancelandoItem(null)}>Cancelar</Button>
+                        <Button variant="danger" onClick={submitCancelarPendiente} disabled={saving}>{saving ? 'Cancelando...' : 'Confirmar cancelación'}</Button>
+                    </>
+                }
+            >
+                {cancelandoItem && (
+                    <div className="space-y-4">
+                        <Callout variant={cancelandoItem.anticipo.venta?.es_credito ? 'warning' : 'info'}>
+                            {cancelandoItem.anticipo.venta?.es_credito
+                                ? 'La venta es a CRÉDITO. No se devuelve dinero; se reduce la deuda del cliente.'
+                                : 'La venta fue de CONTADO. Se devolverá dinero al cliente por el monto cancelado.'}
+                        </Callout>
+                        <div className="rounded-lg px-3 py-2 flex items-center justify-between"
+                             style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 8%, transparent)' }}>
+                            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Pendiente original</span>
+                            <span className="text-lg font-bold" style={{ color: 'var(--color-danger)', fontVariantNumeric: 'tabular-nums' }}>
+                                {Number(cancelandoItem.item.cantidad_pendiente).toLocaleString('es-PE')} {cancelandoItem.item.unidad_nombre || 'und'}
+                            </span>
+                        </div>
+                        <Input label="Cantidad a cancelar" required type="number" min="0.0001" step="any"
+                            max={Number(cancelandoItem.item.cantidad_pendiente)}
+                            value={formCancelar.cantidad}
+                            onChange={e => setFormCancelar(f => ({ ...f, cantidad: e.target.value }))}
+                            error={errors.cantidad}
+                        />
+                        <div className="rounded-lg px-3 py-2 flex items-center justify-between"
+                             style={{ backgroundColor: 'var(--color-surface)' }}>
+                            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Monto a devolver / reducir</span>
+                            <span className="text-lg font-bold" style={{ color: 'var(--color-danger)', fontVariantNumeric: 'tabular-nums' }}>
+                                {money(Math.min(
+                                    Number(formCancelar.cantidad || 0),
+                                    Number(cancelandoItem.item.cantidad_pendiente),
+                                ) * Number(cancelandoItem.item.precio_unitario))}
+                            </span>
+                        </div>
+                        <AfectaCajaSelect
+                            modulo="anticipos_cancelacion" modo="libre" formato="largo"
+                            label="Afecta caja a (turno)"
+                            sinTurnoLabel="Sin turno (no afecta caja)"
+                            turnos={turnos}
+                            value={formCancelar.turno_id === '' ? '' : Number(formCancelar.turno_id)}
+                            onChange={v => setFormCancelar(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                            hint="Si devuelves efectivo, el egreso se imputa a la caja de este turno. «Sin turno» solo lo registra sin afectar caja."
+                        />
+                        {!cancelandoItem.anticipo.venta?.es_credito && (
+                            <>
+                                <Select label="Método de pago (por dónde sale el dinero)"
+                                    options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
+                                    value={formCancelar.metodo_pago_id}
+                                    onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormCancelar(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
+                                    error={errors.metodo_pago_id}
+                                />
+                                {cuentasDeMetodo(formCancelar.metodo_pago_id).length > 0 && (
+                                    <Select label="Cuenta"
+                                        options={cuentasDeMetodo(formCancelar.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
+                                        value={formCancelar.cuenta_id}
+                                        onChange={v => setFormCancelar(f => ({ ...f, cuenta_id: String(v) }))}
+                                        error={errors.cuenta_id}
+                                    />
+                                )}
+                            </>
+                        )}
+                        <Input type="date" label="Fecha de la cancelación" required value={formCancelar.fecha}
+                            onChange={e => setFormCancelar(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                        <Input label="Motivo" required value={formCancelar.motivo}
+                            onChange={e => setFormCancelar(f => ({ ...f, motivo: e.target.value }))} error={errors.motivo} />
+                        <Input label="Observación" value={formCancelar.observacion}
+                            onChange={e => setFormCancelar(f => ({ ...f, observacion: e.target.value }))} />
+                        {errors.anticipo && <Callout variant="danger">{errors.anticipo}</Callout>}
                     </div>
                 )}
             </Modal>

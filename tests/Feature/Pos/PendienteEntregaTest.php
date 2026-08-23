@@ -2,7 +2,10 @@
 
 use App\Models\Cliente;
 use App\Models\ClienteAnticipo;
+use App\Models\ClienteAnticipoCancelacion;
+use App\Models\CuentaMovimiento;
 use App\Models\Stock;
+use App\Models\Venta;
 use App\Services\VentaService;
 use Tests\Support\TestEnv;
 
@@ -474,4 +477,167 @@ it('la venta sin flag entrega_pendiente ignora cantidad_pendiente y no crea anti
 
     expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(45.0);
     expect(ClienteAnticipo::where('venta_id', $venta->id)->exists())->toBeFalse();
+});
+
+it('cancela todo el pendiente de un ítem en contado: ajusta venta, anticipo y genera egreso', function () {
+    [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $item = $anticipo->items->first();
+
+    $this->post(route('finanzas.anticipos.items.cancelar-pendiente', [$anticipo, $item]), [
+        'cantidad' => 7,
+        'motivo'   => 'Cliente no requiere el material pendiente',
+        'fecha'    => now()->toDateString(),
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+    ])->assertSessionHasNoErrors();
+
+    $venta->refresh();
+    expect((float) $venta->total)->toBe(100.0);          // 240 - 140
+    expect((float) $venta->monto_pagado)->toBe(100.0);
+    expect((float) $venta->saldo_pendiente)->toBe(0.0);
+
+    $item->refresh();
+    expect((float) $item->cantidad_pendiente)->toBe(0.0);
+    expect((float) $item->cantidad)->toBe(0.0);            // el ítem del anticipo representa solo lo pendiente
+
+    $anticipo->refresh();
+    expect((float) $anticipo->saldo)->toBe(0.0);
+    expect($anticipo->estado)->toBe('devuelto');
+
+    $cancelacion = ClienteAnticipoCancelacion::where('cliente_anticipo_item_id', $item->id)->first();
+    expect($cancelacion)->not->toBeNull();
+    expect((float) $cancelacion->monto)->toBe(140.0);
+
+    $mov = CuentaMovimiento::where('ref_tipo', 'anticipo_cancelacion')->where('ref_id', $cancelacion->id)->first();
+    expect($mov)->not->toBeNull();
+    expect((float) $mov->monto)->toBe(140.0);
+    expect($mov->tipo)->toBe('egreso');
+
+    // Stock no se mueve: lo cancelado nunca salió del almacén.
+    expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(47.0);
+});
+
+it('cancela parcialmente el pendiente y deja el resto activo', function () {
+    [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $item = $anticipo->items->first();
+
+    $this->post(route('finanzas.anticipos.items.cancelar-pendiente', [$anticipo, $item]), [
+        'cantidad' => 3,
+        'motivo'   => 'Solo cancelo 3 unidades',
+        'fecha'    => now()->toDateString(),
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+    ])->assertSessionHasNoErrors();
+
+    $venta->refresh();
+    expect((float) $venta->total)->toBe(180.0); // 240 - 60
+
+    $item->refresh();
+    expect((float) $item->cantidad_pendiente)->toBe(4.0);
+
+    $anticipo->refresh();
+    expect((float) $anticipo->saldo)->toBe(80.0);
+    expect($anticipo->estado)->toBe('activo');
+
+    $cancelacion = ClienteAnticipoCancelacion::first();
+    expect((float) $cancelacion->monto)->toBe(60.0);
+});
+
+it('en venta a crédito reduce la deuda sin generar egreso de caja', function () {
+    $fierro = $this->env->crearProducto(['precio_venta' => 20, 'stock_inicial' => 50]);
+
+    $venta = $this->service->crear([
+        'tipo_comprobante'  => 'ticket',
+        'cliente_id'        => $this->cliente->id,
+        'es_credito'        => true,
+        'entrega_pendiente' => true,
+        'items' => [[
+            'producto_id'        => $fierro->id,
+            'producto_unidad_id' => $fierro->unidadBase->id,
+            'cantidad'           => 10,
+            'precio_unitario'    => 20,
+            'cantidad_pendiente' => 7,
+        ]],
+        'pagos' => [],
+    ], $this->env->admin, $this->turno);
+
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $item = $anticipo->items->first();
+
+    $this->post(route('finanzas.anticipos.items.cancelar-pendiente', [$anticipo, $item]), [
+        'cantidad' => 7,
+        'motivo'   => 'Cliente no quiere el pendiente',
+        'fecha'    => now()->toDateString(),
+    ])->assertSessionHasNoErrors();
+
+    $venta->refresh();
+    expect((float) $venta->total)->toBe(60.0); // 10-7=3 × 20
+    expect((float) $venta->saldo_pendiente)->toBe(60.0);
+    expect((float) $venta->monto_pagado)->toBe(0.0);
+
+    $anticipo->refresh();
+    expect($anticipo->estado)->toBe('aplicado');
+
+    expect(CuentaMovimiento::where('ref_tipo', 'anticipo_cancelacion')->exists())->toBeFalse();
+});
+
+it('guarda el turno y caja cuando se marca afecta caja', function () {
+    [$venta] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $item = $anticipo->items->first();
+
+    $this->post(route('finanzas.anticipos.items.cancelar-pendiente', [$anticipo, $item]), [
+        'cantidad' => 1,
+        'motivo'   => 'Con turno',
+        'fecha'    => now()->toDateString(),
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+        'turno_id' => $this->turno->id,
+    ])->assertSessionHasNoErrors();
+
+    $cancelacion = ClienteAnticipoCancelacion::first();
+    expect($cancelacion->turno_id)->toBe($this->turno->id);
+    expect($cancelacion->caja_id)->toBe($this->turno->caja_id);
+});
+
+it('permite cancelar sin afectar caja', function () {
+    [$venta] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $item = $anticipo->items->first();
+
+    $this->post(route('finanzas.anticipos.items.cancelar-pendiente', [$anticipo, $item]), [
+        'cantidad' => 1,
+        'motivo'   => 'Sin turno',
+        'fecha'    => now()->toDateString(),
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+        'turno_id' => '',
+    ])->assertSessionHasNoErrors();
+
+    $cancelacion = ClienteAnticipoCancelacion::first();
+    expect($cancelacion->turno_id)->toBeNull();
+    expect($cancelacion->caja_id)->toBeNull();
+});
+
+it('rechaza cancelar contado sin indicar método o cuenta', function () {
+    [$venta] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $item = $anticipo->items->first();
+
+    $this->post(route('finanzas.anticipos.items.cancelar-pendiente', [$anticipo, $item]), [
+        'cantidad' => 1,
+        'motivo'   => 'Sin método',
+        'fecha'    => now()->toDateString(),
+    ])->assertSessionHasErrors(['cuenta_id']);
+});
+
+it('rechaza cancelar más de lo pendiente', function () {
+    [$venta] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $item = $anticipo->items->first();
+
+    $this->post(route('finanzas.anticipos.items.cancelar-pendiente', [$anticipo, $item]), [
+        'cantidad' => 8,
+        'motivo'   => 'Exceso',
+        'fecha'    => now()->toDateString(),
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+    ])->assertSessionHasErrors(['cantidad']);
 });
