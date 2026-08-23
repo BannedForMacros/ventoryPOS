@@ -45,6 +45,7 @@ class AfectaCaja
         'cxp'          => ['label' => 'Cuentas por pagar (abonos)',   'default' => true,  'disponible' => true, 'modo' => 'libre'],
         'cxc'          => ['label' => 'Cuentas por cobrar (abonos)',  'default' => true,  'disponible' => true, 'modo' => 'libre'],
         'anticipos'    => ['label' => 'Anticipos de cliente',         'default' => true,  'disponible' => true, 'modo' => 'libre'],
+        'anticipos_cancelacion' => ['label' => 'Cancelaciones de pendiente de anticipo', 'default' => true, 'disponible' => true, 'modo' => 'libre'],
         'gastos'       => ['label' => 'Gastos',                       'default' => true,  'disponible' => true, 'modo' => 'forzado'],
         'devoluciones' => ['label' => 'Devoluciones',                 'default' => true,  'disponible' => true, 'modo' => 'forzado'],
     ];

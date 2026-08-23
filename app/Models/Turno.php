@@ -44,6 +44,7 @@ class Turno extends Model
     public function gastos(): HasMany           { return $this->hasMany(Gasto::class); }
     public function ventas(): HasMany           { return $this->hasMany(\App\Models\Venta::class); }
     public function retiros(): HasMany          { return $this->hasMany(TurnoRetiro::class); }
+    public function cancelacionesAnticipo(): HasMany { return $this->hasMany(ClienteAnticipoCancelacion::class, 'turno_id'); }
 
     public function scopeAbierto($q)        { return $q->where('estado', 'abierto'); }
     public function scopeCerrado($q)        { return $q->where('estado', 'cerrado'); }
@@ -132,6 +133,17 @@ class Turno extends Model
             ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
             ->sum('monto');
 
+        // Cancelaciones de pendiente de anticipo pagadas EN EFECTIVO desde
+        // esta caja: el billete sale del cajón y el sistema no debe esperarlo.
+        $cancelacionPendienteEfectivo = (float) \App\Models\CuentaMovimiento::where('empresa_id', $this->empresa_id)
+            ->where('tipo', 'egreso')
+            ->where('ref_tipo', 'anticipo_cancelacion')
+            ->where('user_id', $this->user_id)
+            ->where('created_at', '>=', $this->fecha_apertura)
+            ->when($this->fecha_cierre, fn ($q) => $q->where('created_at', '<=', $this->fecha_cierre))
+            ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
+            ->sum('monto');
+
         // Reembolsos de devoluciones en efectivo del turno (descuentan caja)
         $reembolsosEfectivo = (float) \App\Models\DevolucionPago::whereHas('devolucion', fn($q) =>
             $q->where('turno_id', $this->id)
@@ -195,6 +207,7 @@ class Turno extends Model
              - $retirosEfectivo
              - $deudaEgreso
              - $devolucionAnticipoEfectivo
+             - $cancelacionPendienteEfectivo
              + ($sumaFondos ? $fondos : 0.0);
     }
 

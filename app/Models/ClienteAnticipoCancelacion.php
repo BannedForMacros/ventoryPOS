@@ -1,0 +1,37 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class ClienteAnticipoCancelacion extends Model
+{
+    protected $table = 'cliente_anticipo_cancelaciones';
+
+    protected $fillable = [
+        'cliente_anticipo_id', 'cliente_anticipo_item_id', 'empresa_id', 'user_id',
+        'fecha', 'cantidad', 'monto', 'motivo',
+        'turno_id', 'caja_id', 'metodo_pago_id', 'cuenta_id', 'observacion',
+        'moneda', 'tipo_cambio', 'monto_moneda',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'fecha'          => 'date:Y-m-d',
+            'cantidad'       => 'decimal:4',
+            'monto'          => 'decimal:2',
+            'tipo_cambio'    => 'decimal:6',
+            'monto_moneda'   => 'decimal:2',
+        ];
+    }
+
+    public function anticipo(): BelongsTo { return $this->belongsTo(ClienteAnticipo::class, 'cliente_anticipo_id'); }
+    public function item(): BelongsTo     { return $this->belongsTo(ClienteAnticipoItem::class, 'cliente_anticipo_item_id'); }
+    public function user(): BelongsTo    { return $this->belongsTo(User::class); }
+    public function turno(): BelongsTo   { return $this->belongsTo(Turno::class); }
+    public function caja(): BelongsTo    { return $this->belongsTo(Caja::class); }
+    public function metodoPago(): BelongsTo { return $this->belongsTo(MetodoPago::class, 'metodo_pago_id'); }
+    public function cuenta(): BelongsTo  { return $this->belongsTo(Cuenta::class); }
+}

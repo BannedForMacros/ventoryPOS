@@ -85,6 +85,7 @@ class BalanceDiarioController extends Controller
             'deuda_pago'                    => 'Cuotas de deudas/préstamos',
             'devolucion'                    => 'Reembolsos a clientes',
             'cliente_anticipo_devolucion'   => 'Devolución de anticipos',
+            'anticipo_cancelacion'          => 'Cancelaciones de pendiente de anticipo',
             'cierre_turno'                  => 'Faltantes de caja',
             'turno_consolidacion'           => 'Faltantes de caja',
             'ajuste'                        => 'Ajustes de saldo',

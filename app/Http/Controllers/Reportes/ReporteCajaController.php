@@ -37,6 +37,7 @@ class ReporteCajaController extends Controller
             ->withCount(['ventas as ventas_count' => fn ($q) => $q->where('estado', 'completada')])
             ->withSum(['ventas as ventas_total' => fn ($q) => $q->where('estado', 'completada')], 'total')
             ->withSum('gastos as gastos_total', 'monto')
+            ->withSum('cancelacionesAnticipo as cancelaciones_total', 'monto')
             ->get(['id', 'caja_id', 'user_id', 'estado', 'fecha_apertura', 'diferencia']);
 
         $cerrados = $todos->where('estado', 'cerrado');
@@ -48,11 +49,11 @@ class ReporteCajaController extends Controller
             'ventas_total'    => (float) $todos->sum(fn ($t) => (float) ($t->ventas_total ?? 0)),
             'ventas_count'    => (int)   $todos->sum('ventas_count'),
             'gastos_total'    => (float) $todos->sum(fn ($t) => (float) ($t->gastos_total ?? 0)),
+            'cancelaciones_total' => (float) $todos->sum(fn ($t) => (float) ($t->cancelaciones_total ?? 0)),
             'sobrantes'       => (float) $cerrados->sum(fn ($t) => max(0, (float) $t->diferencia)),
             'faltantes'       => (float) $cerrados->sum(fn ($t) => max(0, -(float) $t->diferencia)),
             'diferencia_neta' => (float) $cerrados->sum(fn ($t) => (float) $t->diferencia),
             'con_descuadre'   => $cerrados->filter(fn ($t) => abs((float) $t->diferencia) > 0.009)->count(),
-            // Retiros de efectivo (sangrías / entregas a administración) de los turnos del rango
             'retiros_total'   => (float) TurnoRetiro::whereIn('turno_id', (clone $base)->select('id'))->sum('monto'),
         ];
 
@@ -63,6 +64,7 @@ class ReporteCajaController extends Controller
                 'dia'        => $dia,
                 'ventas'     => (float) $grupo->sum(fn ($t) => (float) ($t->ventas_total ?? 0)),
                 'gastos'     => (float) $grupo->sum(fn ($t) => (float) ($t->gastos_total ?? 0)),
+                'cancelaciones' => (float) $grupo->sum(fn ($t) => (float) ($t->cancelaciones_total ?? 0)),
                 'diferencia' => (float) $grupo->sum(fn ($t) => (float) ($t->diferencia ?? 0)),
             ])
             ->sortKeys()->values();
@@ -73,6 +75,7 @@ class ReporteCajaController extends Controller
             ->map(fn ($grupo) => [
                 'nombre' => $grupo->first()->caja?->nombre ?? '—',
                 'total'  => (float) $grupo->sum(fn ($t) => (float) ($t->ventas_total ?? 0)),
+                'cancelaciones' => (float) $grupo->sum(fn ($t) => (float) ($t->cancelaciones_total ?? 0)),
                 'turnos' => $grupo->count(),
             ])
             ->sortByDesc('total')->values();
@@ -83,6 +86,7 @@ class ReporteCajaController extends Controller
             ->map(fn ($grupo) => [
                 'nombre'     => $grupo->first()->user?->name ?? '—',
                 'total'      => (float) $grupo->sum(fn ($t) => (float) ($t->ventas_total ?? 0)),
+                'cancelaciones' => (float) $grupo->sum(fn ($t) => (float) ($t->cancelaciones_total ?? 0)),
                 'turnos'     => $grupo->count(),
                 'diferencia' => (float) $grupo->where('estado', 'cerrado')->sum(fn ($t) => (float) ($t->diferencia ?? 0)),
             ])
@@ -105,6 +109,7 @@ class ReporteCajaController extends Controller
             ->withCount(['ventas as ventas_count' => fn ($q) => $q->where('estado', 'completada')])
             ->withSum(['ventas as ventas_total' => fn ($q) => $q->where('estado', 'completada')], 'total')
             ->withSum('gastos as gastos_total', 'monto')
+            ->withSum('cancelacionesAnticipo as cancelaciones_total', 'monto')
             ->orderByDesc('fecha_apertura')
             ->paginate(25)
             ->withQueryString()
@@ -125,6 +130,7 @@ class ReporteCajaController extends Controller
                 'ventas_count'           => (int)   $t->ventas_count,
                 'ventas_total'           => (float) ($t->ventas_total ?? 0),
                 'gastos_total'           => (float) ($t->gastos_total ?? 0),
+                'cancelaciones_total'    => (float) ($t->cancelaciones_total ?? 0),
                 'observacion_apertura'   => $t->observacion_apertura,
                 'observacion_cierre'     => $t->observacion_cierre,
                 'arqueo_metodos'         => $t->arqueoMetodos->map(fn ($m) => [

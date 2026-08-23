@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\ClienteAnticipo;
 use App\Models\ClienteAnticipoAplicacion;
+use App\Models\ClienteAnticipoCancelacion;
 use App\Models\ClienteAnticipoItem;
 use App\Models\Cuenta;
+use App\Models\Venta;
+use App\Models\VentaItem;
 use App\Services\TicketPrintService;
 use Illuminate\Support\Facades\Storage;
 use App\Models\MetodoPago;
@@ -23,6 +26,7 @@ use App\Support\AfectaCaja;
 use App\Support\ExigeCuentaDePago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -690,6 +694,207 @@ class AnticipoClienteController extends Controller
         });
 
         return back()->with('success', 'Producto cambiado: ahora el cliente tiene pendiente ' . rtrim(rtrim(number_format($cantidad, 4, '.', ''), '0'), '.') . ' de «' . $nuevoProducto->nombre . '».');
+    }
+
+    /**
+     * Cancela una parte (o la totalidad) del pendiente de un ítem de un anticipo
+     * material del POS. Ajusta la venta original, el anticipo y, según el tipo
+     * de venta, genera un egreso de tesorería (contado) o reduce la deuda (crédito).
+     *
+     * Usa el helper "Afecta caja" para decidir si el movimiento se imputa a un
+     * turno/caja para los reportes de caja.
+     */
+    public function cancelarPendienteItem(Request $request, ClienteAnticipo $anticipo, ClienteAnticipoItem $item)
+    {
+        $user = $request->user();
+        abort_if($anticipo->empresa_id !== $user->empresa_id, 403);
+        abort_if($item->cliente_anticipo_id !== $anticipo->id, 403);
+        abort_unless($anticipo->tipo_valorizacion === 'material' && $anticipo->venta_id, 422,
+            'Solo se puede cancelar pendiente en anticipos materiales del POS.');
+        abort_unless($anticipo->estado === 'activo', 422, 'El anticipo no está activo.');
+
+        $data = $request->validate([
+            'cantidad'       => ['required', 'numeric', 'min:0.0001'],
+            'motivo'         => ['required', 'string', 'min:5', 'max:500'],
+            'fecha'          => ['required', 'date'],
+            'observacion'    => ['nullable', 'string', 'max:500'],
+            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
+            'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
+        ]);
+
+        $venta = Venta::where('id', $anticipo->venta_id)
+            ->where('empresa_id', $user->empresa_id)
+            ->firstOrFail();
+
+        // V14 — Una venta con comprobante informado a SUNAT no se puede tocar
+        // directamente; requiere Nota de Crédito.
+        if (Schema::hasTable('venta_comprobantes')) {
+            $ce = $venta->comprobanteElectronico()->first();
+            if ($ce && $ce->esEmitido()) {
+                abort(422, "La venta tiene el comprobante {$ce->numero} informado a SUNAT. Para reducir el pendiente emita una Nota de Crédito.");
+            }
+        }
+
+        $cantidadCancelar = round((float) $data['cantidad'], 4);
+        $pendiente = (float) $item->cantidad_pendiente;
+        if ($cantidadCancelar > $pendiente + 0.00009) {
+            throw ValidationException::withMessages([
+                'cantidad' => "Solo quedan pendientes {$pendiente} por cancelar.",
+            ]);
+        }
+
+        $esCredito = (bool) $venta->es_credito;
+        if (! $esCredito && empty($data['metodo_pago_id']) && empty($data['cuenta_id'])) {
+            throw ValidationException::withMessages([
+                'cuenta_id' => 'En una venta de contado indica por dónde se devuelve el dinero.',
+            ]);
+        }
+
+        $montoCancelar = round($cantidadCancelar * (float) $item->precio_unitario, 2);
+
+        $turnoId = AfectaCaja::resolverTurno(
+            $user, 'anticipos_cancelacion',
+            !empty($data['turno_id']) ? (int) $data['turno_id'] : null,
+            'libre',
+        );
+
+        $antesVenta = [
+            'total'           => (float) $venta->total,
+            'saldo_pendiente' => (float) $venta->saldo_pendiente,
+        ];
+        $antesItem = [
+            'cantidad'           => (float) $item->cantidad,
+            'cantidad_pendiente' => (float) $item->cantidad_pendiente,
+        ];
+        $antesAnticipoSaldo = (float) $anticipo->saldo;
+
+        DB::transaction(function () use ($anticipo, $item, $venta, $user, $data, $cantidadCancelar, $montoCancelar, $turnoId, $esCredito) {
+            // ── Ajustar el ítem de la venta original ───────────────────────
+            $ventaItem = VentaItem::where('id', $item->venta_item_id)
+                ->where('venta_id', $venta->id)
+                ->firstOrFail();
+
+            $nuevaCantidad = max(0, round((float) $ventaItem->cantidad - $cantidadCancelar, 4));
+            $nuevaCantidadBase = round($nuevaCantidad * (float) $ventaItem->factor_conversion, 4);
+            $nuevoSubtotal = round(((float) $ventaItem->precio_unitario - (float) $ventaItem->descuento_item) * $nuevaCantidad, 2);
+
+            $ventaItem->update([
+                'cantidad'      => $nuevaCantidad,
+                'cantidad_base' => $nuevaCantidadBase,
+                'subtotal'      => $nuevoSubtotal,
+            ]);
+
+            // ── Recalcular totales de la venta ────────────────────────────
+            $venta->load('items');
+            $venta->calcularTotales();
+            $venta->refresh();
+
+            $nuevoTotal = (float) $venta->total;
+            $factorMoneda = ($venta->moneda !== 'PEN' && (float) $venta->tipo_cambio > 0)
+                ? (float) $venta->tipo_cambio
+                : 1.0;
+
+            if ($esCredito) {
+                $montoPagado = (float) $venta->monto_pagado;
+                $venta->update([
+                    'saldo_pendiente' => max(0, round($nuevoTotal - $montoPagado, 2)),
+                    'monto_moneda'    => $venta->moneda !== 'PEN' ? round($nuevoTotal / $factorMoneda, 2) : null,
+                ]);
+            } else {
+                $venta->update([
+                    'monto_pagado'    => $nuevoTotal,
+                    'saldo_pendiente' => 0,
+                    'monto_moneda'    => $venta->moneda !== 'PEN' ? round($nuevoTotal / $factorMoneda, 2) : null,
+                ]);
+            }
+
+            // ── Ajustar el ítem del anticipo ────────────────────────────
+            $item->update([
+                'cantidad'           => max(0, round((float) $item->cantidad - $cantidadCancelar, 4)),
+                'cantidad_pendiente' => max(0, round((float) $item->cantidad_pendiente - $cantidadCancelar, 4)),
+            ]);
+
+            // ── Guardar turno/caja afectada ───────────────────────────────
+            $turno = $turnoId
+                ? Turno::where('id', $turnoId)->where('empresa_id', $user->empresa_id)->first()
+                : null;
+            $cajaId = $turno?->caja_id;
+
+            // ── Crear el registro de cancelación ──────────────────────────
+            $cancelacion = ClienteAnticipoCancelacion::create([
+                'cliente_anticipo_id'      => $anticipo->id,
+                'cliente_anticipo_item_id' => $item->id,
+                'empresa_id'               => $user->empresa_id,
+                'user_id'                  => $user->id,
+                'fecha'                    => $data['fecha'],
+                'cantidad'                 => $cantidadCancelar,
+                'monto'                    => $montoCancelar,
+                'motivo'                   => $data['motivo'],
+                'turno_id'                 => $turnoId,
+                'caja_id'                  => $cajaId,
+                'metodo_pago_id'           => $data['metodo_pago_id'] ?? null,
+                'cuenta_id'                => $data['cuenta_id'] ?? null,
+                'observacion'              => $data['observacion'] ?? null,
+                'moneda'                   => $venta->moneda ?? 'PEN',
+                'tipo_cambio'              => $venta->tipo_cambio,
+                'monto_moneda'             => $venta->moneda !== 'PEN' && $factorMoneda > 0
+                    ? round($montoCancelar / $factorMoneda, 2)
+                    : null,
+            ]);
+
+            // ── Contado: devolver dinero (egreso de tesorería) ────────────
+            if (! $esCredito && $montoCancelar > 0.009) {
+                $cuentaSalida = $data['cuenta_id']
+                    ?? ($data['metodo_pago_id']
+                        ? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'])
+                        : null)
+                    ?? $anticipo->cuenta_id;
+
+                $this->tesoreria->registrar(
+                    $user->empresa_id,
+                    $cuentaSalida,
+                    $user,
+                    $data['fecha'],
+                    'egreso',
+                    $montoCancelar,
+                    "Cancelación de pendiente — Venta {$venta->numero} — {$item->producto_nombre}",
+                    'anticipo_cancelacion',
+                    $cancelacion->id,
+                    $venta->moneda ?? 'PEN',
+                    $venta->tipo_cambio,
+                    $cancelacion->monto_moneda,
+                );
+            }
+
+            // ── Recalcular saldo y estado del anticipo ────────────────────
+            $this->recomputarSaldoMaterial($anticipo);
+
+            $anticipo->refresh();
+            if ((float) $anticipo->saldo <= 0.01) {
+                $anticipo->update(['estado' => $esCredito ? 'aplicado' : 'devuelto']);
+            }
+        });
+
+        AuditoriaService::log('anticipo_cliente.pendiente_cancelado', $anticipo, [
+            'item_id'              => $item->id,
+            'producto'             => $item->producto_nombre,
+            'cantidad_cancelada'   => $cantidadCancelar,
+            'monto_cancelado'      => $montoCancelar,
+            'venta_id'             => $venta->id,
+            'venta_numero'         => $venta->numero,
+            'es_credito'           => $esCredito,
+            'antes_venta'          => $antesVenta,
+            'despues_venta'        => [
+                'total'           => (float) $venta->fresh()->total,
+                'saldo_pendiente' => (float) $venta->fresh()->saldo_pendiente,
+            ],
+            'antes_item'           => $antesItem,
+            'antes_saldo_anticipo' => $antesAnticipoSaldo,
+            'motivo'               => $data['motivo'],
+        ], $user);
+
+        return back()->with('success', 'Pendiente cancelado: la venta y el anticipo quedaron ajustados.');
     }
 
     /**

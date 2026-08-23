@@ -33,6 +33,7 @@ class ClienteAnticipoItem extends Model
     public function ventaItem(): BelongsTo { return $this->belongsTo(VentaItem::class, 'venta_item_id'); }
     public function producto(): BelongsTo  { return $this->belongsTo(Producto::class); }
     public function unidad(): BelongsTo    { return $this->belongsTo(ProductoUnidad::class, 'producto_unidad_id'); }
+    public function cancelaciones(): HasMany { return $this->hasMany(ClienteAnticipoCancelacion::class, 'cliente_anticipo_item_id'); }
 
     /**
      * Pasivo de este ítem: pendiente × precio CONGELADO de la venta.

@@ -43,6 +43,7 @@ class ClienteAnticipo extends Model
     public function turno(): BelongsTo      { return $this->belongsTo(Turno::class); }
     public function aplicaciones(): HasMany { return $this->hasMany(ClienteAnticipoAplicacion::class); }
     public function items(): HasMany        { return $this->hasMany(ClienteAnticipoItem::class); }
+    public function cancelaciones(): HasMany { return $this->hasMany(ClienteAnticipoCancelacion::class, 'cliente_anticipo_id'); }
 
     public function scopeActivo(Builder $q): Builder             { return $q->where('estado', 'activo'); }
     public function scopeDeEmpresa(Builder $q, int $id): Builder { return $q->where('empresa_id', $id); }
