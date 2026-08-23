@@ -32,7 +32,7 @@ class DeudaController extends Controller
         $user = $request->user();
 
         $query = Deuda::deEmpresa($user->empresa_id)
-            ->with(['pagos.metodoPago', 'pagos.cuenta', 'pagos.user'])
+            ->with(['pagos.metodoPago', 'pagos.cuenta', 'pagos.user', 'desembolso.cuenta'])
             ->when($request->input('direccion'), fn ($q, $v) => $q->where('direccion', $v))
             ->when($request->input('tipo'), fn ($q, $v) => $q->where('tipo', $v))
             // Búsqueda server-side sobre TODA la base (no solo la página visible).

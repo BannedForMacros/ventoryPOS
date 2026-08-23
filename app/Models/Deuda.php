@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Deuda extends Model
 {
@@ -36,6 +37,15 @@ class Deuda extends Model
     public function empresa(): BelongsTo { return $this->belongsTo(Empresa::class); }
     public function user(): BelongsTo    { return $this->belongsTo(User::class); }
     public function pagos(): HasMany     { return $this->hasMany(DeudaPago::class); }
+
+    /**
+     * Desembolso inicial registrado en tesorería (solo si la deuda afectó caja).
+     */
+    public function desembolso(): HasOne
+    {
+        return $this->hasOne(CuentaMovimiento::class, 'ref_id')
+            ->where('ref_tipo', 'deuda');
+    }
 
     /**
      * Recalcula el saldo desde cero usando el monto original y los movimientos

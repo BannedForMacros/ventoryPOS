@@ -44,6 +44,7 @@ interface Deuda extends Record<string, unknown> {
     estado: string;
     observacion: string | null;
     pagos: Pago[];
+    desembolso?: { cuenta?: { nombre: string } | null } | null;
 }
 
 interface Paginado<T> { data: T[]; total: number; }
@@ -616,7 +617,14 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                         })()}
                         <Callout variant="info" title="Registro de la deuda"
                             aside={money(detalle.monto_original)}>
-                            {new Date(detalle.fecha_inicio.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')} · {detalle.observacion ?? 'Saldo inicial de la deuda'}
+                            {new Date(detalle.fecha_inicio.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')}
+                            {' · '}
+                            {detalle.desembolso?.cuenta?.nombre
+                                ? `Desembolso en ${detalle.desembolso.cuenta.nombre}`
+                                : 'Sin desembolso en caja'}
+                            {detalle.observacion && (
+                                <span className="block text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{detalle.observacion}</span>
+                            )}
                         </Callout>
                         <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                             {verEliminados
