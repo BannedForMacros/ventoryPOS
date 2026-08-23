@@ -293,14 +293,7 @@ class DeudaController extends Controller
                 $pago->id,
             );
 
-            $nuevoSaldo = $data['tipo'] === 'amortizacion'
-                ? round((float) $deuda->saldo - (float) $data['monto'], 2)
-                : round((float) $deuda->saldo + (float) $data['monto'], 2);
-
-            $deuda->update([
-                'saldo'  => max(0, $nuevoSaldo),
-                'estado' => $nuevoSaldo <= 0.01 ? 'pagada' : 'activa',
-            ]);
+            $deuda->recalcularSaldo();
 
             AuditoriaService::log('deuda.' . $data['tipo'], $deuda, [
                 'monto' => (float) $data['monto'],
@@ -494,17 +487,11 @@ class DeudaController extends Controller
         ]);
 
         DB::transaction(function () use ($pago, $deuda, $user, $data) {
-            // Deshacer el efecto del movimiento en el saldo.
-            $nuevoSaldo = $pago->tipo === 'amortizacion'
-                ? round((float) $deuda->saldo + (float) $pago->monto, 2)
-                : max(0, round((float) $deuda->saldo - (float) $pago->monto, 2));
-
             $this->tesoreria->revertir('deuda_pago', $pago->id);
 
-            $deuda->update([
-                'saldo'  => $nuevoSaldo,
-                'estado' => $deuda->estado === 'anulada' ? 'anulada' : ($nuevoSaldo <= 0.01 ? 'pagada' : 'activa'),
-            ]);
+            $pago->delete();
+
+            $deuda->recalcularSaldo();
 
             AuditoriaService::log('deuda.movimiento_eliminado', $deuda, [
                 'motivo'     => $data['motivo'],
@@ -513,10 +500,8 @@ class DeudaController extends Controller
                     'tipo'  => $pago->tipo,
                     'monto' => (float) $pago->monto,
                 ],
-                'saldo' => $nuevoSaldo,
+                'saldo' => (float) $deuda->saldo,
             ], $user);
-
-            $pago->delete();
         });
 
         return back()->with('success', 'Movimiento eliminado: tesorería y el saldo de la deuda se recalcularon.');

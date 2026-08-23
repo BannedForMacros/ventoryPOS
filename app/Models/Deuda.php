@@ -37,6 +37,26 @@ class Deuda extends Model
     public function user(): BelongsTo    { return $this->belongsTo(User::class); }
     public function pagos(): HasMany     { return $this->hasMany(DeudaPago::class); }
 
+    /**
+     * Recalcula el saldo desde cero usando el monto original y los movimientos
+     * activos. Útil para corregir desfases cuando se eliminan/ajustan pagos.
+     */
+    public function recalcularSaldo(): void
+    {
+        if ($this->estado === 'anulada') {
+            return;
+        }
+
+        $incrementos = (float) $this->pagos()->where('tipo', 'incremento')->sum('monto');
+        $amortizaciones = (float) $this->pagos()->where('tipo', 'amortizacion')->sum('monto');
+        $nuevo = max(0, (float) $this->monto_original + $incrementos - $amortizaciones);
+
+        $this->update([
+            'saldo'  => round($nuevo, 2),
+            'estado' => $nuevo <= 0.01 ? 'pagada' : 'activa',
+        ]);
+    }
+
     public function scopeActiva(Builder $q): Builder             { return $q->where('estado', 'activa'); }
     public function scopePorPagar(Builder $q): Builder           { return $q->where('direccion', self::DIRECCION_POR_PAGAR); }
     public function scopePorCobrar(Builder $q): Builder          { return $q->where('direccion', self::DIRECCION_POR_COBRAR); }
