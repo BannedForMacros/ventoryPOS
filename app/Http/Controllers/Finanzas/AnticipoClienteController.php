@@ -168,6 +168,79 @@ class AnticipoClienteController extends Controller
         return $turnoId;
     }
 
+    /**
+     * Exporta TODOS los anticipos filtrados a CSV (Excel).
+     * Se usa desde el botón Excel del listado; respeta estado y búsqueda.
+     */
+    public function exportar(Request $request)
+    {
+        $user = $request->user();
+
+        $query = ClienteAnticipo::deEmpresa($user->empresa_id)
+            ->with(['cliente', 'producto', 'metodoPago', 'cuenta', 'venta:id,numero', 'items.producto', 'items.unidad'])
+            ->when($request->input('cliente_id'), fn ($q, $v) => $q->where('cliente_id', $v))
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('observacion', 'ilike', "%{$t}%")
+                    ->orWhereHas('cliente', fn ($c) => $c
+                        ->where('nombres', 'ilike', "%{$t}%")
+                        ->orWhere('apellidos', 'ilike', "%{$t}%")
+                        ->orWhere('razon_social', 'ilike', "%{$t}%")
+                        ->orWhere('numero_documento', 'ilike', "%{$t}%"))
+                    ->orWhereHas('producto', fn ($p) => $p->where('nombre', 'ilike', "%{$t}%")));
+            });
+
+        $estado = $request->input('estado', 'activos');
+        if ($estado === 'activos') {
+            $query->activo();
+        } elseif (in_array($estado, ['aplicado', 'anulado', 'devuelto'], true)) {
+            $query->where('estado', $estado);
+        }
+
+        $anticipos = $query->orderByDesc('fecha')->orderByDesc('id')->get();
+
+        $headers = ['Fecha', 'Cliente', 'Modalidad', 'Recibido', 'Pendiente', 'Pasivo hoy', 'Estado', 'Método de pago', 'Cuenta', 'Observación'];
+
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $csv .= implode(',', array_map(fn ($h) => '"' . str_replace('"', '""', $h) . '"', $headers)) . "\n";
+
+        foreach ($anticipos as $a) {
+            $cliente = $a->cliente;
+            $nombreCliente = $cliente?->razon_social
+                ?: trim(($cliente?->nombres ?? '') . ' ' . ($cliente?->apellidos ?? ''));
+
+            $modalidad = $a->tipo_valorizacion === 'material' ? 'Material' : 'Dinero';
+            $recibido  = number_format((float) $a->monto, 2, '.', '');
+            $pendiente = $a->tipo_valorizacion === 'material'
+                ? number_format((float) $a->cantidad_pendiente, 4, '.', '') . ' und'
+                : number_format((float) $a->saldo, 2, '.', '');
+            $pasivo    = $a->estado === 'activo' ? number_format((float) $a->valorPasivo(), 2, '.', '') : '0.00';
+
+            $row = [
+                $a->fecha->format('d/m/Y'),
+                $nombreCliente ?: 'NO IDENTIFICADO',
+                $modalidad,
+                $recibido,
+                $pendiente,
+                $pasivo,
+                ucfirst($a->estado),
+                $a->metodoPago?->nombre ?? '—',
+                $a->cuenta?->nombre ?? '—',
+                $a->observacion ?? '',
+            ];
+
+            $csv .= implode(',', array_map(fn ($v) => '"' . str_replace('"', '""', $v) . '"', $row)) . "\n";
+        }
+
+        $filename = 'anticipos_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
     public function store(Request $request)
     {
         $user = $request->user();

@@ -449,6 +449,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Anticipos de clientes
         Route::middleware('permiso:finanzas.anticipos,ver')->get('anticipos', [AnticipoClienteController::class, 'index'])->name('anticipos.index');
+        Route::middleware('permiso:finanzas.anticipos,ver')->get('anticipos/exportar', [AnticipoClienteController::class, 'exportar'])->name('anticipos.exportar');
         Route::middleware('permiso:finanzas.anticipos,crear')->post('anticipos', [AnticipoClienteController::class, 'store'])->name('anticipos.store');
         Route::middleware('permiso:finanzas.anticipos,editar')->put('anticipos/{anticipo}', [AnticipoClienteController::class, 'update'])->name('anticipos.update');
         Route::middleware('permiso:finanzas.anticipos,editar')->post('anticipos/{anticipo}/aplicar', [AnticipoClienteController::class, 'aplicar'])->name('anticipos.aplicar');

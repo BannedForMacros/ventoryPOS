@@ -607,11 +607,19 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
             </FiltrosCard>
 
             <Table data={anticipos} columns={columns}
+                exportFilename="anticipos"
                 searchPlaceholder="Buscar cliente..." emptyMessage="No hay anticipos registrados"
                 initialSearch={buscar}
                 onServerSearch={(t) => router.get(route('finanzas.anticipos.index'),
                     { estado, buscar: t || undefined },
-                    { preserveState: true, preserveScroll: true, replace: true })} />
+                    { preserveState: true, preserveScroll: true, replace: true })}
+                onExportExcel={() => {
+                    const params = new URLSearchParams();
+                    if (estado && estado !== 'todos') params.set('estado', estado);
+                    if (buscar) params.set('buscar', buscar);
+                    const url = route('finanzas.anticipos.exportar') + (params.toString() ? `?${params.toString()}` : '');
+                    window.open(url, '_blank');
+                }} />
 
             {/* Modal nuevo anticipo */}
             <Modal isOpen={modalNuevo} onClose={() => setModalNuevo(false)} title="Nuevo anticipo de cliente" size="md"
