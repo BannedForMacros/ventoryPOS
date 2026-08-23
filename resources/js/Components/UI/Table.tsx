@@ -4,6 +4,7 @@ import {
     ChevronDown, ChevronUp, ChevronRight, Search,
     ChevronsUpDown, ChevronLeft, ChevronsLeft,
     ChevronRight as ChevronRightIcon, ChevronsRight,
+    FileSpreadsheet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -44,6 +45,17 @@ interface TableProps<T extends Record<string, unknown>> {
     initialSearch?: string;
     /** Clic en cualquier parte de la fila (para tablas que llevan a un detalle). */
     onRowClick?: (row: T) => void;
+    /** Muestra botón para exportar la tabla a Excel/CSV. */
+    exportable?: boolean;
+    /** Nombre base del archivo exportado (sin extensión). Default: 'exportacion'. */
+    exportFilename?: string;
+    /**
+     * Callback para exportar desde el servidor (ej. abrir URL con filtros).
+     * Si no se pasa y los datos son locales, se descarga CSV con todas las
+     * filas filtradas/ordenadas (todas las páginas). Si los datos vienen de
+     * paginación server-side y no hay callback, no se muestra el botón.
+     */
+    onExportExcel?: () => void;
 }
 
 interface PaginationBtnProps {
@@ -88,6 +100,9 @@ export default function Table<T extends Record<string, unknown>>({
     onServerSearch,
     initialSearch,
     onRowClick,
+    exportable = false,
+    exportFilename = 'exportacion',
+    onExportExcel,
 }: TableProps<T>) {
     const [search, setSearch] = useState(initialSearch ?? '');
 
@@ -237,56 +252,129 @@ export default function Table<T extends Record<string, unknown>>({
         return pages;
     };
 
+    // ── Exportar a Excel/CSV ─────────────────────────────────────────────────
+    // Por defecto exporta TODAS las filas filtradas/ordenadas (todas las páginas).
+    // Si la paginación es server-side se requiere onExportExcel para traer todo.
+    const puedeExportarLocal = exportable && !onExportExcel && !serverPag && sortedData.length > 0;
+    const puedeExportarServer = exportable && !!onExportExcel;
+    const mostrarExportar = puedeExportarLocal || puedeExportarServer;
+
+    const descargarCSV = () => {
+        if (!sortedData.length) return;
+
+        const escapeCsv = (value: unknown): string => {
+            const str = String(value ?? '').replace(/"/g, '""');
+            return /[",\n\r]/.test(str) ? `"${str}"` : str;
+        };
+
+        const lines: string[] = [];
+        lines.push(columns.map(col => escapeCsv(col.label)).join(','));
+        sortedData.forEach(row => {
+            lines.push(
+                columns
+                    .map(col => escapeCsv(row[col.key]))
+                    .join(',')
+            );
+        });
+
+        const csv = '\uFEFF' + lines.join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${exportFilename}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleExportExcel = () => {
+        if (onExportExcel) {
+            onExportExcel();
+            return;
+        }
+        descargarCSV();
+    };
+
     return (
         <div className="w-full space-y-3">
 
-            {/* ── Búsqueda ───────────────────────────────────────────── */}
-            {searchable && (
-                <div className="flex items-center gap-3">
-                    <div className="relative flex-1 max-w-sm">
-                        <Search
-                            size={15}
-                            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                            style={{ color: 'var(--color-text-muted)' }}
-                        />
-                        <input
-                            type="text"
-                            placeholder={searchPlaceholder}
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            className="w-full rounded-xl border py-2 pl-9 pr-9 text-sm outline-none transition-all"
+            {/* ── Búsqueda + Exportar ──────────────────────────────────── */}
+            {(searchable || mostrarExportar) && (
+                <div className="flex flex-wrap items-center gap-3">
+                    {searchable && (
+                        <>
+                            <div className="relative flex-1 max-w-sm">
+                                <Search
+                                    size={15}
+                                    className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                                    style={{ color: 'var(--color-text-muted)' }}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder={searchPlaceholder}
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                    className="w-full rounded-xl border py-2 pl-9 pr-9 text-sm outline-none transition-all"
+                                    style={{
+                                        borderColor: 'var(--color-border)',
+                                        backgroundColor: 'var(--color-surface)',
+                                        color: 'var(--color-text)',
+                                    }}
+                                    onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-primary)')}
+                                    onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                                />
+                                {cargando && onServerSearch ? (
+                                    <span
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full animate-spin"
+                                        style={{
+                                            border: '2px solid color-mix(in srgb, var(--color-primary) 25%, transparent)',
+                                            borderTopColor: 'var(--color-primary)',
+                                        }}
+                                    />
+                                ) : search && (
+                                    <button
+                                        onClick={() => setSearch('')}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 transition-colors"
+                                        style={{ color: 'var(--color-text-muted)' }}
+                                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text)')}
+                                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+                            {search && (
+                                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                    {sortedData.length} resultado{sortedData.length !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                        </>
+                    )}
+                    {mostrarExportar && (
+                        <button
+                            onClick={handleExportExcel}
+                            className="ml-auto inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-colors"
                             style={{
                                 borderColor: 'var(--color-border)',
                                 backgroundColor: 'var(--color-surface)',
                                 color: 'var(--color-text)',
                             }}
-                            onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-primary)')}
-                            onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-                        />
-                        {cargando && onServerSearch ? (
-                            <span
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full animate-spin"
-                                style={{
-                                    border: '2px solid color-mix(in srgb, var(--color-primary) 25%, transparent)',
-                                    borderTopColor: 'var(--color-primary)',
-                                }}
-                            />
-                        ) : search && (
-                            <button
-                                onClick={() => setSearch('')}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 transition-colors"
-                                style={{ color: 'var(--color-text-muted)' }}
-                                onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text)')}
-                                onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-                            >
-                                ✕
-                            </button>
-                        )}
-                    </div>
-                    {search && (
-                        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                            {sortedData.length} resultado{sortedData.length !== 1 ? 's' : ''}
-                        </span>
+                            onMouseEnter={e => {
+                                e.currentTarget.style.borderColor = 'var(--color-primary)';
+                                e.currentTarget.style.color = 'var(--color-primary)';
+                                e.currentTarget.style.backgroundColor = 'color-mix(in srgb, var(--color-primary) 8%, transparent)';
+                            }}
+                            onMouseLeave={e => {
+                                e.currentTarget.style.borderColor = 'var(--color-border)';
+                                e.currentTarget.style.color = 'var(--color-text)';
+                                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                            }}
+                        >
+                            <FileSpreadsheet size={16} />
+                            Excel
+                        </button>
                     )}
                 </div>
             )}
