@@ -521,4 +521,36 @@ class DeudaController extends Controller
 
         return back()->with('success', 'Movimiento eliminado: tesorería y el saldo de la deuda se recalcularon.');
     }
+
+    /**
+     * Devuelve los movimientos de una deuda, activos y/o eliminados,
+     * para el modal de movimientos.
+     */
+    public function movimientos(Request $request, Deuda $deuda)
+    {
+        abort_if($deuda->empresa_id !== $request->user()->empresa_id, 403);
+
+        $todos = $request->boolean('todos');
+
+        $pagos = $deuda->pagos()
+            ->with(['metodoPago:id,nombre', 'cuenta:id,nombre', 'user:id,name'])
+            ->when($todos, fn ($q) => $q->withTrashed())
+            ->orderBy('fecha', 'desc')
+            ->orderBy('id', 'desc')
+            ->get()
+            ->map(fn (\App\Models\DeudaPago $p) => [
+                'id'           => $p->id,
+                'fecha'        => $p->fecha->toDateString(),
+                'tipo'         => $p->tipo,
+                'monto'        => $p->monto,
+                'observacion'  => $p->observacion,
+                'metodo_pago'  => $p->metodoPago ? ['nombre' => $p->metodoPago->nombre] : null,
+                'cuenta'       => $p->cuenta ? ['nombre' => $p->cuenta->nombre] : null,
+                'user'         => $p->user ? ['name' => $p->user->name] : null,
+                'eliminado'    => ! is_null($p->deleted_at),
+                'deleted_at'   => $p->deleted_at?->format('d/m/Y H:i'),
+            ]);
+
+        return response()->json($pagos);
+    }
 }

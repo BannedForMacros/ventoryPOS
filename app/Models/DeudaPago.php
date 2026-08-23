@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class DeudaPago extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'deuda_id', 'user_id', 'metodo_pago_id', 'cuenta_id',
         'fecha', 'tipo', 'monto', 'observacion',

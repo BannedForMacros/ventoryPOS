@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import toast from 'react-hot-toast';
 import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, RotateCcw, CalendarClock } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
@@ -27,6 +28,8 @@ interface Pago {
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
     user?: { name: string } | null;
+    eliminado?: boolean;
+    deleted_at?: string | null;
 }
 
 interface Deuda extends Record<string, unknown> {
@@ -92,6 +95,9 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     const [reactivando, setReactivando]   = useState<Deuda | null>(null);
     const [eliminandoPago, setEliminandoPago] = useState<Pago | null>(null);
     const [motivo, setMotivo]             = useState('');
+    const [verEliminados, setVerEliminados] = useState(false);
+    const [movimientosExtra, setMovimientosExtra] = useState<Pago[]>([]);
+    const [cargandoMovimientos, setCargandoMovimientos] = useState(false);
 
     function abrirEditar(d: Deuda) {
         setErrors({});
@@ -152,6 +158,19 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    // Cargar movimientos eliminados (y todos) cuando el modal pida verlos.
+    useEffect(() => {
+        if (!detalle || !verEliminados) {
+            setMovimientosExtra([]);
+            return;
+        }
+        setCargandoMovimientos(true);
+        axios.get<Pago[]>(route('finanzas.deudas.movimientos', detalle.id), { params: { todos: 1 } })
+            .then(res => setMovimientosExtra(res.data))
+            .catch(() => toast.error('No se pudieron cargar los movimientos eliminados'))
+            .finally(() => setCargandoMovimientos(false));
+    }, [detalle, verEliminados]);
 
     /** Cuentas validas para el metodo elegido (vinculadas; efectivo -> caja Efectivo). */
     function cuentasDeMetodo(mid: string) {
@@ -521,60 +540,89 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             </Modal>
 
             {/* Modal detalle movimientos */}
-            <Modal isOpen={detalle !== null} onClose={() => setDetalle(null)}
+            <Modal isOpen={detalle !== null} onClose={() => { setDetalle(null); setVerEliminados(false); setMovimientosExtra([]); }}
                 title={detalle ? `Movimientos — ${detalle.nombre}` : ''} size="2xl"
                 footer={<Button variant="ghost" onClick={() => setDetalle(null)}>Cerrar</Button>}
             >
                 {detalle && (puede.eliminar ? (
                     <div className="space-y-4">
-                        {detalle.pagos.length === 0 ? (
-                            <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>Sin movimientos registrados</p>
-                        ) : (
-                            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
-                                {detalle.pagos.map((p, idx) => (
-                                    <div key={p.id} className="flex items-center gap-3 px-4 py-2.5"
-                                        style={{
-                                            borderBottom: idx < detalle.pagos.length - 1 ? '1px solid var(--color-border)' : undefined,
-                                            backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
-                                        }}>
-                                        <Badge variant={p.tipo === 'amortizacion' ? 'success' : 'warning'}>
-                                            {p.tipo === 'amortizacion' ? 'Amortización' : 'Incremento'}
-                                        </Badge>
-                                        <div className="flex-1 min-w-0 text-xs">
-                                            <p className="font-medium" style={{ color: 'var(--color-text)' }}>
-                                                {new Date(p.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')}
-                                                <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
-                                                    {[p.metodo_pago?.nombre, p.cuenta?.nombre].filter(Boolean).join(' · ') || '—'}
-                                                </span>
-                                            </p>
-                                            {(p.observacion || p.user?.name) && (
-                                                <p className="truncate" style={{ color: 'var(--color-text-muted)' }}>
-                                                    {[p.observacion, p.user?.name ? `por ${p.user.name}` : null].filter(Boolean).join(' · ')}
+                        <div className="flex items-center justify-end">
+                            <label className="inline-flex items-center gap-2 text-xs cursor-pointer select-none"
+                                style={{ color: 'var(--color-text)' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={verEliminados}
+                                    onChange={e => setVerEliminados(e.target.checked)}
+                                    className="rounded border-gray-300"
+                                />
+                                Ver movimientos eliminados
+                            </label>
+                        </div>
+                        {(() => {
+                            const movimientosMostrados = verEliminados ? movimientosExtra : detalle.pagos;
+                            if (cargandoMovimientos) {
+                                return <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>Cargando movimientos…</p>;
+                            }
+                            if (movimientosMostrados.length === 0) {
+                                return <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>Sin movimientos{verEliminados ? ' eliminados' : ''} registrados</p>;
+                            }
+                            return (
+                                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                    {movimientosMostrados.map((p, idx) => (
+                                        <div key={`${p.id}-${p.eliminado ? 'del' : 'act'}`} className="flex items-center gap-3 px-4 py-2.5"
+                                            style={{
+                                                borderBottom: idx < movimientosMostrados.length - 1 ? '1px solid var(--color-border)' : undefined,
+                                                backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
+                                                opacity: p.eliminado ? 0.55 : 1,
+                                            }}>
+                                            <Badge variant={p.tipo === 'amortizacion' ? 'success' : 'warning'}>
+                                                {p.tipo === 'amortizacion' ? 'Amortización' : 'Incremento'}
+                                            </Badge>
+                                            {p.eliminado && (
+                                                <Badge variant="secondary">Eliminado</Badge>
+                                            )}
+                                            <div className="flex-1 min-w-0 text-xs">
+                                                <p className="font-medium" style={{ color: 'var(--color-text)', textDecoration: p.eliminado ? 'line-through' : undefined }}>
+                                                    {new Date(p.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')}
+                                                    <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
+                                                        {[p.metodo_pago?.nombre, p.cuenta?.nombre].filter(Boolean).join(' · ') || '—'}
+                                                    </span>
                                                 </p>
+                                                {(p.observacion || p.user?.name || p.deleted_at) && (
+                                                    <p className="truncate" style={{ color: 'var(--color-text-muted)' }}>
+                                                        {[
+                                                            p.observacion,
+                                                            p.user?.name ? `por ${p.user.name}` : null,
+                                                            p.deleted_at ? `eliminado el ${p.deleted_at}` : null,
+                                                        ].filter(Boolean).join(' · ')}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <span className="font-bold text-sm whitespace-nowrap"
+                                                style={{ color: p.tipo === 'amortizacion' ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                                {p.tipo === 'amortizacion' ? '−' : '+'}{money(p.monto)}
+                                            </span>
+                                            {!p.eliminado && (
+                                                <button onClick={() => { setErrors({}); setMotivo(''); setEliminandoPago(p); }}
+                                                    className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Eliminar movimiento"
+                                                    style={{ color: 'var(--color-danger)' }}>
+                                                    <Trash2 size={14} />
+                                                </button>
                                             )}
                                         </div>
-                                        <span className="font-bold text-sm whitespace-nowrap"
-                                            style={{ color: p.tipo === 'amortizacion' ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                            {p.tipo === 'amortizacion' ? '−' : '+'}{money(p.monto)}
-                                        </span>
-                                        <button onClick={() => { setErrors({}); setMotivo(''); setEliminandoPago(p); }}
-                                            className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Eliminar movimiento"
-                                            style={{ color: 'var(--color-danger)' }}>
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                                    ))}
+                                </div>
+                            );
+                        })()}
                         <Callout variant="info" title="Registro de la deuda"
                             aside={money(detalle.monto_original)}>
                             {new Date(detalle.fecha_inicio.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')} · {detalle.observacion ?? 'Saldo inicial de la deuda'}
                         </Callout>
-                        {detalle.pagos.length > 0 && (
-                            <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                                Eliminar un movimiento revierte su efecto en tesorería y recalcula el saldo de la deuda. Todo queda en auditoría.
-                            </p>
-                        )}
+                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                            {verEliminados
+                                ? 'Los movimientos eliminados se muestran solo como referencia; no afectan el saldo actual de la deuda.'
+                                : 'Eliminar un movimiento lo oculta y revierte su efecto en tesorería, pero queda registrado para consulta.'}
+                        </p>
                     </div>
                 ) : (
                     <Timeline
