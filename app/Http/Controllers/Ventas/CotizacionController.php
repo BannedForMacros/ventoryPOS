@@ -113,6 +113,85 @@ class CotizacionController extends Controller
         ]);
     }
 
+    /**
+     * Exporta TODAS las cotizaciones filtradas a CSV (Excel).
+     * Repite los mismos filtros de index() pero sin paginar.
+     */
+    public function exportar(Request $request)
+    {
+        $user = $request->user();
+        $hoy  = now()->toDateString();
+
+        $estado = $request->input('estado', 'vigentes');
+        $q      = trim((string) $request->input('q', ''));
+        $limite = now()->addDays(3)->toDateString();
+
+        $cotizaciones = Cotizacion::deEmpresa($user->empresa_id)
+            ->with(['cliente', 'user:id,name', 'venta:id,numero'])
+            ->when($estado === 'vigentes', fn ($qq) => $qq->whereIn('estado', [
+                Cotizacion::ESTADO_VIGENTE, Cotizacion::ESTADO_ACEPTADA,
+            ]))
+            ->when($estado === 'alerta', fn ($qq) => $qq->where(function ($w) use ($hoy, $limite) {
+                $w->where(fn ($v) => $v->vigente()->whereBetween('fecha_vencimiento', [$hoy, $limite]))
+                  ->orWhere(fn ($v) => $v->where('estado', Cotizacion::ESTADO_VENCIDA)
+                      ->where(fn ($c) => $c->whereNull('ultimo_contacto')
+                          ->orWhereColumn('ultimo_contacto', '<', 'fecha_vencimiento')));
+            }))
+            ->when(in_array($estado, Cotizacion::ESTADOS, true), fn ($qq) => $qq->where('estado', $estado))
+            ->when($q !== '', fn ($qq) => $qq->where(function ($w) use ($q) {
+                $w->where('numero', 'ilike', "%{$q}%")
+                  ->orWhere('referencia', 'ilike', "%{$q}%")
+                  ->orWhereHas('cliente', fn ($c) => $c->where('nombres', 'ilike', "%{$q}%")
+                      ->orWhere('apellidos', 'ilike', "%{$q}%")
+                      ->orWhere('razon_social', 'ilike', "%{$q}%")
+                      ->orWhere('numero_documento', 'ilike', "%{$q}%"));
+            }))
+            ->orderByDesc('fecha')
+            ->orderByDesc('id')
+            ->get();
+
+        $headers = ['Número', 'Fecha', 'Cliente', 'Referencia / Obra', 'Total', 'Vence', 'Entrega est.', 'Estado', 'Últ. contacto'];
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $csv .= $this->csvLine($headers);
+
+        foreach ($cotizaciones as $c) {
+            $cliente = $c->cliente;
+            $nombreCliente = $cliente?->razon_social
+                ?: trim(($cliente?->nombres ?? '') . ' ' . ($cliente?->apellidos ?? ''));
+
+            $estadoLabel = Cotizacion::labelDe($c->estado);
+            if ($c->estado === Cotizacion::ESTADO_CONVERTIDA && $c->venta?->numero) {
+                $estadoLabel .= ' · Venta ' . $c->venta->numero;
+            }
+
+            $row = [
+                $c->numero,
+                $c->fecha?->format('d/m/Y') ?? '—',
+                $nombreCliente ?: '—',
+                $c->referencia ?? '—',
+                number_format((float) $c->total, 2, '.', ''),
+                $c->fecha_vencimiento?->format('d/m/Y') ?? '—',
+                $c->fecha_entrega_estimada?->format('d/m/Y') ?? '—',
+                $estadoLabel,
+                $c->ultimo_contacto?->format('d/m/Y') ?? '—',
+            ];
+            $csv .= $this->csvLine($row);
+        }
+
+        $filename = 'cotizaciones_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type'        => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    /** Escapa una fila para CSV. */
+    private function csvLine(array $row): string
+    {
+        return implode(',', array_map(fn($v) => '"' . str_replace('"', '""', $v) . '"', $row)) . "\n";
+    }
+
     public function store(Request $request)
     {
         $user = $request->user();

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     Eye, ShoppingCart, Calendar, Receipt, Pencil, Trash2, KeyRound,
     AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins, ListChecks, PackageMinus,
-    Send, MessageCircle, Mail,
+    Send, MessageCircle, Mail, FileSpreadsheet,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -222,6 +222,15 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         router.get(route('ventas.index'), {}, { preserveState: true, replace: true });
     }
 
+    function exportarExcel() {
+        const params = new URLSearchParams();
+        Object.entries(filters).forEach(([k, v]) => {
+            if (v !== '' && v != null) params.set(k, String(v));
+        });
+        const base = route('ventas.exportar');
+        window.location.href = params.toString() ? `${base}?${params.toString()}` : base;
+    }
+
     const tienesFiltros = !!(filters.estado || filters.local_id || filters.turno_id || filters.q
         || filters.fecha_desde || filters.fecha_hasta);
 
@@ -287,9 +296,14 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 tieneFiltros={tienesFiltros}
                 onClear={limpiar}
                 actions={
-                    <Button variant="primary" size="sm" onClick={aplicar} startContent={<Search size={13} />}>
-                        Aplicar filtros
-                    </Button>
+                    <>
+                        <Button variant="primary" size="sm" onClick={aplicar} startContent={<Search size={13} />}>
+                            Aplicar filtros
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={exportarExcel} startContent={<FileSpreadsheet size={13} />}>
+                            Excel
+                        </Button>
+                    </>
                 }
             >
                 <div className="col-span-2">

@@ -159,6 +159,11 @@ export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar
         });
     }
 
+    const exportUrl = () => {
+        const params = new URLSearchParams(window.location.search);
+        window.location.href = route('finanzas.adelantos.exportar') + (params.toString() ? '?' + params.toString() : '');
+    };
+
     const columns: Column<Adelanto>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
@@ -271,7 +276,8 @@ export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar
                 initialSearch={buscar}
                 onServerSearch={(t) => router.get(route('finanzas.adelantos.index'),
                     { estado, buscar: t || undefined },
-                    { preserveState: true, preserveScroll: true, replace: true })} />
+                    { preserveState: true, preserveScroll: true, replace: true })}
+                onExportExcel={exportUrl} />
 
             {/* Modal nuevo adelanto */}
             <Modal isOpen={modalNuevo} onClose={() => setModalNuevo(false)} title="Nuevo adelanto a proveedor" size="md"

@@ -105,6 +105,73 @@ class CuentasPorCobrarController extends Controller
     }
 
     /**
+     * Exporta TODAS las cuentas por cobrar filtradas a CSV (Excel).
+     * Respeta los mismos filtros que index() y no pagina.
+     */
+    public function exportar(Request $request)
+    {
+        $user = $request->user();
+
+        $query = Venta::deEmpresa($user->empresa_id)
+            ->where('es_credito', true)
+            ->where('estado', 'completada')
+            ->with(['cliente'])
+            ->when($request->input('cliente_id'), fn ($q, $v) => $q->where('cliente_id', $v))
+            ->when($request->input('fecha_desde'), fn ($q, $v) => $q->whereDate('fecha_venta', '>=', $v))
+            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->whereDate('fecha_venta', '<=', $v))
+            ->when($request->input('busqueda'), function ($q, $b) {
+                $q->where(function ($q) use ($b) {
+                    $q->where('numero', 'ilike', "%{$b}%")
+                      ->orWhereHas('cliente', function ($c) use ($b) {
+                          $c->where('nombres', 'ilike', "%{$b}%")
+                            ->orWhere('apellidos', 'ilike', "%{$b}%")
+                            ->orWhere('razon_social', 'ilike', "%{$b}%")
+                            ->orWhere('numero_documento', 'ilike', "%{$b}%");
+                      });
+                });
+            });
+
+        $estado = $request->input('estado', 'pendientes');
+        if ($estado === 'pendientes') {
+            $query->where('saldo_pendiente', '>', 0);
+        } elseif ($estado === 'saldadas') {
+            $query->where('saldo_pendiente', '<=', 0);
+        }
+
+        $ventas = $query->orderByDesc('fecha_venta')->get();
+
+        $headers = ['Fecha', 'N°', 'Cliente', 'Total', 'Pagado', 'Saldo', 'Vence'];
+
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $csv .= implode(',', array_map(fn ($h) => '"' . str_replace('"', '""', $h) . '"', $headers)) . "\n";
+
+        foreach ($ventas as $v) {
+            $cliente = $v->cliente;
+            $nombreCliente = $cliente?->razon_social
+                ?: trim(($cliente?->nombres ?? '') . ' ' . ($cliente?->apellidos ?? ''));
+
+            $row = [
+                optional($v->fecha_venta)->format('d/m/Y') ?? '—',
+                $v->numero ?? '—',
+                $nombreCliente ?: '—',
+                number_format((float) $v->total, 2, '.', ''),
+                number_format((float) $v->monto_pagado, 2, '.', ''),
+                number_format((float) $v->saldo_pendiente, 2, '.', ''),
+                optional($v->fecha_vencimiento)?->format('d/m/Y') ?? '—',
+            ];
+
+            $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', $c) . '"', $row)) . "\n";
+        }
+
+        $filename = 'cuentas_por_cobrar_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    /**
      * Turno al que se imputaría un cobro por defecto: 1) el turno propio abierto del
      * usuario; 2) si no tiene, el ÚNICO turno abierto en su ámbito; 3) ninguno.
      */

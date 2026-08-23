@@ -200,6 +200,11 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         });
     }
 
+    const exportUrl = () => {
+        const params = new URLSearchParams(window.location.search);
+        window.location.href = route('finanzas.deudas.exportar') + (params.toString() ? '?' + params.toString() : '');
+    };
+
     const columns: Column<Deuda>[] = [
         {
             key: 'direccion', label: 'Dirección',
@@ -335,7 +340,8 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 initialSearch={buscar}
                 onServerSearch={(t) => router.get(route('finanzas.deudas.index'),
                     { estado, buscar: t || undefined },
-                    { preserveState: true, preserveScroll: true, replace: true })} />
+                    { preserveState: true, preserveScroll: true, replace: true })}
+                onExportExcel={exportUrl} />
 
             {/* Modal nueva deuda */}
             <Modal isOpen={modalNuevo} onClose={() => setModalNuevo(false)} title="Nueva deuda / préstamo" size="md"

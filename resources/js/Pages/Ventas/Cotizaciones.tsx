@@ -334,6 +334,11 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
         router.get(route('cotizaciones.index'), { estado, q: busqueda || undefined }, { preserveState: true, replace: true });
     }
 
+    function exportarExcel() {
+        const params = new URLSearchParams(window.location.search);
+        window.location.href = `${route('cotizaciones.exportar')}?${params.toString()}`;
+    }
+
     function convertirEnVenta(c: Cotizacion) {
         router.visit(route('pos.index', { cotizacion_id: c.id }));
     }
@@ -569,6 +574,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
             </FiltrosCard>
 
             <Table data={cotizaciones} columns={columns} searchable={false}
+                onExportExcel={exportarExcel}
                 emptyMessage="No hay cotizaciones en este filtro" />
 
             {/* ── Modal crear / editar ─────────────────────────────────── */}

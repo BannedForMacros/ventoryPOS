@@ -71,6 +71,72 @@ class TesoreriaController extends Controller
     }
 
     /**
+     * Exporta TODOS los movimientos filtrados a CSV (Excel).
+     * Respeta los mismos filtros que index() y no pagina.
+     */
+    public function exportar(Request $request)
+    {
+        $user = $request->user();
+
+        $efectivo = TesoreriaService::efectivo($user->empresa_id);
+        $cuentaId = (int) $request->input('cuenta_id', $efectivo->id);
+
+        $movimientos = CuentaMovimiento::deEmpresa($user->empresa_id)
+            ->where('cuenta_id', $cuentaId)
+            ->with('user')
+            ->when($request->input('fecha_desde'), fn ($q, $v) => $q->where('fecha', '>=', $v))
+            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->where('fecha', '<=', $v))
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('descripcion', 'ilike', "%{$t}%")
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'ilike', "%{$t}%")));
+            })
+            ->orderByDesc('fecha')->orderByDesc('id')
+            ->get();
+
+        $labels = [
+            'venta' => 'Venta',
+            'venta_abono' => 'Abono de cliente',
+            'gasto' => 'Gasto',
+            'entrada_pago' => 'Pago a proveedor',
+            'entrada' => 'Pago a proveedor',
+            'cliente_anticipo' => 'Anticipo de cliente',
+            'cliente_anticipo_devolucion' => 'Devolución de anticipo',
+            'proveedor_adelanto' => 'Adelanto a proveedor',
+            'proveedor_adelanto_devolucion' => 'Devolución de adelanto',
+            'deuda_pago' => 'Deuda / préstamo',
+            'devolucion' => 'Reembolso devolución',
+            'ajuste' => 'Ajuste manual',
+        ];
+
+        $headers = ['Fecha', 'Tipo', 'Descripción', 'Origen', 'Monto', 'Registrado por'];
+
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $csv .= implode(',', array_map(fn ($h) => '"' . str_replace('"', '""', $h) . '"', $headers)) . "\n";
+
+        foreach ($movimientos as $m) {
+            $row = [
+                optional($m->fecha)->format('d/m/Y') ?? '—',
+                $m->tipo === 'ingreso' ? 'Ingreso' : 'Egreso',
+                $m->descripcion,
+                $labels[$m->ref_tipo] ?? ($m->ref_tipo ?? '—'),
+                number_format((float) $m->monto, 2, '.', ''),
+                $m->user?->name ?? '—',
+            ];
+
+            $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', $c) . '"', $row)) . "\n";
+        }
+
+        $filename = 'tesoreria_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    /**
      * Ajuste de saldo: el usuario cuenta el dinero real; el sistema genera
      * el movimiento por la diferencia, con motivo obligatorio y auditoría.
      */

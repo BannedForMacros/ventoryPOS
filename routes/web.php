@@ -357,6 +357,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // raramente pasa de 1 venta cada 10s) y bloquea abuso obvio.
     Route::prefix('ventas')->name('ventas.')->group(function () {
         Route::middleware('permiso:ventas,ver')->get('/', [VentaController::class, 'index'])->name('index');
+        Route::middleware('permiso:ventas,ver')->get('exportar', [VentaController::class, 'exportar'])->name('exportar');
         Route::middleware(['permiso:ventas,crear', 'throttle:60,1'])->post('/', [VentaController::class, 'store'])->name('store');
         Route::middleware('permiso:ventas,ver')->get('/{venta}', [VentaController::class, 'show'])->name('show');
         // Payload JSON del ticket para imprimir desde la lista sin abrir el detalle.
@@ -392,6 +393,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // se hace desde el POS (?cotizacion_id=), no aquí.
     Route::prefix('cotizaciones')->name('cotizaciones.')->group(function () {
         Route::middleware('permiso:cotizaciones,ver')->get('/', [CotizacionController::class, 'index'])->name('index');
+        Route::middleware('permiso:cotizaciones,ver')->get('exportar', [CotizacionController::class, 'exportar'])->name('exportar');
         // Impresión: ticket térmico (JSON al agente) y proforma A4 (HTML → PDF).
         Route::middleware('permiso:cotizaciones,ver')->get('/{cotizacion}/ticket', [CotizacionController::class, 'ticket'])->name('ticket');
         Route::middleware('permiso:cotizaciones,ver')->get('/{cotizacion}/proforma', [CotizacionController::class, 'proforma'])->name('proforma');
@@ -437,12 +439,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Cuentas por cobrar (ventas a crédito)
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,ver')->get('cuentas-por-cobrar', [CuentasPorCobrarController::class, 'index'])->name('cxc.index');
+        Route::middleware('permiso:finanzas.cuentas-por-cobrar,ver')->get('cuentas-por-cobrar/exportar', [CuentasPorCobrarController::class, 'exportar'])->name('cxc.exportar');
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,crear')->post('cuentas-por-cobrar/{venta}/abonar', [CuentasPorCobrarController::class, 'abonar'])->name('cxc.abonar');
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,editar')->put('cuentas-por-cobrar/abonos/{abono}', [CuentasPorCobrarController::class, 'editarAbono'])->name('cxc.abonos.update');
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,eliminar')->delete('cuentas-por-cobrar/abonos/{abono}', [CuentasPorCobrarController::class, 'eliminarAbono'])->name('cxc.abonos.destroy');
 
         // Cuentas por pagar (proveedores, con abonos parciales)
         Route::middleware('permiso:finanzas.cuentas-por-pagar,ver')->get('cuentas-por-pagar', [CuentasPorPagarController::class, 'index'])->name('cxp.index');
+        Route::middleware('permiso:finanzas.cuentas-por-pagar,ver')->get('cuentas-por-pagar/exportar', [CuentasPorPagarController::class, 'exportar'])->name('cxp.exportar');
         Route::middleware('permiso:finanzas.cuentas-por-pagar,crear')->post('cuentas-por-pagar/{entrada}/abonar', [CuentasPorPagarController::class, 'abonar'])->name('cxp.abonar');
         Route::middleware('permiso:finanzas.cuentas-por-pagar,editar')->put('cuentas-por-pagar/pagos/{pago}', [CuentasPorPagarController::class, 'editarPago'])->name('cxp.pagos.update');
         Route::middleware('permiso:finanzas.cuentas-por-pagar,eliminar')->delete('cuentas-por-pagar/pagos/{pago}', [CuentasPorPagarController::class, 'eliminarPago'])->name('cxp.pagos.destroy');
@@ -468,6 +472,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Adelantos a proveedores
         Route::middleware('permiso:finanzas.adelantos,ver')->get('adelantos', [AdelantoProveedorController::class, 'index'])->name('adelantos.index');
+        Route::middleware('permiso:finanzas.adelantos,ver')->get('adelantos/exportar', [AdelantoProveedorController::class, 'exportar'])->name('adelantos.exportar');
         Route::middleware('permiso:finanzas.adelantos,crear')->post('adelantos', [AdelantoProveedorController::class, 'store'])->name('adelantos.store');
         Route::middleware('permiso:finanzas.adelantos,editar')->post('adelantos/{adelanto}/anular', [AdelantoProveedorController::class, 'anular'])->name('adelantos.anular');
         Route::middleware('permiso:finanzas.adelantos,editar')->put('adelantos/{adelanto}', [AdelantoProveedorController::class, 'update'])->name('adelantos.update');
@@ -475,6 +480,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Deudas y préstamos
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas', [DeudaController::class, 'index'])->name('deudas.index');
+        Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/exportar', [DeudaController::class, 'exportar'])->name('deudas.exportar');
         Route::middleware('permiso:finanzas.deudas,crear')->post('deudas', [DeudaController::class, 'store'])->name('deudas.store');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/pago', [DeudaController::class, 'registrarPago'])->name('deudas.pago');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/{deuda}/anular', [DeudaController::class, 'anular'])->name('deudas.anular');
@@ -485,6 +491,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Consolidación de caja (segundo conteo del supervisor por turno)
         Route::middleware('permiso:finanzas.consolidacion,ver')->get('consolidacion', [ConsolidacionController::class, 'index'])->name('consolidacion.index');
+        Route::middleware('permiso:finanzas.consolidacion,ver')->get('consolidacion/exportar', [ConsolidacionController::class, 'exportar'])->name('consolidacion.exportar');
         Route::middleware('permiso:finanzas.consolidacion,crear')->post('consolidacion/{turno}', [ConsolidacionController::class, 'consolidar'])->name('consolidacion.consolidar');
 
         // Descuentos de planilla (faltantes de caja y otros cargos al trabajador)
@@ -498,6 +505,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Tesorería (movimientos por cuenta + ajuste auditado)
         Route::middleware('permiso:finanzas.tesoreria,ver')->get('tesoreria', [TesoreriaController::class, 'index'])->name('tesoreria.index');
+        Route::middleware('permiso:finanzas.tesoreria,ver')->get('tesoreria/exportar', [TesoreriaController::class, 'exportar'])->name('tesoreria.exportar');
         Route::middleware('permiso:finanzas.tesoreria,editar')->post('tesoreria/ajustar', [TesoreriaController::class, 'ajustar'])->name('tesoreria.ajustar');
         Route::middleware('permiso:finanzas.tesoreria,crear')->post('tesoreria/movimiento', [TesoreriaController::class, 'movimiento'])->name('tesoreria.movimiento');
         Route::middleware('permiso:finanzas.tesoreria,editar')->delete('tesoreria/movimiento/{movimiento}', [TesoreriaController::class, 'destroy'])->name('tesoreria.movimiento.destroy');

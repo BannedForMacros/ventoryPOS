@@ -662,6 +662,126 @@ class VentaController extends Controller
         ]);
     }
 
+    /**
+     * Exporta TODAS las ventas filtradas a CSV (Excel).
+     * Repite los mismos filtros de index() pero sin paginar.
+     */
+    public function exportar(Request $request)
+    {
+        $user    = $request->user();
+        $esAdmin = $user->rol->es_admin;
+
+        $hoy        = now()->toDateString();
+        $fechaDesde = $request->fecha_desde ?: (!$esAdmin ? $hoy : null);
+        $fechaHasta = $request->fecha_hasta ?: (!$esAdmin ? $hoy : null);
+        $q          = trim((string) $request->input('q', ''));
+
+        $conCpe = $this->comprobantesDisponibles($user->empresa_id);
+
+        $with = ['user', 'cliente', 'local', 'caja', 'turno',
+            'pagos:id,venta_id,metodo_pago_id,monto',
+            'pagos.metodoPago:id,nombre'];
+        if ($conCpe) {
+            $with[] = 'comprobanteElectronico:id,venta_id,tipo,numero,estado';
+        }
+
+        $ventas = Venta::deEmpresa($user->empresa_id)
+            ->with($with)
+            ->when(!$esAdmin, fn($qq) => $qq->where('user_id', $user->id))
+            ->when($request->estado, fn($qq, $v) => $qq->where('estado', $v))
+            ->when($fechaDesde, fn($qq, $v) => $qq->where('fecha_venta', '>=', $v))
+            ->when($fechaHasta, fn($qq, $v) => $qq->where('fecha_venta', '<=', $v . ' 23:59:59'))
+            ->when($request->local_id, fn($qq, $v) => $qq->where('local_id', $v))
+            ->when($request->turno_id, fn($qq, $v) => $qq->where('turno_id', $v))
+            ->when($user->local_id, fn($qq) => $qq->where('local_id', $user->local_id))
+            ->when($q !== '', function ($qq) use ($q) {
+                $qq->where(function ($w) use ($q) {
+                    $w->where('numero', 'ilike', "%{$q}%")
+                      ->orWhereHas('cliente', function ($c) use ($q) {
+                          $c->where('nombres', 'ilike', "%{$q}%")
+                            ->orWhere('apellidos', 'ilike', "%{$q}%")
+                            ->orWhere('razon_social', 'ilike', "%{$q}%")
+                            ->orWhere('numero_documento', 'ilike', "%{$q}%");
+                      });
+                    if (is_numeric($q)) {
+                        $w->orWhere('total', $q);
+                    }
+                });
+            })
+            ->orderByDesc('fecha_venta')
+            ->orderByDesc('id')
+            ->get();
+
+        $headers = ['N°', 'Fecha', 'Cliente', 'Comprobante', 'Pago', 'Estado', 'Total'];
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $csv .= $this->csvLine($headers);
+
+        foreach ($ventas as $v) {
+            $cliente = $v->cliente;
+            $nombreCliente = $cliente?->razon_social
+                ?: trim(($cliente?->nombres ?? '') . ' ' . ($cliente?->apellidos ?? ''));
+
+            $comprobante = $this->etiquetaComprobante($v->tipo_comprobante);
+            if ($v->numero_comprobante) {
+                $comprobante .= ' ' . $v->numero_comprobante;
+            }
+            if ($conCpe && $v->comprobanteElectronico?->numero) {
+                $comprobante .= ' - CPE ' . $v->comprobanteElectronico->numero;
+            }
+
+            $metodos = $v->pagos
+                ->map(fn($p) => $p->metodoPago?->nombre)
+                ->filter()
+                ->unique()
+                ->values()
+                ->implode(', ');
+            $pago = $metodos ?: '—';
+            if ($v->es_credito) {
+                $pago .= ($pago !== '—' ? ' · ' : '') . 'Crédito';
+                if ($v->saldo_pendiente > 0) {
+                    $pago .= ' (debe S/ ' . number_format((float) $v->saldo_pendiente, 2, '.', '') . ')';
+                }
+            }
+
+            $row = [
+                $v->numero,
+                $v->fecha_venta?->format('d/m/Y H:i') ?? '—',
+                $nombreCliente ?: 'General',
+                $comprobante,
+                $pago,
+                $v->estado === 'completada' ? 'Completada' : 'Anulada',
+                number_format((float) $v->total, 2, '.', ''),
+            ];
+            $csv .= $this->csvLine($row);
+        }
+
+        $filename = 'historial-ventas_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type'        => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    /** Escapa una fila para CSV (campos entre comillas, dobles comillas escapadas). */
+    private function csvLine(array $row): string
+    {
+        return implode(',', array_map(fn($v) => '"' . str_replace('"', '""', $v) . '"', $row)) . "\n";
+    }
+
+    /** Etiqueta legible del tipo de comprobante para el export. */
+    private function etiquetaComprobante(?string $tipo): string
+    {
+        return match ($tipo) {
+            'ticket'         => 'Ticket',
+            'boleta'         => 'Boleta',
+            'factura'        => 'Factura',
+            'boleta_externa' => 'Boleta externa',
+            'factura_externa'=> 'Factura externa',
+            default          => ucfirst(str_replace('_', ' ', $tipo ?? '')),
+        };
+    }
+
     /** Turnos que alimentan el selector de filtro (y contexto de las cards). */
     private function turnosParaFiltro(User $user, bool $esAdmin, Request $request, ?string $fechaDesde, ?string $fechaHasta)
     {

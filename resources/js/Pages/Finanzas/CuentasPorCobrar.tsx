@@ -302,9 +302,19 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                 searchPlaceholder="Buscar por número de venta o cliente..."
                 emptyMessage="No hay ventas a crédito"
                 initialSearch={busqueda}
+                exportFilename="cuentas_por_cobrar"
                 onServerSearch={(t) => router.get(route('finanzas.cxc.index'),
                     { estado, busqueda: t || undefined },
                     { preserveState: true, preserveScroll: true, replace: true })}
+                onExportExcel={() => {
+                    const params = new URLSearchParams(window.location.search);
+                    params.delete('page');
+                    params.set('estado', estado);
+                    if (busqueda) params.set('busqueda', busqueda);
+                    else params.delete('busqueda');
+                    const url = route('finanzas.cxc.exportar') + (params.toString() ? `?${params.toString()}` : '');
+                    window.open(url, '_blank');
+                }}
             />
 
             {/* Modal abonar */}

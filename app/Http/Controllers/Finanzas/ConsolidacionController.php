@@ -84,6 +84,75 @@ class ConsolidacionController extends Controller
     }
 
     /**
+     * Exporta TODOS los turnos filtrados a CSV (Excel), respetando estado,
+     * rango de fechas y búsqueda. Las columnas coinciden con las visibles en la tabla.
+     */
+    public function exportar(Request $request)
+    {
+        $user = $request->user();
+
+        $estado = $request->input('estado', 'pendientes');
+
+        $query = Turno::deEmpresa($user->empresa_id)
+            ->cerrado()
+            ->with(['caja', 'user', 'consolidacion.user', 'arqueoMetodos.metodoPago'])
+            ->when($request->input('fecha_desde'), fn ($q, $v) => $q->whereDate('fecha_cierre', '>=', $v))
+            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->whereDate('fecha_cierre', '<=', $v))
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->whereHas('caja', fn ($c) => $c->where('nombre', 'ilike', "%{$t}%"))
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'ilike', "%{$t}%")));
+            });
+
+        if ($estado === 'pendientes') {
+            $query->whereDoesntHave('consolidacion');
+        } elseif ($estado === 'consolidados') {
+            $query->whereHas('consolidacion');
+        }
+
+        $turnos = $query->orderByDesc('fecha_cierre')->get();
+
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $headers = ['Cierre', 'Caja', 'Cajera', 'Caja chica', 'Declaró (efectivo)', 'Otros métodos', 'Consolidación'];
+        $csv .= implode(',', array_map($this->escaparCsv(...), $headers)) . "\n";
+
+        foreach ($turnos as $t) {
+            $cierre = $t->fecha_cierre?->format('d/m/Y H:i') ?? '—';
+            $caja = $t->caja?->nombre ?? '—';
+            $cajera = $t->user?->name ?? '—';
+            $cajaChica = 'S/ ' . number_format((float) $t->monto_caja_chica, 2, '.', '');
+            $declaro = $t->monto_cierre_declarado !== null
+                ? 'S/ ' . number_format((float) $t->monto_cierre_declarado, 2, '.', '')
+                : 'Cierre rápido';
+
+            $otrosMetodos = $t->arqueoMetodos->map(
+                fn ($m) => ($m->metodoPago?->nombre ?? 'Método') . ': S/ ' . number_format((float) $m->monto_declarado, 2, '.', '')
+            )->implode(' · ') ?: '—';
+
+            $consolidacion = $t->consolidacion
+                ? 'Consolidado por ' . ($t->consolidacion->user?->name ?? '—')
+                : 'Pendiente';
+
+            $row = [$cierre, $caja, $cajera, $cajaChica, $declaro, $otrosMetodos, $consolidacion];
+            $csv .= implode(',', array_map($this->escaparCsv(...), $row)) . "\n";
+        }
+
+        $filename = 'consolidacion_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    private function escaparCsv(string $value): string
+    {
+        $escaped = str_replace('"', '""', $value);
+        return '"' . $escaped . '"';
+    }
+
+    /**
      * Registra el conteo del consolidador: una línea por efectivo y por
      * cada método verificado. items[]: {metodo_pago_id: null|id, contado}.
      * metodo_pago_id null = EFECTIVO.

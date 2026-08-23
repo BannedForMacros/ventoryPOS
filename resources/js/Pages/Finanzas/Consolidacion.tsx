@@ -155,6 +155,11 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
         });
     }
 
+    const exportUrl = () => {
+        const params = new URLSearchParams(window.location.search);
+        window.location.href = route('finanzas.consolidacion.exportar') + (params.toString() ? '?' + params.toString() : '');
+    };
+
     const columns: Column<TurnoRow>[] = [
         { key: 'fecha_cierre', label: 'Cierre', sortable: true, render: (t) => <span className="text-sm">{fdatetime(t.fecha_cierre)}</span> },
         { key: 'caja', label: 'Caja', render: (t) => <span className="text-sm font-medium">{t.caja?.nombre ?? '—'}</span> },
@@ -241,7 +246,8 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
                 initialSearch={buscar}
                 onServerSearch={(t) => router.get(route('finanzas.consolidacion.index'),
                     { estado, buscar: t || undefined },
-                    { preserveState: true, preserveScroll: true, replace: true })} />
+                    { preserveState: true, preserveScroll: true, replace: true })}
+                onExportExcel={exportUrl} />
 
             {/* Modal consolidar — TODAS las líneas */}
             <Modal isOpen={consolidando !== null} onClose={() => setConsolidando(null)}

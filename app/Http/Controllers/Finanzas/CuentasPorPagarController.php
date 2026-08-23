@@ -118,6 +118,74 @@ class CuentasPorPagarController extends Controller
     }
 
     /**
+     * Exporta TODAS las cuentas por pagar filtradas a CSV (Excel).
+     * Respeta los mismos filtros que index() y no pagina.
+     */
+    public function exportar(Request $request)
+    {
+        $user = $request->user();
+
+        $query = Entrada::deEmpresa($user->empresa_id)
+            ->comprometido()
+            ->with(['proveedorRel'])
+            ->when($request->input('proveedor_id'), fn ($q, $v) => $q->where('proveedor_id', $v))
+            ->when($request->input('fecha_desde'), fn ($q, $v) => $q->where('fecha', '>=', $v))
+            ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->where('fecha', '<=', $v))
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('numero_documento', 'ilike', "%{$t}%")
+                    ->orWhere('proveedor', 'ilike', "%{$t}%")
+                    ->orWhereHas('proveedorRel', fn ($p) => $p
+                        ->where('razon_social', 'ilike', "%{$t}%")
+                        ->orWhere('nombre_comercial', 'ilike', "%{$t}%")));
+            });
+
+        $estado = $request->input('estado', 'pendientes');
+        if ($estado === 'pendientes') {
+            $query->where('estado_pago', '!=', 'pagado')->whereRaw('total - monto_pagado > 0.01');
+        } elseif ($estado === 'parciales') {
+            $query->where('estado_pago', 'parcial');
+        } elseif ($estado === 'pagadas') {
+            $query->where('estado_pago', 'pagado');
+        }
+
+        $entradas = $query->orderByDesc('fecha')->orderByDesc('id')->get();
+
+        $headers = ['Fecha', 'Documento', 'Proveedor', 'Total', 'Pagado', 'Saldo', 'Estado'];
+
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $csv .= implode(',', array_map(fn ($h) => '"' . str_replace('"', '""', $h) . '"', $headers)) . "\n";
+
+        foreach ($entradas as $e) {
+            $saldo = max(0, (float) $e->total - (float) $e->monto_pagado);
+            $proveedor = $e->proveedorRel?->razon_social
+                ?? $e->proveedorRel?->nombre_comercial
+                ?? $e->proveedor
+                ?? '—';
+
+            $row = [
+                optional($e->fecha)->format('d/m/Y') ?? '—',
+                $e->numero_documento ?? '—',
+                $proveedor,
+                number_format((float) $e->total, 2, '.', ''),
+                number_format((float) $e->monto_pagado, 2, '.', ''),
+                number_format($saldo, 2, '.', ''),
+                ucfirst($e->estado_pago),
+            ];
+
+            $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', $c) . '"', $row)) . "\n";
+        }
+
+        $filename = 'cuentas_por_pagar_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    /**
      * Registra un abono al proveedor. Puede pagarse con dinero (método +
      * cuenta) o consumiendo un adelanto previo (proveedor_adelanto_id):
      * en ese caso baja el saldo del adelanto en la misma transacción.

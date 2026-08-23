@@ -87,6 +87,78 @@ class AdelantoProveedorController extends Controller
         ]);
     }
 
+    /**
+     * Exporta TODOS los adelantos a proveedores filtrados a CSV (Excel),
+     * respetando proveedor, estado y búsqueda. Las columnas coinciden con las
+     * visibles en la tabla.
+     */
+    public function exportar(Request $request)
+    {
+        $user = $request->user();
+
+        $query = ProveedorAdelanto::deEmpresa($user->empresa_id)
+            ->with(['proveedor', 'metodoPago', 'cuenta'])
+            ->when($request->input('proveedor_id'), fn ($q, $v) => $q->where('proveedor_id', $v))
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('referencia', 'ilike', "%{$t}%")
+                    ->orWhere('observacion', 'ilike', "%{$t}%")
+                    ->orWhereHas('proveedor', fn ($p) => $p
+                        ->where('razon_social', 'ilike', "%{$t}%")
+                        ->orWhere('nombre_comercial', 'ilike', "%{$t}%")));
+            });
+
+        $estado = $request->input('estado', 'activos');
+        if ($estado === 'activos') {
+            $query->activo();
+        } elseif (in_array($estado, ['aplicado', 'anulado', 'devuelto'], true)) {
+            $query->where('estado', $estado);
+        }
+
+        $adelantos = $query->orderByDesc('fecha')->orderByDesc('id')->get();
+
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $headers = ['Fecha', 'Proveedor', 'Entregado', 'Saldo a favor', 'Estado', 'Referencia'];
+        $csv .= implode(',', array_map($this->escaparCsv(...), $headers)) . "\n";
+
+        foreach ($adelantos as $a) {
+            $proveedor = $a->proveedor;
+            $nombreProveedor = $proveedor?->razon_social ?? $proveedor?->nombre_comercial ?? '—';
+
+            $estadoLabel = match ($a->estado) {
+                'activo' => 'Activo',
+                'aplicado' => 'Aplicado',
+                'devuelto' => 'Devuelto',
+                default => 'Anulado',
+            };
+
+            $row = [
+                $a->fecha->format('d/m/Y'),
+                $nombreProveedor,
+                'S/ ' . number_format((float) $a->monto, 2, '.', ''),
+                'S/ ' . number_format((float) $a->saldo, 2, '.', ''),
+                $estadoLabel,
+                $a->referencia ?? '—',
+            ];
+
+            $csv .= implode(',', array_map($this->escaparCsv(...), $row)) . "\n";
+        }
+
+        $filename = 'adelantos_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    private function escaparCsv(string $value): string
+    {
+        $escaped = str_replace('"', '""', $value);
+        return '"' . $escaped . '"';
+    }
+
     public function store(Request $request)
     {
         $user = $request->user();

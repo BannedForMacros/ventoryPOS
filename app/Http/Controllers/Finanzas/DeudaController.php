@@ -92,6 +92,75 @@ class DeudaController extends Controller
         ]);
     }
 
+    /**
+     * Exporta TODAS las deudas filtradas a CSV (Excel), respetando dirección,
+     * tipo, estado y búsqueda. Las columnas coinciden con las visibles en la tabla.
+     */
+    public function exportar(Request $request)
+    {
+        $user = $request->user();
+
+        $query = Deuda::deEmpresa($user->empresa_id)
+            ->with(['pagos.metodoPago'])
+            ->when($request->input('direccion'), fn ($q, $v) => $q->where('direccion', $v))
+            ->when($request->input('tipo'), fn ($q, $v) => $q->where('tipo', $v))
+            ->when($request->input('buscar'), function ($q, $texto) {
+                $t = trim($texto);
+                $q->where(fn ($sub) => $sub
+                    ->where('nombre', 'ilike', "%{$t}%")
+                    ->orWhere('observacion', 'ilike', "%{$t}%"));
+            });
+
+        $estado = $request->input('estado', 'activas');
+        if ($estado === 'activas') {
+            $query->activa();
+        } elseif ($estado === 'pagadas') {
+            $query->where('estado', 'pagada');
+        } elseif ($estado === 'anuladas') {
+            $query->where('estado', 'anulada');
+        }
+
+        $deudas = $query->orderBy('direccion')->orderBy('tipo')->orderBy('nombre')->get();
+
+        $tipoLabel = [
+            'bancaria' => 'Bancaria', 'personal' => 'Personal',
+            'trabajador' => 'Al personal', 'otro' => 'Otro',
+        ];
+
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $headers = ['Dirección', 'Nombre', 'Tipo', 'Método de pago', 'Original', 'Saldo', 'Estado'];
+        $csv .= implode(',', array_map($this->escaparCsv(...), $headers)) . "\n";
+
+        foreach ($deudas as $d) {
+            $metodos = $d->pagos->map(fn ($p) => $p->metodoPago?->nombre)->filter()->unique()->implode(' · ') ?: '—';
+
+            $row = [
+                $d->direccion === 'por_pagar' ? 'Debemos' : 'Nos deben',
+                $d->nombre,
+                $tipoLabel[$d->tipo] ?? $d->tipo,
+                $metodos,
+                'S/ ' . number_format((float) $d->monto_original, 2, '.', ''),
+                'S/ ' . number_format((float) $d->saldo, 2, '.', ''),
+                $d->estado === 'activa' ? 'Activa' : ($d->estado === 'pagada' ? 'Pagada' : 'Anulada'),
+            ];
+
+            $csv .= implode(',', array_map($this->escaparCsv(...), $row)) . "\n";
+        }
+
+        $filename = 'deudas_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    private function escaparCsv(string $value): string
+    {
+        $escaped = str_replace('"', '""', $value);
+        return '"' . $escaped . '"';
+    }
+
     public function store(Request $request)
     {
         $user = $request->user();

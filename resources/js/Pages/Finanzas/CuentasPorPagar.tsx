@@ -291,9 +291,19 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                 searchPlaceholder="Buscar proveedor o documento (toda la base)..."
                 emptyMessage="No hay cuentas por pagar"
                 initialSearch={buscar}
+                exportFilename="cuentas_por_pagar"
                 onServerSearch={(t) => router.get(route('finanzas.cxp.index'),
                     { estado, buscar: t || undefined },
                     { preserveState: true, preserveScroll: true, replace: true })}
+                onExportExcel={() => {
+                    const params = new URLSearchParams(window.location.search);
+                    params.delete('page');
+                    params.set('estado', estado);
+                    if (buscar) params.set('buscar', buscar);
+                    else params.delete('buscar');
+                    const url = route('finanzas.cxp.exportar') + (params.toString() ? `?${params.toString()}` : '');
+                    window.open(url, '_blank');
+                }}
             />
 
             {/* Modal pagar */}

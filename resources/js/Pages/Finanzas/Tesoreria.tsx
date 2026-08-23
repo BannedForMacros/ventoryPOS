@@ -228,6 +228,16 @@ export default function Tesoreria({ cuentas, cuentaId, movimientos, puede, busca
                 onServerSearch={(t) => router.get(route('finanzas.tesoreria.index'),
                     { cuenta_id: cuentaId, buscar: t || undefined },
                     { preserveState: true, preserveScroll: true, replace: true })}
+                exportFilename="tesoreria"
+                onExportExcel={() => {
+                    const params = new URLSearchParams(window.location.search);
+                    params.delete('page');
+                    params.set('cuenta_id', String(cuentaId));
+                    if (buscar) params.set('buscar', buscar);
+                    else params.delete('buscar');
+                    const url = route('finanzas.tesoreria.exportar') + (params.toString() ? `?${params.toString()}` : '');
+                    window.open(url, '_blank');
+                }}
                 emptyMessage={`Sin movimientos en ${cuentaActiva?.nombre ?? 'esta cuenta'}. Se registran solos al vender, gastar, abonar, etc.`}
             />
 
