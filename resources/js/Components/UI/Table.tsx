@@ -100,7 +100,7 @@ export default function Table<T extends Record<string, unknown>>({
     onServerSearch,
     initialSearch,
     onRowClick,
-    exportable = false,
+    exportable = true,
     exportFilename = 'exportacion',
     onExportExcel,
 }: TableProps<T>) {
