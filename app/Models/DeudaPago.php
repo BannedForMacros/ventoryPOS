@@ -29,4 +29,5 @@ class DeudaPago extends Model
     public function user(): BelongsTo       { return $this->belongsTo(User::class); }
     public function metodoPago(): BelongsTo { return $this->belongsTo(MetodoPago::class, 'metodo_pago_id'); }
     public function cuenta(): BelongsTo     { return $this->belongsTo(Cuenta::class); }
+    public function turno(): BelongsTo      { return $this->belongsTo(Turno::class); }
 }
