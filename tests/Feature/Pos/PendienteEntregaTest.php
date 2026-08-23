@@ -423,6 +423,39 @@ it('puede editar una entrega de anticipo material ajustando cantidades', functio
     expect((float) $entrega->fresh()->items->first()->cantidad)->toBe(1.0);
 });
 
+it('editar una entrega a 0 elimina el detalle y, si queda vacía, anula la entrega', function () {
+    [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $itemFierro = $anticipo->items->first();
+
+    // Entrega inicial de 4 fierros.
+    $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
+        'fecha' => now()->toDateString(),
+        'items' => [['id' => $itemFierro->id, 'cantidad' => 4]],
+    ])->assertSessionHasNoErrors();
+
+    $entrega = $anticipo->fresh()->aplicaciones()->with('items')->first();
+
+    // Editar a 0: frontend no envía el ítem.
+    $this->actingAs($this->env->admin)
+        ->put(route('finanzas.anticipos.entrega.editar', $entrega), [
+            'fecha' => now()->toDateString(),
+            'observacion' => 'No se llevó nada finalmente',
+            'items' => [],
+        ])
+        ->assertSessionHasNoErrors();
+
+    // La entrega se eliminó.
+    expect(\App\Models\ClienteAnticipoAplicacion::where('id', $entrega->id)->exists())->toBeFalse();
+
+    // Stock recuperado: inicial 50 - llevado en venta 3 = 47.
+    expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(47.0);
+
+    // Pendiente recuperado.
+    $itemFierro->refresh();
+    expect((float) $itemFierro->cantidad_pendiente)->toBe(7.0);
+});
+
 it('la venta sin flag entrega_pendiente ignora cantidad_pendiente y no crea anticipo', function () {
     $fierro = $this->env->crearProducto(['precio_venta' => 20, 'stock_inicial' => 50]);
 

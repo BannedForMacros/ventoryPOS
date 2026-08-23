@@ -845,7 +845,7 @@ class AnticipoClienteController extends Controller
         $data = $request->validate([
             'fecha'       => ['required', 'date'],
             'observacion' => ['nullable', 'string', 'max:500'],
-            'items'       => ['required', 'array', 'min:1'],
+            'items'       => ['present', 'array'],
             'items.*.id'       => ['required', 'integer'],
             'items.*.cantidad' => ['required', 'numeric', 'min:0'],
         ]);
@@ -853,27 +853,29 @@ class AnticipoClienteController extends Controller
         $entrega->load('items.item.producto', 'anticipo.venta.local');
         $apItems = $entrega->items->keyBy('id');
 
+        // Las cantidades recibidas en el payload indican lo que SÍ se entregó.
+        // Si un ítem de la entrega no viene, se entiende que su nueva cantidad es 0.
+        $cantidadesRecibidas = [];
+        foreach ($data['items'] as $idx => $linea) {
+            $cantidadesRecibidas[(int) $linea['id']] = round((float) $linea['cantidad'], 4);
+        }
+
         // Validar y preparar ajustes.
         $almacen = $this->almacenDeEntregaMaterial($anticipo, $user);
         $permitirNegativo = $this->config->permiteStockNegativo($user->empresa_id);
         $ajustes = [];
 
-        foreach ($data['items'] as $idx => $linea) {
-            $apItem = $apItems->get((int) $linea['id']);
-            if (!$apItem || !$apItem->item) {
-                throw ValidationException::withMessages([
-                    "items.{$idx}.id" => 'El ítem no pertenece a esta entrega.',
-                ]);
-            }
-
-            $nuevaCantidad = round((float) $linea['cantidad'], 4);
+        foreach ($apItems as $id => $apItem) {
             $item = $apItem->item;
+            if (!$item) continue;
+
+            $nuevaCantidad = $cantidadesRecibidas[$id] ?? 0.0;
             $viejaCantidad = (float) $apItem->cantidad;
             $maximoPermitido = round((float) $item->cantidad_pendiente + $viejaCantidad, 4);
 
             if ($nuevaCantidad > $maximoPermitido + 0.00009) {
                 throw ValidationException::withMessages([
-                    "items.{$idx}.cantidad" => "De «{$item->producto_nombre}» solo puedes aumentar hasta {$maximoPermitido} (pendiente + lo ya entregado en esta entrega).",
+                    'items' => "De «{$item->producto_nombre}» solo puedes aumentar hasta {$maximoPermitido} (pendiente + lo ya entregado en esta entrega).",
                 ]);
             }
 
@@ -885,7 +887,6 @@ class AnticipoClienteController extends Controller
                     'nuevaCantidad' => $nuevaCantidad,
                     'diferencia'    => $diferencia,
                     'producto'      => $item->producto,
-                    'idx'           => $idx,
                 ];
             }
         }
@@ -895,8 +896,9 @@ class AnticipoClienteController extends Controller
             'cantidad' => (float) $i->cantidad,
         ])->all();
 
-        DB::transaction(function () use ($entrega, $anticipo, $data, $ajustes, $almacen, $permitirNegativo, $user) {
-            // Aplicar ajustes de stock y pendiente.
+        DB::transaction(function () use ($entrega, $anticipo, $data, $ajustes, $almacen, $permitirNegativo) {
+            // Aplicar ajustes de stock y pendiente. Si la nueva cantidad es 0,
+            // se elimina el detalle de la entrega.
             $totalEntregado = (float) $entrega->cantidad;
             foreach ($ajustes as $a) {
                 $apItem = $a['apItem'];
@@ -904,7 +906,6 @@ class AnticipoClienteController extends Controller
                 $diff   = $a['diferencia'];
                 $nueva  = $a['nuevaCantidad'];
 
-                $apItem->update(['cantidad' => $nueva]);
                 $item->update([
                     'cantidad_pendiente' => max(0, round((float) $item->cantidad_pendiente - $diff, 4)),
                 ]);
@@ -925,6 +926,12 @@ class AnticipoClienteController extends Controller
                     }
                 }
 
+                if ($nueva <= 0.00009) {
+                    $apItem->delete();
+                } else {
+                    $apItem->update(['cantidad' => $nueva]);
+                }
+
                 $totalEntregado += $diff;
             }
 
@@ -934,9 +941,19 @@ class AnticipoClienteController extends Controller
                 'cantidad'    => max(0, round($totalEntregado, 4)),
             ]);
 
-            // Recalcular anticipo.
+            // Si la entrega quedó sin ítems, se elimina (equivale a anularla).
+            $entrega->load('items');
+            if ($entrega->items->isEmpty()) {
+                $entrega->delete();
+            }
+
             $this->recomputarSaldoMaterial($anticipo);
         });
+
+        $existe = $anticipo->fresh()->aplicaciones()->where('id', $entrega->id ?? 0)->exists();
+        $mensaje = $existe
+            ? 'Entrega actualizada: stock y pendiente quedaron consistentes.'
+            : 'Entrega eliminada: al quedar en 0 se anuló y se recuperó el stock/pendiente.';
 
         AuditoriaService::log('anticipo_cliente.entrega_editada', $anticipo, [
             'entrega' => $entrega->numero,
@@ -948,7 +965,7 @@ class AnticipoClienteController extends Controller
             'saldo'   => (float) $anticipo->fresh()->saldo,
         ], $user);
 
-        return back()->with('success', 'Entrega actualizada: stock y pendiente quedaron consistentes.');
+        return back()->with('success', $mensaje);
     }
 
     /**
