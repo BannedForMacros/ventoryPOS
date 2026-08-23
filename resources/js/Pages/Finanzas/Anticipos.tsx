@@ -25,7 +25,7 @@ import type { PageProps, Cliente } from '@/types';
 interface AplicacionItem {
     id: number;
     cantidad: string;
-    item?: { id: number; producto_nombre: string; unidad_nombre: string } | null;
+    item?: { id: number; producto_nombre: string; unidad_nombre: string; cantidad_pendiente: string } | null;
 }
 
 interface Aplicacion {
@@ -155,8 +155,10 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     const [formAnular, setFormAnular]   = useState({ accion: 'devuelto', motivo: '', metodo_pago_id: '', cuenta_id: '', fecha: hoy() });
     // Editar / anular una ENTREGA de dinero ya registrada.
     const [editandoEntrega, setEditandoEntrega] = useState<Aplicacion | null>(null);
+    const [editandoEntregaMaterial, setEditandoEntregaMaterial] = useState<Aplicacion | null>(null);
     const [anulandoEntrega, setAnulandoEntrega] = useState<Aplicacion | null>(null);
     const [formEntrega, setFormEntrega]         = useState({ monto: '', fecha: hoy(), observacion: '', metodo_pago_id: '', cuenta_id: '' });
+    const [formEntregaMaterial, setFormEntregaMaterial] = useState<{ fecha: string; observacion: string; items: Record<number, string> }>({ fecha: hoy(), observacion: '', items: {} });
     const [motivoEntrega, setMotivoEntrega]     = useState('');
 
     // Cambiar producto de una línea pendiente (anticipo material del POS).
@@ -355,6 +357,37 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
         setSaving(true);
         router.put(route('finanzas.anticipos.entrega.editar', editandoEntrega.id), formEntrega as any, {
             onSuccess: () => { setEditandoEntrega(null); setDetalle(null); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    /** Abre el modal de edición de una entrega MATERIAL del POS. */
+    function abrirEditarEntregaMaterial(ap: Aplicacion) {
+        setErrors({});
+        const itemsInicial: Record<number, string> = {};
+        (ap.items ?? []).forEach(ai => {
+            itemsInicial[ai.id] = String(Number(ai.cantidad));
+        });
+        setFormEntregaMaterial({
+            fecha:       ap.fecha,
+            observacion: ap.observacion ?? '',
+            items:       itemsInicial,
+        });
+        setEditandoEntregaMaterial(ap);
+    }
+
+    function submitEditarEntregaMaterial() {
+        if (!editandoEntregaMaterial) return;
+        setSaving(true);
+        router.put(route('finanzas.anticipos.entrega.editar', editandoEntregaMaterial.id), {
+            fecha:       formEntregaMaterial.fecha,
+            observacion: formEntregaMaterial.observacion,
+            items: (editandoEntregaMaterial.items ?? []).map(ai => ({
+                id:       ai.id,
+                cantidad: parseFloat(formEntregaMaterial.items[ai.id] ?? '') || 0,
+            })).filter(i => i.cantidad > 0),
+        } as any, {
+            onSuccess: () => { setEditandoEntregaMaterial(null); setDetalle(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         });
     }
@@ -976,10 +1009,13 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                                 style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>
                                                 <FileDown size={13} /> PDF A4
                                             </button>
-                                            {/* Editar / anular la entrega: solo anticipos EN DINERO y con permiso. */}
-                                            {puedeEditarEntregas && detalle.tipo_valorizacion === 'monto' && !esMultiItem(detalle) && !detalle.venta && (
+                                            {/* Editar / anular la entrega: dinero (no POS) o material multi-producto del POS. */}
+                                            {puedeEditarEntregas && (
+                                                (detalle.tipo_valorizacion === 'monto' && !esMultiItem(detalle) && !detalle.venta) ||
+                                                (esMultiItem(detalle) && detalle.tipo_valorizacion === 'material')
+                                            ) && (
                                                 <>
-                                                    <button onClick={() => abrirEditarEntrega(ap)} title="Editar esta entrega (monto/fecha)"
+                                                    <button onClick={() => esMultiItem(detalle) ? abrirEditarEntregaMaterial(ap) : abrirEditarEntrega(ap)} title={esMultiItem(detalle) ? 'Editar cantidades entregadas' : 'Editar esta entrega (monto/fecha)'}
                                                         className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors hover:bg-black/5"
                                                         style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
                                                         <Pencil size={13} /> Editar
@@ -1038,6 +1074,67 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         onChange={e => setFormEntrega(f => ({ ...f, observacion: e.target.value }))} error={errors.observacion} />
                     {errors.entrega && <Callout variant="danger">{errors.entrega}</Callout>}
                 </div>
+            </Modal>
+
+            {/* Modal EDITAR entrega MATERIAL del POS */}
+            <Modal isOpen={editandoEntregaMaterial !== null} onClose={() => setEditandoEntregaMaterial(null)}
+                title={editandoEntregaMaterial ? `Editar entrega ${editandoEntregaMaterial.numero ?? ''}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEditandoEntregaMaterial(null)}>Cancelar</Button>
+                        <Button onClick={submitEditarEntregaMaterial} disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</Button>
+                    </>
+                }
+            >
+                {editandoEntregaMaterial && (
+                    <div className="space-y-4">
+                        <Callout variant="info">
+                            Puedes corregir las cantidades entregadas de cada producto. El stock y el pendiente del anticipo se ajustan automáticamente.
+                        </Callout>
+                        <Input type="date" label="Fecha" required value={formEntregaMaterial.fecha}
+                            onChange={e => setFormEntregaMaterial(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                        <div>
+                            <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-text-muted)' }}>Cantidades entregadas</p>
+                            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                                {(editandoEntregaMaterial.items ?? []).map((ai, idx) => {
+                                    const maximo = Number(ai.item?.cantidad_pendiente ?? 0) + Number(ai.cantidad);
+                                    const valor = formEntregaMaterial.items[ai.id] ?? '';
+                                    const num = parseFloat(valor) || 0;
+                                    const excedido = num > maximo + 0.00009;
+                                    return (
+                                        <div key={ai.id} className="flex items-center gap-2 px-3 py-2 text-xs"
+                                            style={{
+                                                borderBottom: idx < ((editandoEntregaMaterial.items!.length) - 1) ? '1px solid var(--color-border)' : undefined,
+                                                backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
+                                            }}>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>{ai.item?.producto_nombre ?? 'ítem'}</p>
+                                                <p style={{ color: 'var(--color-text-muted)' }}>máx. {maximo} {ai.item?.unidad_nombre || 'und'}</p>
+                                            </div>
+                                            <input
+                                                type="number" min={0} max={maximo} step="any" value={valor}
+                                                onChange={e => setFormEntregaMaterial(f => ({ ...f, items: { ...f.items, [ai.id]: e.target.value } }))}
+                                                className="w-20 text-right rounded-lg px-2 py-1.5 border outline-none flex-shrink-0"
+                                                style={{
+                                                    borderColor: excedido ? 'var(--color-danger)' : 'var(--color-border)',
+                                                    backgroundColor: 'var(--color-bg)',
+                                                    color: 'var(--color-text)',
+                                                }}
+                                            />
+                                            <span className="flex-shrink-0 w-20 text-right" style={{ color: excedido ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
+                                                {excedido ? `máx ${maximo}` : num > 0 ? 'entrega' : 'anula'}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {errors.items && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.items}</p>}
+                        </div>
+                        <Input label="Observación" value={formEntregaMaterial.observacion}
+                            onChange={e => setFormEntregaMaterial(f => ({ ...f, observacion: e.target.value }))} error={errors.observacion} />
+                        {errors.entrega && <Callout variant="danger">{errors.entrega}</Callout>}
+                    </div>
+                )}
             </Modal>
 
             {/* Modal ANULAR entrega de dinero */}

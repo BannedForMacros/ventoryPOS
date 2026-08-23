@@ -60,7 +60,7 @@ class AnticipoClienteController extends Controller
             ->with([
                 'cliente', 'producto', 'metodoPago', 'cuenta', 'venta:id,numero',
                 'items.producto:id,nombre,precio_venta', 'items.unidad:id,precio_venta',
-                'aplicaciones.venta', 'aplicaciones.user', 'aplicaciones.items.item:id,producto_nombre,unidad_nombre',
+                'aplicaciones.venta', 'aplicaciones.user', 'aplicaciones.items.item:id,producto_nombre,unidad_nombre,cantidad_pendiente',
                 'aplicaciones.metodoPago:id,nombre', 'aplicaciones.cuenta:id,nombre',
             ])
             ->when($request->input('cliente_id'), fn ($q, $v) => $q->where('cliente_id', $v))
@@ -761,10 +761,10 @@ class AnticipoClienteController extends Controller
     }
 
     /**
-     * Edita una ENTREGA (aplicación) de un anticipo EN DINERO: corrige monto,
-     * fecha u observación. El saldo del anticipo se recalcula (monto − suma de
-     * entregas) y su estado se reajusta. NO mueve tesorería: aplicar un anticipo
-     * en dinero nunca movió caja (el dinero entró al crear el anticipo).
+     * Edita una ENTREGA (aplicación) de un anticipo:
+     *  - En DINERO: corrige monto, fecha, método/cuenta.
+     *  - En MATERIAL (POS): corrige las CANTIDADES entregadas de cada ítem,
+     *    ajustando stock y pendiente del anticipo. No se cambian productos.
      */
     public function editarEntrega(Request $request, ClienteAnticipoAplicacion $entrega)
     {
@@ -772,8 +772,17 @@ class AnticipoClienteController extends Controller
         abort_if($entrega->empresa_id !== $user->empresa_id, 403);
 
         $anticipo = $entrega->anticipo;
-        $this->soloEntregaDinero($anticipo, $entrega);
+        $this->validarEntregaEditable($anticipo, $entrega);
 
+        if ($anticipo->tipo_valorizacion === 'monto') {
+            return $this->editarEntregaDinero($request, $entrega, $anticipo, $user);
+        }
+
+        return $this->editarEntregaMaterial($request, $entrega, $anticipo, $user);
+    }
+
+    private function editarEntregaDinero(Request $request, ClienteAnticipoAplicacion $entrega, ClienteAnticipo $anticipo, $user)
+    {
         $data = $request->validate([
             'monto'          => ['required', 'numeric', 'min:0.01'],
             'fecha'          => ['required', 'date'],
@@ -831,11 +840,120 @@ class AnticipoClienteController extends Controller
         return back()->with('success', 'Entrega actualizada: el saldo del anticipo se recalculó.');
     }
 
+    private function editarEntregaMaterial(Request $request, ClienteAnticipoAplicacion $entrega, ClienteAnticipo $anticipo, $user)
+    {
+        $data = $request->validate([
+            'fecha'       => ['required', 'date'],
+            'observacion' => ['nullable', 'string', 'max:500'],
+            'items'       => ['required', 'array', 'min:1'],
+            'items.*.id'       => ['required', 'integer'],
+            'items.*.cantidad' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        $entrega->load('items.item.producto', 'anticipo.venta.local');
+        $apItems = $entrega->items->keyBy('id');
+
+        // Validar y preparar ajustes.
+        $almacen = $this->almacenDeEntregaMaterial($anticipo, $user);
+        $permitirNegativo = $this->config->permiteStockNegativo($user->empresa_id);
+        $ajustes = [];
+
+        foreach ($data['items'] as $idx => $linea) {
+            $apItem = $apItems->get((int) $linea['id']);
+            if (!$apItem || !$apItem->item) {
+                throw ValidationException::withMessages([
+                    "items.{$idx}.id" => 'El ítem no pertenece a esta entrega.',
+                ]);
+            }
+
+            $nuevaCantidad = round((float) $linea['cantidad'], 4);
+            $item = $apItem->item;
+            $viejaCantidad = (float) $apItem->cantidad;
+            $maximoPermitido = round((float) $item->cantidad_pendiente + $viejaCantidad, 4);
+
+            if ($nuevaCantidad > $maximoPermitido + 0.00009) {
+                throw ValidationException::withMessages([
+                    "items.{$idx}.cantidad" => "De «{$item->producto_nombre}» solo puedes aumentar hasta {$maximoPermitido} (pendiente + lo ya entregado en esta entrega).",
+                ]);
+            }
+
+            $diferencia = round($nuevaCantidad - $viejaCantidad, 4);
+            if (abs($diferencia) > 0.00009) {
+                $ajustes[] = [
+                    'apItem'        => $apItem,
+                    'item'          => $item,
+                    'nuevaCantidad' => $nuevaCantidad,
+                    'diferencia'    => $diferencia,
+                    'producto'      => $item->producto,
+                    'idx'           => $idx,
+                ];
+            }
+        }
+
+        $antes = $entrega->items->map(fn ($i) => [
+            'item'     => $i->item?->producto_nombre,
+            'cantidad' => (float) $i->cantidad,
+        ])->all();
+
+        DB::transaction(function () use ($entrega, $anticipo, $data, $ajustes, $almacen, $permitirNegativo, $user) {
+            // Aplicar ajustes de stock y pendiente.
+            $totalEntregado = (float) $entrega->cantidad;
+            foreach ($ajustes as $a) {
+                $apItem = $a['apItem'];
+                $item   = $a['item'];
+                $diff   = $a['diferencia'];
+                $nueva  = $a['nuevaCantidad'];
+
+                $apItem->update(['cantidad' => $nueva]);
+                $item->update([
+                    'cantidad_pendiente' => max(0, round((float) $item->cantidad_pendiente - $diff, 4)),
+                ]);
+
+                if ($almacen && $a['producto'] && $anticipo->venta
+                    && $this->config->deboDescontarStock($a['producto'], $anticipo->venta->local)) {
+                    $base = round(abs($diff) * (float) $item->factor_conversion, 4);
+                    if ($base > 0.00009) {
+                        $signo = $diff > 0 ? -1 : 1; // Si entrega más: sale stock; si menos: vuelve.
+                        Stock::ajustar($almacen->id, $item->producto_id, $signo * $base, 0, $permitirNegativo, contexto: [
+                            'tipo'            => 'ajuste_entrega_pendiente',
+                            'referencia_tipo' => 'venta',
+                            'referencia_id'   => $anticipo->venta_id,
+                            'fecha'           => now(),
+                            'user_id'         => optional(auth()->user())->id,
+                            'empresa_id'      => $almacen->empresa_id,
+                        ]);
+                    }
+                }
+
+                $totalEntregado += $diff;
+            }
+
+            $entrega->update([
+                'fecha'       => $data['fecha'],
+                'observacion' => $data['observacion'] ?? $entrega->observacion,
+                'cantidad'    => max(0, round($totalEntregado, 4)),
+            ]);
+
+            // Recalcular anticipo.
+            $this->recomputarSaldoMaterial($anticipo);
+        });
+
+        AuditoriaService::log('anticipo_cliente.entrega_editada', $anticipo, [
+            'entrega' => $entrega->numero,
+            'antes'   => $antes,
+            'despues' => collect($data['items'])->map(fn ($i) => [
+                'item'     => $apItems[(int) $i['id']]?->item?->producto_nombre,
+                'cantidad' => (float) $i['cantidad'],
+            ])->all(),
+            'saldo'   => (float) $anticipo->fresh()->saldo,
+        ], $user);
+
+        return back()->with('success', 'Entrega actualizada: stock y pendiente quedaron consistentes.');
+    }
+
     /**
-     * Anula (deshace) una ENTREGA de dinero: la elimina y devuelve el anticipo a
-     * 'activo' con su saldo restituido (monto − entregas restantes). No es una
-     * "devolución" al cliente: es como si esa entrega nunca se hubiera hecho, con
-     * toda la trazabilidad en auditoría.
+     * Anula (deshace) una ENTREGA. Para dinero, restituye el saldo; para material,
+     * devuelve el stock y recupera el pendiente del anticipo.
      */
     public function anularEntrega(Request $request, ClienteAnticipoAplicacion $entrega)
     {
@@ -843,7 +961,7 @@ class AnticipoClienteController extends Controller
         abort_if($entrega->empresa_id !== $user->empresa_id, 403);
 
         $anticipo = $entrega->anticipo;
-        $this->soloEntregaDinero($anticipo, $entrega);
+        $this->validarEntregaEditable($anticipo, $entrega);
 
         $data = $request->validate(['motivo' => ['required', 'string', 'min:5', 'max:500']]);
 
@@ -853,31 +971,64 @@ class AnticipoClienteController extends Controller
             'fecha'   => (string) $entrega->fecha->toDateString(),
         ];
 
-        DB::transaction(function () use ($entrega, $anticipo) {
-            // Revierte el egreso de caja de esta entrega antes de borrarla.
-            $this->tesoreria->revertir('cliente_anticipo_entrega', $entrega->id);
-            $entrega->delete();
-            $otras = (float) $anticipo->aplicaciones()->sum('monto');
-            $this->recomputarSaldoDinero($anticipo, $otras);
-        });
+        if ($anticipo->tipo_valorizacion === 'monto') {
+            DB::transaction(function () use ($entrega, $anticipo) {
+                // Revierte el egreso de caja de esta entrega antes de borrarla.
+                $this->tesoreria->revertir('cliente_anticipo_entrega', $entrega->id);
+                $entrega->delete();
+                $otras = (float) $anticipo->aplicaciones()->sum('monto');
+                $this->recomputarSaldoDinero($anticipo, $otras);
+            });
+        } else {
+            $entrega->load('items.item.producto', 'anticipo.venta.local');
+            $almacen = $this->almacenDeEntregaMaterial($anticipo, $user);
+            $permitirNegativo = $this->config->permiteStockNegativo($user->empresa_id);
+
+            DB::transaction(function () use ($entrega, $anticipo, $almacen, $permitirNegativo) {
+                foreach ($entrega->items as $apItem) {
+                    $item = $apItem->item;
+                    if (!$item) continue;
+
+                    // Recuperar pendiente.
+                    $item->update([
+                        'cantidad_pendiente' => round((float) $item->cantidad_pendiente + (float) $apItem->cantidad, 4),
+                    ]);
+
+                    // Devolver stock al almacén.
+                    if ($almacen && $item->producto && $anticipo->venta
+                        && $this->config->deboDescontarStock($item->producto, $anticipo->venta->local)) {
+                        $base = round((float) $apItem->cantidad * (float) $item->factor_conversion, 4);
+                        if ($base > 0.00009) {
+                            Stock::ajustar($almacen->id, $item->producto_id, $base, 0, $permitirNegativo, contexto: [
+                                'tipo'            => 'anulacion_entrega_pendiente',
+                                'referencia_tipo' => 'venta',
+                                'referencia_id'   => $anticipo->venta_id,
+                                'fecha'           => now(),
+                                'user_id'         => optional(auth()->user())->id,
+                                'empresa_id'      => $almacen->empresa_id,
+                            ]);
+                        }
+                    }
+                }
+
+                $entrega->items()->delete();
+                $entrega->delete();
+                $this->recomputarSaldoMaterial($anticipo);
+            });
+        }
 
         AuditoriaService::log('anticipo_cliente.entrega_anulada', $anticipo, $info + [
             'motivo' => $data['motivo'],
             'saldo'  => (float) $anticipo->fresh()->saldo,
         ], $user);
 
-        return back()->with('success', 'Entrega anulada: el anticipo volvió a estar disponible por ese monto.');
+        return back()->with('success', 'Entrega anulada: el anticipo y el stock quedaron consistentes.');
     }
 
-    /** Reglas comunes para editar/anular una entrega: solo anticipos EN DINERO. */
-    private function soloEntregaDinero(?ClienteAnticipo $anticipo, ClienteAnticipoAplicacion $entrega): void
+    /** Reglas comunes para editar/anular una entrega. */
+    private function validarEntregaEditable(?ClienteAnticipo $anticipo, ClienteAnticipoAplicacion $entrega): void
     {
         abort_if($anticipo === null, 404);
-        if ($anticipo->tipo_valorizacion !== 'monto' || $anticipo->venta_id || $anticipo->items()->exists()) {
-            throw ValidationException::withMessages([
-                'entrega' => 'Solo se editan/anulan entregas de anticipos EN DINERO. Las de material o las de una venta del POS se corrigen anulando la venta.',
-            ]);
-        }
         abort_unless(in_array($anticipo->estado, ['activo', 'aplicado'], true), 422,
             'El anticipo no admite editar sus entregas en su estado actual.');
         if ($entrega->observacion && str_contains($entrega->observacion, 'Excedente a CxC')) {
@@ -885,6 +1036,29 @@ class AnticipoClienteController extends Controller
                 'entrega' => 'Esta entrega generó una cuenta por cobrar por excedente. Revísala y ajústala manualmente en Cuentas por cobrar.',
             ]);
         }
+    }
+
+    /** Resuelve el almacén de ventas del local de la venta original (POS). */
+    private function almacenDeEntregaMaterial(ClienteAnticipo $anticipo, $user): ?\App\Models\Almacen
+    {
+        if (!$anticipo->venta_id || !$anticipo->venta) {
+            return null;
+        }
+        return $this->scope->almacenVentasDeLocal($anticipo->empresa_id, $anticipo->venta->local_id);
+    }
+
+    /** Reasienta saldo/estado de un anticipo MATERIAL a partir de sus ítems pendientes. */
+    private function recomputarSaldoMaterial(ClienteAnticipo $anticipo): void
+    {
+        $anticipo->load('items');
+        $nuevoSaldo = round($anticipo->items->sum(fn ($i) => (float) $i->cantidad_pendiente * (float) $i->precio_unitario), 2);
+        $nuevaCantidad = round($anticipo->items->sum(fn ($i) => (float) $i->cantidad_pendiente), 4);
+
+        $anticipo->update([
+            'saldo'              => $nuevoSaldo,
+            'cantidad_pendiente' => $nuevaCantidad,
+            'estado'             => $nuevoSaldo <= 0.01 ? 'aplicado' : 'activo',
+        ]);
     }
 
     /** Reasienta saldo/estado de un anticipo en dinero: saldo = monto − entregas. */
