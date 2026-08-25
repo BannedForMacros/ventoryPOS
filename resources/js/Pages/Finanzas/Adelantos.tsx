@@ -15,6 +15,8 @@ import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
+import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
+import type { TurnoLite } from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 
 interface Aplicacion {
@@ -54,6 +56,7 @@ interface Props extends PageProps {
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
     puede: { editar: boolean; eliminar: boolean };
+    turnos: TurnoLite[];
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -64,10 +67,10 @@ const nombreProveedor = (p?: { razon_social?: string; nombre_comercial?: string 
     p?.razon_social ?? p?.nombre_comercial ?? '—';
 
 const emptyForm = () => ({
-    proveedor_id: '', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
+    proveedor_id: '', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '', turno_id: '' as number | '',
 });
 
-export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar, proveedores, metodosPago, cuentas, puede }: Props) {
+export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar, proveedores, metodosPago, cuentas, puede, turnos }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo] = useState(false);
     const [anulando, setAnulando]     = useState<Adelanto | null>(null);
@@ -81,7 +84,7 @@ export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar
     const [reactivando, setReactivando]   = useState<Adelanto | null>(null);
     const [motivoReactivar, setMotivoReactivar] = useState('');
     const [formEditar, setFormEditar] = useState({
-        monto: '', fecha: hoy(), metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
+        monto: '', fecha: hoy(), metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '', turno_id: '' as number | '',
     });
 
     function abrirEditar(a: Adelanto) {
@@ -93,6 +96,7 @@ export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar
             cuenta_id:      a.cuenta_id ? String(a.cuenta_id) : '',
             referencia:     a.referencia ?? '',
             observacion:    a.observacion ?? '',
+            turno_id:       (a as any).turno_id ? Number((a as any).turno_id) : '',
         });
         setEditando(a);
     }
@@ -109,6 +113,7 @@ export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar
             cuenta_id:      formEditar.cuenta_id || null,
             referencia:     formEditar.referencia || null,
             observacion:    formEditar.observacion || null,
+            turno_id:       formEditar.turno_id === '' ? null : formEditar.turno_id,
         } as any, {
             onSuccess: () => { setEditando(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -144,6 +149,7 @@ export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar
             ...form,
             metodo_pago_id: form.metodo_pago_id || null,
             cuenta_id:      form.cuenta_id || null,
+            turno_id:       form.turno_id === '' ? null : form.turno_id,
         } as any, {
             onSuccess: () => { setModalNuevo(false); setForm(emptyForm()); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -325,6 +331,19 @@ export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar
                         onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))} />
                     <Input label="Observación" value={form.observacion}
                         onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} />
+
+                    {/* "Afecta caja a:" — de qué caja/turno sale el efectivo (opt-in,
+                        modo libre). Se auto-oculta si la empresa apaga el módulo 'adelantos'. */}
+                    <AfectaCajaSelect
+                        modulo="adelantos" modo="libre" formato="largo"
+                        label="Afecta caja a (turno)"
+                        sinTurnoLabel="Sin turno (no afecta caja)"
+                        turnos={turnos}
+                        value={form.turno_id === '' ? '' : Number(form.turno_id)}
+                        onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : v }))}
+                        error={errors.turno_id}
+                        hint="Elige de qué caja salió el efectivo, para que la consolidación de ese turno lo reste."
+                    />
                 </div>
             </Modal>
 
@@ -404,6 +423,17 @@ export default function Adelantos({ adelantos, totalActivo, kpis, estado, buscar
                             onChange={e => setFormEditar(f => ({ ...f, referencia: e.target.value }))} />
                         <Input label="Observación" value={formEditar.observacion}
                             onChange={e => setFormEditar(f => ({ ...f, observacion: e.target.value }))} />
+
+                        <AfectaCajaSelect
+                            modulo="adelantos" modo="libre" formato="largo"
+                            label="Afecta caja a (turno)"
+                            sinTurnoLabel="Sin turno (no afecta caja)"
+                            turnos={turnos}
+                            value={formEditar.turno_id === '' ? '' : Number(formEditar.turno_id)}
+                            onChange={v => setFormEditar(f => ({ ...f, turno_id: v === '' ? '' : v }))}
+                            error={errors.turno_id}
+                            hint="Elige de qué caja salió el efectivo, para que la consolidación de ese turno lo reste."
+                        />
                     </div>
                 )}
             </Modal>

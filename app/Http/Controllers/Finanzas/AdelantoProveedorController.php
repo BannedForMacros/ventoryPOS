@@ -7,8 +7,10 @@ use App\Models\Cuenta;
 use App\Models\MetodoPago;
 use App\Models\Proveedor;
 use App\Models\ProveedorAdelanto;
+use App\Models\Turno;
 use App\Services\AuditoriaService;
 use App\Services\TesoreriaService;
+use App\Support\AfectaCaja;
 use App\Support\ExigeCuentaDePago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,7 +36,7 @@ class AdelantoProveedorController extends Controller
         $user = $request->user();
 
         $query = ProveedorAdelanto::deEmpresa($user->empresa_id)
-            ->with(['proveedor', 'metodoPago', 'cuenta', 'aplicaciones.entrada', 'aplicaciones.user'])
+            ->with(['proveedor', 'metodoPago', 'cuenta', 'turno:id,caja_id', 'turno.caja:id,nombre', 'aplicaciones.entrada', 'aplicaciones.user'])
             ->when($request->input('proveedor_id'), fn ($q, $v) => $q->where('proveedor_id', $v))
             // Búsqueda server-side sobre TODA la base (no solo la página visible).
             ->when($request->input('buscar'), function ($q, $texto) {
@@ -84,6 +86,12 @@ class AdelantoProveedorController extends Controller
                 ->orderBy('razon_social')->get(['id', 'razon_social', 'nombre_comercial']),
             'metodosPago' => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
             'cuentas'     => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
+            // "Afecta caja a:" — turnos ABIERTOS para el selector unificado.
+            'turnos'      => Turno::deEmpresa($user->empresa_id)
+                ->with(['user:id,name', 'caja:id,nombre'])
+                ->where('estado', 'abierto')
+                ->orderByDesc('fecha_apertura')->limit(40)
+                ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
         ]);
     }
 
@@ -171,7 +179,12 @@ class AdelantoProveedorController extends Controller
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
+            // "Afecta caja a:" — turno de cuya caja sale el efectivo.
+            'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
+
+        // Gate por config de empresa (módulo 'adelantos', modo libre: respeta lo elegido).
+        $data['turno_id'] = AfectaCaja::resolverTurno($user, 'adelantos', $data['turno_id'] ?? null, 'libre');
 
         $adelanto = DB::transaction(function () use ($data, $user) {
             $adelanto = ProveedorAdelanto::create($data + [
@@ -279,13 +292,14 @@ class AdelantoProveedorController extends Controller
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
+            'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ], [
             'monto.prohibited' => 'Este adelanto ya tiene consumos: su monto no se edita. Solo fecha, referencia y observación.',
         ]);
 
         $antes = ['monto' => (float) $adelanto->monto, 'fecha' => $adelanto->fecha->toDateString()];
 
-        DB::transaction(function () use ($adelanto, $user, $data, $tieneConsumos) {
+        DB::transaction(function () use ($adelanto, $user, $data, $tieneConsumos, $request) {
             $montoNuevo = $tieneConsumos ? (float) $adelanto->monto : (float) $data['monto'];
 
             $adelanto->update([
@@ -296,6 +310,10 @@ class AdelantoProveedorController extends Controller
                 'cuenta_id'      => $data['cuenta_id'] ?? $adelanto->cuenta_id,
                 'referencia'     => $data['referencia'] ?? null,
                 'observacion'    => $data['observacion'] ?? null,
+                // Solo tocar turno_id si el request lo envió (para no borrarlo sin querer).
+                'turno_id'       => $request->has('turno_id')
+                    ? AfectaCaja::resolverTurno($user, 'adelantos', $data['turno_id'] ?? null, 'libre')
+                    : $adelanto->turno_id,
             ]);
 
             // Rehacer el egreso original con los datos nuevos.

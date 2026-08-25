@@ -218,6 +218,30 @@ it('reactivar un adelanto anulado re-asienta el egreso', function () {
     expect(CuentaMovimiento::where('ref_tipo', 'proveedor_adelanto')->where('ref_id', $adelanto->id)->exists())->toBeTrue();
 });
 
+it('adelanto con turno_id descuenta la caja en calcularMontoEsperado', function () {
+    $turno = $this->env->abrirTurno(apertura: 500);
+
+    $prov = Proveedor::create([
+        'empresa_id' => $this->env->empresa->id, 'razon_social' => 'Proveedor Turno',
+        'tipo_documento' => 'RUC', 'numero_documento' => '20999888777', 'activo' => true,
+    ]);
+
+    // Registrar adelanto imputado a este turno.
+    $this->post(route('finanzas.adelantos.store'), [
+        'proveedor_id'  => $prov->id,
+        'fecha'         => now()->toDateString(),
+        'monto'         => 200,
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+        'turno_id'      => $turno->id,
+    ])->assertSessionHasNoErrors();
+
+    $adelanto = ProveedorAdelanto::where('empresa_id', $this->env->empresa->id)->orderByDesc('id')->first();
+    expect($adelanto->turno_id)->toBe($turno->id);
+
+    // Esperado = 500 (apertura) - 200 (adelanto efectivo) = 300
+    expect($turno->fresh()->calcularMontoEsperado())->toBe(300.0);
+});
+
 // ── Tesorería: movimiento manual de ajuste ──────────────────────────────
 
 it('registra un movimiento manual de ajuste (egreso) sobre una cuenta', function () {

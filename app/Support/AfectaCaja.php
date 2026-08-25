@@ -48,6 +48,7 @@ class AfectaCaja
         'anticipos_cancelacion' => ['label' => 'Cancelaciones de pendiente de anticipo', 'default' => true, 'disponible' => true, 'modo' => 'libre'],
         'gastos'       => ['label' => 'Gastos',                       'default' => true,  'disponible' => true, 'modo' => 'forzado'],
         'devoluciones' => ['label' => 'Devoluciones',                 'default' => true,  'disponible' => true, 'modo' => 'forzado'],
+        'adelantos'    => ['label' => 'Adelantos a proveedores',     'default' => true,  'disponible' => true, 'modo' => 'libre'],
     ];
 
     /**

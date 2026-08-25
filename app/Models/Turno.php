@@ -167,6 +167,17 @@ class Turno extends Model
         // esperado (son la entrega del efectivo final), por eso no se restan.
         $retirosEfectivo = (float) $this->retiros()->where('momento', 'turno')->sum('monto');
 
+        // Adelantos a proveedores pagados en EFECTIVO desde esta caja: el billete
+        // sale del cajón. Los anulados se excluyen (su egreso fue revertido). Los
+        // devueltos también (su devolución genera un ingreso separado).
+        $adelantosProveedorEfectivo = (float) \App\Models\ProveedorAdelanto::where('turno_id', $this->id)
+            ->whereNotIn('estado', ['anulado', 'devuelto'])
+            ->where(fn($q) =>
+                $q->whereHas('metodoPago.tipo', fn($t) => $t->where('slug', 'efectivo'))
+                  ->orWhere(fn($q2) => $q2->whereNull('metodo_pago_id')
+                        ->whereHas('cuenta', fn($c) => $c->where('es_efectivo', true)))
+            )->sum('monto');
+
         // Deuda / préstamos (módulo "Afecta caja"): desembolsos iniciales y
         // cuotas/incrementos pagados en EFECTIVO desde esta caja. A diferencia
         // de los demás módulos, la "efectividad" y el signo se leen del
@@ -205,6 +216,7 @@ class Turno extends Model
              - $reembolsosEfectivo
              - $comprasEfectivo
              - $retirosEfectivo
+             - $adelantosProveedorEfectivo
              - $deudaEgreso
              - $devolucionAnticipoEfectivo
              - $cancelacionPendienteEfectivo

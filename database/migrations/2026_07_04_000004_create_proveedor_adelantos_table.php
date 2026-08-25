@@ -25,6 +25,7 @@ return new class extends Migration {
             $table->foreignId('user_id')->constrained('users');
             $table->foreignId('metodo_pago_id')->nullable()->constrained('metodos_pago')->nullOnDelete();
             $table->foreignId('cuenta_id')->nullable()->constrained('cuentas')->nullOnDelete();
+            $table->foreignId('turno_id')->nullable()->constrained('turnos')->nullOnDelete();
             $table->date('fecha');
             $table->decimal('monto', 12, 2);
             $table->decimal('saldo', 12, 2);

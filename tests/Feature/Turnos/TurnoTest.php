@@ -79,6 +79,31 @@ it('calcularMontoEsperado: apertura + ventas efectivo - gastos', function () {
     expect($turno->fresh()->calcularMontoEsperado())->toBe(160.0);
 });
 
+it('calcularMontoEsperado resta adelantos a proveedores pagados en efectivo', function () {
+    $turno = $this->env->abrirTurno(apertura: 200);
+    ventaEfectivo($this->env, $turno, 100);
+
+    // Adelanto de 50 imputado a este turno con método efectivo.
+    $prov = \App\Models\Proveedor::create([
+        'empresa_id' => $this->env->empresa->id, 'razon_social' => 'Proveedor Caja Test',
+        'tipo_documento' => 'RUC', 'numero_documento' => '20111222333', 'activo' => true,
+    ]);
+    \App\Models\ProveedorAdelanto::create([
+        'empresa_id'     => $this->env->empresa->id,
+        'proveedor_id'   => $prov->id,
+        'user_id'        => $this->env->admin->id,
+        'turno_id'       => $turno->id,
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+        'fecha'          => now()->toDateString(),
+        'monto'          => 50,
+        'saldo'          => 50,
+        'estado'         => 'activo',
+    ]);
+
+    // Esperado = 200 (apertura) + 100 (venta) - 50 (adelanto) = 250
+    expect($turno->fresh()->calcularMontoEsperado())->toBe(250.0);
+});
+
 it('cerrar turno SIN diferencia (declarado == esperado) deja diferencia=0', function () {
     $turno = $this->env->abrirTurno(apertura: 100);
     ventaEfectivo($this->env, $turno, 80);
