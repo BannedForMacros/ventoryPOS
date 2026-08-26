@@ -26,7 +26,10 @@ class CuentasPorPagarController extends Controller
 {
     use ExigeCuentaDePago;
 
-    public function __construct(private TesoreriaService $tesoreria) {}
+    public function __construct(
+        private TesoreriaService $tesoreria,
+        private \App\Services\ProveedorAdelantoService $adelantos,
+    ) {}
 
     public function index(Request $request)
     {
@@ -219,35 +222,22 @@ class CuentasPorPagarController extends Controller
         $data['turno_id'] = AfectaCaja::resolverTurno($user, 'cxp', $data['turno_id'] ?? null, 'libre');
 
         DB::transaction(function () use ($entrada, $user, $data) {
+            $pago = null;
+
             // Si el pago consume un adelanto, validar saldo y descontarlo.
             if (!empty($data['proveedor_adelanto_id'])) {
-                $adelanto = ProveedorAdelanto::where('id', $data['proveedor_adelanto_id'])
-                    ->lockForUpdate()
-                    ->firstOrFail();
+                $pago = $this->adelantos->aplicar(
+                    (int) $data['proveedor_adelanto_id'],
+                    (float) $data['monto'],
+                    $entrada,
+                    $user,
+                    $data['fecha'],
+                    $data['turno_id'] ?? null,
+                );
+            } else {
+                $pago = EntradaPago::create($data + ['entrada_id' => $entrada->id, 'user_id' => $user->id]);
 
-                abort_unless($adelanto->estado === 'activo', 422, 'El adelanto no está activo.');
-                abort_if((float) $adelanto->saldo < (float) $data['monto'] - 0.01, 422, 'El adelanto no tiene saldo suficiente.');
-
-                $nuevoSaldo = round((float) $adelanto->saldo - (float) $data['monto'], 2);
-                $adelanto->update([
-                    'saldo'  => max(0, $nuevoSaldo),
-                    'estado' => $nuevoSaldo <= 0.01 ? 'aplicado' : 'activo',
-                ]);
-
-                $adelanto->aplicaciones()->create([
-                    'entrada_id' => $entrada->id,
-                    'user_id'    => $user->id,
-                    'fecha'      => $data['fecha'],
-                    'monto'      => $data['monto'],
-                ]);
-            }
-
-            $pago = EntradaPago::create($data + ['entrada_id' => $entrada->id, 'user_id' => $user->id]);
-
-            // F7 — Egreso de tesorería SOLO si sale dinero nuevo. Cuando el
-            // pago consume un adelanto no hay salida de caja (el dinero ya
-            // salió cuando se entregó el adelanto).
-            if (empty($data['proveedor_adelanto_id'])) {
+                // F7 — Egreso de tesorería SOLO si sale dinero nuevo.
                 $prov = $entrada->proveedorRel?->razon_social ?? $entrada->proveedor ?? 'proveedor';
                 $this->tesoreria->registrar(
                     $user->empresa_id,
@@ -260,9 +250,9 @@ class CuentasPorPagarController extends Controller
                     'entrada_pago',
                     $pago->id,
                 );
-            }
 
-            $entrada->aplicarPago((float) $data['monto']);
+                $entrada->aplicarPago((float) $data['monto']);
+            }
 
             AuditoriaService::log('cxp.abono', $entrada, [
                 'monto'        => (float) $data['monto'],
@@ -394,18 +384,7 @@ class CuentasPorPagarController extends Controller
         DB::transaction(function () use ($pago, $entrada, $user, $data) {
             // Pago vía adelanto: devolver el saldo al adelanto y borrar su aplicación.
             if ($pago->proveedor_adelanto_id) {
-                $adelanto = ProveedorAdelanto::where('id', $pago->proveedor_adelanto_id)->lockForUpdate()->first();
-                if ($adelanto) {
-                    $adelanto->update([
-                        'saldo'  => round((float) $adelanto->saldo + (float) $pago->monto, 2),
-                        'estado' => 'activo',
-                    ]);
-                    $adelanto->aplicaciones()
-                        ->where('entrada_id', $entrada->id)
-                        ->where('monto', $pago->monto)
-                        ->orderByDesc('id')
-                        ->first()?->delete();
-                }
+                $this->adelantos->revertirAplicacion($pago);
             } else {
                 // Pago con dinero: revertir el egreso de tesorería.
                 $this->tesoreria->revertir('entrada_pago', $pago->id);

@@ -12,6 +12,7 @@ use App\Models\EntradaPago;
 use App\Models\MetodoPago;
 use App\Models\Producto;
 use App\Models\Proveedor;
+use App\Models\ProveedorAdelanto;
 use App\Models\Stock;
 use App\Services\AuditoriaService;
 use App\Services\LocalScopeService;
@@ -28,12 +29,13 @@ class EntradaController extends Controller
         private LocalScopeService $scope,
         private TesoreriaService $tesoreria,
         private \App\Services\MercaderiaTransitoService $transito,
+        private \App\Services\ProveedorAdelantoService $adelantos,
     ) {}
 
     /**
-     * Registra los pagos iniciales de una entrada (líneas método+cuenta+monto):
-     * crea los entrada_pagos, asienta cada egreso en tesorería y sincroniza
-     * monto_pagado/estado_pago.
+     * Registra los pagos iniciales de una entrada (líneas método+cuenta+monto o
+     * proveedor_adelanto_id+monto): crea los entrada_pagos, asienta cada egreso
+     * en tesorería (solo pagos con dinero) y sincroniza monto_pagado/estado_pago.
      *
      * La fecha del pago es la que trae CADA línea (`fecha`, del formulario — mismo
      * criterio que Cuentas por Pagar); si la línea no la trae, se usa HOY (cuando
@@ -41,7 +43,7 @@ class EntradaController extends Controller
      * retrofechados" que movían el efectivo a días ya cerrados). Así el pago desde
      * la Entrada y desde Cuentas por Pagar quedan sincronizados.
      *
-     * @param array<array{metodo_pago_id:int|null,cuenta_id:int|null,monto:float|string,referencia?:string|null,fecha?:string|null}> $lineas
+     * @param array<array{metodo_pago_id?:int|null,cuenta_id?:int|null,proveedor_adelanto_id?:int|null,monto:float|string,referencia?:string|null,fecha?:string|null}> $lineas
      */
     private function registrarPagosIniciales(Entrada $entrada, array $lineas, int $userId, int|string|null $turnoId = 'auto'): void
     {
@@ -68,16 +70,33 @@ class EntradaController extends Controller
         }
 
         foreach ($lineas as $linea) {
+            $monto   = round((float) $linea['monto'], 2);
+            $fechaPago = !empty($linea['fecha'])
+                ? substr((string) $linea['fecha'], 0, 10)
+                : now()->toDateString();
+
+            // ── Pago con adelanto previamente entregado al proveedor ─────────
+            if (!empty($linea['proveedor_adelanto_id'])) {
+                $this->adelantos->aplicar(
+                    (int) $linea['proveedor_adelanto_id'],
+                    $monto,
+                    $entrada,
+                    $userId,
+                    $fechaPago,
+                    $turnoId === 'auto' ? null : $turnoId,
+                );
+                continue;
+            }
+
+            // ── Pago con dinero nuevo: egreso de tesorería ────────────────────
             $pago = EntradaPago::create([
                 'entrada_id'     => $entrada->id,
                 'user_id'        => $userId,
                 'turno_id'       => $turnoId,
                 'metodo_pago_id' => $linea['metodo_pago_id'] ?? null,
                 'cuenta_id'      => $linea['cuenta_id'] ?? null,
-                'fecha'          => !empty($linea['fecha'])          // fecha del formulario (como CxP);
-                    ? substr((string) $linea['fecha'], 0, 10)         // si no viene, HOY — nunca la de la compra
-                    : now()->toDateString(),
-                'monto'          => round((float) $linea['monto'], 2),
+                'fecha'          => $fechaPago,
+                'monto'          => $monto,
                 'referencia'     => $linea['referencia'] ?? null,
             ]);
 
@@ -219,6 +238,10 @@ class EntradaController extends Controller
                 ->orderByDesc('fecha_apertura')->limit(40)
                 ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
             'turnoActivoId' => \App\Models\Turno::turnoActivoDelUsuario($user->id)?->id,
+            // Adelantos con saldo del proveedor para poder pagar con ellos.
+            'adelantos' => ProveedorAdelanto::deEmpresa($empresaId)->activo()
+                ->where('saldo', '>', 0)
+                ->get(['id', 'proveedor_id', 'saldo']),
         ]);
     }
 
@@ -254,20 +277,24 @@ class EntradaController extends Controller
             'estado_pago'      => 'nullable|in:pendiente,parcial,pagado',
             'metodo_pago_id'   => 'nullable|exists:metodos_pago,id',
             'cuenta_id'        => 'nullable|exists:cuentas,id',
-            'pagos'                    => 'nullable|array|max:10',
-            'pagos.*.metodo_pago_id'   => ['required', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id),
+            'pagos'                            => 'nullable|array|max:10',
+            'pagos.*.metodo_pago_id'           => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.cuenta_id'                => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id),
                 function ($attr, $value, $fail) use ($request) {
                     if ($value) return;
                     preg_match('/pagos\.(\d+)\./', $attr, $m);
-                    if (isset($m[1]) && PagoCuenta::requiere((int) $request->input("pagos.{$m[1]}.metodo_pago_id"))) {
+                    $indice = $m[1] ?? null;
+                    if ($indice === null) return;
+                    if ($request->input("pagos.{$indice}.proveedor_adelanto_id")) return;
+                    if (PagoCuenta::requiere((int) $request->input("pagos.{$indice}.metodo_pago_id"))) {
                         $fail('Debes seleccionar la cuenta para este método de pago.');
                     }
                 },
             ],
-            'pagos.*.monto'            => 'required|numeric|min:0.01',
-            'pagos.*.referencia'       => 'nullable|string|max:200',
-            'pagos.*.fecha'            => ['nullable', 'date'],
+            'pagos.*.proveedor_adelanto_id'  => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.monto'                    => 'required|numeric|min:0.01',
+            'pagos.*.referencia'               => 'nullable|string|max:200',
+            'pagos.*.fecha'                    => ['nullable', 'date'],
             // "Afecta caja a:" — turno de cuya caja sale el efectivo del pago.
             'turno_id'                 => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
@@ -459,6 +486,10 @@ class EntradaController extends Controller
                     ->values()
                 : collect(),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
+            // Adelantos con saldo del proveedor para poder pagar con ellos.
+            'adelantos' => ProveedorAdelanto::deEmpresa($empresaId)->activo()
+                ->where('saldo', '>', 0)
+                ->get(['id', 'proveedor_id', 'saldo']),
         ]);
     }
 
@@ -487,20 +518,24 @@ class EntradaController extends Controller
             'detalles.*.numero_documento'  => 'nullable|string|max:50',
             // Pagos NUEVOS registrados desde la edición (p. ej. se agregó un
             // producto y se paga la diferencia ahí mismo).
-            'pagos'                    => 'nullable|array|max:10',
-            'pagos.*.metodo_pago_id'   => ['required', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'pagos.*.cuenta_id'        => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id),
+            'pagos'                            => 'nullable|array|max:10',
+            'pagos.*.metodo_pago_id'           => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.cuenta_id'                => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id),
                 function ($attr, $value, $fail) use ($request) {
                     if ($value) return;
                     preg_match('/pagos\.(\d+)\./', $attr, $m);
-                    if (isset($m[1]) && PagoCuenta::requiere((int) $request->input("pagos.{$m[1]}.metodo_pago_id"))) {
+                    $indice = $m[1] ?? null;
+                    if ($indice === null) return;
+                    if ($request->input("pagos.{$indice}.proveedor_adelanto_id")) return;
+                    if (PagoCuenta::requiere((int) $request->input("pagos.{$indice}.metodo_pago_id"))) {
                         $fail('Debes seleccionar la cuenta para este método de pago.');
                     }
                 },
             ],
-            'pagos.*.monto'            => 'required|numeric|min:0.01',
-            'pagos.*.referencia'       => 'nullable|string|max:200',
-            'pagos.*.fecha'            => ['nullable', 'date'],
+            'pagos.*.proveedor_adelanto_id'  => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.monto'                    => 'required|numeric|min:0.01',
+            'pagos.*.referencia'               => 'nullable|string|max:200',
+            'pagos.*.fecha'                    => ['nullable', 'date'],
             // Pagos YA registrados EDITADOS en la misma pantalla (solo admin). Se
             // guardan junto con todo lo demás en un solo submit — sin botón por fila.
             'pagos_editados'                  => 'nullable|array',
@@ -699,17 +734,7 @@ class EntradaController extends Controller
                     $pago = $entrada->pagosParciales()->whereKey($pagoId)->first();
                     if (!$pago) continue;
                     if ($pago->proveedor_adelanto_id) {
-                        $adelanto = \App\Models\ProveedorAdelanto::whereKey($pago->proveedor_adelanto_id)->lockForUpdate()->first();
-                        if ($adelanto) {
-                            $adelanto->update([
-                                'saldo'  => round((float) $adelanto->saldo + (float) $pago->monto, 2),
-                                'estado' => 'activo',
-                            ]);
-                            $adelanto->aplicaciones()
-                                ->where('entrada_id', $entrada->id)
-                                ->where('monto', $pago->monto)
-                                ->orderByDesc('id')->first()?->delete();
-                        }
+                        $this->adelantos->revertirAplicacion($pago);
                     } else {
                         $this->tesoreria->revertir('entrada_pago', $pago->id);
                     }
@@ -793,7 +818,7 @@ class EntradaController extends Controller
                 }
 
                 // Pagos NUEVOS desde la edición (entrada_pagos + egreso en tesorería).
-                $lineas = $data['pagos'] ?? [];
+            $lineas = $data['pagos'] ?? [];
                 if (!empty($lineas)) {
                     $suma  = round(collect($lineas)->sum(fn ($l) => (float) $l['monto']), 2);
                     $saldo = $entrada->refresh()->saldoPendiente();
@@ -982,7 +1007,7 @@ class EntradaController extends Controller
         $pagos = $entrada->pagosParciales()->get();
         if ($pagos->contains(fn ($p) => $p->proveedor_adelanto_id !== null)) {
             return back()->withErrors([
-                'estado_pago' => 'Esta entrada tiene pagos que consumieron un adelanto al proveedor. Gestiónalos desde Finanzas → Cuentas por Pagar.',
+                'estado_pago' => 'Esta entrada tiene pagos que consumieron un adelanto al proveedor. Para revertirlos, edita la entrada y anula el pago correspondiente.',
             ]);
         }
 
@@ -1029,9 +1054,13 @@ class EntradaController extends Controller
         ];
 
         DB::transaction(function () use ($entrada) {
-            // Revertir pagos registrados (y sus asientos de tesorería) antes de borrar.
+            // Revertir pagos registrados (y sus asientos de tesorería o adelantos) antes de borrar.
             foreach ($entrada->pagosParciales()->get() as $p) {
-                $this->tesoreria->revertir('entrada_pago', $p->id);
+                if ($p->proveedor_adelanto_id) {
+                    $this->adelantos->revertirAplicacion($p);
+                } else {
+                    $this->tesoreria->revertir('entrada_pago', $p->id);
+                }
                 $p->delete();
             }
             $entrada->detalles()->delete();
@@ -1081,9 +1110,13 @@ class EntradaController extends Controller
         DB::transaction(function () use ($entrada, $user) {
             $productos = $entrada->detalles->pluck('producto_id')->unique();
 
-            // 1) Revertir pagos y sus egresos de tesorería.
+            // 1) Revertir pagos y sus egresos de tesorería (o restaurar adelantos).
             foreach ($entrada->pagosParciales()->get() as $p) {
-                $this->tesoreria->revertir('entrada_pago', $p->id);
+                if ($p->proveedor_adelanto_id) {
+                    $this->adelantos->revertirAplicacion($p);
+                } else {
+                    $this->tesoreria->revertir('entrada_pago', $p->id);
+                }
                 $p->delete();
             }
 

@@ -10,6 +10,7 @@ import Select from '@/Components/UI/Select';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import Badge from '@/Components/UI/Badge';
+import Callout from '@/Components/UI/Callout';
 import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
@@ -36,6 +37,7 @@ interface Proveedor { id: number; razon_social: string | null; nombre_comercial:
 interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
 interface MetodoPagoForm { id: number; nombre: string; cuentas: CuentaMP[]; }
 interface StockRow { almacen_id: number; producto_id: number; cantidad: string; }
+interface Adelanto { id: number; proveedor_id: number; saldo: string; }
 // Pago ya registrado (histórico) de la entrada. Un admin puede editarlo/anularlo.
 interface PagoPrevio {
     id: number;
@@ -91,7 +93,11 @@ interface Props extends PageProps {
     productosAbsorbidos: number[];
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
+    /** Adelantos con saldo por proveedor para pagar con ellos. */
+    adelantos: Adelanto[];
 }
+
+const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 
 interface DetalleRow {
     producto_id: number | '';
@@ -114,7 +120,7 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
     return String(Math.round((t / q) * 10000) / 10000);
 }
 
-export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen }: Props) {
+export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen, adelantos }: Props) {
     // "Afecta caja a:" — arranca en el turno actual de los pagos (si sigue
     // ABIERTO), para reflejar el estado real. Re-imputar solo ocurre si el
     // usuario TOCA el selector (turnoTocado), para no cambiarlo sin querer.
@@ -221,9 +227,10 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
     // Los pagos ya registrados no se tocan aquí (se corrigen en Finanzas →
     // Cuentas por pagar); esto permite pagar el saldo — p. ej. cuando se
     // agrega un producto y el total sube.
-    interface LineaPago { key: string; metodo_pago_id: number | ''; cuenta_id: number | ''; monto: string; fecha: string; }
-    const nuevaLinea = (monto = ''): LineaPago =>
-        ({ key: Math.random().toString(36).slice(2), metodo_pago_id: '', cuenta_id: '', monto, fecha: hoyLocal() });
+    type ModoPago = 'efectivo' | 'adelanto';
+    interface LineaPago { key: string; modo: ModoPago; metodo_pago_id: number | ''; cuenta_id: number | ''; proveedor_adelanto_id: number | ''; monto: string; fecha: string; }
+    const nuevaLinea = (monto = '', modo: ModoPago = 'efectivo'): LineaPago =>
+        ({ key: Math.random().toString(36).slice(2), modo, metodo_pago_id: '', cuenta_id: '', proveedor_adelanto_id: '', monto, fecha: hoyLocal() });
     const [pagosNuevos, setPagosNuevos] = useState<LineaPago[]>([]);
 
     const cuentasDeLinea = (l: LineaPago) =>
@@ -233,6 +240,10 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
         const cts = metodosPago.find(m => m.id === Number(metodoId))?.cuentas ?? [];
         return cts.length === 1 ? cts[0].id : '';
     };
+    const adelantosDisponibles = proveedorId
+        ? adelantos.filter(a => a.proveedor_id === proveedorId && Number(a.saldo) > 0)
+        : [];
+    const saldoAdelantosDisponibles = adelantosDisponibles.reduce((s, a) => s + Number(a.saldo), 0);
     function setPago(key: string, patch: Partial<LineaPago>) {
         setPagosNuevos(prev => prev.map(p => p.key === key ? { ...p, ...patch } : p));
     }
@@ -362,10 +373,19 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
 
         pagosNuevos.forEach((p, idx) => {
             const n = idx + 1;
-            if (!p.metodo_pago_id) errs.push(`Pago nuevo #${n}: falta el método de pago`);
+            if (p.modo === 'efectivo') {
+                if (!p.metodo_pago_id) errs.push(`Pago nuevo #${n}: falta el método de pago`);
+                if (cuentasDeLinea(p).length > 0 && !p.cuenta_id) errs.push(`Pago nuevo #${n}: selecciona la cuenta`);
+            }
+            if (p.modo === 'adelanto') {
+                if (!p.proveedor_adelanto_id) errs.push(`Pago nuevo #${n}: selecciona el adelanto`);
+                const adelanto = adelantosDisponibles.find(a => a.id === p.proveedor_adelanto_id);
+                if (adelanto && Number(p.monto) > Number(adelanto.saldo) + 0.01) {
+                    errs.push(`Pago nuevo #${n}: el monto supera el saldo del adelanto`);
+                }
+            }
             const m = parseFloat(p.monto);
             if (!p.monto || isNaN(m) || m <= 0) errs.push(`Pago nuevo #${n}: el monto debe ser mayor a 0`);
-            if (cuentasDeLinea(p).length > 0 && !p.cuenta_id) errs.push(`Pago nuevo #${n}: selecciona la cuenta`);
         });
         if (totalPagoNuevo > saldoActual + 0.009) {
             errs.push(`Los pagos nuevos (S/ ${totalPagoNuevo.toFixed(2)}) superan el saldo pendiente (S/ ${saldoActual.toFixed(2)})`);
@@ -445,8 +465,9 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                 numero_documento: facturaPorItem ? (d.numero_documento.trim() || null) : null,
             })),
             pagos: pagosNuevos.map(p => ({
-                metodo_pago_id: p.metodo_pago_id,
-                cuenta_id:      p.cuenta_id || null,
+                metodo_pago_id: p.modo === 'adelanto' ? null : p.metodo_pago_id,
+                cuenta_id:      p.modo === 'adelanto' ? null : (p.cuenta_id || null),
+                proveedor_adelanto_id: p.modo === 'adelanto' ? p.proveedor_adelanto_id : null,
                 monto:          p.monto,
                 fecha:          p.fecha,
             })),
@@ -891,61 +912,136 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                         </p>
                     ) : (
                         <div className="space-y-3">
+                            {/* Info de adelantos disponibles */}
+                            {adelantosDisponibles.length > 0 && (
+                                <Callout variant="info" title="Adelantos disponibles" aside={money(saldoAdelantosDisponibles)}>
+                                    Este proveedor tiene {adelantosDisponibles.length} adelanto(s) con saldo. Puedes pagar una línea usando el adelanto y completar el resto en efectivo/cuenta.
+                                </Callout>
+                            )}
+
                             {pagosNuevos.map((p, idx) => {
                                 const cuentas = cuentasDeLinea(p);
+                                const adelantoSel = adelantosDisponibles.find(a => a.id === p.proveedor_adelanto_id);
                                 return (
-                                    <div key={p.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_150px_140px_auto] gap-3 items-end">
-                                        <Select
-                                            label={idx === 0 ? 'Método de pago' : undefined}
-                                            required
-                                            placeholder="Seleccionar método"
-                                            value={p.metodo_pago_id}
-                                            onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: cuentaDefaultDe(v === '' ? '' : Number(v)) })}
-                                            options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
-                                        />
-                                        <Select
-                                            label={idx === 0 ? 'Cuenta' : undefined}
-                                            required={cuentas.length > 0}
-                                            placeholder={cuentas.length ? '— Selecciona una cuenta —' : 'Se asigna sola'}
-                                            value={p.cuenta_id}
-                                            onChange={v => setPago(p.key, { cuenta_id: v === '' ? '' : Number(v) })}
-                                            options={cuentas.map(c => ({
-                                                value: c.id,
-                                                label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
-                                            }))}
-                                            disabled={cuentas.length === 0}
-                                            error={cuentas.length > 0 && !p.cuenta_id ? 'Elige la cuenta' : undefined}
-                                        />
-                                        <Input
-                                            label={idx === 0 ? 'Fecha' : undefined}
-                                            required type="date"
-                                            value={p.fecha}
-                                            onChange={e => setPago(p.key, { fecha: e.target.value })}
-                                        />
-                                        <Input
-                                            label={idx === 0 ? 'Monto (S/)' : undefined}
-                                            required type="number" min="0.01" step="0.01"
-                                            value={p.monto}
-                                            onChange={e => setPago(p.key, { monto: e.target.value })}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setPagosNuevos(prev => prev.filter(x => x.key !== p.key))}
-                                            className="p-2 mb-0.5 rounded-lg hover:bg-black/5"
-                                            title="Quitar línea de pago"
-                                            style={{ color: 'var(--color-danger)' }}
-                                        >
-                                            <Trash2 size={15} />
-                                        </button>
+                                    <div key={p.key} className="rounded-xl border p-3 space-y-3"
+                                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                                                Pago #{idx + 1}
+                                            </span>
+                                            {adelantosDisponibles.length > 0 && (
+                                                <div className="inline-flex rounded-md border overflow-hidden text-[11px] font-semibold leading-none"
+                                                    style={{ borderColor: 'var(--color-border)' }}>
+                                                    {(['efectivo', 'adelanto'] as const).map(m => (
+                                                        <button key={m} type="button"
+                                                            onClick={() => setPago(p.key, {
+                                                                modo: m,
+                                                                metodo_pago_id: '',
+                                                                cuenta_id: '',
+                                                                proveedor_adelanto_id: '',
+                                                                monto: m === 'adelanto'
+                                                                    ? String(Math.min(
+                                                                        Math.max(0, Number((saldoActual - totalPagoNuevo + Number(p.monto)).toFixed(2))),
+                                                                        Number(adelantosDisponibles[0]?.saldo ?? 0)
+                                                                    ))
+                                                                    : p.monto,
+                                                            })}
+                                                            className="px-2 py-1 transition-colors"
+                                                            style={{
+                                                                backgroundColor: p.modo === m ? 'var(--color-primary)' : 'transparent',
+                                                                color: p.modo === m ? '#fff' : 'var(--color-text-muted)',
+                                                            }}>
+                                                            {m === 'efectivo' ? 'Efectivo / Cuenta' : 'Adelanto'}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => setPagosNuevos(prev => prev.filter(x => x.key !== p.key))}
+                                                className="p-1.5 rounded-lg hover:bg-black/5 ml-auto"
+                                                title="Quitar línea de pago"
+                                                style={{ color: 'var(--color-danger)' }}
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_150px_140px] gap-3 items-end">
+                                            {p.modo === 'adelanto' ? (
+                                                <Select
+                                                    label="Adelanto disponible"
+                                                    required
+                                                    placeholder={adelantosDisponibles.length ? '— Seleccionar adelanto —' : 'Sin adelantos'}
+                                                    value={p.proveedor_adelanto_id}
+                                                    onChange={v => {
+                                                        const aid = v === '' ? '' : Number(v);
+                                                        const a = adelantosDisponibles.find(x => x.id === aid);
+                                                        const saldoA = a ? Number(a.saldo) : 0;
+                                                        const saldoPendiente = Math.max(0, Number((saldoActual - totalPagoNuevo + Number(p.monto)).toFixed(2)));
+                                                        setPago(p.key, {
+                                                            proveedor_adelanto_id: aid,
+                                                            monto: String(Math.min(saldoPendiente, saldoA) || ''),
+                                                        });
+                                                    }}
+                                                    options={adelantosDisponibles.map(a => ({
+                                                        value: a.id,
+                                                        label: `Adelanto #${a.id} — saldo ${money(a.saldo)}`,
+                                                    }))}
+                                                    disabled={adelantosDisponibles.length === 0}
+                                                    error={errors[`pagos.${idx}.proveedor_adelanto_id`]}
+                                                />
+                                            ) : (
+                                                <Select
+                                                    label="Método de pago"
+                                                    required
+                                                    placeholder="Seleccionar método"
+                                                    value={p.metodo_pago_id}
+                                                    onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: cuentaDefaultDe(v === '' ? '' : Number(v)) })}
+                                                    options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                                                    error={errors[`pagos.${idx}.metodo_pago_id`]}
+                                                />
+                                            )}
+                                            {p.modo === 'adelanto' ? (
+                                                <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {adelantoSel
+                                                        ? <span>Saldo: <strong style={{ color: 'var(--color-success)' }}>{money(adelantoSel.saldo)}</strong></span>
+                                                        : <span>Selecciona un adelanto</span>}
+                                                </div>
+                                            ) : (
+                                                <Select
+                                                    label="Cuenta"
+                                                    required={cuentas.length > 0}
+                                                    placeholder={cuentas.length ? '— Selecciona una cuenta —' : 'Se asigna sola'}
+                                                    value={p.cuenta_id}
+                                                    onChange={v => setPago(p.key, { cuenta_id: v === '' ? '' : Number(v) })}
+                                                    options={cuentas.map(c => ({
+                                                        value: c.id,
+                                                        label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
+                                                    }))}
+                                                    disabled={cuentas.length === 0}
+                                                    error={cuentas.length > 0 && !p.cuenta_id ? 'Elige la cuenta' : undefined}
+                                                />
+                                            )}
+                                            <Input
+                                                label="Fecha"
+                                                required type="date"
+                                                value={p.fecha}
+                                                onChange={e => setPago(p.key, { fecha: e.target.value })}
+                                            />
+                                            <Input
+                                                label={`Monto (S/)${p.modo === 'adelanto' && adelantoSel ? ` · máx. ${money(adelantoSel.saldo)}` : ''}`}
+                                                required type="number" min="0.01" step="0.01"
+                                                value={p.monto}
+                                                onChange={e => setPago(p.key, { monto: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
                                 );
                             })}
 
                             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                                 <div className="flex gap-2">
-                                    {/* Una sola acción: la primera línea se precarga con el saldo
-                                        (un clic = pagar todo), pero el monto es editable para dejarlo
-                                        como pago parcial. Sin dos botones que confundían. */}
                                     <Button type="button" variant="ghost" size="sm"
                                         onClick={() => setPagosNuevos(prev => prev.length === 0
                                             ? [nuevaLinea(saldoActual > 0.009 ? saldoActual.toFixed(2) : '')]
