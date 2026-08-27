@@ -19,6 +19,24 @@ class StockController extends Controller
     /** Umbral de "stock bajo" (no hay mínimo por producto en el catálogo). */
     private const UMBRAL_BAJO = 5;
 
+    /**
+     * Query base de stock para los almacenes visibles del usuario, aplicando
+     * los filtros comunes de almacén, categoría y búsqueda. Se reutiliza en
+     * index(), exportar() y los KPIs.
+     */
+    private function queryBase(Request $request, ?array $almacenIds = null): \Illuminate\Database\Eloquent\Builder
+    {
+        $ids = $almacenIds ?? $this->scope->almacenIdsVisibles($request->user());
+
+        return Stock::whereIn('almacen_id', $ids)
+            ->when($request->almacen_id, fn ($q, $id) => $q->where('almacen_id', $id))
+            ->when($request->categoria_id, fn ($q, $id) =>
+                $q->whereHas('producto', fn ($p) => $p->where('categoria_id', $id)))
+            ->when($request->busqueda, fn ($q, $s) =>
+                $q->whereHas('producto', fn ($p) =>
+                    $p->where('nombre', 'ilike', "%{$s}%")->orWhere('codigo', 'ilike', "%{$s}%")));
+    }
+
     public function index(Request $request)
     {
         $user       = $request->user();
@@ -29,13 +47,7 @@ class StockController extends Controller
         // Base: alcance de almacenes + filtros que también afectan los KPIs
         // (almacén, categoría, búsqueda). El filtro de "estado" NO va aquí para
         // que los KPIs muestren siempre el desglose completo del ámbito.
-        $base = Stock::whereIn('almacen_id', $almacenIds)
-            ->when($request->almacen_id, fn ($q, $id) => $q->where('almacen_id', $id))
-            ->when($request->categoria_id, fn ($q, $id) =>
-                $q->whereHas('producto', fn ($p) => $p->where('categoria_id', $id)))
-            ->when($request->busqueda, fn ($q, $s) =>
-                $q->whereHas('producto', fn ($p) =>
-                    $p->where('nombre', 'ilike', "%{$s}%")->orWhere('codigo', 'ilike', "%{$s}%")));
+        $base = $this->queryBase($request, $almacenIds);
 
         // KPIs de una sola consulta agregada (nada de traer todas las filas).
         $umbral = self::UMBRAL_BAJO;
@@ -122,6 +134,79 @@ class StockController extends Controller
             // Habilita el botón "Ajustar" por fila (permiso inventario.ajustes → editar).
             'puede'                => ['ajustar' => $user->tienePermiso('inventario.ajustes', 'editar')],
         ]);
+    }
+
+    /**
+     * Exporta el stock actual a CSV (Excel) respetando los filtros activos.
+     * Se descarga TODO el resultado filtrado, sin paginar.
+     */
+    public function exportar(Request $request)
+    {
+        $user       = $request->user();
+        $almacenes  = $this->scope->almacenesVisibles($user);
+        $almacenIds = $almacenes->pluck('id')->toArray();
+        $umbral     = self::UMBRAL_BAJO;
+
+        $dir  = $request->input('dir') === 'desc' ? 'desc' : 'asc';
+        $sort = $request->input('sort', 'nombre');
+
+        $query = $this->queryBase($request, $almacenIds)
+            ->with(['producto.unidadBase.unidadMedida', 'producto.categoria:id,nombre', 'almacen.local'])
+            ->when($request->estado, function ($q, $e) use ($umbral) {
+                match ($e) {
+                    'con_stock' => $q->where('cantidad', '>', 0),
+                    'agotado'   => $q->where('cantidad', 0),
+                    'bajo'      => $q->where('cantidad', '>', 0)->where('cantidad', '<=', $umbral),
+                    'negativo'  => $q->where('cantidad', '<', 0),
+                    default     => $q,
+                };
+            });
+
+        match ($sort) {
+            'cantidad' => $query->orderBy('cantidad', $dir),
+            'costo'    => $query->orderBy('costo_promedio', $dir),
+            'valor'    => $query->orderByRaw("(cantidad * costo_promedio) {$dir}"),
+            default    => $query->orderBy(
+                DB::table('productos')->select('nombre')->whereColumn('productos.id', 'stock.producto_id'),
+                $dir,
+            ),
+        };
+
+        $items = $query->get();
+
+        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
+        $headers = ['Almacén', 'Producto', 'Código', 'Categoría', 'Unidad base', 'Cantidad', 'Costo promedio', 'Valor total', 'Estado'];
+        $csv .= implode(',', array_map($this->escaparCsv(...), $headers)) . "\n";
+
+        foreach ($items as $s) {
+            $cantidad = (float) $s->cantidad;
+            $estado   = $cantidad < 0 ? 'Negativo' : ($cantidad === 0.0 ? 'Agotado' : ($cantidad <= $umbral ? 'Bajo' : 'Con stock'));
+            $row = [
+                $s->almacen?->nombre ?? '—',
+                $s->producto?->nombre ?? '—',
+                $s->producto?->codigo ?? '—',
+                $s->producto?->categoria?->nombre ?? '—',
+                $s->producto?->unidadBase?->unidadMedida?->abreviatura ?? '—',
+                number_format($cantidad, 2, '.', ''),
+                number_format((float) $s->costo_promedio, 4, '.', ''),
+                number_format(round($cantidad * (float) $s->costo_promedio, 2), 2, '.', ''),
+                $estado,
+            ];
+            $csv .= implode(',', array_map($this->escaparCsv(...), $row)) . "\n";
+        }
+
+        $filename = 'stock_' . now()->format('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type'        => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    private function escaparCsv(string $value): string
+    {
+        $escaped = str_replace('"', '""', $value);
+        return '"' . $escaped . '"';
     }
 
     /**

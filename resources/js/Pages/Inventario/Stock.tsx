@@ -410,6 +410,13 @@ export default function Stock({
                 searchable={false}
                 sortable={false}
                 emptyMessage="No hay stock para este filtro"
+                onExportExcel={() => {
+                    const params = new URLSearchParams(window.location.search);
+                    params.delete('page');
+                    const url = route('inventario.stock.exportar') + (params.toString() ? `?${params.toString()}` : '');
+                    window.open(url, '_blank');
+                }}
+                exportFilename="stock"
             />
 
             {/* Modal: Ajustar stock — ingreso/salida por ajuste, sin dinero, con fecha propia */}

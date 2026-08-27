@@ -169,6 +169,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('inventario')->name('inventario.')->group(function () {
         // Stock
         Route::middleware('permiso:inventario.stock,ver')->get('stock', [StockController::class, 'index'])->name('stock.index');
+        Route::middleware('permiso:inventario.stock,ver')->get('stock/exportar', [StockController::class, 'exportar'])->name('stock.exportar');
         // Recalcular es una operación de mutación masiva → exige permiso "editar".
         Route::middleware('permiso:inventario.stock,editar')->post('stock/recalcular', [StockController::class, 'recalcular'])->name('stock.recalcular');
 
