@@ -87,6 +87,8 @@ export interface MetodoPagoCierre {
 
 export interface CajaCierre {
   montoApertura?: number;
+  montoFondosAdicionales?: number;
+  montoArrastre?: number;
   ventasEfectivo?: number;
   entradas?: number;
   salidas?: number;

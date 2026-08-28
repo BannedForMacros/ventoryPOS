@@ -123,6 +123,7 @@ class ReporteCajaController extends Controller
                 'fecha_apertura'         => $t->fecha_apertura?->toIso8601String(),
                 'fecha_cierre'           => $t->fecha_cierre?->toIso8601String(),
                 'monto_apertura'         => (float) $t->monto_apertura,
+                'monto_fondos_adicionales' => (float) ($t->monto_fondos_adicionales ?? 0),
                 'monto_caja_chica'       => (float) $t->monto_caja_chica,
                 'monto_cierre_declarado' => $t->monto_cierre_declarado !== null ? (float) $t->monto_cierre_declarado : null,
                 'monto_cierre_esperado'  => $t->monto_cierre_esperado  !== null ? (float) $t->monto_cierre_esperado  : null,

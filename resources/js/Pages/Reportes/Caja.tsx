@@ -57,6 +57,7 @@ interface TurnoRow {
     fecha_apertura: string;
     fecha_cierre:   string | null;
     monto_apertura:         number;
+    monto_fondos_adicionales: number;
     monto_caja_chica:       number;
     monto_cierre_declarado: number | null;
     monto_cierre_esperado:  number | null;
@@ -333,7 +334,13 @@ export default function ReportesCaja({
                             </div>
                             {abiertos.has(t.id) && (
                                 <div className="mt-2 pt-2 text-[11px] space-y-1" style={{ borderTop: '1px dashed var(--color-border)' }}>
-                                    <p style={{ color: 'var(--color-text)' }}>Apertura: <b>{fmtS(t.monto_apertura)}</b> · Caja chica: <b>{fmtS(t.monto_caja_chica)}</b></p>
+                                    <p style={{ color: 'var(--color-text)' }}>
+                                        Apertura: <b>{fmtS(t.monto_apertura)}</b>
+                                        {t.monto_fondos_adicionales > 0.009 && (
+                                            <span> (arrastre <b>{fmtS(t.monto_apertura - t.monto_fondos_adicionales)}</b> + adic. <b>{fmtS(t.monto_fondos_adicionales)}</b>)</span>
+                                        )}
+                                        {' · '}Caja chica: <b>{fmtS(t.monto_caja_chica)}</b>
+                                    </p>
                                     {t.monto_cierre_esperado !== null && (
                                         <p style={{ color: 'var(--color-text)' }}>Esperado: <b>{fmtS(t.monto_cierre_esperado)}</b> · Declarado: <b>{fmtS(t.monto_cierre_declarado ?? 0)}</b></p>
                                     )}
@@ -401,6 +408,9 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
                                 <p>Cerró: <b>{t.user_cierre?.name ?? t.user?.name ?? '—'}</b> · {fechaHora(t.fecha_cierre)}</p>
                             )}
                             <p>Monto apertura: <b>{fmtS(t.monto_apertura)}</b></p>
+                            {t.monto_fondos_adicionales > 0.009 && (
+                                <p>Fondos adicionales: <b>{fmtS(t.monto_fondos_adicionales)}</b> · Arrastre: <b>{fmtS(t.monto_apertura - t.monto_fondos_adicionales)}</b></p>
+                            )}
                             {t.monto_caja_chica > 0 && <p>Caja chica: <b>{fmtS(t.monto_caja_chica)}</b></p>}
                             {t.observacion_apertura && (
                                 <p className="italic" style={{ color: 'var(--color-text-muted)' }}>“{t.observacion_apertura}”</p>

@@ -282,6 +282,9 @@ export default function CerrarTurno({ turno, productosStockNegativo, ventasPorMe
                                 icon={<Wallet size={16} style={{ color: 'var(--color-success)' }} />}
                                 label="Monto apertura"
                                 valor={`S/ ${parseFloat(turno.monto_apertura).toFixed(2)}`}
+                                subvalor={Number(turno.monto_fondos_adicionales ?? 0) > 0.009
+                                    ? `Arrastre S/ ${(parseFloat(turno.monto_apertura) - Number(turno.monto_fondos_adicionales ?? 0)).toFixed(2)} + Adic. S/ ${parseFloat(turno.monto_fondos_adicionales).toFixed(2)}`
+                                    : undefined}
                             />
                         </div>
                     </Section>
@@ -708,7 +711,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     );
 }
 
-function InfoCard({ icon, label, valor }: { icon: React.ReactNode; label: string; valor: string }) {
+function InfoCard({ icon, label, valor, subvalor }: { icon: React.ReactNode; label: string; valor: string; subvalor?: string }) {
     return (
         <div
             className="rounded-lg px-3 py-2"
@@ -716,6 +719,7 @@ function InfoCard({ icon, label, valor }: { icon: React.ReactNode; label: string
         >
             <div className="flex items-center gap-2 mb-1">{icon}<p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p></div>
             <p className="font-semibold text-sm" style={{ color: 'var(--color-text)' }}>{valor}</p>
+            {subvalor && <p className="text-xs mt-0.5 font-medium" style={{ color: 'var(--color-primary)' }}>{subvalor}</p>}
         </div>
     );
 }

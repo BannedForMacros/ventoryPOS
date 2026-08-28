@@ -144,6 +144,9 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin, co
                     icon={<Wallet size={16} style={{ color: 'var(--color-success)' }} />}
                     label="Monto apertura"
                     valor={`S/ ${parseFloat(turno.monto_apertura).toFixed(2)}`}
+                    subvalor={Number(turno.monto_fondos_adicionales ?? 0) > 0.009
+                        ? `Arrastre S/ ${(parseFloat(turno.monto_apertura) - Number(turno.monto_fondos_adicionales ?? 0)).toFixed(2)} + Adic. S/ ${parseFloat(turno.monto_fondos_adicionales).toFixed(2)}`
+                        : undefined}
                     action={
                         puedeEditarApertura && (
                             <button
@@ -612,6 +615,7 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin, co
                 onClose={() => setModalEditarApertura(false)}
                 turnoId={turno.id}
                 montoActual={turno.monto_apertura}
+                fondosAdicionalesActuales={Number(turno.monto_fondos_adicionales ?? 0)}
                 editable={configEfectivo?.apertura_editable ?? true}
             />
         </AppLayout>

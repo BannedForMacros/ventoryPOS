@@ -332,6 +332,7 @@ export interface Turno extends Record<string, unknown> {
     user_id:                 number;
     user_cierre_id:          number | null;
     monto_apertura:          string;
+    monto_fondos_adicionales: string;
     monto_caja_chica:        string;
     monto_cierre_declarado:  string | null;
     monto_cierre_esperado:   string | null;

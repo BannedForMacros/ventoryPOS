@@ -16,8 +16,9 @@ class ActualizarAperturaRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'monto_apertura' => ['required', 'numeric', 'min:0'],
-            'motivo'         => ['required', 'string', 'min:10', 'max:500'],
+            'monto_apertura'           => ['required', 'numeric', 'min:0'],
+            'monto_fondos_adicionales' => ['nullable', 'numeric', 'min:0'],
+            'motivo'                   => ['required', 'string', 'min:10', 'max:500'],
         ];
     }
 

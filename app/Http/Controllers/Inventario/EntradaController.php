@@ -280,13 +280,12 @@ class EntradaController extends Controller
             'metodo_pago_id'   => 'nullable|exists:metodos_pago,id',
             'cuenta_id'        => 'nullable|exists:cuentas,id',
             'pagos'                            => 'nullable|array|max:10',
-            'pagos.*.metodo_pago_id'           => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.metodo_pago_id'           => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id), $this->reglaMetodoOAdelantoEnArray()],
             'pagos.*.cuenta_id'                => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoriaEnArray($request)],
-            'pagos.*.proveedor_adelanto_id'  => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.proveedor_adelanto_id'    => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'                    => 'required|numeric|min:0.01',
             'pagos.*.referencia'               => 'nullable|string|max:200',
             'pagos.*.fecha'                    => ['nullable', 'date'],
-            // "Afecta caja a:" — turno de cuya caja sale el efectivo del pago.
             'turno_id'                 => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
@@ -510,9 +509,9 @@ class EntradaController extends Controller
             // Pagos NUEVOS registrados desde la edición (p. ej. se agregó un
             // producto y se paga la diferencia ahí mismo).
             'pagos'                            => 'nullable|array|max:10',
-            'pagos.*.metodo_pago_id'           => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.metodo_pago_id'           => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id), $this->reglaMetodoOAdelantoEnArray()],
             'pagos.*.cuenta_id'                => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoriaEnArray($request)],
-            'pagos.*.proveedor_adelanto_id'  => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.proveedor_adelanto_id'    => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'                    => 'required|numeric|min:0.01',
             'pagos.*.referencia'               => 'nullable|string|max:200',
             'pagos.*.fecha'                    => ['nullable', 'date'],
@@ -1157,6 +1156,18 @@ class EntradaController extends Controller
         return redirect()->back()->with('success', $entrada->fresh()->esEnTransito()
             ? 'Entrada reactivada: vuelve a quedar en camino y por pagar.'
             : 'Entrada reactivada: quedó confirmada y por pagar; stock y kardex re-aplicados.');
+    }
+
+    private function reglaMetodoOAdelantoEnArray(): \Closure
+    {
+        return function ($attr, $value, $fail) {
+            preg_match('/pagos\.(\d+)\.metodo_pago_id/', $attr, $m);
+            $idx = $m[1] ?? null;
+            if ($idx === null) return;
+            if (! $value && ! request()->input("pagos.{$idx}.proveedor_adelanto_id")) {
+                $fail('Cada pago debe tener un metodo de pago o un adelanto de proveedor.');
+            }
+        };
     }
 
     /**

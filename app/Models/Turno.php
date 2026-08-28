@@ -11,7 +11,7 @@ class Turno extends Model
 {
     protected $fillable = [
         'empresa_id', 'local_id', 'caja_id', 'user_id', 'user_cierre_id',
-        'monto_apertura', 'monto_caja_chica',
+        'monto_apertura', 'monto_fondos_adicionales', 'monto_caja_chica',
         'monto_cierre_declarado', 'monto_cierre_esperado', 'diferencia',
         'estado', 'fecha_apertura', 'fecha_cierre',
         'observacion_apertura', 'observacion_cierre',
@@ -21,14 +21,15 @@ class Turno extends Model
     protected function casts(): array
     {
         return [
-            'fecha_apertura'          => 'datetime',
-            'fecha_cierre'            => 'datetime',
-            'monto_apertura'          => 'decimal:2',
-            'monto_caja_chica'        => 'decimal:2',
-            'monto_cierre_declarado'  => 'decimal:2',
-            'monto_cierre_esperado'   => 'decimal:2',
-            'diferencia'              => 'decimal:2',
-            'efectivo_arrastre'       => 'decimal:2',
+            'fecha_apertura'             => 'datetime',
+            'fecha_cierre'               => 'datetime',
+            'monto_apertura'             => 'decimal:2',
+            'monto_fondos_adicionales'   => 'decimal:2',
+            'monto_caja_chica'           => 'decimal:2',
+            'monto_cierre_declarado'    => 'decimal:2',
+            'monto_cierre_esperado'      => 'decimal:2',
+            'diferencia'                 => 'decimal:2',
+            'efectivo_arrastre'          => 'decimal:2',
         ];
     }
 
@@ -266,6 +267,15 @@ class Turno extends Model
         }
 
         return null; // modo libre
+    }
+
+    /**
+     * Monto del turno que proviene del arrastre del cierre anterior.
+     * Es el total de apertura menos los fondos adicionales inyectados.
+     */
+    public function getMontoArrastreAttribute(): float
+    {
+        return round((float) $this->monto_apertura - (float) ($this->monto_fondos_adicionales ?? 0), 2);
     }
 
     /**

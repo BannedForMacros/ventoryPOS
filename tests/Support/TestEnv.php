@@ -251,17 +251,18 @@ class TestEnv
     /**
      * Abre un turno para el usuario indicado (o el admin por defecto).
      */
-    public function abrirTurno(?User $user = null, float $apertura = 100.0): Turno
+    public function abrirTurno(?User $user = null, float $apertura = 100.0, float $fondosAdicionales = 0.0): Turno
     {
         return Turno::create([
-            'empresa_id'      => $this->empresa->id,
-            'local_id'        => $this->local->id,
-            'caja_id'         => $this->caja->id,
-            'user_id'         => ($user ?? $this->admin)->id,
-            'monto_apertura'  => $apertura,
-            'monto_caja_chica'=> 0,
-            'estado'          => 'abierto',
-            'fecha_apertura'  => now(),
+            'empresa_id'               => $this->empresa->id,
+            'local_id'                 => $this->local->id,
+            'caja_id'                  => $this->caja->id,
+            'user_id'                  => ($user ?? $this->admin)->id,
+            'monto_apertura'           => $apertura,
+            'monto_fondos_adicionales' => $fondosAdicionales,
+            'monto_caja_chica'         => 0,
+            'estado'                   => 'abierto',
+            'fecha_apertura'           => now(),
         ]);
     }
 

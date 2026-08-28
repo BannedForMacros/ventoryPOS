@@ -260,29 +260,51 @@ class TurnoController extends Controller
         // Apertura sugerida (arrastre / fondo fijo). El servidor manda: si la
         // empresa bloqueó la edición, se usa el sugerido aunque el cliente
         // envíe otro monto; si la edición está permitida y difiere, se audita.
-        $empresa        = \App\Models\Empresa::find($user->empresa_id);
-        $sugerida       = Turno::aperturaSugeridaParaCaja($caja);
-        $montoApertura  = (float) $request->input('monto_apertura');
-        $fueAjustada    = false;
+        $empresa           = \App\Models\Empresa::find($user->empresa_id);
+        $sugerida          = Turno::aperturaSugeridaParaCaja($caja);
+        $montoApertura     = (float) $request->input('monto_apertura');
+        $fondosAdicionales = max(0, (float) $request->input('monto_fondos_adicionales', 0));
+        $fueAjustada       = false;
+        $arrastre          = null;
+
         if ($sugerida !== null) {
+            $arrastre = (float) $sugerida['monto'];
+            $montoAperturaEsperado = round($arrastre + $fondosAdicionales, 2);
+
             if (!($empresa?->apertura_editable ?? true)) {
-                $montoApertura = (float) $sugerida['monto'];
-            } elseif (abs($montoApertura - (float) $sugerida['monto']) >= 0.01) {
+                // Apertura no editable: el arrastre es fijo, pero los fondos
+                // adicionales siempre se permiten inyectar.
+                $montoApertura = $montoAperturaEsperado;
+            } elseif (abs($montoApertura - $montoAperturaEsperado) >= 0.01) {
+                // Si el total no coincide con arrastre + adicionales, confiamos
+                // en el total y recalculamos los fondos adicionales (legacy).
+                $fondosAdicionales = max(0, round($montoApertura - $arrastre, 2));
                 $fueAjustada = true;
             }
         }
 
         $turno = Turno::create([
-            'empresa_id'           => $user->empresa_id,
-            'local_id'             => $caja->local_id,
-            'caja_id'              => $caja->id,
-            'user_id'              => $user->id,
-            'monto_apertura'       => $montoApertura,
-            'monto_caja_chica'     => $montoCajaChica,
-            'estado'               => 'abierto',
-            'fecha_apertura'       => now(),
-            'observacion_apertura' => $request->input('observacion_apertura'),
+            'empresa_id'               => $user->empresa_id,
+            'local_id'                 => $caja->local_id,
+            'caja_id'                  => $caja->id,
+            'user_id'                  => $user->id,
+            'monto_apertura'           => $montoApertura,
+            'monto_fondos_adicionales' => $fondosAdicionales,
+            'monto_caja_chica'         => $montoCajaChica,
+            'estado'                   => 'abierto',
+            'fecha_apertura'           => now(),
+            'observacion_apertura'     => $request->input('observacion_apertura'),
         ]);
+
+        if ($fondosAdicionales > 0.009 && $arrastre !== null) {
+            \App\Services\AuditoriaService::log('turno.apertura_fondos_adicionales', $turno, [
+                'caja'               => $caja->nombre,
+                'arrastre'           => $arrastre,
+                'fondos_adicionales' => $fondosAdicionales,
+                'total_apertura'     => $montoApertura,
+                'origen'             => $sugerida['origen'] ?? null,
+            ], $user);
+        }
 
         if ($fueAjustada) {
             \App\Services\AuditoriaService::log('turno.apertura_ajustada', $turno, [
@@ -316,22 +338,40 @@ class TurnoController extends Controller
             ]);
         }
 
-        $montoAnterior = (float) $turno->monto_apertura;
-        $montoNuevo    = (float) $request->validated('monto_apertura');
-        $motivo        = $request->validated('motivo');
+        $montoAnterior    = (float) $turno->monto_apertura;
+        $adicionalesAnt   = (float) $turno->monto_fondos_adicionales;
+        $montoNuevo       = (float) $request->validated('monto_apertura');
+        $adicionalesNuevo = max(0, (float) $request->validated('monto_fondos_adicionales'));
+        $motivo           = $request->validated('motivo');
 
-        if (abs($montoNuevo - $montoAnterior) < 0.01) {
+        // El arrastre se deriva del cierre anterior de la misma caja.
+        $sugerida = Turno::aperturaSugeridaParaCaja($turno->caja);
+        $arrastre = $sugerida ? (float) $sugerida['monto'] : 0;
+
+        // El total debe ser arrastre + fondos adicionales (o mayor, si el usuario
+        // sube el total; en ese caso se recalculan los adicionales).
+        $montoAperturaEsperado = round($arrastre + $adicionalesNuevo, 2);
+        if (abs($montoNuevo - $montoAperturaEsperado) >= 0.01) {
+            $adicionalesNuevo = max(0, round($montoNuevo - $arrastre, 2));
+        }
+
+        if (abs($montoNuevo - $montoAnterior) < 0.01 && abs($adicionalesNuevo - $adicionalesAnt) < 0.01) {
             return back()->with('success', 'El monto ingresado es igual al actual; no se realizaron cambios.');
         }
 
-        $turno->update(['monto_apertura' => $montoNuevo]);
+        $turno->update([
+            'monto_apertura'           => $montoNuevo,
+            'monto_fondos_adicionales' => $adicionalesNuevo,
+        ]);
 
         \App\Services\AuditoriaService::log('turno.apertura_editada', $turno, [
-            'caja'           => $turno->caja?->nombre,
-            'monto_anterior' => $montoAnterior,
-            'monto_nuevo'    => $montoNuevo,
-            'diferencia'     => round($montoNuevo - $montoAnterior, 2),
-            'motivo'         => $motivo,
+            'caja'                  => $turno->caja?->nombre,
+            'monto_anterior'        => $montoAnterior,
+            'monto_nuevo'           => $montoNuevo,
+            'fondos_adicionales'    => $adicionalesNuevo,
+            'arrastre'              => $arrastre,
+            'diferencia'            => round($montoNuevo - $montoAnterior, 2),
+            'motivo'                => $motivo,
         ], $user);
 
         return redirect()->back()->with('success', 'Monto de apertura actualizado correctamente.');

@@ -164,6 +164,97 @@ it('cerrar turno CON diferencia (faltante) la guarda en negativo', function () {
     expect((float) $turno->diferencia)->toBe(-10.0);
 });
 
+it('abrir un turno en modo arrastre separa fondos adicionales del arrastre', function () {
+    $this->env->empresa->update(['modo_apertura_caja' => 'arrastre']);
+
+    // Primer turno cerrado con 150 de efectivo esperado (quedará como arrastre)
+    $primero = $this->env->abrirTurno(apertura: 100);
+    ventaEfectivo($this->env, $primero, 50);
+    $this->post(route('turnos.cerrar', $primero), [
+        'arqueo' => [
+            ['denominacion' => 100, 'cantidad' => 1],
+            ['denominacion' => 50, 'cantidad' => 1],
+        ],
+        'arqueo_metodos' => [],
+    ])->assertRedirect();
+    expect($primero->fresh()->estado)->toBe('cerrado');
+
+    // Segundo turno: arrastre 150 + fondos adicionales 50 = apertura 200
+    $response = $this->post(route('turnos.abrir'), [
+        'caja_id'                  => $this->env->caja->id,
+        'monto_apertura'           => 200,
+        'monto_fondos_adicionales' => 50,
+        'observacion_apertura'     => 'Apertura con fondos adicionales',
+    ]);
+
+    $response->assertRedirect();
+    $turno = Turno::where('caja_id', $this->env->caja->id)->where('estado', 'abierto')->first();
+    expect((float) $turno->monto_apertura)->toBe(200.0);
+    expect((float) $turno->monto_fondos_adicionales)->toBe(50.0);
+    expect($turno->montoArrastre)->toBe(150.0);
+});
+
+it('abrir turno con apertura bloqueada fuerza arrastre + fondos adicionales', function () {
+    $this->env->empresa->update(['modo_apertura_caja' => 'arrastre', 'apertura_editable' => false]);
+
+    $primero = $this->env->abrirTurno(apertura: 80);
+    ventaEfectivo($this->env, $primero, 20);
+    $this->post(route('turnos.cerrar', $primero), [
+        'arqueo' => [
+            ['denominacion' => 100, 'cantidad' => 1],
+        ],
+        'arqueo_metodos' => [],
+    ]);
+
+    // El cliente envía otro monto, pero el servidor lo ignora.
+    $this->post(route('turnos.abrir'), [
+        'caja_id'                  => $this->env->caja->id,
+        'monto_apertura'           => 999,
+        'monto_fondos_adicionales' => 25,
+    ])->assertRedirect();
+
+    $turno = Turno::where('caja_id', $this->env->caja->id)->where('estado', 'abierto')->first();
+    expect((float) $turno->monto_apertura)->toBe(125.0); // 100 arrastre + 25 adicionales
+    expect((float) $turno->monto_fondos_adicionales)->toBe(25.0);
+});
+
+it('actualizar apertura recalcula fondos adicionales a partir del arrastre', function () {
+    $this->env->empresa->update(['modo_apertura_caja' => 'arrastre', 'apertura_editable' => true]);
+
+    $primero = $this->env->abrirTurno(apertura: 100);
+    ventaEfectivo($this->env, $primero, 50);
+    $this->post(route('turnos.cerrar', $primero), [
+        'arqueo' => [
+            ['denominacion' => 100, 'cantidad' => 1],
+            ['denominacion' => 50, 'cantidad' => 1],
+        ],
+        'arqueo_metodos' => [],
+    ]);
+
+    $segundo = Turno::create([
+        'empresa_id'               => $this->env->empresa->id,
+        'local_id'                 => $this->env->local->id,
+        'caja_id'                  => $this->env->caja->id,
+        'user_id'                  => $this->env->admin->id,
+        'monto_apertura'           => 160,
+        'monto_fondos_adicionales' => 10,
+        'monto_caja_chica'         => 0,
+        'estado'                   => 'abierto',
+        'fecha_apertura'           => now(),
+    ]);
+
+    $this->patch(route('turnos.apertura.update', $segundo), [
+        'monto_apertura'           => 180,
+        'monto_fondos_adicionales' => 30,
+        'motivo'                   => 'Corrijo conteo',
+    ])->assertRedirect();
+
+    $segundo->refresh();
+    expect((float) $segundo->monto_apertura)->toBe(180.0);
+    expect((float) $segundo->monto_fondos_adicionales)->toBe(30.0);
+    expect($segundo->montoArrastre)->toBe(150.0);
+});
+
 it('reabrir un turno cerrado limpia los campos de cierre y registra auditoría', function () {
     $turno = $this->env->abrirTurno(apertura: 100);
     ventaEfectivo($this->env, $turno, 50);

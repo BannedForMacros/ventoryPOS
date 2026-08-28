@@ -24,17 +24,19 @@ interface ConfigEfectivo {
 }
 
 interface AbrirForm {
-    caja_id:               number | '';
-    monto_apertura:        string;
-    monto_caja_chica:      string;
-    observacion_apertura:  string;
+    caja_id:                    number | '';
+    monto_apertura:             string;
+    monto_fondos_adicionales:   string;
+    monto_caja_chica:           string;
+    observacion_apertura:       string;
 }
 
 const emptyForm = (): AbrirForm => ({
-    caja_id:              '',
-    monto_apertura:       '',
-    monto_caja_chica:     '',
-    observacion_apertura: '',
+    caja_id:                  '',
+    monto_apertura:           '',
+    monto_fondos_adicionales: '',
+    monto_caja_chica:         '',
+    observacion_apertura:     '',
 });
 
 interface ConfigFondosLocal {
@@ -71,14 +73,15 @@ export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, con
 
     function handleCajaChange(id: number | string) {
         const caja = cajasDisponibles.find(c => c.id === Number(id)) ?? null;
+        const sugeridoMonto = caja?.apertura_sugerida?.monto ?? 0;
         setForm(f => ({
             ...f,
-            caja_id:          Number(id) || '',
-            // Precarga con la apertura sugerida (la cajera ya no digita de memoria)
-            monto_apertura:   caja?.apertura_sugerida
-                ? caja.apertura_sugerida.monto.toFixed(2)
-                : f.monto_apertura,
-            monto_caja_chica: caja?.caja_chica_activa
+            caja_id:                  Number(id) || '',
+            // Precarga con el arrastre (la cajera ya no digita de memoria). Los
+            // fondos adicionales quedan en 0; el total es arrastre + adicionales.
+            monto_apertura:           sugeridoMonto ? sugeridoMonto.toFixed(2) : '',
+            monto_fondos_adicionales: '',
+            monto_caja_chica:         caja?.caja_chica_activa
                 ? String(caja.caja_chica_monto_sugerido)
                 : '',
         }));
@@ -92,7 +95,11 @@ export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, con
 
     function submit() {
         setSaving(true);
-        router.post(route('turnos.abrir'), form as any, {
+        const payload = {
+            ...form,
+            monto_fondos_adicionales: form.monto_fondos_adicionales || '0',
+        };
+        router.post(route('turnos.abrir'), payload as any, {
             onSuccess: () => { setSaving(false); handleClose(); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         });
@@ -126,36 +133,81 @@ export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, con
                 />
 
                 <div className="space-y-2">
-                    <Input
-                        label="Monto de apertura (S/)"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        required
-                        value={form.monto_apertura}
-                        onChange={e => setForm(f => ({ ...f, monto_apertura: e.target.value }))}
-                        placeholder="0.00"
-                        error={errors.monto_apertura}
-                        disabled={saving || aperturaBloqueada}
-                    />
-                    {sugerida && (
-                        <div
-                            className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
-                            style={{
-                                backgroundColor: 'color-mix(in srgb, var(--color-success) 8%, transparent)',
-                                color: 'var(--color-text-muted)',
-                            }}
-                        >
-                            <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-success)' }} />
-                            <span>
-                                {sugerida.origen === 'arrastre'
-                                    ? <>Apertura sugerida por <strong>arrastre</strong>: {sugerida.detalle}.</>
-                                    : <>Apertura por <strong>fondo fijo</strong> de esta caja.</>}
-                                {aperturaBloqueada
-                                    ? ' El monto lo fija el sistema (configuración de la empresa).'
-                                    : ' Puedes ajustarlo; el cambio quedará auditado.'}
-                            </span>
+                    {sugerida ? (
+                        <div className="rounded-xl p-3 space-y-3" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                            <Input
+                                label="Arrastre del cierre anterior (S/)"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={sugerida.monto.toFixed(2)}
+                                disabled
+                            />
+                            <Input
+                                label="Fondos adicionales (S/)"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={form.monto_fondos_adicionales}
+                                onChange={e => {
+                                    const adicionales = Math.max(0, parseFloat(e.target.value || '0'));
+                                    setForm(f => ({
+                                        ...f,
+                                        monto_fondos_adicionales: e.target.value,
+                                        monto_apertura: (sugerida.monto + adicionales).toFixed(2),
+                                    }));
+                                }}
+                                placeholder="0.00"
+                                error={errors.monto_fondos_adicionales}
+                                disabled={saving}
+                            />
+                            <Input
+                                label="Total apertura (S/)"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                required
+                                value={form.monto_apertura}
+                                disabled={aperturaBloqueada || saving}
+                                onChange={e => {
+                                    const total = Math.max(0, parseFloat(e.target.value || '0'));
+                                    setForm(f => ({
+                                        ...f,
+                                        monto_apertura: e.target.value,
+                                        monto_fondos_adicionales: Math.max(0, total - sugerida.monto).toFixed(2),
+                                    }));
+                                }}
+                                error={errors.monto_apertura}
+                            />
+                            <div
+                                className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+                                style={{
+                                    backgroundColor: 'color-mix(in srgb, var(--color-success) 8%, transparent)',
+                                    color: 'var(--color-text-muted)',
+                                }}
+                            >
+                                <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-success)' }} />
+                                <span>
+                                    {sugerida.origen === 'arrastre'
+                                        ? <>Apertura sugerida por <strong>arrastre</strong>: {sugerida.detalle}.</>
+                                        : <>Apertura por <strong>fondo fijo</strong> de esta caja.</>}
+                                    {' '}El arrastre es fijo; solo puedes sumar fondos adicionales. El cambio quedará auditado.
+                                </span>
+                            </div>
                         </div>
+                    ) : (
+                        <Input
+                            label="Monto de apertura (S/)"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={form.monto_apertura}
+                            onChange={e => setForm(f => ({ ...f, monto_apertura: e.target.value }))}
+                            placeholder="0.00"
+                            error={errors.monto_apertura}
+                            disabled={saving}
+                        />
                     )}
                 </div>
 

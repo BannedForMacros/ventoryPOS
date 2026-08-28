@@ -113,7 +113,16 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
         },
         {
             key: 'monto_apertura', label: 'Apertura (S/)',
-            render: (t) => <span>S/ {parseFloat(t.monto_apertura).toFixed(2)}</span>,
+            render: (t) => (
+                <div className="flex flex-col">
+                    <span>S/ {parseFloat(t.monto_apertura).toFixed(2)}</span>
+                    {Number(t.monto_fondos_adicionales ?? 0) > 0.009 && (
+                        <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                            +S/ {parseFloat(t.monto_fondos_adicionales).toFixed(2)} adic.
+                        </span>
+                    )}
+                </div>
+            ),
         },
         {
             key: 'diferencia', label: 'Diferencia',
@@ -417,6 +426,7 @@ export default function TurnosIndex({ turnos, buscar, cajasDisponibles, metodosP
                     onClose={() => setModalEditarApertura(false)}
                     turnoId={turnoActivo.id}
                     montoActual={turnoActivo.monto_apertura}
+                    fondosAdicionalesActuales={turnoActivo.monto_fondos_adicionales}
                     editable={configEfectivo.apertura_editable}
                 />
             )}

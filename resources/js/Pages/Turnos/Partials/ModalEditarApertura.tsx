@@ -6,11 +6,12 @@ import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 
 interface Props {
-    isOpen:          boolean;
-    onClose:         () => void;
-    turnoId:         number;
-    montoActual:     number | string;
-    editable?:       boolean;
+    isOpen:                     boolean;
+    onClose:                    () => void;
+    turnoId:                    number;
+    montoActual:                number | string;
+    fondosAdicionalesActuales?: number | string;
+    editable?:                  boolean;
 }
 
 export default function ModalEditarApertura({
@@ -18,15 +19,18 @@ export default function ModalEditarApertura({
     onClose,
     turnoId,
     montoActual,
+    fondosAdicionalesActuales = 0,
     editable = true,
 }: Props) {
     const [monto, setMonto]   = useState(String(montoActual ?? ''));
+    const [adicionales, setAdicionales] = useState(String(fondosAdicionalesActuales ?? ''));
     const [motivo, setMotivo] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
 
     function handleClose() {
         setMonto(String(montoActual ?? ''));
+        setAdicionales(String(fondosAdicionalesActuales ?? ''));
         setMotivo('');
         setErrors({});
         onClose();
@@ -35,7 +39,8 @@ export default function ModalEditarApertura({
     function submit() {
         setSaving(true);
         router.patch(route('turnos.apertura.update', turnoId), {
-            monto_apertura: monto,
+            monto_apertura:           monto,
+            monto_fondos_adicionales: adicionales || '0',
             motivo,
         }, {
             preserveScroll: true,
@@ -45,6 +50,10 @@ export default function ModalEditarApertura({
     }
 
     const motivoValido = motivo.trim().length >= 10;
+
+    const montoNum = parseFloat(monto || '0');
+    const adicionalesNum = Math.max(0, parseFloat(adicionales || '0'));
+    const arrastreCalculado = Math.max(0, montoNum - adicionalesNum).toFixed(2);
 
     return (
         <Modal
@@ -73,7 +82,19 @@ export default function ModalEditarApertura({
                 )}
 
                 <Input
-                    label="Nuevo monto de apertura (S/)"
+                    label="Fondos adicionales (S/)"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={adicionales}
+                    onChange={e => setAdicionales(e.target.value)}
+                    placeholder="0.00"
+                    error={errors.monto_fondos_adicionales}
+                    disabled={saving || !editable}
+                />
+
+                <Input
+                    label="Total apertura (S/)"
                     type="number"
                     step="0.01"
                     min="0"
@@ -84,6 +105,14 @@ export default function ModalEditarApertura({
                     error={errors.monto_apertura}
                     disabled={saving || !editable}
                 />
+
+                <div
+                    className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-success) 8%, transparent)', color: 'var(--color-text-muted)' }}
+                >
+                    <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-success)' }} />
+                    Arrastre calculado: <strong>S/ {arrastreCalculado}</strong> = total menos fondos adicionales.
+                </div>
 
                 <div>
                     <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>

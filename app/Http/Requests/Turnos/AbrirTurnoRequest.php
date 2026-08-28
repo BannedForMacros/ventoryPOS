@@ -13,10 +13,11 @@ class AbrirTurnoRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'caja_id'              => ['required', 'integer', 'exists:cajas,id'],
-            'monto_apertura'       => ['required', 'numeric', 'min:0'],
-            'monto_caja_chica'     => ['nullable', 'numeric', 'min:0'],
-            'observacion_apertura' => ['nullable', 'string', 'max:500'],
+            'caja_id'                   => ['required', 'integer', 'exists:cajas,id'],
+            'monto_apertura'            => ['required', 'numeric', 'min:0'],
+            'monto_fondos_adicionales'  => ['nullable', 'numeric', 'min:0'],
+            'monto_caja_chica'          => ['nullable', 'numeric', 'min:0'],
+            'observacion_apertura'      => ['nullable', 'string', 'max:500'],
         ];
     }
 
