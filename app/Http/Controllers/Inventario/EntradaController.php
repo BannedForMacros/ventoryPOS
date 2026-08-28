@@ -7,6 +7,7 @@ use App\Models\Almacen;
 use App\Models\Cuenta;
 use App\Models\Entrada;
 use App\Support\AfectaCaja;
+use App\Support\ExigeCuentaDePago;
 use App\Support\PagoCuenta;
 use App\Models\EntradaPago;
 use App\Models\MetodoPago;
@@ -25,6 +26,7 @@ use Inertia\Inertia;
 
 class EntradaController extends Controller
 {
+    use ExigeCuentaDePago;
     public function __construct(
         private LocalScopeService $scope,
         private TesoreriaService $tesoreria,
@@ -278,19 +280,8 @@ class EntradaController extends Controller
             'metodo_pago_id'   => 'nullable|exists:metodos_pago,id',
             'cuenta_id'        => 'nullable|exists:cuentas,id',
             'pagos'                            => 'nullable|array|max:10',
-            'pagos.*.metodo_pago_id'           => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'pagos.*.cuenta_id'                => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id),
-                function ($attr, $value, $fail) use ($request) {
-                    if ($value) return;
-                    preg_match('/pagos\.(\d+)\./', $attr, $m);
-                    $indice = $m[1] ?? null;
-                    if ($indice === null) return;
-                    if ($request->input("pagos.{$indice}.proveedor_adelanto_id")) return;
-                    if (PagoCuenta::requiere((int) $request->input("pagos.{$indice}.metodo_pago_id"))) {
-                        $fail('Debes seleccionar la cuenta para este método de pago.');
-                    }
-                },
-            ],
+            'pagos.*.metodo_pago_id'           => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.cuenta_id'                => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoriaEnArray($request)],
             'pagos.*.proveedor_adelanto_id'  => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'                    => 'required|numeric|min:0.01',
             'pagos.*.referencia'               => 'nullable|string|max:200',
@@ -519,19 +510,8 @@ class EntradaController extends Controller
             // Pagos NUEVOS registrados desde la edición (p. ej. se agregó un
             // producto y se paga la diferencia ahí mismo).
             'pagos'                            => 'nullable|array|max:10',
-            'pagos.*.metodo_pago_id'           => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'pagos.*.cuenta_id'                => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id),
-                function ($attr, $value, $fail) use ($request) {
-                    if ($value) return;
-                    preg_match('/pagos\.(\d+)\./', $attr, $m);
-                    $indice = $m[1] ?? null;
-                    if ($indice === null) return;
-                    if ($request->input("pagos.{$indice}.proveedor_adelanto_id")) return;
-                    if (PagoCuenta::requiere((int) $request->input("pagos.{$indice}.metodo_pago_id"))) {
-                        $fail('Debes seleccionar la cuenta para este método de pago.');
-                    }
-                },
-            ],
+            'pagos.*.metodo_pago_id'           => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'pagos.*.cuenta_id'                => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoriaEnArray($request)],
             'pagos.*.proveedor_adelanto_id'  => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'                    => 'required|numeric|min:0.01',
             'pagos.*.referencia'               => 'nullable|string|max:200',
@@ -974,8 +954,8 @@ class EntradaController extends Controller
 
         $data = $request->validate([
             'estado_pago'    => 'required|in:pendiente,pagado',
-            'metodo_pago_id' => ['nullable', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
-            'cuenta_id'      => ['nullable', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
+            'metodo_pago_id' => ['required_if:estado_pago,pagado', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
         ]);
 
         if ($data['estado_pago'] === 'pagado') {

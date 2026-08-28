@@ -28,7 +28,7 @@ class StoreGastoRequest extends FormRequest
             // Método de pago con el que se paga el gasto (y su cuenta si tiene).
             // El backend lo resuelve a una cuenta_id concreta vía resolverCuenta.
             'metodo_pago_id' => [
-                'nullable', 'integer',
+                'required', 'integer',
                 Rule::exists('metodos_pago', 'id')->where('empresa_id', $empresaId)->where('activo', true),
             ],
             // Id de la fila pivote cuenta_metodo_pago (NO el id de la cuenta).

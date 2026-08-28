@@ -169,15 +169,6 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
-    /** Cuentas válidas para el método elegido (vinculadas; efectivo → caja Efectivo). */
-    function cuentasDeMetodo(mid: string) {
-        const m = metodosPago.find(x => String(x.id) === mid);
-        if (!m) return cuentas;
-        if (m.cuentas?.length) return m.cuentas;
-        if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
-        return []; // electronico sin cuenta vinculada: se crea sola con el nombre del metodo
-    }
-
     function abrirAbono(v: VentaCxc) {
         setAbonando(v);
         setErrors({});
@@ -372,34 +363,23 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                 ? <Callout variant="success" title="Con este abono la venta queda SALDADA" />
                                 : <Callout variant="info" title="Nuevo saldo pendiente" aside={money(nuevo)} />;
                         })()}
-                        <Select label="Método de pago" required
-                            options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                            value={form.metodo_pago_id}
-                            onChange={v => {
-                                const cts = cuentasDeMetodo(String(v));
-                                setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' }));
+                        <PagoForm
+                            value={{
+                                metodo_pago_id: form.metodo_pago_id,
+                                cuenta_id: form.cuenta_id,
+                                referencia: form.referencia,
                             }}
-                            placeholder="— Seleccionar —"
-                            error={errors.metodo_pago_id}
-                        />
-                        {cuentasDeMetodo(form.metodo_pago_id).length > 0 ? (
-                            <Select label="Cuenta destino"
-                                options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                                value={form.cuenta_id}
-                                onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
-                                placeholder="— Seleccionar —"
-                                hint={form.metodo_pago_id ? 'Solo las cuentas vinculadas al método elegido' : undefined}
-                                error={errors.cuenta_id}
-                            />
-                        ) : (
-                            <Callout variant="info">
-                                El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
-                                que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
-                            </Callout>
-                        )}
-                        <Input label="Referencia (operación, voucher...)"
-                            value={form.referencia}
-                            onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))}
+                            onChange={v => setForm(f => ({
+                                ...f,
+                                metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
+                                cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
+                                referencia: v.referencia ?? '',
+                            }))}
+                            metodosPago={metodosPago}
+                            cuentas={cuentas}
+                            errors={errors}
+                            required={true}
+                            showObservacion={false}
                         />
                         <Input label="Observación"
                             value={form.observacion}
@@ -690,29 +670,25 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                 )
                                 : <Callout variant="info" title="Máximo permitido" aside={money(topeEditar)} />
                         )}
-                        <Select label="Método de pago" required
-                            options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                            value={formAbono.metodo_pago_id}
-                            onChange={v => {
-                                const cts = cuentasDeMetodo(String(v));
-                                setFormAbono(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' }));
+                        <PagoForm
+                            value={{
+                                metodo_pago_id: formAbono.metodo_pago_id,
+                                cuenta_id: formAbono.cuenta_id,
+                                referencia: formAbono.referencia,
+                                observacion: formAbono.observacion,
                             }}
-                            placeholder="— Seleccionar —"
-                            error={errors.metodo_pago_id}
+                            onChange={v => setFormAbono(f => ({
+                                ...f,
+                                metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
+                                cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
+                                referencia: v.referencia ?? '',
+                                observacion: v.observacion ?? '',
+                            }))}
+                            metodosPago={metodosPago}
+                            cuentas={cuentas}
+                            errors={errors}
+                            required={true}
                         />
-                        {cuentasDeMetodo(formAbono.metodo_pago_id).length > 0 && (
-                            <Select label="Cuenta destino"
-                                options={cuentasDeMetodo(formAbono.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                                value={formAbono.cuenta_id}
-                                onChange={v => setFormAbono(f => ({ ...f, cuenta_id: String(v) }))}
-                                placeholder="— Seleccionar —"
-                                error={errors.cuenta_id}
-                            />
-                        )}
-                        <Input label="Referencia (operación, voucher...)" value={formAbono.referencia}
-                            onChange={e => setFormAbono(f => ({ ...f, referencia: e.target.value }))} />
-                        <Input label="Observación" value={formAbono.observacion}
-                            onChange={e => setFormAbono(f => ({ ...f, observacion: e.target.value }))} />
                     </div>
                 )}
             </Modal>

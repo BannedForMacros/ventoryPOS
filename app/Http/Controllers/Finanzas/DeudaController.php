@@ -302,7 +302,7 @@ class DeudaController extends Controller
             // Por defecto SÍ se mueve; se puede desactivar para deudas históricas
             // (ya gastadas / sin rastro de caja).
             'registrar_caja'    => ['boolean'],
-            'metodo_pago_id'    => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'metodo_pago_id'    => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'         => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             // "Afecta caja a:" — turno cuya caja recibe/entrega el desembolso.
             'turno_id'          => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
