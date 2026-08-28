@@ -200,7 +200,7 @@ class CuentasPorCobrarController extends Controller
         $data = $request->validate([
             'monto'          => ['required', 'numeric', 'min:0.01', 'max:' . (float) $venta->saldo_pendiente],
             'fecha'          => ['required', 'date'],
-            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
@@ -272,7 +272,7 @@ class CuentasPorCobrarController extends Controller
         $data = $request->validate([
             'monto'          => ['required', 'numeric', 'min:0.01', "max:{$maxMonto}"],
             'fecha'          => ['required', 'date'],
-            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],

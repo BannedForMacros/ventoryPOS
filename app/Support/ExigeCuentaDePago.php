@@ -24,4 +24,27 @@ trait ExigeCuentaDePago
             }
         };
     }
+
+    /**
+     * Regla para arrays de pagos: la cuenta es obligatoria cuando el método de
+     * pago de la misma línea tiene cuentas vinculadas.
+     *
+     * Uso:
+     *   'pagos.*.cuenta_id' => ['nullable', 'integer', Rule::exists(...), $this->reglaCuentaObligatoriaEnArray($request, 'pagos')],
+     */
+    protected function reglaCuentaObligatoriaEnArray(Request $request, string $campoArray = 'pagos', string $campoMetodo = 'metodo_pago_id', string $campoCuenta = 'cuenta_id'): Closure
+    {
+        return function ($attr, $value, $fail) use ($request, $campoArray, $campoMetodo, $campoCuenta) {
+            if ($value) return;
+
+            preg_match('/' . preg_quote($campoArray, '/') . '\.(\d+)\./', $attr, $m);
+            $indice = $m[1] ?? null;
+            if ($indice === null) return;
+
+            $metodoId = $request->input("{$campoArray}.{$indice}.{$campoMetodo}");
+            if (PagoCuenta::requiere($metodoId ? (int) $metodoId : null)) {
+                $fail('Debes seleccionar la cuenta para este método de pago.');
+            }
+        };
+    }
 }

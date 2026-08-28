@@ -14,6 +14,7 @@ import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
+import PagoForm from '@/Components/PagoForm';
 import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
@@ -371,7 +372,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                 ? <Callout variant="success" title="Con este abono la venta queda SALDADA" />
                                 : <Callout variant="info" title="Nuevo saldo pendiente" aside={money(nuevo)} />;
                         })()}
-                        <Select label="Método de pago"
+                        <Select label="Método de pago" required
                             options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                             value={form.metodo_pago_id}
                             onChange={v => {
@@ -689,7 +690,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                 )
                                 : <Callout variant="info" title="Máximo permitido" aside={money(topeEditar)} />
                         )}
-                        <Select label="Método de pago"
+                        <Select label="Método de pago" required
                             options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                             value={formAbono.metodo_pago_id}
                             onChange={v => {
