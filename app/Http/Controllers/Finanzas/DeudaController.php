@@ -381,7 +381,7 @@ class DeudaController extends Controller
             'tipo'           => ['required', Rule::in(['amortizacion', 'incremento'])],
             'fecha'          => ['required', 'date'],
             'monto'          => ['required', 'numeric', 'min:0.01'],
-            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'observacion'    => ['nullable', 'string', 'max:500'],
             // "Afecta caja a:" — turno cuya caja mueve el efectivo de esta cuota.
@@ -450,7 +450,7 @@ class DeudaController extends Controller
             'tipo'           => ['required', Rule::in(['amortizacion', 'incremento'])],
             'fecha'          => ['required', 'date'],
             'monto'          => ['required', 'numeric', 'min:0.01'],
-            'metodo_pago_id' => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'observacion'    => ['nullable', 'string', 'max:500'],
             'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],

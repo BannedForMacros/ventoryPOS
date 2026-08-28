@@ -795,7 +795,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                         <Button variant="ghost" onClick={() => setPagoEntrada(null)} disabled={savingPago}>
                             {pagoFormDirty ? 'Cancelar' : 'Cerrar'}
                         </Button>
-                        <Button onClick={guardarPago} loading={savingPago} disabled={!pagoFormDirty}>
+                        <Button onClick={guardarPago} loading={savingPago} disabled={!pagoFormDirty || (pagoForm.pagado && !pagoForm.metodoId)}>
                             Guardar
                         </Button>
                     </>
@@ -868,6 +868,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                             <div className="space-y-3">
                                 <Select
                                     label="Método de pago"
+                                    required
                                     placeholder="Seleccionar método"
                                     value={pagoForm.metodoId}
                                     onChange={v => setPagoForm(f => ({

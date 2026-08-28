@@ -16,6 +16,7 @@ import Callout from '@/Components/UI/Callout';
 import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
+import PagoForm from '@/Components/PagoForm';
 import AfectaCajaSelect, { TurnoLite } from '@/Components/AfectaCajaSelect';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import type { PageProps } from '@/types';
@@ -253,13 +254,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     }, [detalle, verEliminados]);
 
     /** Cuentas validas para el metodo elegido (vinculadas; efectivo -> caja Efectivo). */
-    function cuentasDeMetodo(mid: string) {
-        const m = metodosPago.find(x => String(x.id) === mid);
-        if (!m) return cuentas;
-        if (m.cuentas?.length) return m.cuentas;
-        if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
-        return []; // electronico sin cuenta vinculada: se crea sola con el nombre del metodo
-    }
+
 
     function submitNuevo() {
         setSaving(true);
@@ -540,30 +535,23 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                         />
                         {form.registrar_caja && (
                             <div className="space-y-3">
-                                <Select label="Método de pago"
-                                    options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                                    value={form.metodo_pago_id}
-                                    onChange={v => { const cts = cuentasDeMetodo(String(v)); setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
-                                    placeholder="— Seleccionar —"
+                                <PagoForm
+                                    value={{
+                                        metodo_pago_id: form.metodo_pago_id,
+                                        cuenta_id: form.cuenta_id,
+                                    }}
+                                    onChange={v => setForm(f => ({
+                                        ...f,
+                                        metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
+                                        cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
+                                    }))}
+                                    metodosPago={metodosPago}
+                                    cuentas={cuentas}
+                                    errors={errors}
+                                    required={true}
+                                    showReferencia={false}
+                                    showObservacion={false}
                                 />
-                                {cuentasDeMetodo(form.metodo_pago_id).length > 0 ? (
-                                    <Select label="Cuenta"
-                                        options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                                        value={form.cuenta_id}
-                                        onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
-                                        placeholder="— Seleccionar —"
-                                        error={errors.cuenta_id}
-                                    />
-                                ) : form.metodo_pago_id ? (
-                                    <Callout variant="info">
-                                        El dinero se registrará en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
-                                        que el sistema crea y vincula automáticamente a este método.
-                                    </Callout>
-                                ) : (
-                                    <Callout variant="info">
-                                        Sin método: el desembolso irá a la caja <strong>Efectivo</strong>.
-                                    </Callout>
-                                )}
                                 <AfectaCajaSelect
                                     modulo="deuda"
                                     turnos={turnos}
@@ -656,26 +644,25 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                             <Input label="Monto" required type="number" min="0.01" step="0.01" value={formPago.monto}
                                 onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
                         </div>
-                        <Select label="Método de pago"
-                            options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                            value={formPago.metodo_pago_id}
-                            onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormPago(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
-                            placeholder="— Seleccionar —"
+                        <PagoForm
+                            value={{
+                                metodo_pago_id: formPago.metodo_pago_id,
+                                cuenta_id: formPago.cuenta_id,
+                                observacion: formPago.observacion,
+                            }}
+                            onChange={v => setFormPago(f => ({
+                                ...f,
+                                metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
+                                cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
+                                observacion: v.observacion ?? '',
+                            }))}
+                            metodosPago={metodosPago}
+                            cuentas={cuentas}
+                            errors={errors}
+                            required={true}
+                            showReferencia={false}
+                            labels={{ observacion: 'Observación' }}
                         />
-                        {cuentasDeMetodo(formPago.metodo_pago_id).length > 0 ? (
-                            <Select label="Cuenta" required
-                                options={cuentasDeMetodo(formPago.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                                value={formPago.cuenta_id}
-                                onChange={v => setFormPago(f => ({ ...f, cuenta_id: String(v) }))}
-                                placeholder="— Selecciona una cuenta —"
-                                error={errors.cuenta_id}
-                            />
-                        ) : (
-                            <Callout variant="info">
-                                El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === formPago.metodo_pago_id)?.nombre}»</strong>,
-                                que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
-                            </Callout>
-                        )}
                         <AfectaCajaSelect
                             modulo="deuda"
                             turnos={turnos}
@@ -684,8 +671,6 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                             error={errors.turno_id}
                             hint='La cuota en efectivo entra/sale de la caja de este turno. "Sin turno" solo la registra.'
                         />
-                        <Input label="Observación" value={formPago.observacion}
-                            onChange={e => setFormPago(f => ({ ...f, observacion: e.target.value }))} />
                     </div>
                 )}
             </Modal>
@@ -719,26 +704,25 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                             <Input label="Monto" required type="number" min="0.01" step="0.01" value={formEditarPago.monto}
                                 onChange={e => setFormEditarPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
                         </div>
-                        <Select label="Método de pago"
-                            options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                            value={formEditarPago.metodo_pago_id}
-                            onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormEditarPago(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
-                            placeholder="— Seleccionar —"
+                        <PagoForm
+                            value={{
+                                metodo_pago_id: formEditarPago.metodo_pago_id,
+                                cuenta_id: formEditarPago.cuenta_id,
+                                observacion: formEditarPago.observacion,
+                            }}
+                            onChange={v => setFormEditarPago(f => ({
+                                ...f,
+                                metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
+                                cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
+                                observacion: v.observacion ?? '',
+                            }))}
+                            metodosPago={metodosPago}
+                            cuentas={cuentas}
+                            errors={errors}
+                            required={true}
+                            showReferencia={false}
+                            labels={{ observacion: 'Observación' }}
                         />
-                        {cuentasDeMetodo(formEditarPago.metodo_pago_id).length > 0 ? (
-                            <Select label="Cuenta" required
-                                options={cuentasDeMetodo(formEditarPago.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                                value={formEditarPago.cuenta_id}
-                                onChange={v => setFormEditarPago(f => ({ ...f, cuenta_id: String(v) }))}
-                                placeholder="— Selecciona una cuenta —"
-                                error={errors.cuenta_id}
-                            />
-                        ) : (
-                            <Callout variant="info">
-                                El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === formEditarPago.metodo_pago_id)?.nombre}»</strong>,
-                                que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
-                            </Callout>
-                        )}
                         <AfectaCajaSelect
                             modulo="deuda"
                             turnos={turnos}
@@ -747,8 +731,6 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                             error={errors.turno_id}
                             hint='La cuota en efectivo entra/sale de la caja de este turno. "Sin turno" solo la registra.'
                         />
-                        <Input label="Observación" value={formEditarPago.observacion}
-                            onChange={e => setFormEditarPago(f => ({ ...f, observacion: e.target.value }))} />
                     </div>
                 )}
             </Modal>

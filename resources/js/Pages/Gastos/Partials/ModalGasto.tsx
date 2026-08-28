@@ -146,6 +146,10 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
             setErrors({ cuenta_metodo_pago_id: 'Selecciona la cuenta para este método de pago.' });
             return;
         }
+        if (!gastoEditar && !form.metodo_pago_id) {
+            setErrors({ metodo_pago_id: 'Selecciona un método de pago.' });
+            return;
+        }
         setSaving(true);
         const opts = {
             onSuccess: () => { setSaving(false); handleClose(); },

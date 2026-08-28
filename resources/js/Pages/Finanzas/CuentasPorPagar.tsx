@@ -317,7 +317,8 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                         <Button variant="ghost" onClick={() => setAbonando(null)}>Cancelar</Button>
                         <Button onClick={submitAbono}
                             disabled={saving || form.monto === '' || Number(form.monto) <= 0
-                                || (abonando !== null && Number(form.monto) > saldoDe(abonando) + 0.009)}>
+                                || (abonando !== null && Number(form.monto) > saldoDe(abonando) + 0.009)
+                                || (!usarAdelanto && !form.metodo_pago_id)}>
                             {saving ? 'Guardando...' : 'Registrar pago'}
                         </Button>
                     </>
@@ -383,7 +384,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                             />
                         ) : (
                             <>
-                                <Select label="Método de pago"
+                                <Select label="Método de pago" required
                                     options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                                     value={form.metodo_pago_id}
                                     onChange={v => {
@@ -559,7 +560,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setEditandoPago(null)}>Cancelar</Button>
-                        <Button onClick={submitEditarPago} disabled={saving}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button>
+                        <Button onClick={submitEditarPago} disabled={saving || !!(editandoPago && !editandoPago.proveedor_adelanto_id && !formPago.metodo_pago_id)}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button>
                     </>
                 }
             >
@@ -588,7 +589,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                         </div>
                         {!editandoPago.proveedor_adelanto_id && (
                             <>
-                                <Select label="Método de pago"
+                                <Select label="Método de pago" required
                                     options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                                     value={formPago.metodo_pago_id}
                                     onChange={v => {

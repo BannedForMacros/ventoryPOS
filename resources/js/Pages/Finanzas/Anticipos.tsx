@@ -18,6 +18,7 @@ import Callout from '@/Components/UI/Callout';
 import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
+import PagoForm from '@/Components/PagoForm';
 import Timeline from '@/Components/UI/Timeline';
 import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import type { PageProps, Cliente } from '@/types';
@@ -261,15 +262,6 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
-    /** Cuentas validas para el metodo elegido (vinculadas; efectivo -> caja Efectivo). */
-    function cuentasDeMetodo(mid: string) {
-        const m = metodosPago.find(x => String(x.id) === mid);
-        if (!m) return cuentas;
-        if (m.cuentas?.length) return m.cuentas;
-        if (m.tipo_slug === 'efectivo') return cuentas.filter(c => c.es_efectivo);
-        return []; // electronico sin cuenta vinculada: se crea sola con el nombre del metodo
-    }
-
     // ── Impresión de una ENTREGA (aplicación) ──────────────────────────
     async function imprimirEntrega(ap: Aplicacion) {
         const tid = toast.loading(`Enviando entrega ${ap.numero ?? ''}...`);
@@ -396,7 +388,13 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     function submitAnular() {
         if (!anulando) return;
         setSaving(true);
-        router.post(route('finanzas.anticipos.anular', anulando.id), formAnular as any, {
+        router.post(route('finanzas.anticipos.anular', anulando.id), {
+            accion: formAnular.accion,
+            motivo: formAnular.motivo,
+            metodo_pago_id: formAnular.metodo_pago_id || null,
+            cuenta_id: formAnular.cuenta_id || null,
+            fecha: formAnular.fecha,
+        } as any, {
             onSuccess: () => { setAnulando(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         });
@@ -416,7 +414,13 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     function submitEditarEntrega() {
         if (!editandoEntrega) return;
         setSaving(true);
-        router.put(route('finanzas.anticipos.entrega.editar', editandoEntrega.id), formEntrega as any, {
+        router.put(route('finanzas.anticipos.entrega.editar', editandoEntrega.id), {
+            monto: formEntrega.monto,
+            fecha: formEntrega.fecha,
+            observacion: formEntrega.observacion || null,
+            metodo_pago_id: formEntrega.metodo_pago_id || null,
+            cuenta_id: formEntrega.cuenta_id || null,
+        } as any, {
             onSuccess: () => { setEditandoEntrega(null); setDetalle(null); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         });
@@ -666,25 +670,15 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         <Input label="Monto recibido" required type="number" min="0.01" step="0.01" value={form.monto}
                             onChange={e => setForm(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
                     </div>
-                    <Select label="Método de pago"
-                        options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                        value={form.metodo_pago_id}
-                        onChange={v => { const cts = cuentasDeMetodo(String(v)); setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
-                        placeholder="— Seleccionar —"
+                    <PagoForm
+                        value={{ metodo_pago_id: form.metodo_pago_id, cuenta_id: form.cuenta_id }}
+                        onChange={pago => setForm(f => ({ ...f, metodo_pago_id: String(pago.metodo_pago_id ?? ''), cuenta_id: String(pago.cuenta_id ?? '') }))}
+                        metodosPago={metodosPago}
+                        cuentas={cuentas}
+                        errors={errors}
+                        showReferencia={false}
+                        showObservacion={false}
                     />
-                    {cuentasDeMetodo(form.metodo_pago_id).length > 0 ? (
-                        <Select label="Cuenta destino"
-                            options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                            value={form.cuenta_id}
-                            onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
-                            placeholder="— Seleccionar —"
-                        />
-                    ) : (
-                        <Callout variant="info">
-                            El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
-                            que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
-                        </Callout>
-                    )}
                     {/* "Afecta caja a:" — a qué caja/turno entra el dinero del anticipo.
                         Por defecto el turno activo del cajero; se puede elegir "Sin turno"
                         u otro. Solo el efectivo con turno suma al esperado de esa caja. */}
@@ -752,20 +746,15 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         <Input label="Monto recibido" required type="number" min="0.01" step="0.01" value={form.monto}
                             onChange={e => setForm(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
                     </div>
-                    <Select label="Método de pago"
-                        options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                        value={form.metodo_pago_id}
-                        onChange={v => { const cts = cuentasDeMetodo(String(v)); setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
-                        placeholder="— Seleccionar —"
+                    <PagoForm
+                        value={{ metodo_pago_id: form.metodo_pago_id, cuenta_id: form.cuenta_id }}
+                        onChange={pago => setForm(f => ({ ...f, metodo_pago_id: String(pago.metodo_pago_id ?? ''), cuenta_id: String(pago.cuenta_id ?? '') }))}
+                        metodosPago={metodosPago}
+                        cuentas={cuentas}
+                        errors={errors}
+                        showReferencia={false}
+                        showObservacion={false}
                     />
-                    {cuentasDeMetodo(form.metodo_pago_id).length > 0 && (
-                        <Select label="Cuenta destino"
-                            options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                            value={form.cuenta_id}
-                            onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
-                            placeholder="— Seleccionar —"
-                        />
-                    )}
                     <AfectaCajaSelect
                         modulo="anticipos" modo="libre" formato="largo"
                         label="Afecta caja a (turno)"
@@ -890,20 +879,16 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                 <>
                                     <Input label="Valor de la entrega (S/)" required type="number" min="0.01" step="0.01" value={formAplicar.monto}
                                         onChange={e => setFormAplicar(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
-                                    <Select label="Método de pago (por dónde sale el dinero)"
-                                        options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                                        value={formAplicar.metodo_pago_id}
-                                        onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormAplicar(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
-                                        error={errors.metodo_pago_id}
+                                    <PagoForm
+                                        value={{ metodo_pago_id: formAplicar.metodo_pago_id, cuenta_id: formAplicar.cuenta_id }}
+                                        onChange={pago => setFormAplicar(f => ({ ...f, metodo_pago_id: String(pago.metodo_pago_id ?? ''), cuenta_id: String(pago.cuenta_id ?? '') }))}
+                                        metodosPago={metodosPago}
+                                        cuentas={cuentas}
+                                        errors={errors}
+                                        labels={{ metodo: 'Método de pago (por dónde sale el dinero)', cuenta: 'Cuenta' }}
+                                        showReferencia={false}
+                                        showObservacion={false}
                                     />
-                                    {cuentasDeMetodo(formAplicar.metodo_pago_id).length > 0 && (
-                                        <Select label="Cuenta"
-                                            options={cuentasDeMetodo(formAplicar.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                                            value={formAplicar.cuenta_id}
-                                            onChange={v => setFormAplicar(f => ({ ...f, cuenta_id: String(v) }))}
-                                            error={errors.cuenta_id}
-                                        />
-                                    )}
                                 </>
                             )}
 
@@ -969,20 +954,16 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                     S/ {Number(anulando.saldo).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                             </div>
-                            <Select label="Método de pago (por dónde sale el dinero)"
-                                options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                                value={formAnular.metodo_pago_id}
-                                onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormAnular(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
-                                error={errors.metodo_pago_id}
+                            <PagoForm
+                                value={{ metodo_pago_id: formAnular.metodo_pago_id, cuenta_id: formAnular.cuenta_id }}
+                                onChange={pago => setFormAnular(f => ({ ...f, metodo_pago_id: String(pago.metodo_pago_id ?? ''), cuenta_id: String(pago.cuenta_id ?? '') }))}
+                                metodosPago={metodosPago}
+                                cuentas={cuentas}
+                                errors={errors}
+                                labels={{ metodo: 'Método de pago (por dónde sale el dinero)', cuenta: 'Cuenta' }}
+                                showReferencia={false}
+                                showObservacion={false}
                             />
-                            {cuentasDeMetodo(formAnular.metodo_pago_id).length > 0 && (
-                                <Select label="Cuenta"
-                                    options={cuentasDeMetodo(formAnular.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                                    value={formAnular.cuenta_id}
-                                    onChange={v => setFormAnular(f => ({ ...f, cuenta_id: String(v) }))}
-                                    error={errors.cuenta_id}
-                                />
-                            )}
                             <Input type="date" label="Fecha de la devolución" value={formAnular.fecha}
                                 onChange={e => setFormAnular(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
                             {/* La caja afectada no se pregunta: se deriva de quién registra la
@@ -1164,20 +1145,16 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                     </Callout>
                     <Input type="number" step="0.01" label="Monto entregado" required value={formEntrega.monto}
                         onChange={e => setFormEntrega(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
-                    <Select label="Método de pago (por dónde sale el dinero)"
-                        options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                        value={formEntrega.metodo_pago_id}
-                        onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormEntrega(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
-                        error={errors.metodo_pago_id}
+                    <PagoForm
+                        value={{ metodo_pago_id: formEntrega.metodo_pago_id, cuenta_id: formEntrega.cuenta_id }}
+                        onChange={pago => setFormEntrega(f => ({ ...f, metodo_pago_id: String(pago.metodo_pago_id ?? ''), cuenta_id: String(pago.cuenta_id ?? '') }))}
+                        metodosPago={metodosPago}
+                        cuentas={cuentas}
+                        errors={errors}
+                        labels={{ metodo: 'Método de pago (por dónde sale el dinero)', cuenta: 'Cuenta' }}
+                        showReferencia={false}
+                        showObservacion={false}
                     />
-                    {cuentasDeMetodo(formEntrega.metodo_pago_id).length > 0 && (
-                        <Select label="Cuenta"
-                            options={cuentasDeMetodo(formEntrega.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                            value={formEntrega.cuenta_id}
-                            onChange={v => setFormEntrega(f => ({ ...f, cuenta_id: String(v) }))}
-                            error={errors.cuenta_id}
-                        />
-                    )}
                     <Input type="date" label="Fecha" required value={formEntrega.fecha}
                         onChange={e => setFormEntrega(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
                     <Input label="Observación" value={formEntrega.observacion}
@@ -1360,20 +1337,16 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         />
                         {!cancelandoItem.anticipo.venta?.es_credito && (
                             <>
-                                <Select label="Método de pago (por dónde sale el dinero)"
-                                    options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
-                                    value={formCancelar.metodo_pago_id}
-                                    onChange={v => { const cts = cuentasDeMetodo(String(v)); setFormCancelar(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' })); }}
-                                    error={errors.metodo_pago_id}
+                                <PagoForm
+                                    value={{ metodo_pago_id: formCancelar.metodo_pago_id, cuenta_id: formCancelar.cuenta_id }}
+                                    onChange={pago => setFormCancelar(f => ({ ...f, metodo_pago_id: String(pago.metodo_pago_id ?? ''), cuenta_id: String(pago.cuenta_id ?? '') }))}
+                                    metodosPago={metodosPago}
+                                    cuentas={cuentas}
+                                    errors={errors}
+                                    labels={{ metodo: 'Método de pago (por dónde sale el dinero)', cuenta: 'Cuenta' }}
+                                    showReferencia={false}
+                                    showObservacion={false}
                                 />
-                                {cuentasDeMetodo(formCancelar.metodo_pago_id).length > 0 && (
-                                    <Select label="Cuenta"
-                                        options={cuentasDeMetodo(formCancelar.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
-                                        value={formCancelar.cuenta_id}
-                                        onChange={v => setFormCancelar(f => ({ ...f, cuenta_id: String(v) }))}
-                                        error={errors.cuenta_id}
-                                    />
-                                )}
                             </>
                         )}
                         <Input type="date" label="Fecha de la cancelación" required value={formCancelar.fecha}
