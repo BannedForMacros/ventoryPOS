@@ -313,9 +313,14 @@ class ReconstruirKardex extends Command
 
             if ($m['recalc'] && $q > 0 && $costo > 0) {
                 // Ingreso CON costo real (compra / recepción): recalcula CPP ponderado.
-                $nueva = $cant + $q;
-                $cpp   = $nueva > 0 ? (($cant * $cpp) + ($q * $costo)) / $nueva : 0.0;
-                $cant  = $nueva;
+                // Si el saldo previo es negativo (backorder) no lo arrastramos al
+                // promedio, porque una cantidad negativa no es inventario real.
+                // Esto evita que el denominador sea casi cero por error de punto
+                // flotante y se genere un CPP descomunal (overflow en PGSQL).
+                $base  = $cant < 0 ? 0.0 : $cant;
+                $nueva = $base + $q;
+                $cpp   = $nueva > 0 ? (($base * $cpp) + ($q * $costo)) / $nueva : 0.0;
+                $cant  = $cant + $q;
                 $costoUnitario = $costo;
             } else {
                 // Salida / venta / transf. salida / devolución / cierre / ingreso sin costo:
