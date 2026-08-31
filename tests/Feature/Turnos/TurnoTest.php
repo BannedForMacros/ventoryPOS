@@ -255,6 +255,44 @@ it('actualizar apertura recalcula fondos adicionales a partir del arrastre', fun
     expect($segundo->montoArrastre)->toBe(150.0);
 });
 
+it('actualizar apertura a adicionales=0 recalcula el total respetando el arrastre', function () {
+    $this->env->empresa->update(['modo_apertura_caja' => 'arrastre', 'apertura_editable' => true]);
+
+    // Primer turno: arrastre de 100
+    $primero = $this->env->abrirTurno(apertura: 100);
+    $this->post(route('turnos.cerrar', $primero), [
+        'arqueo' => [
+            ['denominacion' => 100, 'cantidad' => 1],
+        ],
+        'arqueo_metodos' => [],
+    ]);
+
+    // Segundo turno: por error se duplicaron adicionales (arrastre 100 + adic 100 = 200)
+    $segundo = Turno::create([
+        'empresa_id'               => $this->env->empresa->id,
+        'local_id'                 => $this->env->local->id,
+        'caja_id'                  => $this->env->caja->id,
+        'user_id'                  => $this->env->admin->id,
+        'monto_apertura'           => 200,
+        'monto_fondos_adicionales' => 100,
+        'monto_caja_chica'         => 0,
+        'estado'                   => 'abierto',
+        'fecha_apertura'           => now(),
+    ]);
+
+    // Se corrige: fondos adicionales = 0; el total debe bajar al arrastre real.
+    $this->patch(route('turnos.apertura.update', $segundo), [
+        'monto_apertura'           => 200, // el usuario no lo mueve
+        'monto_fondos_adicionales' => 0,
+        'motivo'                   => 'Corrijo fondos adicionales',
+    ])->assertRedirect();
+
+    $segundo->refresh();
+    expect((float) $segundo->monto_apertura)->toBe(100.0);
+    expect((float) $segundo->monto_fondos_adicionales)->toBe(0.0);
+    expect($segundo->montoArrastre)->toBe(100.0);
+});
+
 it('reabrir un turno cerrado limpia los campos de cierre y registra auditoría', function () {
     $turno = $this->env->abrirTurno(apertura: 100);
     ventaEfectivo($this->env, $turno, 50);

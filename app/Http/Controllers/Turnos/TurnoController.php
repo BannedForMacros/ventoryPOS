@@ -348,11 +348,24 @@ class TurnoController extends Controller
         $sugerida = Turno::aperturaSugeridaParaCaja($turno->caja);
         $arrastre = $sugerida ? (float) $sugerida['monto'] : 0;
 
-        // El total debe ser arrastre + fondos adicionales (o mayor, si el usuario
-        // sube el total; en ese caso se recalculan los adicionales).
+        // El arrastre proveniente del cierre anterior es un monto fijo: la
+        // apertura siempre debe ser arrastre + fondos adicionales. Cuando el
+        // usuario corrige, puede haber movido el total o los adicionales;
+        // respetamos el campo que mas cambio y recalculamos el otro.
         $montoAperturaEsperado = round($arrastre + $adicionalesNuevo, 2);
         if (abs($montoNuevo - $montoAperturaEsperado) >= 0.01) {
-            $adicionalesNuevo = max(0, round($montoNuevo - $arrastre, 2));
+            $deltaTotal       = abs($montoNuevo - $montoAnterior);
+            $deltaAdicionales = abs($adicionalesNuevo - $adicionalesAnt);
+
+            if ($sugerida && ($sugerida['origen'] ?? null) === 'arrastre' && $deltaAdicionales > $deltaTotal) {
+                // El usuario movio principalmente los fondos adicionales:
+                // recalculamos el total para que arrastre + adicionales cuadre.
+                $montoNuevo = $montoAperturaEsperado;
+            } else {
+                // El usuario movio principalmente el total (o no hay arrastre):
+                // recalculamos los adicionales para cuadrar con el arrastre.
+                $adicionalesNuevo = max(0, round($montoNuevo - $arrastre, 2));
+            }
         }
 
         if (abs($montoNuevo - $montoAnterior) < 0.01 && abs($adicionalesNuevo - $adicionalesAnt) < 0.01) {
