@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus, Pencil, Users, Package, Coins, Trash2 } from 'lucide-react';
+import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus, Pencil, Users, Package, Coins, Trash2, RotateCcw } from 'lucide-react';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -168,6 +168,8 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     const [entregas, setEntregas]       = useState<Record<number, string>>({});
     const [excesoACxc, setExcesoACxc]   = useState(false);
     const [formAnular, setFormAnular]   = useState({ accion: 'devuelto', motivo: '', metodo_pago_id: '', cuenta_id: '', fecha: hoy() });
+    const [reactivando, setReactivando] = useState<Anticipo | null>(null);
+    const [motivoReactivar, setMotivoReactivar] = useState('');
     // Editar / anular una ENTREGA de dinero ya registrada.
     const [editandoEntrega, setEditandoEntrega] = useState<Aplicacion | null>(null);
     const [editandoEntregaMaterial, setEditandoEntregaMaterial] = useState<Aplicacion | null>(null);
@@ -400,6 +402,15 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
         });
     }
 
+    function submitReactivar() {
+        if (!reactivando) return;
+        setSaving(true);
+        router.post(route('finanzas.anticipos.reactivar', reactivando.id), { motivo: motivoReactivar.trim() } as any, {
+            onSuccess: () => { setReactivando(null); setMotivoReactivar(''); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
     /** Abre el modal de edición de una entrega de dinero. */
     function abrirEditarEntrega(ap: Aplicacion) {
         setErrors({});
@@ -558,6 +569,13 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                 <Ban size={15} />
                             </button>
                         </>
+                    )}
+                    {(a.estado === 'anulado' || a.estado === 'devuelto') && puedeEditar(a) && (
+                        <button onClick={() => { setErrors({}); setMotivoReactivar(''); setReactivando(a); }}
+                            className="p-1.5 rounded-lg hover:bg-black/5" title="Reactivar anticipo"
+                            style={{ color: 'var(--color-primary)' }}>
+                            <RotateCcw size={15} />
+                        </button>
                     )}
                 </div>
             ),
@@ -981,6 +999,34 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                     <Input label="Motivo" required value={formAnular.motivo}
                         onChange={e => setFormAnular(f => ({ ...f, motivo: e.target.value }))} error={errors.motivo} />
                 </div>
+            </Modal>
+
+            {/* Modal reactivar anticipo */}
+            <Modal isOpen={reactivando !== null} onClose={() => setReactivando(null)}
+                title={reactivando ? `Reactivar anticipo — ${nombreCliente(reactivando.cliente)}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setReactivando(null)}>Cancelar</Button>
+                        <Button onClick={submitReactivar} disabled={saving || motivoReactivar.trim().length < 5}>
+                            {saving ? 'Reactivando...' : 'Reactivar'}
+                        </Button>
+                    </>
+                }
+            >
+                {reactivando && (
+                    <div className="space-y-3">
+                        <Callout variant="info">
+                            {reactivando.estado === 'anulado'
+                                ? <>El anticipo estaba <strong>anulado</strong>: al reactivarlo se vuelve a asentar el ingreso original en tesorería.</>
+                                : <>El anticipo estaba <strong>devuelto</strong>: al reactivarlo se revierte el egreso de la devolución y vuelve a estar disponible.</>}
+                        </Callout>
+                        <Input label="Motivo (mínimo 5 caracteres)" required value={motivoReactivar}
+                            onChange={e => setMotivoReactivar(e.target.value)}
+                            placeholder="Ej.: se cerró por error"
+                            error={errors.motivo}
+                        />
+                    </div>
+                )}
             </Modal>
 
             {/* Modal detalle aplicaciones */}
