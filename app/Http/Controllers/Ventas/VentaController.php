@@ -1022,21 +1022,33 @@ class VentaController extends Controller
             ]);
 
         // Devoluciones de anticipo pagadas EN EFECTIVO desde estas cajas: el
-        // billete sale del cajón. Espejo exacto de Turno::calcularMontoEsperado —
-        // la caja se DERIVA del movimiento de tesorería (quién lo registró y en
-        // qué momento real), porque el anticipo solo sabe en qué turno ENTRÓ el
-        // dinero, que casi nunca es el mismo por el que sale.
+        // billete sale del cajón. Primera fuente de verdad: turno_devolucion_id
+        // guardado en el anticipo. Fallback: turno abierto del usuario que hizo
+        // el egreso (created_at), para registros antiguos sin turno_devolucion_id.
         $devolucionAnticipoMovs = \App\Models\CuentaMovimiento::where('empresa_id', $turno->empresa_id)
             ->where('tipo', 'egreso')
             ->where('ref_tipo', 'cliente_anticipo_devolucion')
             ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
-            ->where(function ($q) use ($turnos) {
-                foreach ($turnos as $t) {
-                    $q->orWhere(fn ($s) => $s
-                        ->where('user_id', $t->user_id)
-                        ->where('created_at', '>=', $t->fecha_apertura)
-                        ->when($t->fecha_cierre, fn ($w) => $w->where('created_at', '<=', $t->fecha_cierre)));
-                }
+            ->where(function ($q) use ($turnos, $turnoIds) {
+                // Anticipos cuyo turno de devolución está en los turnos resumidos.
+                $q->whereIn('ref_id', \App\Models\ClienteAnticipo::whereIn('turno_devolucion_id', $turnoIds)->select('id'));
+
+                // Fallback antiguo: egreso registrado mientras alguno de los
+                // turnos resumidos estaba abierto y por su mismo usuario.
+                // Excluimos los que YA tienen turno_devolucion_id asignado en
+                // los turnos resumidos para no contarlos dos veces.
+                $q->orWhere(function ($s) use ($turnos, $turnoIds) {
+                    foreach ($turnos as $t) {
+                        $s->orWhere(fn ($w) => $w
+                            ->where('user_id', $t->user_id)
+                            ->where('created_at', '>=', $t->fecha_apertura)
+                            ->when($t->fecha_cierre, fn ($x) => $x->where('created_at', '<=', $t->fecha_cierre)));
+                    }
+                    $s->whereNotIn(
+                        'ref_id',
+                        \App\Models\ClienteAnticipo::whereIn('turno_devolucion_id', $turnoIds)->select('id')
+                    );
+                });
             })
             ->orderByDesc('id')->get();
 

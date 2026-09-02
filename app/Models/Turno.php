@@ -112,26 +112,31 @@ class Turno extends Model
         // Devoluciones de anticipo pagadas EN EFECTIVO desde ESTA caja: el billete
         // sale del cajón y el sistema no debe esperarlo.
         //
-        // El anticipo NO dice de qué caja salió (su turno_id es el turno donde
-        // ENTRÓ el dinero — normalmente de otro día, o NULL si nació de una venta
-        // POS). La caja se DERIVA del movimiento de tesorería: quien registró la
-        // devolución (user_id) y cuándo lo hizo de verdad (created_at, no `fecha`,
-        // que puede venir retrofechada). Si ese usuario tenía este turno abierto
-        // en ese instante, el billete salió de este cajón.
+        // Primera fuente de verdad: turno_devolucion_id guardado en el anticipo
+        // (seteado al devolver). Así si la devolución la registra otro usuario
+        // (admin, gerente) o sin turno abierto, el egreso se descuenta de la
+        // caja correcta.
         //
-        // Derivarlo en vez de guardarlo tiene una ventaja: arregla también las
-        // devoluciones YA registradas, sin migrar ni corregir datos.
-        //
-        // Monto y "efectividad" se leen del movimiento (mismo patrón que deuda,
-        // abajo): se devuelve el SALDO al momento de devolver, no el monto
-        // original, y la cuenta de salida puede diferir de la de entrada.
+        // Fallback: registros antiguos sin turno_devolucion_id se derivan del
+        // turno abierto del usuario que hizo el egreso (user_id + created_at),
+        // que era el comportamiento anterior.
         $devolucionAnticipoEfectivo = (float) \App\Models\CuentaMovimiento::where('empresa_id', $this->empresa_id)
             ->where('tipo', 'egreso')
             ->where('ref_tipo', 'cliente_anticipo_devolucion')
-            ->where('user_id', $this->user_id)
-            ->where('created_at', '>=', $this->fecha_apertura)
-            ->when($this->fecha_cierre, fn ($q) => $q->where('created_at', '<=', $this->fecha_cierre))
             ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
+            ->where(function ($q) {
+                // Anticipos cuyo turno de devolución apunta a este turno.
+                $q->whereIn('ref_id', \App\Models\ClienteAnticipo::where('turno_devolucion_id', $this->id)->select('id'));
+
+                // Fallback antiguo: el egreso se registró mientras este turno
+                // estaba abierto y pertenecía al mismo usuario.
+                $q->orWhere(function ($s) {
+                    $s->where('user_id', $this->user_id)
+                      ->where('created_at', '>=', $this->fecha_apertura)
+                      ->when($this->fecha_cierre, fn ($w) => $w->where('created_at', '<=', $this->fecha_cierre))
+                      ->whereNotIn('ref_id', \App\Models\ClienteAnticipo::where('turno_devolucion_id', $this->id)->select('id'));
+                });
+            })
             ->sum('monto');
 
         // Cancelaciones de pendiente de anticipo pagadas EN EFECTIVO desde

@@ -902,6 +902,12 @@ class AnticipoClienteController extends Controller
             // F7 — Tesorería: si se devuelve el dinero, egreso por el saldo
             // restante; si fue un registro erróneo, se revierte el ingreso.
             if ($data['accion'] === 'devuelto') {
+                // El dinero sale de la caja del turno que el usuario tenga
+                // abierto al registrar la devolución. Si no tiene ninguno
+                // (admin fuera de turno), caemos al turno donde entró el dinero,
+                // que es la caja más probable de la que se devuelve.
+                $turnoDevolucionId = Turno::turnoActivoDelUsuario($user->id)?->id ?? $anticipo->turno_id;
+
                 // El dinero sale por la cuenta elegida (o la resuelta del método);
                 // si no se indicó nada, por la cuenta original del anticipo.
                 $cuentaSalida = $data['cuenta_id']
@@ -920,6 +926,8 @@ class AnticipoClienteController extends Controller
                     'cliente_anticipo_devolucion',
                     $anticipo->id,
                 );
+
+                $anticipo->update(['turno_devolucion_id' => $turnoDevolucionId]);
             } else {
                 $this->tesoreria->revertir('cliente_anticipo', $anticipo->id);
             }
@@ -1302,8 +1310,10 @@ class AnticipoClienteController extends Controller
                     $anticipo->id,
                 );
             } else {
-                // La devolución generó un egreso: revertirlo.
+                // La devolución generó un egreso: revertirlo y olvidar el
+                // turno de devolución, porque el anticipo vuelve a estar vivo.
                 $this->tesoreria->revertir('cliente_anticipo_devolucion', $anticipo->id);
+                $anticipo->update(['turno_devolucion_id' => null]);
             }
 
             $agotado = $anticipo->tipo_valorizacion === 'material'
