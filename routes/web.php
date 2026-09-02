@@ -50,6 +50,7 @@ use App\Http\Controllers\Finanzas\PlanillaDescuentoController;
 use App\Http\Controllers\Finanzas\TesoreriaController;
 use App\Http\Controllers\Inventario\AjusteInventarioController;
 use App\Http\Controllers\Inventario\CierreInventarioController;
+use App\Http\Controllers\Inventario\DespachoController;
 use App\Http\Controllers\Inventario\EntradaController;
 use App\Http\Controllers\Inventario\SalidaController;
 use App\Http\Controllers\Inventario\StockController;
@@ -227,6 +228,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 ->except(['show']);
         });
     });
+
+    // ── DESPACHOS EN ALMACEN (bandeja del almacenero) ────────────────────
+    Route::middleware('permiso:despachos,ver')->get('/despachos', [DespachoController::class, 'index'])->name('despachos.index');
+    Route::middleware('permiso:despachos,editar')->post('/despachos/{anticipo}/confirmar', [DespachoController::class, 'confirmar'])->name('despachos.confirmar');
 
     // ── CLIENTES ─────────────────────────────────────────────────────────
     Route::prefix('clientes')->name('clientes.')->group(function () {

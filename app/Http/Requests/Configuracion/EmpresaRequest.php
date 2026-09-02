@@ -74,6 +74,8 @@ class EmpresaRequest extends FormRequest
             'venta_edicion_con_contador'      => 'boolean',
             'cajera_puede_editar'             => 'boolean',
             'cajera_puede_anular'             => 'boolean',
+            // Despacho en almacén: la mercadería se reserva y el stock sale solo al confirmar.
+            'usa_despacho_almacen'            => 'boolean',
             // Mercadería en tránsito (comprada/facturada pero que aún no llega).
             // `vende_` solo tiene efecto si `usa_` está activo — lo resuelve
             // MercaderiaTransitoService, no hace falta validación cruzada.

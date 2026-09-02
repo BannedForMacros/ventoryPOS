@@ -47,6 +47,8 @@ type FormData = {
     venta_edicion_con_contador: boolean;
     venta_edicion_minutos: number | '';
     cajera_puede_anular: boolean;
+    // Despacho en almacén: stock diferido hasta que el almacenero confirme.
+    usa_despacho_almacen: boolean;
     // Manejo de efectivo (opt-in por empresa)
     modo_apertura_caja: ModoApertura;
     apertura_editable: boolean;
@@ -97,6 +99,7 @@ const emptyForm: FormData = {
     venta_edicion_con_contador: true,
     venta_edicion_minutos: 3,
     cajera_puede_anular: true,
+    usa_despacho_almacen: false,
     modo_apertura_caja: 'libre',
     apertura_editable: true,
     usa_retiros_caja: false,
@@ -160,6 +163,7 @@ export default function Empresas({ empresas }: Props) {
             venta_edicion_con_contador: emp.venta_edicion_con_contador ?? true,
             venta_edicion_minutos: emp.venta_edicion_minutos ?? 3,
             cajera_puede_anular: emp.cajera_puede_anular ?? true,
+            usa_despacho_almacen: emp.usa_despacho_almacen ?? false,
             modo_apertura_caja: (emp.modo_apertura_caja as ModoApertura) ?? 'libre',
             apertura_editable: emp.apertura_editable ?? true,
             usa_retiros_caja: emp.usa_retiros_caja ?? false,
@@ -411,8 +415,20 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </span>
                         </label>
-                        {errors.permite_duplicar_items_venta && (
-                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.permite_duplicar_items_venta}</p>
+                        <label className="flex items-start gap-2 cursor-pointer mt-3">
+                            <Checkbox
+                                checked={data.usa_despacho_almacen}
+                                onChange={e => setData('usa_despacho_almacen', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Habilitar despacho en almacén</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, el POS permite marcar una venta como "despacho en almacén". El stock no se descuenta al vender; el almacenero lo confirma luego desde la bandeja de despachos.
+                                </span>
+                            </span>
+                        </label>
+                        {errors.usa_despacho_almacen && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.usa_despacho_almacen}</p>
                         )}
                     </div>
 

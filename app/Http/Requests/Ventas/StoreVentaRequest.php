@@ -47,6 +47,10 @@ class StoreVentaRequest extends FormRequest
             // La fecha estimada es informativa: puede quedar en el pasado al
             // EDITAR una venta vieja o al backdatear un turno reabierto.
             'entrega_pendiente'      => ['nullable', 'boolean'],
+            // Despacho en almacén: toda la venta queda pendiente de entrega y
+            // el stock sale recién cuando el almacenero confirma el despacho.
+            // Requiere que la empresa tenga la opción activa.
+            'despacho_almacen'       => ['nullable', 'boolean'],
             'fecha_entrega_estimada' => ['nullable', 'date'],
             // Backdate de admin: registrar la venta en un turno REABIERTO ajeno
             // con la fecha real en que ocurrió. Solo se honran si el usuario es
@@ -126,6 +130,10 @@ class StoreVentaRequest extends FormRequest
             $this->validarPagosPertenencia($validator, $empresaId);
             $this->validarDescuentoYTope($validator); // M20
             $this->validarAnticipo($validator, $empresaId);
+
+            // Despacho en almacén: fuerza entrega_pendiente completa. Reutiliza
+            // las validaciones de entrega pendiente (cliente, crédito, etc.).
+            $this->validarDespachoAlmacen($validator, $empresaId);
 
             $total = $this->calcularTotalEsperado($empresaId);
 
@@ -258,7 +266,8 @@ class StoreVentaRequest extends FormRequest
      */
     private function validarEntregaPendiente($validator, int $empresaId): void
     {
-        if (!$this->boolean('entrega_pendiente')) return;
+        $esEntregaPendiente = $this->boolean('entrega_pendiente') || $this->boolean('despacho_almacen');
+        if (!$esEntregaPendiente) return;
 
         if ($this->boolean('es_credito')) {
             $venta = $this->route('venta');
@@ -286,12 +295,16 @@ class StoreVentaRequest extends FormRequest
         }
 
         $hayPendiente = false;
+        $esDespachoAlmacen = $this->boolean('despacho_almacen');
         foreach ($this->input('items', []) as $index => $item) {
             $cantidad  = (float) ($item['cantidad'] ?? 0);
-            $pendiente = (float) ($item['cantidad_pendiente'] ?? 0);
+            $pendiente = $esDespachoAlmacen
+                ? $cantidad
+                : (float) ($item['cantidad_pendiente'] ?? 0);
+
             if ($pendiente < 0) continue; // min:0 ya lo atrapa
 
-            if ($pendiente > $cantidad + 0.00009) {
+            if (!$esDespachoAlmacen && $pendiente > $cantidad + 0.00009) {
                 $validator->errors()->add(
                     "items.{$index}.cantidad_pendiente",
                     'La cantidad pendiente por entregar no puede superar la cantidad vendida de la línea.',
@@ -301,11 +314,38 @@ class StoreVentaRequest extends FormRequest
         }
 
         if (!$hayPendiente) {
+            $mensaje = $esDespachoAlmacen
+                ? 'La venta marcada como "Despacho en almacén" debe tener al menos un producto.'
+                : 'Marcaste "Pendiente por entregar" pero ninguna línea tiene cantidad pendiente. Indica cuánto se queda o desmarca la opción.';
             $validator->errors()->add(
-                'entrega_pendiente',
-                'Marcaste "Pendiente por entregar" pero ninguna línea tiene cantidad pendiente. Indica cuánto se queda o desmarca la opción.',
+                $esDespachoAlmacen ? 'items' : 'entrega_pendiente',
+                $mensaje,
             );
         }
+    }
+
+    /**
+     * Despacho en almacén: opción de empresa. Reutiliza las validaciones de
+     * entrega pendiente (cliente identificado, no crédito sin saldar, etc.).
+     */
+    private function validarDespachoAlmacen($validator, int $empresaId): void
+    {
+        if (!$this->boolean('despacho_almacen')) {
+            return;
+        }
+
+        $empresa = Empresa::find($empresaId);
+        if (!($empresa?->usa_despacho_almacen ?? false)) {
+            $validator->errors()->add(
+                'despacho_almacen',
+                'La empresa no tiene habilitada la opción de despacho en almacén.',
+            );
+            return;
+        }
+
+        // En despacho de almacén toda la venta queda pendiente, por eso
+        // reutilizamos las reglas ya probadas de entrega_pendiente.
+        $this->validarEntregaPendiente($validator, $empresaId);
     }
 
     /**

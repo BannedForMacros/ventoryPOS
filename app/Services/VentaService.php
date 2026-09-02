@@ -191,7 +191,10 @@ class VentaService
         // Pendiente por entregar: el cliente paga todo pero se lleva solo parte.
         // Lo pendiente NO descuenta stock aquí (sale recién al entregarse) y se
         // acumula para crear el anticipo material vinculado a la venta.
+        // Despacho en almacén: toda la venta queda pendiente; el almacenero
+        // confirma la entrega luego y recién ahí descuenta stock.
         $esEntregaPendiente = !empty($data['entrega_pendiente']);
+        $esDespachoAlmacen  = !empty($data['despacho_almacen']);
         $itemsPendientes    = [];
 
         // Items
@@ -205,8 +208,8 @@ class VentaService
             $descuentoItem  = round((float) ($itemData['descuento_item'] ?? 0) * $factor, 2);
             $subtotal       = round(($precioUnitario - $descuentoItem) * $cantidad, 2);
 
-            $cantPendiente  = $esEntregaPendiente
-                ? min(max(0, (float) ($itemData['cantidad_pendiente'] ?? 0)), $cantidad)
+            $cantPendiente  = ($esEntregaPendiente || $esDespachoAlmacen)
+                ? ($esDespachoAlmacen ? $cantidad : min(max(0, (float) ($itemData['cantidad_pendiente'] ?? 0)), $cantidad))
                 : 0.0;
 
             // Costo CONGELADO por unidad base (criterio canónico del balance:
@@ -399,7 +402,9 @@ class VentaService
                 'tipo_valorizacion'      => 'material',
                 'estado'                 => 'activo',
                 'fecha_entrega_estimada' => $data['fecha_entrega_estimada'] ?? null,
-                'observacion'            => "Pendiente por entregar — Venta {$venta->numero}",
+                'observacion'            => $esDespachoAlmacen
+                    ? "Despacho en almacén — Venta {$venta->numero}"
+                    : "Pendiente por entregar — Venta {$venta->numero}",
             ]);
 
             $anticipo->items()->createMany($itemsPendientes);

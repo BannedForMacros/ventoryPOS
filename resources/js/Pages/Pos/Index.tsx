@@ -109,6 +109,7 @@ interface VentaEnEdicion {
     // Pendiente por entregar existente (prellenado del panel). Si ya hubo
     // entregas registradas, la edición está bloqueada en el backend.
     entrega_pendiente?:      boolean;
+    despacho_almacen?:       boolean;
     fecha_entrega_estimada?: string | null;
     pendiente_bloqueado?:    boolean;
     items:                 VentaEnEdicionItem[];
@@ -322,6 +323,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
         permite_duplicar_items_venta?: boolean;
+        usa_despacho_almacen?: boolean;
     } | undefined;
     const tasaIgv = Number(empresaAuth?.tasa_igv ?? 18);
     const permiteDuplicarItems = empresaAuth?.permite_duplicar_items_venta ?? false;
@@ -444,7 +446,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // En EDICIÓN se prellena con el pendiente actual de la venta (editar lo
     // reemplaza: el anticipo anterior se anula y se recrea con lo nuevo).
     const [entregaPendiente, setEntregaPendiente]   = useState(!!ventaEnEdicion?.entrega_pendiente);
-    const [fechaEntrega, setFechaEntrega]           = useState(ventaEnEdicion?.fecha_entrega_estimada ?? '');
+    const [despachoAlmacen, setDespachoAlmacen]       = useState(!!ventaEnEdicion?.despacho_almacen);
+    const [fechaEntrega, setFechaEntrega]             = useState(ventaEnEdicion?.fecha_entrega_estimada ?? '');
     const [pendientes, setPendientes]               = useState<Record<string, number>>(() => {
         const m: Record<string, number> = {};
         ventaEnEdicion?.items.forEach(it => {
@@ -1096,8 +1099,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             descuento_concepto_id: descuentoConceptoId,
             es_credito:            esCredito,
             fecha_vencimiento:     esCredito && fechaVencimiento ? fechaVencimiento : null,
-            entrega_pendiente:     entregaPendiente,
-            fecha_entrega_estimada: entregaPendiente && fechaEntrega ? fechaEntrega : null,
+            entrega_pendiente:     entregaPendiente && !despachoAlmacen,
+            despacho_almacen:      despachoAlmacen,
+            fecha_entrega_estimada: (entregaPendiente || despachoAlmacen) && fechaEntrega ? fechaEntrega : null,
             moneda,
             tipo_cambio:           moneda === 'USD' ? (tipoCambioHoy ?? null) : null,
             // Modo turno específico (admin): la venta va a ESE turno con la
@@ -1195,9 +1199,24 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             return;
         }
         setEntregaPendiente(v);
+        if (v) setDespachoAlmacen(false);
         // Solo desmarcamos crédito si la venta NO estaba a crédito originalmente.
         // Una venta a crédito ya pagada puede mantener el flag por trazabilidad.
         if (v && !creditoBloqueadoEnEdicion) setEsCredito(false);
+    }
+    function activarDespachoAlmacen(v: boolean) {
+        if (v && esCredito && !creditoYaPagado) {
+            const msg = saldoPendienteEdicion > 0
+                ? 'No puedes marcar despacho en almacén: la venta a crédito aún tiene saldo pendiente. Salda el crédito primero.'
+                : 'No puedes combinar "Despacho en almacén" con venta a crédito.';
+            toast.error(msg);
+            return;
+        }
+        setDespachoAlmacen(v);
+        if (v) {
+            setEntregaPendiente(false);
+            if (!creditoBloqueadoEnEdicion) setEsCredito(false);
+        }
     }
     function setPendienteLinea(key: string, valor: number) {
         setPendientes(prev => ({ ...prev, [key]: valor }));
@@ -1208,12 +1227,16 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         // registradas del pendiente (el backend bloquea toda la edición ahí).
         permitirPendiente:     !ventaEnEdicion?.pendiente_bloqueado,
         entregaPendiente,
+        despachoAlmacen,
         fechaEntrega,
         pendienteDe,
         totalPendientes,
         onSetEntregaPendiente: activarPendiente,
+        onSetDespachoAlmacen:  activarDespachoAlmacen,
         onSetFechaEntrega:     setFechaEntrega,
         onSetPendiente:        setPendienteLinea,
+        // Bandeja de despacho en almacén (solo si la empresa lo activó).
+        usaDespachoAlmacen:    empresaAuth?.usa_despacho_almacen ?? false,
         // Autofoco del precio en líneas recién agregadas con precio base 0.
         nuevaLineaPrecioKey,
         onAutoFocusPrecio:     () => setNuevaLineaPrecioKey(null),
@@ -2113,6 +2136,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 entregaPendiente={entregaPendiente}
                 pendienteDe={pendienteDe}
                 fechaEntrega={fechaEntrega}
+                despachoAlmacen={despachoAlmacen}
                 anticipoMonto={montoAnticipoUsado}
             />
 
@@ -2246,12 +2270,15 @@ interface CarritoPanelProps {
     // Pendiente por entregar (pagado pero se lleva solo parte)
     permitirPendiente: boolean;
     entregaPendiente: boolean;
+    despachoAlmacen: boolean;
     fechaEntrega: string;
     pendienteDe: (item: LineaCarrito) => number;
     totalPendientes: number;
     onSetEntregaPendiente: (v: boolean) => void;
+    onSetDespachoAlmacen: (v: boolean) => void;
     onSetFechaEntrega: (v: string) => void;
     onSetPendiente: (key: string, v: number) => void;
+    usaDespachoAlmacen: boolean;
     // Autofoco del precio en líneas recién agregadas con precio base 0.
     nuevaLineaPrecioKey: string | null;
     onAutoFocusPrecio: () => void;
@@ -2269,8 +2296,9 @@ function CarritoPanel({
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar,
     puedeVender, razonNoVender, bloqueoComprobante,
     esCredito, fechaVencimiento, onSetEsCredito, onSetFechaVencimiento,
-    permitirPendiente, entregaPendiente, fechaEntrega, pendienteDe, totalPendientes,
-    onSetEntregaPendiente, onSetFechaEntrega, onSetPendiente,
+    permitirPendiente, entregaPendiente, despachoAlmacen, fechaEntrega, pendienteDe, totalPendientes,
+    onSetEntregaPendiente, onSetDespachoAlmacen, onSetFechaEntrega, onSetPendiente,
+    usaDespachoAlmacen,
     nuevaLineaPrecioKey, onAutoFocusPrecio,
     anticipoSeleccionado, montoAnticipoUsado,
 }: CarritoPanelProps) {
@@ -2574,6 +2602,62 @@ function CarritoPanel({
                                                 Aún no marcaste nada como pendiente: reduce lo que "lleva" en algún producto.
                                             </p>
                                         )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Despacho en almacén: toda la venta queda pendiente de
+                            entrega. El almacenero la confirma luego y recién ahí
+                            descuenta el stock. */}
+                        {usaDespachoAlmacen && (
+                            <div
+                                className="rounded-xl px-3 py-2.5"
+                                style={{
+                                    border: `1px solid ${despachoAlmacen ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                                    backgroundColor: despachoAlmacen
+                                        ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))'
+                                        : 'var(--color-surface)',
+                                }}
+                            >
+                                <label className="flex items-center justify-between gap-2 cursor-pointer select-none">
+                                    <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                                        <Package size={15} style={{ color: despachoAlmacen ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
+                                        Despacho en almacén
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={despachoAlmacen}
+                                        onChange={e => onSetDespachoAlmacen(e.target.checked)}
+                                        className="h-4 w-4 accent-[var(--color-primary)]"
+                                    />
+                                </label>
+                                {despachoAlmacen && (
+                                    <div className="mt-2 space-y-2">
+                                        {esClienteGeneral && (
+                                            <p className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
+                                                Selecciona un cliente identificado para dejar mercadería en almacén.
+                                            </p>
+                                        )}
+                                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                            Toda la mercadería quedará pendiente de despacho. El almacenero la verá en su bandeja y confirmará la entrega; el stock saldrá del almacén en ese momento.
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                                Entrega estimada (opcional)
+                                            </span>
+                                            <input
+                                                type="date"
+                                                value={fechaEntrega}
+                                                onChange={e => onSetFechaEntrega(e.target.value)}
+                                                className="flex-1 text-xs rounded-lg px-2 py-1.5 border outline-none"
+                                                style={{
+                                                    borderColor: 'var(--color-border)',
+                                                    backgroundColor: 'var(--color-bg)',
+                                                    color: 'var(--color-text)',
+                                                }}
+                                            />
+                                        </div>
                                     </div>
                                 )}
                             </div>

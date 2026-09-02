@@ -47,6 +47,8 @@ class Empresa extends Model
         'venta_edicion_con_contador',
         'cajera_puede_editar',
         'cajera_puede_anular',
+        // Despacho en almacén: el stock solo descuenta al confirmar el despacho.
+        'usa_despacho_almacen',
         // Manejo de efectivo (todo opt-in; defaults = comportamiento clásico)
         'modo_apertura_caja',
         'apertura_editable',
@@ -83,6 +85,7 @@ class Empresa extends Model
             'venta_edicion_con_contador'      => 'boolean',
             'cajera_puede_editar'             => 'boolean',
             'cajera_puede_anular'             => 'boolean',
+            'usa_despacho_almacen'            => 'boolean',
             'apertura_editable'               => 'boolean',
             'usa_retiros_caja'                => 'boolean',
             'retiro_requiere_aprobacion'      => 'boolean',

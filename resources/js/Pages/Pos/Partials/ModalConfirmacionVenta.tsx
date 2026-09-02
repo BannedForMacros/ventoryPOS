@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingBag, User, Receipt, CreditCard, CheckCircle2, Truck, Printer } from 'lucide-react';
+import { ShoppingBag, User, Receipt, CreditCard, CheckCircle2, Truck, Printer, Package } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import type { Cliente, DescuentoConcepto, MetodoPago } from '@/types';
@@ -29,6 +29,8 @@ interface Props {
     entregaPendiente?:   boolean;
     pendienteDe?:        (item: LineaCarrito) => number;
     fechaEntrega?:       string;
+    // Despacho en almacén: toda la venta queda pendiente de entrega.
+    despachoAlmacen?:    boolean;
     // Monto cubierto con anticipo de efectivo del cliente.
     anticipoMonto?:      number;
 }
@@ -50,7 +52,7 @@ export default function ModalConfirmacionVenta({
     isOpen, onClose, onConfirmar, loading,
     items, pagos, cliente, descuentoTotal, descuentoConceptoId, tipoComprobante, numeroComprobante = '',
     subtotal, igv, total, metodosPago, conceptos,
-    entregaPendiente, pendienteDe, fechaEntrega,
+    entregaPendiente, pendienteDe, fechaEntrega, despachoAlmacen,
     anticipoMonto = 0,
 }: Props) {
     const pendientes = entregaPendiente && pendienteDe
@@ -236,6 +238,37 @@ export default function ModalConfirmacionVenta({
                                 ? `Entrega estimada: ${new Date(fechaEntrega + 'T00:00:00').toLocaleDateString('es-PE')}. `
                                 : ''}
                             Se registrará automáticamente en Finanzas → Anticipos; el stock pendiente sale del almacén al entregarse.
+                        </p>
+                    </div>
+                )}
+
+                {/* Despacho en almacén: resumen de lo que queda pendiente */}
+                {despachoAlmacen && (
+                    <div
+                        className="rounded-xl p-3"
+                        style={{
+                            backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, var(--color-bg))',
+                            border: '1px solid var(--color-primary)',
+                        }}
+                    >
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                            <Package size={14} style={{ color: 'var(--color-primary)' }} />
+                            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-primary)' }}>
+                                Despacho en almacén
+                            </span>
+                        </div>
+                        <ul className="text-xs space-y-0.5" style={{ color: 'var(--color-text)' }}>
+                            {items.map(item => (
+                                <li key={item.key}>
+                                    <strong>{item.cantidad}</strong> × {item.producto_nombre} ({item.unidad_nombre})
+                                </li>
+                            ))}
+                        </ul>
+                        <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                            {fechaEntrega
+                                ? `Entrega estimada: ${new Date(fechaEntrega + 'T00:00:00').toLocaleDateString('es-PE')}. `
+                                : ''}
+                            El almacenero confirmará el despacho y recién ahí saldrá el stock del almacén.
                         </p>
                     </div>
                 )}

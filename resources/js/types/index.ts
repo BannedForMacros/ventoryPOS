@@ -51,6 +51,8 @@ export interface Empresa extends Record<string, unknown> {
     venta_edicion_con_contador: boolean;
     cajera_puede_editar: boolean;
     cajera_puede_anular: boolean;
+    /** Habilita ventas marcadas como "despacho en almacén" (stock diferido). */
+    usa_despacho_almacen: boolean;
     /** Mercadería comprada que aún no llega: estado "En camino" en Entradas. */
     usa_mercaderia_transito: boolean;
     /** Permite sobrevender en el POS, pero solo hasta lo que está en tránsito. */
