@@ -28,6 +28,7 @@ class ModulosReportesSeeder extends Seeder
         );
 
         $hijos = [
+            ['slug' => 'reportes.cierre-mes',  'nombre' => 'Cierre de mes', 'icono' => 'CalendarRange', 'ruta' => '/reportes/cierre-mes', 'orden' => 1],
             ['slug' => 'reportes.ventas',       'nombre' => 'Ventas',        'icono' => 'TrendingUp',  'ruta' => '/reportes/ventas',       'orden' => 2],
             ['slug' => 'reportes.utilidad',    'nombre' => 'Utilidad',      'icono' => 'CircleDollarSign', 'ruta' => '/reportes/utilidad', 'orden' => 2],
             ['slug' => 'reportes.productos',   'nombre' => 'Productos',     'icono' => 'Package',     'ruta' => '/reportes/productos',    'orden' => 3],

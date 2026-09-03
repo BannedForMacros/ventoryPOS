@@ -536,6 +536,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // ── REPORTES ─────────────────────────────────────────────────────────
     Route::prefix('reportes')->name('reportes.')->group(function () {
+        Route::middleware('permiso:reportes.cierre-mes,ver')->get('cierre-mes', [\App\Http\Controllers\Reportes\ReporteCierreMesController::class, 'index'])->name('cierre-mes');
         Route::middleware('permiso:reportes.descuentos,ver')->get('descuentos',   [DescuentoLogController::class,        'index'])->name('descuentos');
         Route::middleware('permiso:reportes.ventas,ver')->get('ventas',           [ReporteVentaController::class,        'index'])->name('ventas');
         Route::middleware('permiso:reportes.utilidad,ver')->get('utilidad',       [\App\Http\Controllers\Reportes\ReporteUtilidadController::class, 'index'])->name('utilidad');

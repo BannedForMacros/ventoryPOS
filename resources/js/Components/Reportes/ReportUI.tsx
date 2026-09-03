@@ -138,10 +138,12 @@ export function FieldSelect({ label, value, onChange, options }: {
     );
 }
 
-export function FiltrosReporte({ fechaDesde, fechaHasta, onChange, onClear, tieneFiltros, children }: {
+export function FiltrosReporte({ fechaDesde, fechaHasta, onChange, onClear, tieneFiltros, rangosExtra = [], children }: {
     fechaDesde: string; fechaHasta: string;
     onChange: (patch: Record<string, string | undefined>) => void;
     onClear?: () => void; tieneFiltros?: boolean;
+    /** Rangos rápidos adicionales (ej. ['Mes pasado', ...]) tras los por defecto. */
+    rangosExtra?: Array<[string, () => { fecha_desde: string; fecha_hasta: string }]>;
     /** Selects adicionales (FieldSelect / inputs propios del reporte). */
     children?: React.ReactNode;
 }) {
@@ -150,6 +152,7 @@ export function FiltrosReporte({ fechaDesde, fechaHasta, onChange, onClear, tien
         ['7 días', () => rango(6)],
         ['Este mes', () => { const h = new Date(); return { fecha_desde: iso(new Date(h.getFullYear(), h.getMonth(), 1)), fecha_hasta: hoyISO() }; }],
         ['30 días', () => rango(29)],
+        ...rangosExtra,
     ];
 
     return (
