@@ -103,7 +103,9 @@ class StoreVentaRequest extends FormRequest
             // cuenta_metodo_pago_id se valida cruzado en withValidator (debe pertenecer
             // al metodo Y a la empresa, y la cuenta debe estar activa).
             // En venta a crédito los pagos son opcionales (pago inicial parcial o nada).
-            'pagos'                              => [$this->boolean('es_credito') ? 'nullable' : 'required', 'array', $this->boolean('es_credito') ? 'min:0' : 'min:1'],
+            // Cuando un anticipo de efectivo cubre TODO el total, tampoco se requiere
+            // un pago adicional (el dinero ya entró al registrar el anticipo).
+            'pagos'                              => ['nullable', 'array', 'min:0'],
             'pagos.*.metodo_pago_id'             => [
                 'required', 'integer',
                 Rule::exists('metodos_pago', 'id')

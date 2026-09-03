@@ -301,6 +301,10 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
         a.estado === 'activo' && a.tipo_valorizacion === 'monto'
         && !esMultiItem(a) && !a.venta && (a.aplicaciones?.length ?? 0) === 0;
 
+    /** Se reactivan anticipos anulados/devueltos que no vengan del POS. */
+    const puedeReactivar = (a: Anticipo) =>
+        (a.estado === 'anulado' || a.estado === 'devuelto') && !a.venta && (puede?.editar ?? false);
+
     /** Abre el modal de edición sembrando el formulario con el anticipo. */
     function abrirEditar(a: Anticipo) {
         setErrors({});
@@ -570,7 +574,7 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                             </button>
                         </>
                     )}
-                    {(a.estado === 'anulado' || a.estado === 'devuelto') && puedeEditar(a) && (
+                    {(a.estado === 'anulado' || a.estado === 'devuelto') && puedeReactivar(a) && (
                         <button onClick={() => { setErrors({}); setMotivoReactivar(''); setReactivando(a); }}
                             className="p-1.5 rounded-lg hover:bg-black/5" title="Reactivar anticipo"
                             style={{ color: 'var(--color-primary)' }}>

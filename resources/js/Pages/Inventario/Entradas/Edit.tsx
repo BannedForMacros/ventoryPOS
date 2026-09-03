@@ -95,6 +95,10 @@ interface Props extends PageProps {
     modoAlmacen: 'simple' | 'central_y_local';
     /** Adelantos con saldo por proveedor para pagar con ellos. */
     adelantos: Adelanto[];
+    /** Si la empresa permite vender/ajustar con stock negativo, reducir cantidades
+     *  de una entrada confirmada NO bloquea (solo advierte): el backend replantea
+     *  el kardex con Stock::reconstruir() al guardar. */
+    permiteStockNegativo: boolean;
 }
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
@@ -120,7 +124,7 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
     return String(Math.round((t / q) * 10000) / 10000);
 }
 
-export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen, adelantos }: Props) {
+export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen, adelantos, permiteStockNegativo }: Props) {
     // "Afecta caja a:" — arranca en el turno actual de los pagos (si sigue
     // ABIERTO), para reflejar el estado real. Re-imputar solo ocurre si el
     // usuario TOCA el selector (turnoTocado), para no cambiarlo sin querer.
@@ -330,7 +334,11 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
             if ((productosAbsorbidos ?? []).includes(prodId)) return;
 
             const stockAct = stockMap.get(prodId) ?? 0;
-            const consumido = Math.max(0, aporto - stockAct);
+            // Acotado al aporte: si el stock está NEGATIVO (ventas en negativo),
+            // "aporto - stockAct" superaría lo que la entrada aportó y generaría
+            // un mínimo imposible (ej. aportó 640, stock −20 → mín. 660). Lo
+            // consumido de ESTA entrada nunca puede superar lo que ella aportó.
+            const consumido = Math.min(aporto, Math.max(0, aporto - stockAct));
             if (consumido > 0) {
                 const prod = productos.find(p => p.id === prodId);
                 m.set(prodId, {
@@ -448,11 +456,19 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
         }
         // Bloqueo explicito si hay violaciones de stock — backend tambien valida,
         // pero atajamos aca para evitar el roundtrip y dar mensaje accionable.
-        if (violaciones.length > 0) {
+        // Excepcion: si la empresa permite stock negativo, reducir solo ADVIERTE
+        // (el stock quedara en negativo y Stock::reconstruir replantea el kardex).
+        if (violaciones.length > 0 && !permiteStockNegativo) {
             mostrarErroresValidacion(violaciones.map(v =>
                 `${v.nombre}: tienes ${v.actual.toFixed(2)} base, debes mantener al menos ${v.minimo.toFixed(2)} base`
             ));
             return;
+        }
+        if (violaciones.length > 0 && permiteStockNegativo) {
+            const nombres = violaciones.map(v => v.nombre).join(', ');
+            if (!window.confirm(`Vas a reducir por debajo de lo ya vendido/consumido: ${nombres}. El stock quedará en NEGATIVO y el kardex se recalculará al guardar. ¿Continuar?`)) {
+                return;
+            }
         }
         setProcessing(true);
         router.put(route('inventario.entradas.update', entrada.id), {
@@ -516,8 +532,9 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                         <p className="font-semibold mb-1">Esta entrada ya fue confirmada.</p>
                         <p style={{ color: 'var(--color-text-muted)' }}>
                             Al guardar: el stock se ajustará automáticamente con la diferencia y el <strong>costo promedio se recalculará</strong>.
-                            Si reduces la cantidad de un producto que ya tiene ventas o transferencias posteriores, el sistema bloqueará el cambio
-                            con un mensaje indicando la cantidad mínima permitida.
+                            {permiteStockNegativo
+                                ? ' Si reduces la cantidad de un producto que ya tiene ventas o transferencias posteriores, el stock quedará en negativo (tu empresa lo permite) y el kardex se recalculará al guardar.'
+                                : ' Si reduces la cantidad de un producto que ya tiene ventas o transferencias posteriores, el sistema bloqueará el cambio con un mensaje indicando la cantidad mínima permitida.'}
                         </p>
                     </div>
                 </div>
@@ -618,7 +635,9 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                 Productos con movimientos posteriores
                             </div>
                             <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                Estos productos ya tuvieron salidas/ventas después de confirmar esta entrada. Puedes redistribuir entre líneas, pero la <strong>suma total por producto</strong> debe ser ≥ al mínimo indicado. Si necesitas quitar uno, agrega otra línea del mismo producto con la cantidad restante.
+                                {permiteStockNegativo
+                                    ? 'Estos productos ya tuvieron salidas/ventas después de confirmar esta entrada. Como tu empresa permite stock negativo, puedes reducir por debajo del mínimo: el stock quedará en negativo y el kardex se recalculará al guardar.'
+                                    : 'Estos productos ya tuvieron salidas/ventas después de confirmar esta entrada. Puedes redistribuir entre líneas, pero la suma total por producto debe ser ≥ al mínimo indicado. Si necesitas quitar uno, agrega otra línea del mismo producto con la cantidad restante.'}
                             </p>
                             <ul className="text-xs space-y-1 mt-1">
                                 {[...restriccionesPorProducto.entries()].map(([prodId, r]) => {

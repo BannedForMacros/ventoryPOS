@@ -32,6 +32,7 @@ class EntradaController extends Controller
         private TesoreriaService $tesoreria,
         private \App\Services\MercaderiaTransitoService $transito,
         private \App\Services\ProveedorAdelantoService $adelantos,
+        private \App\Services\ConfiguracionOperacionService $config,
     ) {}
 
     /**
@@ -466,6 +467,9 @@ class EntradaController extends Controller
                 ->with('cuentas:id,nombre,banco,numero_cuenta')
                 ->orderBy('nombre')->get(['id', 'nombre', 'tipo_id']),
             'stocks'    => $stocks,
+            // Si la empresa permite stock negativo, el form NO bloquea reducciones
+            // que dejen el stock en negativo (solo advierte); el backend valida igual.
+            'permiteStockNegativo' => $this->config->permiteStockNegativo($empresaId),
             // Productos de esta entrada ABSORBIDOS por el inventario inicial (la
             // fecha de la entrada cae en o antes del corte de apertura): su
             // mercadería vive en el conteo físico, no en el stock en vivo, así
@@ -561,6 +565,10 @@ class EntradaController extends Controller
         // ── Si era confirmada, validar ANTES que ninguna reduccion deje stock negativo.
         // Esto cubre el caso "ya se vendieron / transfirieron unidades de esta entrada".
         // Mejor fallar aqui con mensaje claro que reventar despues con InsufficientStock.
+        // Si la empresa permite stock negativo (mismo flag que gobierna las ventas),
+        // la reduccion pasa: al final Stock::reconstruir() replantea el kardex del
+        // producto desde el historial, asi queda consistente aunque quede en negativo.
+        $permiteNegativo = $this->config->permiteStockNegativo($user->empresa_id);
         if ($eraConfirmada) {
             $entrada->loadMissing('detalles');
 
@@ -595,7 +603,7 @@ class EntradaController extends Controller
                     ->where('producto_id', $productoId)
                     ->value('cantidad') ?? 0);
 
-                if ($stockActual + $delta < 0) {
+                if (! $permiteNegativo && $stockActual + $delta < 0) {
                     $producto    = Producto::find($productoId);
                     $consumido   = $cantVieja - $stockActual;          // unidades ya salidas (ventas/transfer/etc.)
                     $minPermit   = max(0.0001, $cantVieja - $stockActual);
