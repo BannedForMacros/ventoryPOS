@@ -1117,6 +1117,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             itemCols={detalleData.itemCols}
                             montoLabel={detalleData.montoLabel}
                             emptyMessage="Sin datos en el período"
+                            exportNombre={detalleDe?.descripcion ?? detalleDe?.categoria ?? 'detalle'}
                         />
                     </div>
                 )}

@@ -11,6 +11,7 @@ use App\Models\Venta;
 use App\Models\VentaAbono;
 use App\Models\VentaPago;
 use App\Services\LocalScopeService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,9 @@ use Inertia\Inertia;
  * SUNAT y externos), cobros por método de pago, créditos y sus abonos,
  * gastos, devoluciones, compras y la utilidad bruta/neta, con comparativa
  * contra el período anterior de la misma duración.
+ *
+ * El mismo paquete de datos alimenta la pantalla (Inertia) y el PDF que se
+ * le envía a los dueños (ruta /reportes/cierre-mes/pdf).
  */
 class ReporteCierreMesController extends Controller
 {
@@ -34,6 +38,37 @@ class ReporteCierreMesController extends Controller
         (SELECT s.costo_promedio FROM stock s WHERE s.producto_id = p.id AND s.costo_promedio > 0 ORDER BY s.id LIMIT 1), 0)";
 
     public function index(Request $request)
+    {
+        $datos = $this->recopilarDatos($request);
+
+        return Inertia::render('Reportes/CierreMes', [
+            ...$datos,
+            'locales' => $this->scope->localesVisibles($request->user()),
+        ]);
+    }
+
+    /** PDF del cierre, listo para enviar a los dueños. */
+    public function pdf(Request $request)
+    {
+        $datos   = $this->recopilarDatos($request);
+        $empresa = $request->user()->empresa;
+
+        $desde = $datos['filters']['fecha_desde'];
+        $hasta = $datos['filters']['fecha_hasta'];
+
+        return Pdf::loadView('reportes.cierre-mes', [
+            ...$datos,
+            'empresa'   => $empresa,
+            'generado'  => now()->format('d/m/Y H:i'),
+        ])->setPaper('a4')->download("cierre_{$desde}_al_{$hasta}.pdf");
+    }
+
+    /**
+     * Toda la agregación del período, compartida por la pantalla y el PDF.
+     *
+     * @return array<string, mixed>
+     */
+    private function recopilarDatos(Request $request): array
     {
         $user = $request->user();
 
@@ -275,7 +310,7 @@ class ReporteCierreMesController extends Controller
                 'count'     => (int)   $r->count,
             ]);
 
-        return Inertia::render('Reportes/CierreMes', [
+        return [
             'kpis'                  => $kpis,
             'serie_diaria'          => $serieDiaria,
             'por_comprobante'       => $porComprobante,
@@ -285,12 +320,11 @@ class ReporteCierreMesController extends Controller
             'gastos_por_cuenta'     => $gastosPorCuenta,
             'top_deudores'          => $topDeudores,
             'compras_por_proveedor' => $comprasPorProveedor,
-            'locales'               => $this->scope->localesVisibles($user),
             'filters'               => [
                 'fecha_desde' => $desde,
                 'fecha_hasta' => $hasta,
                 'local_id'    => $request->local_id,
             ],
-        ]);
+        ];
     }
 }

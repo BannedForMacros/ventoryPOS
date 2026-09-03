@@ -2,8 +2,8 @@ import { useEffect } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
-    CalendarRange, TrendingUp, TrendingDown, Receipt, Percent, CreditCard,
-    HandCoins, Package, Scale, Landmark, FileText, Wallet, ShoppingBag,
+    CalendarRange, TrendingUp, TrendingDown, Receipt, CreditCard,
+    HandCoins, Package, Scale, Landmark, FileText, Wallet, ShoppingBag, Download,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -113,6 +113,19 @@ export default function ReportesCierreMes({
                 icon={<CalendarRange size={22} />}
                 title="Cierre de mes"
                 subtitle={`${filters.fecha_desde} → ${filters.fecha_hasta} · estado consolidado del período`}
+                actions={
+                    <a
+                        href={route('reportes.cierre-mes.pdf', {
+                            fecha_desde: filters.fecha_desde,
+                            fecha_hasta: filters.fecha_hasta,
+                            local_id:    filters.local_id,
+                        })}
+                        className="inline-flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl text-white transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: 'var(--color-primary)' }}
+                    >
+                        <Download size={15} /> Descargar PDF
+                    </a>
+                }
             />
 
             {/* Filtros: rango seleccionable + atajos de mes */}
@@ -137,7 +150,46 @@ export default function ReportesCierreMes({
                 )}
             </FiltrosReporte>
 
-            {/* KPIs principales */}
+            {/* ══ LA UTILIDAD, PROTAGONISTA: lo primero que se ve ══ */}
+            <div className="rounded-2xl px-5 py-4 mb-5 flex flex-wrap items-center gap-x-8 gap-y-3"
+                style={{
+                    background: kpis.utilidad_neta >= 0
+                        ? 'linear-gradient(120deg, color-mix(in srgb, var(--color-success) 16%, var(--color-surface)) 0%, var(--color-surface) 70%)'
+                        : 'linear-gradient(120deg, color-mix(in srgb, var(--color-danger) 14%, var(--color-surface)) 0%, var(--color-surface) 70%)',
+                    border: `2px solid color-mix(in srgb, ${kpis.utilidad_neta >= 0 ? 'var(--color-success)' : 'var(--color-danger)'} 40%, var(--color-border))`,
+                }}>
+                <div className="min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: 'var(--color-text-muted)' }}>
+                        Utilidad neta del período
+                    </p>
+                    <p className="text-4xl font-extrabold tabular-nums leading-tight"
+                        style={{ color: kpis.utilidad_neta >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                        {fmtS(kpis.utilidad_neta)}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                        {kpis.margen_neto !== null && <>margen neto {kpis.margen_neto}% · </>}
+                        bruta {fmtS(kpis.utilidad_bruta)}{kpis.margen_bruto !== null && ` (${kpis.margen_bruto}%)`}
+                    </p>
+                </div>
+                {/* Desglose de dónde sale la utilidad */}
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm ml-auto">
+                    {[
+                        { label: 'Ventas', monto: kpis.ventas, signo: '', color: 'var(--color-success)' },
+                        { label: 'Costo de lo vendido', monto: kpis.costo, signo: '−', color: 'var(--color-text-muted)' },
+                        { label: 'Gastos', monto: kpis.gastos, signo: '−', color: 'var(--color-danger)' },
+                        { label: 'Devoluciones', monto: kpis.devoluciones, signo: '−', color: 'var(--color-warning)' },
+                    ].map(x => (
+                        <div key={x.label}>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>{x.label}</p>
+                            <p className="font-bold tabular-nums" style={{ color: x.color }}>
+                                {x.signo && <span className="mr-0.5">{x.signo}</span>}{fmtS(x.monto)}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* KPIs secundarios */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
                 <Kpi icon={<TrendingUp size={18} />} label="Ventas" value={fmtS(kpis.ventas)}
                     sub={kpis.variacion_ventas !== null
@@ -145,10 +197,9 @@ export default function ReportesCierreMes({
                         : `${fmtInt(kpis.ventas_count)} ventas · ticket prom. ${fmtS(kpis.ticket_promedio)}`}
                     subColor={kpis.variacion_ventas !== null ? (kpis.variacion_ventas >= 0 ? 'var(--color-success)' : 'var(--color-danger)') : undefined}
                     color="var(--color-success)" />
-                <Kpi icon={<Scale size={18} />} label="Utilidad neta" value={fmtS(kpis.utilidad_neta)}
-                    sub={kpis.margen_neto !== null ? `margen ${kpis.margen_neto}% · bruta ${fmtS(kpis.utilidad_bruta)}` : `bruta ${fmtS(kpis.utilidad_bruta)}`}
-                    subColor={kpis.utilidad_neta < 0 ? 'var(--color-danger)' : undefined}
-                    color={kpis.utilidad_neta >= 0 ? 'var(--color-primary)' : 'var(--color-danger)'} />
+                <Kpi icon={<Wallet size={18} />} label="Cobrado en el período" value={fmtS(cobradoTotal)}
+                    sub="ventas de contado + abonos a créditos"
+                    color="var(--color-primary)" />
                 <Kpi icon={<TrendingDown size={18} />} label="Gastos" value={fmtS(kpis.gastos)}
                     sub={`${fmtInt(kpis.gastos_count)} gastos${kpis.devoluciones > 0 ? ` · devoluciones ${fmtS(kpis.devoluciones)}` : ''}`}
                     color="var(--color-danger)" />

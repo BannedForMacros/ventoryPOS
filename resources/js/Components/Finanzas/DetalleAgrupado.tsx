@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
-import { ChevronDown, History, Search, UserRound } from 'lucide-react';
+import { ChevronDown, Copy, FileSpreadsheet, History, Search, UserRound } from 'lucide-react';
+import toast from 'react-hot-toast';
 import Collapse from '@/Components/UI/Collapse';
 
 /**
@@ -54,6 +55,7 @@ interface Props {
     itemCols?: DetalleCol[];   // columnas del detalle, a medida por categoría
     montoLabel?: string;       // "Monto", "Saldo", "Pasivo hoy"...
     emptyMessage?: string;
+    exportNombre?: string;     // nombre base del archivo Excel (ej. "Efectivo", "BCP")
 }
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -66,7 +68,7 @@ const colorDe = (tipo?: string | null) =>
 
 const cardColor = (c?: DetalleCard['color']) => c ? `var(--color-${c})` : 'var(--color-text)';
 
-export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 'Monto', emptyMessage = 'Sin datos' }: Props) {
+export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 'Monto', emptyMessage = 'Sin datos', exportNombre = 'detalle' }: Props) {
     const cols: DetalleCol[] = itemCols?.length ? itemCols : [{ campo: 'descripcion', label: 'Descripción' }];
     const [q, setQ] = useState('');
     const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
@@ -105,6 +107,65 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
 
     const hayUsuarios = grupos.some(g => g.items.some(i => i.user));
 
+    // ── Exportar a Excel (copiar / descargar) ─────────────────────────
+    // Aplica a TODAS las categorías que usan este detalle (efectivo,
+    // transferencias/bancos, gastos...). Copiar = TSV (tabulaciones): al
+    // pegar en Excel cada dato cae en su celda. Descargar = CSV con BOM
+    // (misma convención del proyecto: lo abre Excel directo).
+    const cabecera = [...cols.map(c => c.label), ...(hayUsuarios ? ['Usuario'] : []), montoLabel];
+
+    const filaDe = (it: DetalleItem): string[] => [
+        ...cols.map(c => String(it[c.campo] ?? '')),
+        ...(hayUsuarios ? [it.user ?? ''] : []),
+        ((it.tipo === 'egreso' ? -1 : 1) * Number(it.monto ?? 0)).toFixed(2),
+    ];
+
+    const filasDe = (gruposExp: DetalleGrupo[], conFecha: boolean): string[][] => {
+        const filas: string[][] = [conFecha ? ['Fecha', ...cabecera] : cabecera];
+        gruposExp.forEach(g => g.items.forEach(it =>
+            filas.push(conFecha
+                ? [g.esFecha ? g.titulo : `${g.titulo}${g.subtitulo ? ` ${g.subtitulo}` : ''}`, ...filaDe(it)]
+                : filaDe(it))));
+        return filas;
+    };
+
+    async function copiarTexto(txt: string): Promise<boolean> {
+        try { await navigator.clipboard.writeText(txt); return true; } catch { /* sin HTTPS: fallback */ }
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = txt;
+            ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            const ok = document.execCommand('copy');
+            ta.remove(); return ok;
+        } catch { return false; }
+    }
+
+    function copiar(gruposExp: DetalleGrupo[], conFecha: boolean) {
+        const filas = filasDe(gruposExp, conFecha);
+        if (filas.length < 2) { toast.error('No hay operaciones que copiar'); return; }
+        const tsv = filas.map(f => f.map(c => c.replace(/[\t\r\n]+/g, ' ').trim()).join('\t')).join('\n');
+        copiarTexto(tsv).then(ok => ok
+            ? toast.success(`${filas.length - 1} operaciones copiadas — pégalas en Excel`)
+            : toast.error('No se pudo copiar al portapapeles'));
+    }
+
+    const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'detalle';
+
+    function descargar(gruposExp: DetalleGrupo[], conFecha: boolean, nombre: string) {
+        const filas = filasDe(gruposExp, conFecha);
+        if (filas.length < 2) { toast.error('No hay operaciones que exportar'); return; }
+        const esc = (v: string) => /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+        const csv = '\uFEFF' + filas.map(f => f.map(esc).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${nombre}.csv`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+        toast.success(`${filas.length - 1} operaciones exportadas a Excel`);
+    }
+
     return (
         <div className="space-y-4">
             {/* Cards de resumen */}
@@ -124,16 +185,40 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                 </div>
             )}
 
-            {/* Buscador propio del componente */}
-            <div className="relative">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
-                <input
-                    value={q}
-                    onChange={e => setQ(e.target.value)}
-                    placeholder="Buscar por descripción, usuario o fecha..."
-                    className="w-full text-sm rounded-xl pl-9 pr-3 py-2.5 border outline-none"
-                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
-                />
+            {/* Buscador propio del componente + exportar TODO lo filtrado */}
+            <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
+                    <input
+                        value={q}
+                        onChange={e => setQ(e.target.value)}
+                        placeholder="Buscar por descripción, usuario o fecha..."
+                        className="w-full text-sm rounded-xl pl-9 pr-3 py-2.5 border outline-none"
+                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                    />
+                </div>
+                <button
+                    onClick={() => copiar(filtrados, true)}
+                    title="Copiar todo el período filtrado (pegar en Excel)"
+                    className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2.5 rounded-xl border transition-colors hover:opacity-80"
+                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                >
+                    <Copy size={13} />
+                    <span className="hidden sm:inline">Copiar</span>
+                </button>
+                <button
+                    onClick={() => descargar(filtrados, true, slug(exportNombre))}
+                    title="Descargar todo el período filtrado en Excel (CSV)"
+                    className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2.5 rounded-xl border transition-colors hover:opacity-80"
+                    style={{
+                        borderColor: 'color-mix(in srgb, var(--color-success) 40%, transparent)',
+                        backgroundColor: 'color-mix(in srgb, var(--color-success) 8%, var(--color-surface))',
+                        color: 'var(--color-success)',
+                    }}
+                >
+                    <FileSpreadsheet size={14} />
+                    <span className="hidden sm:inline">Excel</span>
+                </button>
             </div>
 
             {/* TABLA de grupos */}
@@ -155,8 +240,9 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                         const desplegable = g.items.length > 0;
                         return (
                             <div key={g.id} style={{ borderTop: idx > 0 ? '1px solid var(--color-border)' : 'none' }}>
-                                {/* Fila del grupo */}
-                                <button
+                                {/* Fila del grupo (div: permite anidar los botones de exportar) */}
+                                <div
+                                    role={desplegable ? 'button' : undefined}
                                     onClick={() => desplegable && toggle(g.id)}
                                     className={`w-full grid grid-cols-12 gap-2 items-center px-4 py-3 text-left transition-colors ${desplegable ? 'hover:bg-black/[0.03] cursor-pointer' : 'cursor-default'}`}
                                     style={{ backgroundColor: abierto ? 'color-mix(in srgb, var(--color-primary) 4%, var(--color-bg))' : 'transparent' }}
@@ -179,10 +265,33 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                     <span className="col-span-2 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
                                         {desplegable ? g.items.length : '—'}
                                     </span>
-                                    <span className="col-span-3 text-right text-sm font-bold" style={{ color: colorDe(g.tipo) }}>
-                                        {g.tipo === 'ingreso' ? '+' : g.tipo === 'egreso' ? '−' : ''}{money(g.monto)}
+                                    <span className="col-span-3 flex items-center justify-end gap-1">
+                                        <span className="text-sm font-bold whitespace-nowrap" style={{ color: colorDe(g.tipo) }}>
+                                            {g.tipo === 'ingreso' ? '+' : g.tipo === 'egreso' ? '−' : ''}{money(g.monto)}
+                                        </span>
+                                        {/* Exportar SOLO este día: copiar (pegar en Excel) / descargar CSV */}
+                                        {desplegable && (
+                                            <span className="flex items-center gap-0.5 ml-1">
+                                                <button
+                                                    onClick={e => { e.stopPropagation(); copiar([g], false); }}
+                                                    title={`Copiar operaciones de ${g.esFecha ? fFecha(g.titulo) : g.titulo} (pegar en Excel)`}
+                                                    className="p-1.5 rounded-lg transition-colors hover:bg-black/[0.06]"
+                                                    style={{ color: 'var(--color-text-muted)' }}
+                                                >
+                                                    <Copy size={13} />
+                                                </button>
+                                                <button
+                                                    onClick={e => { e.stopPropagation(); descargar([g], false, `${slug(exportNombre)}-${slug(g.titulo)}`); }}
+                                                    title={`Descargar ${g.esFecha ? fFecha(g.titulo) : g.titulo} en Excel (CSV)`}
+                                                    className="p-1.5 rounded-lg transition-colors hover:bg-black/[0.06]"
+                                                    style={{ color: 'var(--color-success)' }}
+                                                >
+                                                    <FileSpreadsheet size={14} />
+                                                </button>
+                                            </span>
+                                        )}
                                     </span>
-                                </button>
+                                </div>
 
                                 {/* Sub-tabla del detalle: columnas A MEDIDA de la categoría */}
                                 {desplegable && (

@@ -581,7 +581,10 @@ class BalanceDiarioController extends Controller
             case 'gastos_emitidos': {
                 $esEgreso = $categoria === 'gastos_emitidos';
                 $hasta = min($request->input('hasta', $fecha), $fecha);
-                $desde = $request->input('desde', date('Y-m-d', strtotime($hasta . ' -3 months')));
+                // Por defecto SOLO el mes del balance (el negocio cuadra por
+                // mes); para ver días de meses anteriores se usan los filtros
+                // Desde/Hasta del modal.
+                $desde = $request->input('desde', date('Y-m-01', strtotime($hasta)));
 
                 // AUDITORÍA: la línea de cuenta muestra TODO lo que entró Y salió
                 // (antes solo ingresos): así se explica por qué el monto cambió
