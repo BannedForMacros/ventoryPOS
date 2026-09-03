@@ -265,10 +265,10 @@ class ReporteCierreMesController extends Controller
         $comprasPorProveedor = (clone $comprasBase)
             ->select('proveedor_id', DB::raw('SUM(total) as total'), DB::raw('SUM(monto_pagado) as pagado'), DB::raw('COUNT(*) as count'))
             ->groupBy('proveedor_id')
-            ->with('proveedorRel:id,nombre')
+            ->with('proveedorRel:id,razon_social,nombre_comercial')
             ->orderByDesc('total')->limit(6)->get()
             ->map(fn ($r) => [
-                'nombre'    => $r->proveedorRel?->nombre ?? '—',
+                'nombre'    => $r->proveedorRel?->razon_social ?: ($r->proveedorRel?->nombre_comercial ?? '—'),
                 'total'     => (float) $r->total,
                 'pagado'    => (float) $r->pagado,
                 'pendiente' => (float) $r->total - (float) $r->pagado,
