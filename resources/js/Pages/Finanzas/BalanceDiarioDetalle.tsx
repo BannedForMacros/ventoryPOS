@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw, ZoomIn, ChevronDown, ArrowDownCircle, ArrowUpCircle, Coins, Landmark, TrendingUp, ArrowUpRight, ArrowDownRight, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw, ZoomIn, ChevronDown, X, ArrowDownCircle, ArrowUpCircle, Coins, Landmark, TrendingUp, ArrowUpRight, ArrowDownRight, AlertTriangle } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
@@ -147,6 +147,10 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
     const [detalleData, setDetalleData]   = useState<DetalleData | null>(null);
     const [detalleCargando, setDetalleCargando] = useState(false);
     const [rango, setRango]               = useState({ desde: '', hasta: '' });
+    // Desglose de Caja Grande: colapsable DENTRO del modal (no recarga el detalle).
+    const [desgloseCG, setDesgloseCG]           = useState(false);
+    const [entregasCG, setEntregasCG]           = useState<{ total: number; items: any[] } | null>(null);
+    const [cargandoEntregasCG, setCargandoEntregasCG] = useState(false);
 
     async function cargarDetalle(item: Item, desde?: string, hasta?: string, cuentaId?: number | null, userId?: number | null, cajaGrande?: boolean) {
         setDetalleCargando(true);
@@ -180,6 +184,9 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
             const data = await res.json();
             setDetalleData(data);
             if (data.desde) setRango({ desde: data.desde, hasta: data.hasta });
+            // Una carga completa (filtros, tabs, otro detalle) cierra el desglose
+            // de Caja Grande: sus entregas quedan desactualizadas.
+            if (!cajaGrande) { setDesgloseCG(false); setEntregasCG(null); }
         } catch {
             toast.error('No se pudo cargar el detalle de esta línea.');
             setDetalleDe(null);
@@ -192,7 +199,44 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
         if (!CON_DETALLE.has(item.categoria)) return;
         setDetalleDe(item);
         setDetalleData(null);
+        setDesgloseCG(false);
+        setEntregasCG(null);
         void cargarDetalle(item);
+    }
+
+    // ── Desglose Caja Grande (colapsable, SIN recargar el modal) ─────────
+    // Trae SOLO las entregas a administración del período; la lista de
+    // movimientos de abajo no se toca, así no "brinca" el modal.
+    function toggleDesgloseCajaGrande() {
+        if (!detalleDe) return;
+        if (desgloseCG) { setDesgloseCG(false); return; }
+        setDesgloseCG(true);
+        if (entregasCG === null) void cargarEntregasCajaGrande();
+    }
+
+    async function cargarEntregasCajaGrande() {
+        setCargandoEntregasCG(true);
+        try {
+            const params = new URLSearchParams();
+            if (detalleDe?.ref_id) params.set('ref_id', String(detalleDe.ref_id));
+            if (detalleDe?.ref_tipo === 'entidad' && detalleDe.categoria === 'efectivo') {
+                params.set('entidad', detalleDe.descripcion);
+            }
+            params.set('caja_grande', '1');
+            if (rango.desde) params.set('desde', rango.desde);
+            if (rango.hasta) params.set('hasta', rango.hasta);
+            const url = route('finanzas.balance.detalle', { fecha: balance.fecha.slice(0, 10), categoria: detalleDe!.categoria })
+                + `?${params.toString()}`;
+            const res = await fetch(url, { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+            if (!res.ok) throw new Error();
+            const data = await res.json();
+            setEntregasCG(data.entregasAdmin ?? { total: 0, items: [] });
+        } catch {
+            toast.error('No se pudieron cargar las entregas a administración.');
+            setDesgloseCG(false);
+        } finally {
+            setCargandoEntregasCG(false);
+        }
     }
 
     useEffect(() => {
@@ -1052,17 +1096,23 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         <span className="font-bold tabular-nums">{money(detalleData.cajaGrande.total_en_cajas)}</span>
                                     </div>
                                     <button type="button"
-                                        onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, detalleData?.cuentaSel ?? null, detalleData?.userSel ?? null, true)}
-                                        className="w-full flex items-center justify-between gap-2 text-left text-xs px-2 py-1.5 rounded-lg transition-colors hover:opacity-85 cursor-pointer"
+                                        onClick={toggleDesgloseCajaGrande}
+                                        className={`w-full flex items-center justify-between gap-2 text-left text-xs px-2 py-1.5 rounded-lg transition-colors cursor-pointer ${desgloseCG ? 'hover:opacity-90' : 'hover:opacity-85'}`}
                                         style={{
                                             backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)',
                                             border: '1px solid color-mix(in srgb, var(--color-primary) 22%, transparent)',
                                         }}
-                                        title="Ver ingresos/egresos del efectivo y las entregas a administración que componen este saldo">
-                                        <span className="font-semibold" style={{ color: 'var(--color-primary)' }}>
-                                            Caja Grande (administración)
-                                            <span className="block text-[10px] font-normal mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                                Ver movimientos y entregas →
+                                        aria-expanded={desgloseCG}
+                                        title={desgloseCG
+                                            ? 'Minimizar el desglose de Caja Grande'
+                                            : 'Ver los movimientos y entregas a administración que componen este saldo'}>
+                                        <span className="min-w-0">
+                                            <span className="flex items-center gap-1.5 font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                                <ChevronDown size={13} className={`flex-shrink-0 transition-transform duration-300 ${desgloseCG ? '' : '-rotate-90'}`} />
+                                                Caja Grande (administración)
+                                            </span>
+                                            <span className="block text-[10px] font-normal mt-0.5 pl-5" style={{ color: 'var(--color-text-muted)' }}>
+                                                {desgloseCG ? 'Minimizar desglose' : 'Ver movimientos y entregas a administración'}
                                             </span>
                                         </span>
                                         <span className="font-bold tabular-nums whitespace-nowrap"
@@ -1070,6 +1120,77 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                             {money(detalleData.cajaGrande.caja_grande)}
                                         </span>
                                     </button>
+
+                                    {/* Desglose colapsable: entregas a administración (traslados
+                                        internos) del período. Solo afecta esta tarjeta. */}
+                                    <Collapse open={desgloseCG}>
+                                        <div className="rounded-lg px-2 py-2 space-y-2"
+                                            style={{ backgroundColor: 'var(--color-surface)', border: '1px dashed var(--color-border)' }}>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                                    Entregas a administración
+                                                    <span className="font-normal normal-case ml-1">
+                                                        · período filtrado ({entregasCG ? entregasCG.items.length : 0})
+                                                    </span>
+                                                </p>
+                                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                    {entregasCG && !cargandoEntregasCG && (
+                                                        <span className="text-xs font-bold tabular-nums" style={{ color: 'var(--color-success)' }}>
+                                                            +{money(entregasCG.total)}
+                                                        </span>
+                                                    )}
+                                                    <button type="button" onClick={() => setDesgloseCG(false)}
+                                                        title="Minimizar desglose"
+                                                        className="p-1 rounded-md transition-colors hover:bg-black/[0.06]"
+                                                        style={{ color: 'var(--color-text-muted)' }}>
+                                                        <X size={13} />
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {cargandoEntregasCG ? (
+                                                <div className="flex items-center gap-2 text-xs py-2" style={{ color: 'var(--color-text-muted)' }}>
+                                                    <span className="h-3 w-3 rounded-full animate-spin flex-shrink-0"
+                                                        style={{ border: '2px solid color-mix(in srgb, var(--color-primary) 25%, transparent)', borderTopColor: 'var(--color-primary)' }} />
+                                                    Cargando entregas a administración…
+                                                </div>
+                                            ) : entregasCG && entregasCG.items.length > 0 ? (
+                                                <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--color-border)' }}>
+                                                    <table className="w-full text-xs">
+                                                        <thead>
+                                                            <tr className="text-[10px] font-bold uppercase tracking-wider" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
+                                                                <th className="text-left font-bold px-2 py-1.5">Fecha</th>
+                                                                <th className="text-left font-bold px-2 py-1.5">Caja</th>
+                                                                <th className="text-left font-bold px-2 py-1.5">Cajera</th>
+                                                                <th className="text-left font-bold px-2 py-1.5">Momento</th>
+                                                                <th className="text-right font-bold px-2 py-1.5">Monto</th>
+                                                                <th className="text-left font-bold px-2 py-1.5">Registró</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {entregasCG.items.map((e: any, i: number) => (
+                                                                <tr key={i} style={{ borderTop: '1px dashed var(--color-border)' }}>
+                                                                    <td className="px-2 py-1.5 whitespace-nowrap font-medium" style={{ color: 'var(--color-text)' }}>{e.fecha}</td>
+                                                                    <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text)' }}>{e.caja}</td>
+                                                                    <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{e.cajera}</td>
+                                                                    <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{e.momento}</td>
+                                                                    <td className="px-2 py-1.5 whitespace-nowrap text-right font-semibold tabular-nums" style={{ color: 'var(--color-success)' }}>
+                                                                        +{money(e.monto)}
+                                                                    </td>
+                                                                    <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{e.registro}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs py-1" style={{ color: 'var(--color-text-muted)' }}>
+                                                    No hubo entregas a administración en este período. El saldo de Caja Grande se explica
+                                                    con los movimientos de Efectivo de la lista de abajo (ingresos y egresos).
+                                                </p>
+                                            )}
+                                        </div>
+                                    </Collapse>
                                     <div className="flex items-center justify-between text-xs px-2 pt-1.5" style={{ borderTop: '1px dashed var(--color-border)' }}>
                                         <span className="font-semibold" style={{ color: 'var(--color-text)' }}>Total efectivo</span>
                                         <span className="font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
@@ -1082,57 +1203,6 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         </p>
                                     )}
                                 </div>
-                            </div>
-                        )}
-
-                        {/* Caja Grande (clic en su fila): traslados internos a administración
-                            en el período. Los ingresos/egresos reales del Efectivo se ven en la
-                            lista del detalle de abajo. */}
-                        {detalleData.verCajaGrande && detalleData.entregasAdmin && (
-                            <div className="rounded-xl px-3 py-2.5" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
-                                <div className="flex items-center justify-between gap-2 mb-2">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                                        Entregas a administración · período filtrado ({detalleData.entregasAdmin.items.length})
-                                    </p>
-                                    <span className="text-xs font-bold tabular-nums" style={{ color: 'var(--color-success)' }}>
-                                        +{money(detalleData.entregasAdmin.total)}
-                                    </span>
-                                </div>
-                                {detalleData.entregasAdmin.items.length > 0 ? (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-xs">
-                                            <thead>
-                                                <tr className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                                                    <th className="text-left font-bold px-2 py-1">Fecha</th>
-                                                    <th className="text-left font-bold px-2 py-1">Caja</th>
-                                                    <th className="text-left font-bold px-2 py-1">Cajera</th>
-                                                    <th className="text-left font-bold px-2 py-1">Momento</th>
-                                                    <th className="text-right font-bold px-2 py-1">Monto</th>
-                                                    <th className="text-left font-bold px-2 py-1">Registró</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {detalleData.entregasAdmin.items.map((e: any, i: number) => (
-                                                    <tr key={i} style={{ borderTop: '1px dashed var(--color-border)' }}>
-                                                        <td className="px-2 py-1.5 whitespace-nowrap font-medium" style={{ color: 'var(--color-text)' }}>{e.fecha}</td>
-                                                        <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text)' }}>{e.caja}</td>
-                                                        <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{e.cajera}</td>
-                                                        <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{e.momento}</td>
-                                                        <td className="px-2 py-1.5 whitespace-nowrap text-right font-semibold tabular-nums" style={{ color: 'var(--color-success)' }}>
-                                                            +{money(e.monto)}
-                                                        </td>
-                                                        <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{e.registro}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                ) : (
-                                    <p className="text-xs py-1" style={{ color: 'var(--color-text-muted)' }}>
-                                        No hubo entregas a administración en este período. El saldo de Caja Grande se explica con los
-                                        movimientos de Efectivo de la lista de abajo (ingresos y egresos).
-                                    </p>
-                                )}
                             </div>
                         )}
 
@@ -1181,9 +1251,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             itemCols={detalleData.itemCols}
                             montoLabel={detalleData.montoLabel}
                             emptyMessage="Sin datos en el período"
-                            exportNombre={detalleData.verCajaGrande
-                                ? `caja-grande-${(detalleDe?.descripcion ?? 'efectivo').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
-                                : detalleDe?.descripcion ?? detalleDe?.categoria ?? 'detalle'}
+                            exportNombre={detalleDe?.descripcion ?? detalleDe?.categoria ?? 'detalle'}
                         />
                     </div>
                 )}
