@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use App\Models\Cliente;
 use App\Models\ClienteAnticipo;
 use App\Models\ClienteAnticipoAplicacion;
@@ -203,9 +204,7 @@ class AnticipoClienteController extends Controller
         $anticipos = $query->orderByDesc('fecha')->orderByDesc('id')->get();
 
         $headers = ['Fecha', 'Cliente', 'Modalidad', 'Recibido', 'Pendiente', 'Pasivo hoy', 'Estado', 'Método de pago', 'Cuenta', 'Observación'];
-
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
-        $csv .= implode(',', array_map(fn ($h) => '"' . str_replace('"', '""', $h) . '"', $headers)) . "\n";
+        $filas = [];
 
         foreach ($anticipos as $a) {
             $cliente = $a->cliente;
@@ -213,13 +212,13 @@ class AnticipoClienteController extends Controller
                 ?: trim(($cliente?->nombres ?? '') . ' ' . ($cliente?->apellidos ?? ''));
 
             $modalidad = $a->tipo_valorizacion === 'material' ? 'Material' : 'Dinero';
-            $recibido  = number_format((float) $a->monto, 2, '.', '');
+            $recibido  = (float) $a->monto;
             $pendiente = $a->tipo_valorizacion === 'material'
                 ? number_format((float) $a->cantidad_pendiente, 4, '.', '') . ' und'
-                : number_format((float) $a->saldo, 2, '.', '');
-            $pasivo    = $a->estado === 'activo' ? number_format((float) $a->valorPasivo(), 2, '.', '') : '0.00';
+                : (float) $a->saldo;
+            $pasivo    = $a->estado === 'activo' ? (float) $a->valorPasivo() : 0.0;
 
-            $row = [
+            $filas[] = [
                 $a->fecha->format('d/m/Y'),
                 $nombreCliente ?: 'NO IDENTIFICADO',
                 $modalidad,
@@ -231,16 +230,9 @@ class AnticipoClienteController extends Controller
                 $a->cuenta?->nombre ?? '—',
                 $a->observacion ?? '',
             ];
-
-            $csv .= implode(',', array_map(fn ($v) => '"' . str_replace('"', '""', $v) . '"', $row)) . "\n";
         }
 
-        $filename = 'anticipos_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type' => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
+        return Xlsx::descargar($headers, $filas, 'anticipos', [3 => true, 5 => true]);
     }
 
     public function store(Request $request)

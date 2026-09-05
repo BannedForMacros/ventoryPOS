@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use App\Models\Cuenta;
 use App\Models\CuentaMovimiento;
 use App\Models\Deuda;
@@ -133,38 +134,24 @@ class DeudaController extends Controller
             'trabajador' => 'Al personal', 'otro' => 'Otro',
         ];
 
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
         $headers = ['Dirección', 'Nombre', 'Tipo', 'Método de pago', 'Original', 'Saldo', 'Estado'];
-        $csv .= implode(',', array_map($this->escaparCsv(...), $headers)) . "\n";
+        $filas = [];
 
         foreach ($deudas as $d) {
             $metodos = $d->pagos->map(fn ($p) => $p->metodoPago?->nombre)->filter()->unique()->implode(' · ') ?: '—';
 
-            $row = [
+            $filas[] = [
                 $d->direccion === 'por_pagar' ? 'Debemos' : 'Nos deben',
                 $d->nombre,
                 $tipoLabel[$d->tipo] ?? $d->tipo,
                 $metodos,
-                'S/ ' . number_format((float) $d->monto_original, 2, '.', ''),
-                'S/ ' . number_format((float) $d->saldo, 2, '.', ''),
+                (float) $d->monto_original,
+                (float) $d->saldo,
                 $d->estado === 'activa' ? 'Activa' : ($d->estado === 'pagada' ? 'Pagada' : 'Anulada'),
             ];
-
-            $csv .= implode(',', array_map($this->escaparCsv(...), $row)) . "\n";
         }
 
-        $filename = 'deudas_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type' => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
-    }
-
-    private function escaparCsv(string $value): string
-    {
-        $escaped = str_replace('"', '""', $value);
-        return '"' . $escaped . '"';
+        return Xlsx::descargar($headers, $filas, 'deudas', [4 => true, 5 => true]);
     }
 
     /**

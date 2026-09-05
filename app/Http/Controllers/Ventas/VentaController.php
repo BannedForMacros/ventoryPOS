@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Ventas;
 
+use App\Support\Xlsx;
+
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Ventas\AnularVentaRequest;
 use App\Http\Requests\Ventas\StoreVentaRequest;
@@ -713,8 +715,7 @@ class VentaController extends Controller
             ->get();
 
         $headers = ['N°', 'Fecha', 'Cliente', 'Comprobante', 'Pago', 'Estado', 'Total'];
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
-        $csv .= $this->csvLine($headers);
+        $filas = [];
 
         foreach ($ventas as $v) {
             $cliente = $v->cliente;
@@ -743,30 +744,18 @@ class VentaController extends Controller
                 }
             }
 
-            $row = [
+            $filas[] = [
                 $v->numero,
                 $v->fecha_venta?->format('d/m/Y H:i') ?? '—',
                 $nombreCliente ?: 'General',
                 $comprobante,
                 $pago,
                 $v->estado === 'completada' ? 'Completada' : 'Anulada',
-                number_format((float) $v->total, 2, '.', ''),
+                (float) $v->total,
             ];
-            $csv .= $this->csvLine($row);
         }
 
-        $filename = 'historial-ventas_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type'        => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
-    }
-
-    /** Escapa una fila para CSV (campos entre comillas, dobles comillas escapadas). */
-    private function csvLine(array $row): string
-    {
-        return implode(',', array_map(fn($v) => '"' . str_replace('"', '""', $v) . '"', $row)) . "\n";
+        return Xlsx::descargar($headers, $filas, 'historial-ventas', [6 => true]);
     }
 
     /** Etiqueta legible del tipo de comprobante para el export. */

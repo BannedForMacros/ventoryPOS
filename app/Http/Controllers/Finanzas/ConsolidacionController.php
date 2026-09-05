@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use App\Models\MetodoPago;
 use App\Models\PlanillaDescuento;
 use App\Models\Turno;
@@ -113,17 +114,16 @@ class ConsolidacionController extends Controller
 
         $turnos = $query->orderByDesc('fecha_cierre')->get();
 
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
         $headers = ['Cierre', 'Caja', 'Cajera', 'Caja chica', 'Declaró (efectivo)', 'Otros métodos', 'Consolidación'];
-        $csv .= implode(',', array_map($this->escaparCsv(...), $headers)) . "\n";
+        $filas = [];
 
         foreach ($turnos as $t) {
             $cierre = $t->fecha_cierre?->format('d/m/Y H:i') ?? '—';
             $caja = $t->caja?->nombre ?? '—';
             $cajera = $t->user?->name ?? '—';
-            $cajaChica = 'S/ ' . number_format((float) $t->monto_caja_chica, 2, '.', '');
+            $cajaChica = (float) $t->monto_caja_chica;
             $declaro = $t->monto_cierre_declarado !== null
-                ? 'S/ ' . number_format((float) $t->monto_cierre_declarado, 2, '.', '')
+                ? (float) $t->monto_cierre_declarado
                 : 'Cierre rápido';
 
             $otrosMetodos = $t->arqueoMetodos->map(
@@ -134,22 +134,10 @@ class ConsolidacionController extends Controller
                 ? 'Consolidado por ' . ($t->consolidacion->user?->name ?? '—')
                 : 'Pendiente';
 
-            $row = [$cierre, $caja, $cajera, $cajaChica, $declaro, $otrosMetodos, $consolidacion];
-            $csv .= implode(',', array_map($this->escaparCsv(...), $row)) . "\n";
+            $filas[] = [$cierre, $caja, $cajera, $cajaChica, $declaro, $otrosMetodos, $consolidacion];
         }
 
-        $filename = 'consolidacion_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type' => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
-    }
-
-    private function escaparCsv(string $value): string
-    {
-        $escaped = str_replace('"', '""', $value);
-        return '"' . $escaped . '"';
+        return Xlsx::descargar($headers, $filas, 'consolidacion', [3 => true, 4 => true]);
     }
 
     /**

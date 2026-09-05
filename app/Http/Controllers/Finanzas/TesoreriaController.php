@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use App\Models\Cuenta;
 use App\Models\CuentaMovimiento;
 use App\Services\TesoreriaService;
@@ -111,29 +112,20 @@ class TesoreriaController extends Controller
         ];
 
         $headers = ['Fecha', 'Tipo', 'Descripción', 'Origen', 'Monto', 'Registrado por'];
-
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
-        $csv .= implode(',', array_map(fn ($h) => '"' . str_replace('"', '""', $h) . '"', $headers)) . "\n";
+        $filas = [];
 
         foreach ($movimientos as $m) {
-            $row = [
+            $filas[] = [
                 optional($m->fecha)->format('d/m/Y') ?? '—',
                 $m->tipo === 'ingreso' ? 'Ingreso' : 'Egreso',
                 $m->descripcion,
                 $labels[$m->ref_tipo] ?? ($m->ref_tipo ?? '—'),
-                number_format((float) $m->monto, 2, '.', ''),
+                (float) $m->monto,
                 $m->user?->name ?? '—',
             ];
-
-            $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', $c) . '"', $row)) . "\n";
         }
 
-        $filename = 'tesoreria_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type' => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
+        return Xlsx::descargar($headers, $filas, 'tesoreria', [4 => true]);
     }
 
     /**

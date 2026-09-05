@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use App\Models\Cuenta;
 use App\Models\Entrada;
 use App\Models\EntradaPago;
@@ -156,9 +157,7 @@ class CuentasPorPagarController extends Controller
         $entradas = $query->orderByDesc('fecha')->orderByDesc('id')->get();
 
         $headers = ['Fecha', 'Documento', 'Proveedor', 'Total', 'Pagado', 'Saldo', 'Estado'];
-
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
-        $csv .= implode(',', array_map(fn ($h) => '"' . str_replace('"', '""', $h) . '"', $headers)) . "\n";
+        $filas = [];
 
         foreach ($entradas as $e) {
             $saldo = max(0, (float) $e->total - (float) $e->monto_pagado);
@@ -167,25 +166,18 @@ class CuentasPorPagarController extends Controller
                 ?? $e->proveedor
                 ?? '—';
 
-            $row = [
+            $filas[] = [
                 optional($e->fecha)->format('d/m/Y') ?? '—',
                 $e->numero_documento ?? '—',
                 $proveedor,
-                number_format((float) $e->total, 2, '.', ''),
-                number_format((float) $e->monto_pagado, 2, '.', ''),
-                number_format($saldo, 2, '.', ''),
+                (float) $e->total,
+                (float) $e->monto_pagado,
+                $saldo,
                 ucfirst($e->estado_pago),
             ];
-
-            $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', $c) . '"', $row)) . "\n";
         }
 
-        $filename = 'cuentas_por_pagar_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type' => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
+        return Xlsx::descargar($headers, $filas, 'cuentas_por_pagar', [3 => true, 4 => true, 5 => true]);
     }
 
     /**

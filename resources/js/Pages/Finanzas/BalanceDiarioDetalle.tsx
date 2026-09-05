@@ -148,7 +148,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
     const [detalleCargando, setDetalleCargando] = useState(false);
     const [rango, setRango]               = useState({ desde: '', hasta: '' });
 
-    async function cargarDetalle(item: Item, desde?: string, hasta?: string, cuentaId?: number | null, userId?: number | null) {
+    async function cargarDetalle(item: Item, desde?: string, hasta?: string, cuentaId?: number | null, userId?: number | null, cajaGrande?: boolean) {
         setDetalleCargando(true);
         try {
             const params = new URLSearchParams();
@@ -158,9 +158,11 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
             if ((item.categoria === 'efectivo' || item.categoria === 'cuenta_bancaria') && item.ref_tipo === 'entidad') {
                 params.set('entidad', item.descripcion);
             }
-            // Filtros del detalle: sub-cuenta (tab) y cajero (usuario).
+            // Filtros del detalle: sub-cuenta (tab), cajero (usuario) y, desde la
+            // fila "Caja Grande", su desglose de entregas a administración.
             if (cuentaId) params.set('cuenta_id', String(cuentaId));
             if (userId) params.set('user_id', String(userId));
+            if (cajaGrande) params.set('caja_grande', '1');
             if (desde) params.set('desde', desde);
             if (hasta) params.set('hasta', hasta);
             const url = route('finanzas.balance.detalle', { fecha: balance.fecha.slice(0, 10), categoria: item.categoria })
@@ -1049,14 +1051,25 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         <span className="font-semibold">En puntos de venta</span>
                                         <span className="font-bold tabular-nums">{money(detalleData.cajaGrande.total_en_cajas)}</span>
                                     </div>
-                                    <div className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg"
-                                        style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)' }}>
-                                        <span className="font-semibold" style={{ color: 'var(--color-primary)' }}>Caja Grande (administración)</span>
-                                        <span className="font-bold tabular-nums"
+                                    <button type="button"
+                                        onClick={() => detalleDe && cargarDetalle(detalleDe, rango.desde, rango.hasta, detalleData?.cuentaSel ?? null, detalleData?.userSel ?? null, true)}
+                                        className="w-full flex items-center justify-between gap-2 text-left text-xs px-2 py-1.5 rounded-lg transition-colors hover:opacity-85 cursor-pointer"
+                                        style={{
+                                            backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)',
+                                            border: '1px solid color-mix(in srgb, var(--color-primary) 22%, transparent)',
+                                        }}
+                                        title="Ver ingresos/egresos del efectivo y las entregas a administración que componen este saldo">
+                                        <span className="font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                            Caja Grande (administración)
+                                            <span className="block text-[10px] font-normal mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                                Ver movimientos y entregas →
+                                            </span>
+                                        </span>
+                                        <span className="font-bold tabular-nums whitespace-nowrap"
                                             style={{ color: detalleData.cajaGrande.negativo ? 'var(--color-danger)' : 'var(--color-primary)' }}>
                                             {money(detalleData.cajaGrande.caja_grande)}
                                         </span>
-                                    </div>
+                                    </button>
                                     <div className="flex items-center justify-between text-xs px-2 pt-1.5" style={{ borderTop: '1px dashed var(--color-border)' }}>
                                         <span className="font-semibold" style={{ color: 'var(--color-text)' }}>Total efectivo</span>
                                         <span className="font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
@@ -1069,6 +1082,57 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         </p>
                                     )}
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Caja Grande (clic en su fila): traslados internos a administración
+                            en el período. Los ingresos/egresos reales del Efectivo se ven en la
+                            lista del detalle de abajo. */}
+                        {detalleData.verCajaGrande && detalleData.entregasAdmin && (
+                            <div className="rounded-xl px-3 py-2.5" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                        Entregas a administración · período filtrado ({detalleData.entregasAdmin.items.length})
+                                    </p>
+                                    <span className="text-xs font-bold tabular-nums" style={{ color: 'var(--color-success)' }}>
+                                        +{money(detalleData.entregasAdmin.total)}
+                                    </span>
+                                </div>
+                                {detalleData.entregasAdmin.items.length > 0 ? (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-xs">
+                                            <thead>
+                                                <tr className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                                    <th className="text-left font-bold px-2 py-1">Fecha</th>
+                                                    <th className="text-left font-bold px-2 py-1">Caja</th>
+                                                    <th className="text-left font-bold px-2 py-1">Cajera</th>
+                                                    <th className="text-left font-bold px-2 py-1">Momento</th>
+                                                    <th className="text-right font-bold px-2 py-1">Monto</th>
+                                                    <th className="text-left font-bold px-2 py-1">Registró</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {detalleData.entregasAdmin.items.map((e: any, i: number) => (
+                                                    <tr key={i} style={{ borderTop: '1px dashed var(--color-border)' }}>
+                                                        <td className="px-2 py-1.5 whitespace-nowrap font-medium" style={{ color: 'var(--color-text)' }}>{e.fecha}</td>
+                                                        <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text)' }}>{e.caja}</td>
+                                                        <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{e.cajera}</td>
+                                                        <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{e.momento}</td>
+                                                        <td className="px-2 py-1.5 whitespace-nowrap text-right font-semibold tabular-nums" style={{ color: 'var(--color-success)' }}>
+                                                            +{money(e.monto)}
+                                                        </td>
+                                                        <td className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{e.registro}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <p className="text-xs py-1" style={{ color: 'var(--color-text-muted)' }}>
+                                        No hubo entregas a administración en este período. El saldo de Caja Grande se explica con los
+                                        movimientos de Efectivo de la lista de abajo (ingresos y egresos).
+                                    </p>
+                                )}
                             </div>
                         )}
 
@@ -1117,7 +1181,9 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             itemCols={detalleData.itemCols}
                             montoLabel={detalleData.montoLabel}
                             emptyMessage="Sin datos en el período"
-                            exportNombre={detalleDe?.descripcion ?? detalleDe?.categoria ?? 'detalle'}
+                            exportNombre={detalleData.verCajaGrande
+                                ? `caja-grande-${(detalleDe?.descripcion ?? 'efectivo').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+                                : detalleDe?.descripcion ?? detalleDe?.categoria ?? 'detalle'}
                         />
                     </div>
                 )}

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use App\Models\Cuenta;
 use App\Models\MetodoPago;
 use App\Models\Turno;
@@ -141,34 +142,25 @@ class CuentasPorCobrarController extends Controller
         $ventas = $query->orderByDesc('fecha_venta')->get();
 
         $headers = ['Fecha', 'N°', 'Cliente', 'Total', 'Pagado', 'Saldo', 'Vence'];
-
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
-        $csv .= implode(',', array_map(fn ($h) => '"' . str_replace('"', '""', $h) . '"', $headers)) . "\n";
+        $filas = [];
 
         foreach ($ventas as $v) {
             $cliente = $v->cliente;
             $nombreCliente = $cliente?->razon_social
                 ?: trim(($cliente?->nombres ?? '') . ' ' . ($cliente?->apellidos ?? ''));
 
-            $row = [
+            $filas[] = [
                 optional($v->fecha_venta)->format('d/m/Y') ?? '—',
                 $v->numero ?? '—',
                 $nombreCliente ?: '—',
-                number_format((float) $v->total, 2, '.', ''),
-                number_format((float) $v->monto_pagado, 2, '.', ''),
-                number_format((float) $v->saldo_pendiente, 2, '.', ''),
+                (float) $v->total,
+                (float) $v->monto_pagado,
+                (float) $v->saldo_pendiente,
                 optional($v->fecha_vencimiento)?->format('d/m/Y') ?? '—',
             ];
-
-            $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', $c) . '"', $row)) . "\n";
         }
 
-        $filename = 'cuentas_por_cobrar_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type' => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
+        return Xlsx::descargar($headers, $filas, 'cuentas_por_cobrar', [3 => true, 4 => true, 5 => true]);
     }
 
     /**

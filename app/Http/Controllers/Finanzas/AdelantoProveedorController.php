@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
+use App\Support\Xlsx;
 use App\Models\Cuenta;
 use App\Models\MetodoPago;
 use App\Models\Proveedor;
@@ -126,9 +127,8 @@ class AdelantoProveedorController extends Controller
 
         $adelantos = $query->orderByDesc('fecha')->orderByDesc('id')->get();
 
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
         $headers = ['Fecha', 'Proveedor', 'Entregado', 'Saldo a favor', 'Estado', 'Referencia'];
-        $csv .= implode(',', array_map($this->escaparCsv(...), $headers)) . "\n";
+        $filas = [];
 
         foreach ($adelantos as $a) {
             $proveedor = $a->proveedor;
@@ -141,30 +141,17 @@ class AdelantoProveedorController extends Controller
                 default => 'Anulado',
             };
 
-            $row = [
+            $filas[] = [
                 $a->fecha->format('d/m/Y'),
                 $nombreProveedor,
-                'S/ ' . number_format((float) $a->monto, 2, '.', ''),
-                'S/ ' . number_format((float) $a->saldo, 2, '.', ''),
+                (float) $a->monto,
+                (float) $a->saldo,
                 $estadoLabel,
                 $a->referencia ?? '—',
             ];
-
-            $csv .= implode(',', array_map($this->escaparCsv(...), $row)) . "\n";
         }
 
-        $filename = 'adelantos_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type' => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
-    }
-
-    private function escaparCsv(string $value): string
-    {
-        $escaped = str_replace('"', '""', $value);
-        return '"' . $escaped . '"';
+        return Xlsx::descargar($headers, $filas, 'adelantos', [2 => true, 3 => true]);
     }
 
     public function store(Request $request)

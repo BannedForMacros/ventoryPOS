@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Inventario;
 
+use App\Support\Xlsx;
+
 use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\Categoria;
@@ -174,39 +176,31 @@ class StockController extends Controller
 
         $items = $query->get();
 
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
         $headers = ['Almacén', 'Producto', 'Código', 'Categoría', 'Unidad base', 'Cantidad', 'Costo promedio', 'Valor total', 'Estado'];
-        $csv .= implode(',', array_map($this->escaparCsv(...), $headers)) . "\n";
-
+        $filas = [];
         foreach ($items as $s) {
             $cantidad = (float) $s->cantidad;
+            $costo    = (float) $s->costo_promedio;
             $estado   = $cantidad < 0 ? 'Negativo' : ($cantidad === 0.0 ? 'Agotado' : ($cantidad <= $umbral ? 'Bajo' : 'Con stock'));
-            $row = [
+            $filas[] = [
                 $s->almacen?->nombre ?? '—',
                 $s->producto?->nombre ?? '—',
                 $s->producto?->codigo ?? '—',
                 $s->producto?->categoria?->nombre ?? '—',
                 $s->producto?->unidadBase?->unidadMedida?->abreviatura ?? '—',
-                number_format($cantidad, 2, '.', ''),
-                number_format((float) $s->costo_promedio, 4, '.', ''),
-                number_format(round($cantidad * (float) $s->costo_promedio, 2), 2, '.', ''),
+                $cantidad,
+                $costo,
+                round($cantidad * $costo, 2),
                 $estado,
             ];
-            $csv .= implode(',', array_map($this->escaparCsv(...), $row)) . "\n";
         }
 
-        $filename = 'stock_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type'        => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
-    }
-
-    private function escaparCsv(string $value): string
-    {
-        $escaped = str_replace('"', '""', $value);
-        return '"' . $escaped . '"';
+        return Xlsx::descargar(
+            $headers,
+            $filas,
+            'stock',
+            [5 => true, 6 => '#,##0.0000', 7 => true],
+        );
     }
 
     /**

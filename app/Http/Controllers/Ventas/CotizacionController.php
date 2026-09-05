@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Ventas;
 
+use App\Support\Xlsx;
+
 use App\Http\Controllers\Controller;
 use App\Models\Cliente;
 use App\Models\Cotizacion;
@@ -151,8 +153,7 @@ class CotizacionController extends Controller
             ->get();
 
         $headers = ['Número', 'Fecha', 'Cliente', 'Referencia / Obra', 'Total', 'Vence', 'Entrega est.', 'Estado', 'Últ. contacto'];
-        $csv = "\xEF\xBB\xBF"; // BOM UTF-8
-        $csv .= $this->csvLine($headers);
+        $filas = [];
 
         foreach ($cotizaciones as $c) {
             $cliente = $c->cliente;
@@ -164,32 +165,20 @@ class CotizacionController extends Controller
                 $estadoLabel .= ' · Venta ' . $c->venta->numero;
             }
 
-            $row = [
+            $filas[] = [
                 $c->numero,
                 $c->fecha?->format('d/m/Y') ?? '—',
                 $nombreCliente ?: '—',
                 $c->referencia ?? '—',
-                number_format((float) $c->total, 2, '.', ''),
+                (float) $c->total,
                 $c->fecha_vencimiento?->format('d/m/Y') ?? '—',
                 $c->fecha_entrega_estimada?->format('d/m/Y') ?? '—',
                 $estadoLabel,
                 $c->ultimo_contacto?->format('d/m/Y') ?? '—',
             ];
-            $csv .= $this->csvLine($row);
         }
 
-        $filename = 'cotizaciones_' . now()->format('Ymd_His') . '.csv';
-
-        return response($csv, 200, [
-            'Content-Type'        => 'text/csv; charset=utf-8',
-            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-        ]);
-    }
-
-    /** Escapa una fila para CSV. */
-    private function csvLine(array $row): string
-    {
-        return implode(',', array_map(fn($v) => '"' . str_replace('"', '""', $v) . '"', $row)) . "\n";
+        return Xlsx::descargar($headers, $filas, 'cotizaciones', [4 => true]);
     }
 
     public function store(Request $request)

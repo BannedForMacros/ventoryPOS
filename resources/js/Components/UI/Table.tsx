@@ -7,6 +7,7 @@ import {
     FileSpreadsheet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { descargarExcel, valorCelda } from '@/lib/exportarExcel';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 export interface Column<T extends Record<string, unknown>> {
@@ -45,13 +46,13 @@ interface TableProps<T extends Record<string, unknown>> {
     initialSearch?: string;
     /** Clic en cualquier parte de la fila (para tablas que llevan a un detalle). */
     onRowClick?: (row: T) => void;
-    /** Muestra botón para exportar la tabla a Excel/CSV. */
+    /** Muestra botón para exportar la tabla a Excel (.xlsx). */
     exportable?: boolean;
     /** Nombre base del archivo exportado (sin extensión). Default: 'exportacion'. */
     exportFilename?: string;
     /**
      * Callback para exportar desde el servidor (ej. abrir URL con filtros).
-     * Si no se pasa y los datos son locales, se descarga CSV con todas las
+     * Si no se pasa y los datos son locales, se descarga .xlsx con todas las
      * filas filtradas/ordenadas (todas las páginas). Si los datos vienen de
      * paginación server-side y no hay callback, no se muestra el botón.
      */
@@ -259,34 +260,13 @@ export default function Table<T extends Record<string, unknown>>({
     const puedeExportarServer = exportable && !!onExportExcel;
     const mostrarExportar = puedeExportarLocal || puedeExportarServer;
 
-    const descargarCSV = () => {
+    const descargarLocal = () => {
         if (!sortedData.length) return;
-
-        const escapeCsv = (value: unknown): string => {
-            const str = String(value ?? '').replace(/"/g, '""');
-            return /[",\n\r]/.test(str) ? `"${str}"` : str;
-        };
-
-        const lines: string[] = [];
-        lines.push(columns.map(col => escapeCsv(col.label)).join(','));
+        const aoa: (string | number | boolean | null | undefined)[][] = [columns.map(col => col.label)];
         sortedData.forEach(row => {
-            lines.push(
-                columns
-                    .map(col => escapeCsv(row[col.key]))
-                    .join(',')
-            );
+            aoa.push(columns.map(col => valorCelda(row[col.key])));
         });
-
-        const csv = '\uFEFF' + lines.join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${exportFilename}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        descargarExcel(exportFilename, aoa);
     };
 
     const handleExportExcel = () => {
@@ -294,7 +274,7 @@ export default function Table<T extends Record<string, unknown>>({
             onExportExcel();
             return;
         }
-        descargarCSV();
+        descargarLocal();
     };
 
     return (

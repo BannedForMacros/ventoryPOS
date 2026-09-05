@@ -14,6 +14,8 @@ use App\Models\Entrada;
 use App\Models\Gasto;
 use App\Models\ProveedorAdelanto;
 use App\Models\Venta;
+use App\Models\Turno;
+use App\Models\TurnoRetiro;
 use App\Services\BalanceDiarioService;
 use App\Services\TesoreriaService;
 use Illuminate\Http\Request;
@@ -721,6 +723,7 @@ class BalanceDiarioController extends Controller
                 $porCajero  = [];
                 $porTurno   = [];
                 $cajaGrande = null;
+                $entregasAdmin = null;
                 if (!$esEgreso && $categoria === 'efectivo') {
                     $porTurno = \App\Models\Turno::deEmpresa($empresaId)
                         ->whereDate('fecha_apertura', $fecha)
@@ -797,6 +800,32 @@ class BalanceDiarioController extends Controller
                             'negativo'       => $montoAdmin < 0,
                         ];
                     }
+
+                    // Caja Grande (clic en su fila): movimientos que la alimentan.
+                    // Como no es una cuenta, su "libro" se arma con los traslados
+                    // internos de custodia (entregas a administración, tabla
+                    // turno_retiros) en el período filtrado; los ingresos/egresos
+                    // reales del Efectivo siguen abajo en la lista del detalle.
+                    if ($request->boolean('caja_grande') && $empresa?->usa_caja_grande) {
+                        $retiros = TurnoRetiro::where('empresa_id', $empresaId)
+                            ->where('concepto', TurnoRetiro::CONCEPTO_ENTREGA_ADMIN)
+                            ->whereBetween('created_at', [$desde . ' 00:00:00', $hasta . ' 23:59:59'])
+                            ->with(['turno.caja:id,nombre', 'turno.user:id,name', 'user:id,name'])
+                            ->orderByDesc('created_at')
+                            ->get();
+                        $entregasAdmin = [
+                            'total' => round((float) $retiros->sum('monto'), 2),
+                            'items' => $retiros->map(fn ($r) => [
+                                'fecha'   => date('d/m/Y', strtotime((string) $r->created_at)),
+                                'turno'   => (int) $r->turno_id,
+                                'caja'    => $r->turno?->caja?->nombre ?? '—',
+                                'cajera'  => $r->turno?->user?->name ?? $r->user?->name ?? '—',
+                                'momento' => $r->momento === 'cierre' ? 'Al cierre del turno' : 'Durante el turno',
+                                'monto'   => round((float) $r->monto, 2),
+                                'registro'=> $r->user?->name ?? '—',
+                            ])->values(),
+                        ];
+                    }
                 } elseif (!$esEgreso) {
                     // Bancos: neto por cajero (columnas calificadas porque users
                     // también tiene empresa_id → deEmpresa sería ambiguo).
@@ -830,6 +859,8 @@ class BalanceDiarioController extends Controller
                     'porCajero'  => $porCajero,
                     'porTurno'   => $porTurno,
                     'cajaGrande' => $cajaGrande,
+                    'verCajaGrande'   => (bool) $request->boolean('caja_grande'),
+                    'entregasAdmin'   => $entregasAdmin,
                     'userSel'    => $userSel,
                 ]);
             }
