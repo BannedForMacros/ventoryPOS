@@ -170,9 +170,9 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
             />
 
             <div className="space-y-6 max-w-6xl">
-                <section className="rounded-2xl border p-6 space-y-4"
+                <section className="rounded-2xl border p-4 sm:p-6 space-y-4"
                     style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <Select
                             label="Almacén"
                             required
@@ -202,7 +202,7 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
                 </section>
 
                 {almacenId !== '' && (
-                    <section className="rounded-2xl border p-6 space-y-4"
+                    <section className="rounded-2xl border p-4 sm:p-6 space-y-4"
                         style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
                         <div className="flex flex-wrap gap-3 items-end">
                             <div className="flex-1 min-w-[200px]">
@@ -325,7 +325,7 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
                     </section>
                 )}
 
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                     <Button variant="ghost" onClick={() => router.visit(route('inventario.cierres.index'))}>
                         Cancelar
                     </Button>

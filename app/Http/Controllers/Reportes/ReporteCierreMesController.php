@@ -11,7 +11,6 @@ use App\Models\Venta;
 use App\Models\VentaAbono;
 use App\Models\VentaPago;
 use App\Services\LocalScopeService;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,8 +25,9 @@ use Inertia\Inertia;
  * gastos, devoluciones, compras y la utilidad bruta/neta, con comparativa
  * contra el período anterior de la misma duración.
  *
- * El mismo paquete de datos alimenta la pantalla (Inertia) y el PDF que se
- * le envía a los dueños (ruta /reportes/cierre-mes/pdf).
+ * El mismo paquete de datos alimenta la pantalla (Inertia) y la vista de
+ * impresión (ruta /reportes/cierre-mes/imprimir) con la que el navegador
+ * genera el PDF que se le envía a los dueños.
  */
 class ReporteCierreMesController extends Controller
 {
@@ -47,20 +47,23 @@ class ReporteCierreMesController extends Controller
         ]);
     }
 
-    /** PDF del cierre, listo para enviar a los dueños. */
-    public function pdf(Request $request)
+    /** Vista de impresión: el navegador la convierte en PDF de alta calidad. */
+    public function imprimir(Request $request)
     {
         $datos   = $this->recopilarDatos($request);
         $empresa = $request->user()->empresa;
 
-        $desde = $datos['filters']['fecha_desde'];
-        $hasta = $datos['filters']['fecha_hasta'];
+        $local = $request->local_id
+            ? \App\Models\Local::where('empresa_id', $request->user()->empresa_id)
+                ->where('id', $request->local_id)->value('nombre')
+            : null;
 
-        return Pdf::loadView('reportes.cierre-mes', [
+        return view('reportes.cierre-mes-print', [
             ...$datos,
-            'empresa'   => $empresa,
-            'generado'  => now()->format('d/m/Y H:i'),
-        ])->setPaper('a4')->download("cierre_{$desde}_al_{$hasta}.pdf");
+            'empresa'  => $empresa,
+            'generado' => now()->format('d/m/Y H:i'),
+            'local'    => $local,
+        ]);
     }
 
     /**

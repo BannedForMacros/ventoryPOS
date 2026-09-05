@@ -115,15 +115,17 @@ export default function ReportesCierreMes({
                 subtitle={`${filters.fecha_desde} → ${filters.fecha_hasta} · estado consolidado del período`}
                 actions={
                     <a
-                        href={route('reportes.cierre-mes.pdf', {
+                        href={route('reportes.cierre-mes.imprimir', {
                             fecha_desde: filters.fecha_desde,
                             fecha_hasta: filters.fecha_hasta,
                             local_id:    filters.local_id,
                         })}
+                        target="_blank"
+                        rel="noreferrer"
                         className="inline-flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl text-white transition-opacity hover:opacity-90"
                         style={{ backgroundColor: 'var(--color-primary)' }}
                     >
-                        <Download size={15} /> Descargar PDF
+                        <Download size={15} /> Imprimir / PDF
                     </a>
                 }
             />
