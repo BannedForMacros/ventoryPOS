@@ -160,6 +160,20 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
     const adelantosDisponibles = abonando
         ? adelantos.filter(a => a.proveedor_id === abonando.proveedor_id && Number(a.saldo) > 0)
         : [];
+    const saldoAdelantosDisponibles = adelantosDisponibles.reduce((s, a) => s + Number(a.saldo), 0);
+    /** Adelanto elegido en el modal (si se marcó "pagar consumiendo un adelanto"). */
+    const adelantoSel = usarAdelanto
+        ? adelantosDisponibles.find(a => String(a.id) === String(form.proveedor_adelanto_id))
+        : undefined;
+    /**
+     * Tope real del pago: un adelanto NO puede pagar más de su propio saldo. Sin
+     * adelanto el tope es el saldo de la compra. Igual que en Entradas: si el
+     * adelanto no alcanza, se cubre lo que da y el resto va en un segundo pago.
+     */
+    const saldoCompra = abonando ? saldoDe(abonando) : 0;
+    const topeMonto = adelantoSel
+        ? Math.min(saldoCompra, Number(adelantoSel.saldo))
+        : saldoCompra;
 
     /** Cuentas válidas para el método elegido (vinculadas; efectivo → caja Efectivo). */
     function cuentasDeMetodo(mid: string) {
@@ -182,6 +196,21 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
     function submitAbono() {
         if (!abonando) return;
+
+        // Validación en el front: el backend rebota con "El adelanto no tiene
+        // saldo suficiente" y el error caía debajo de un monto que el propio
+        // sistema había precargado — se leía como "no se puede pagar así".
+        if (usarAdelanto) {
+            if (!form.proveedor_adelanto_id) {
+                setErrors({ proveedor_adelanto_id: 'Selecciona el adelanto que vas a consumir.' });
+                return;
+            }
+            if (adelantoSel && Number(form.monto) > Number(adelantoSel.saldo) + 0.01) {
+                setErrors({ monto: `Este adelanto solo tiene ${money(adelantoSel.saldo)} de saldo. Baja el monto y registra el resto como un segundo pago.` });
+                return;
+            }
+        }
+
         setSaving(true);
         router.post(route('finanzas.cxp.abonar', abonando.id), {
             ...form,
@@ -318,7 +347,9 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                         <Button onClick={submitAbono}
                             disabled={saving || form.monto === '' || Number(form.monto) <= 0
                                 || (abonando !== null && Number(form.monto) > saldoDe(abonando) + 0.009)
-                                || (!usarAdelanto && !form.metodo_pago_id)}>
+                                || (!usarAdelanto && !form.metodo_pago_id)
+                                || (usarAdelanto && !form.proveedor_adelanto_id)
+                                || (!!adelantoSel && Number(form.monto) > Number(adelantoSel.saldo) + 0.009)}>
                             {saving ? 'Guardando...' : 'Registrar pago'}
                         </Button>
                     </>
@@ -333,10 +364,11 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                         ]} />
                         <div className="grid grid-cols-2 gap-3">
                             <Input label="Monto del pago" required type="number" min="0.01" step="0.01"
-                                max={saldoDe(abonando)}
+                                max={topeMonto}
                                 value={form.monto}
                                 onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
                                 error={errors.monto}
+                                hint={adelantoSel ? `Tope del adelanto #${adelantoSel.id}: ${money(adelantoSel.saldo)}` : undefined}
                             />
                             <Input label="Fecha" required type="date"
                                 value={form.fecha}
@@ -357,16 +389,51 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                     </Callout>
                                 );
                             }
+                            // Un adelanto no puede pagar más de lo que tiene: se avisa
+                            // ANTES de guardar y se dice cuánto quedaría por cubrir.
+                            if (adelantoSel && montoNum > Number(adelantoSel.saldo) + 0.009) {
+                                return (
+                                    <Callout variant="danger" title="El adelanto no alcanza para este monto">
+                                        El adelanto #{adelantoSel.id} tiene {money(adelantoSel.saldo)} de saldo.
+                                        Baja el monto a {money(adelantoSel.saldo)} y registra los {money(Math.round((montoNum - Number(adelantoSel.saldo)) * 100) / 100)} restantes
+                                        como un segundo pago (con otro adelanto, efectivo o cuenta).
+                                    </Callout>
+                                );
+                            }
+                            if (nuevo > 0.009 && adelantoSel) {
+                                return (
+                                    <Callout variant="info" title="Con este adelanto la compra NO queda pagada" aside={money(nuevo)}>
+                                        Quedarán {money(nuevo)} pendientes: regístralos como un segundo pago
+                                        {adelantosDisponibles.length > 1 ? ' (puedes usar otro adelanto del proveedor)' : ''}.
+                                    </Callout>
+                                );
+                            }
                             return nuevo <= 0.009
                                 ? <Callout variant="success" title="Con este pago la compra queda PAGADA" />
                                 : <Callout variant="info" title="Nuevo saldo pendiente" aside={money(nuevo)} />;
                         })()}
 
                         {adelantosDisponibles.length > 0 && (
-                            <Callout variant="info">
+                            <Callout variant="info" title="Adelantos disponibles" aside={money(saldoAdelantosDisponibles)}>
                                 <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                                     <input type="checkbox" checked={usarAdelanto}
-                                        onChange={e => setUsarAdelanto(e.target.checked)}
+                                        onChange={e => {
+                                            const on = e.target.checked;
+                                            setUsarAdelanto(on);
+                                            setErrors({});
+                                            // Con un solo adelanto lo elegimos y ajustamos el monto solos;
+                                            // al desmarcar, el monto vuelve al saldo de la compra.
+                                            const unico = on && adelantosDisponibles.length === 1 ? adelantosDisponibles[0] : null;
+                                            setForm(f => ({
+                                                ...f,
+                                                proveedor_adelanto_id: unico ? String(unico.id) : '',
+                                                metodo_pago_id: on ? '' : f.metodo_pago_id,
+                                                cuenta_id:      on ? '' : f.cuenta_id,
+                                                monto: unico
+                                                    ? Math.min(saldoCompra, Number(unico.saldo)).toFixed(2)
+                                                    : (on ? f.monto : saldoCompra.toFixed(2)),
+                                            }));
+                                        }}
                                         className="h-4 w-4 accent-[var(--color-primary)]"
                                     />
                                     <span style={{ color: 'var(--color-text)' }}>Pagar consumiendo un adelanto entregado al proveedor</span>
@@ -378,7 +445,17 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                             <Select label="Adelanto a consumir" required
                                 options={adelantosDisponibles.map(a => ({ value: String(a.id), label: `Adelanto #${a.id} — saldo ${money(a.saldo)}` }))}
                                 value={form.proveedor_adelanto_id}
-                                onChange={v => setForm(f => ({ ...f, proveedor_adelanto_id: String(v) }))}
+                                onChange={v => {
+                                    // El monto se topa al saldo del adelanto: si no alcanza,
+                                    // cubre lo que da y el resto va en un segundo pago.
+                                    const a = adelantosDisponibles.find(x => String(x.id) === String(v));
+                                    setErrors({});
+                                    setForm(f => ({
+                                        ...f,
+                                        proveedor_adelanto_id: String(v),
+                                        monto: a ? Math.min(saldoCompra, Number(a.saldo)).toFixed(2) : f.monto,
+                                    }));
+                                }}
                                 placeholder="— Seleccionar —"
                                 error={errors.proveedor_adelanto_id}
                             />
