@@ -27,6 +27,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class VentaController extends Controller
@@ -1211,6 +1212,68 @@ class VentaController extends Controller
         abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
 
         return response()->json(app(TicketPrintService::class)->payloadDeVenta($venta));
+    }
+
+    /**
+     * PDF A4 de la venta (dompdf). Es el detalle COMPLETO del documento:
+     * empresa, cliente, ítems, totales en letras, pagos/crédito/abonos,
+     * descuentos autorizados, pendiente por entregar y CPE si existe.
+     */
+    public function pdf(Request $request, Venta $venta)
+    {
+        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+
+        $venta->load([
+            'empresa', 'local', 'caja', 'turno.caja', 'user', 'cliente',
+            'items',
+            'pagos.metodoPago', 'pagos.cuentaMetodoPago',
+            'descuentosLog.concepto', 'descuentosLog.user',
+            'abonos.metodoPago',
+            'anticipos.items',
+        ]);
+
+        // Comprobante electrónico: mismo criterio defensivo que el ticket. Si
+        // el módulo no existe o falla, el PDF sale igual, sin bloque CPE.
+        $cpe = null;
+        if ($venta->tipo_comprobante !== 'ticket' && method_exists($venta, 'comprobanteElectronico')) {
+            try {
+                $cpe = $venta->comprobanteElectronico()->first();
+            } catch (\Throwable) {
+                $cpe = null;
+            }
+            if ($cpe && trim((string) $cpe->numero) === '') {
+                $cpe = null;
+            }
+        }
+
+        // Logo incrustado en base64 (mismo motivo que la proforma: que la
+        // imagen siempre cargue, sin depender de storage:link ni de APP_URL).
+        $logoData = null;
+        $empresa  = $venta->empresa;
+        try {
+            if ($empresa?->logo && Storage::disk('public')->exists($empresa->logo)) {
+                $ext  = strtolower(pathinfo($empresa->logo, PATHINFO_EXTENSION));
+                $mime = match ($ext) {
+                    'png'   => 'image/png',
+                    'webp'  => 'image/webp',
+                    'gif'   => 'image/gif',
+                    default => 'image/jpeg',
+                };
+                $logoData = 'data:' . $mime . ';base64,' . base64_encode(Storage::disk('public')->get($empresa->logo));
+            }
+        } catch (\Throwable) {
+            $logoData = null;
+        }
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.venta', [
+            'venta'   => $venta,
+            'empresa' => $empresa,
+            'cpe'     => $cpe,
+            'logo'    => $logoData,
+        ])->setPaper('a4');
+
+        // stream = inline en el navegador (se ve y se descarga desde ahí).
+        return $pdf->stream("Venta-{$venta->numero}.pdf");
     }
 
     public function show(Request $request, Venta $venta)

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     ArrowLeft, XCircle, Receipt, User, ShoppingBag,
     CreditCard, Percent, Calendar, Store, UserCheck, Printer,
-    FileCheck2, Download, RefreshCw, KeyRound, AlertTriangle,
+    FileCheck2, Download, RefreshCw, KeyRound, AlertTriangle, FileText,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -214,6 +214,16 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                         >
                             <span className="hidden sm:inline">Imprimir ticket</span>
                         </Button>
+                        <a href={route('ventas.pdf', venta.id)} target="_blank" rel="noopener noreferrer">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                startContent={<FileText size={15} />}
+                                title="Exportar la venta en PDF (A4)"
+                            >
+                                PDF
+                            </Button>
+                        </a>
                         {puedeAnular() && venta.estado !== 'anulada' && (
                             <Button variant="danger" size="sm" startContent={<XCircle size={15} />} onClick={anular}>
                                 <span className="hidden sm:inline">Anular</span>

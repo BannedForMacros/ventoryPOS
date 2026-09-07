@@ -368,6 +368,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:ventas,ver')->get('/{venta}', [VentaController::class, 'show'])->name('show');
         // Payload JSON del ticket para imprimir desde la lista sin abrir el detalle.
         Route::middleware('permiso:ventas,ver')->get('/{venta}/ticket', [VentaController::class, 'ticket'])->name('ticket');
+        // PDF A4 de la venta (detalle completo, descargable desde el detalle).
+        Route::middleware('permiso:ventas,ver')->get('/{venta}/pdf', [VentaController::class, 'pdf'])->name('pdf');
         // Edición completa de la venta, permitida solo dentro de los 3 min de creada
         // (el guard de tiempo lo aplica el controlador). Reutiliza el editor del POS.
         Route::middleware(['permiso:ventas,editar', 'throttle:60,1'])->put('/{venta}', [VentaController::class, 'update'])->name('update');
