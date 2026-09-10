@@ -28,6 +28,9 @@ interface Pago {
     turno_id?: number | null;
     turno?: { id: number; caja?: { nombre: string } | null } | null;
     proveedor_adelanto_id: number | null;
+    // Pago por compensación con una venta al crédito (sin dinero): no se edita, solo se anula.
+    compensacion_grupo_id?: string | null;
+    compensacion_venta_id?: number | null;
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
     user?: { name: string } | null;
@@ -661,7 +664,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                             onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
                             error={errors.turno_id}
                             hint="Elige de qué caja salió el efectivo, para que la consolidación de ese turno lo reste."
-                        />
+                        />}
                     </div>
                 )}
             </Modal>
@@ -728,14 +731,16 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                             borderBottom: idx < detalle.pagos_parciales.length - 1 ? '1px solid var(--color-border)' : undefined,
                                             backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-bg)',
                                         }}>
-                                        <Badge variant={p.proveedor_adelanto_id ? 'warning' : 'success'}>
-                                            {p.proveedor_adelanto_id ? 'Adelanto' : 'Pago'}
+                                        <Badge variant={p.compensacion_grupo_id ? 'primary' : p.proveedor_adelanto_id ? 'warning' : 'success'}>
+                                            {p.compensacion_grupo_id ? 'Compensación' : p.proveedor_adelanto_id ? 'Adelanto' : 'Pago'}
                                         </Badge>
                                         <div className="flex-1 min-w-0 text-xs">
                                             <p className="font-medium" style={{ color: 'var(--color-text)' }}>
                                                 {fdate(p.fecha)}
                                                 <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
-                                                    {p.proveedor_adelanto_id
+                                                    {p.compensacion_grupo_id
+                                                        ? 'Compensado con una venta al crédito (sin caja)'
+                                                        : p.proveedor_adelanto_id
                                                         ? `Consumió adelanto #${p.proveedor_adelanto_id}`
                                                         : [p.metodo_pago?.nombre, p.cuenta?.nombre, p.referencia].filter(Boolean).join(' · ') || '—'}
                                                 </span>
@@ -758,11 +763,14 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                         </span>
                                         {esAdmin && (
                                             <div className="flex items-center gap-1 flex-shrink-0">
-                                                <button onClick={() => abrirEditarPago(p)}
-                                                    className="p-1.5 rounded-lg hover:bg-black/5" title="Editar pago"
-                                                    style={{ color: 'var(--color-primary)' }}>
-                                                    <Pencil size={14} />
-                                                </button>
+                                                {/* Un pago por compensación no se edita (solo anular: revierte ambos lados). */}
+                                                {!p.compensacion_grupo_id && (
+                                                    <button onClick={() => abrirEditarPago(p)}
+                                                        className="p-1.5 rounded-lg hover:bg-black/5" title="Editar pago"
+                                                        style={{ color: 'var(--color-primary)' }}>
+                                                        <Pencil size={14} />
+                                                    </button>
+                                                )}
                                                 <button onClick={() => { setErrors({}); setMotivoAnular(''); setAnulandoPago(p); }}
                                                     className="p-1.5 rounded-lg hover:bg-black/5" title="Anular pago"
                                                     style={{ color: 'var(--color-danger)' }}>
