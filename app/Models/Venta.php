@@ -163,6 +163,11 @@ class Venta extends Model
             ->selectRaw('COALESCE(MAX(CAST(SUBSTRING(numero FROM 3) AS INTEGER)), 0) as n')
             ->value('n');
 
-        return 'V-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        // La cajera puede fijar el inicio de numeración al abrir el turno
+        // (ej. 1001 → V-1001, V-1002, ...); sin configurar arranca en V-0001.
+        $inicial = (int) (DB::table('turnos')->where('id', $turnoId)->value('correlativo_inicial') ?? 0);
+        $siguiente = max($max, $inicial - 1) + 1;
+
+        return 'V-' . str_pad((string) $siguiente, 4, '0', STR_PAD_LEFT);
     }
 }

@@ -144,7 +144,12 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
                 </span>
             ),
         },
-        { key: 'monto', label: 'Monto', align: 'right', render: (d) => <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(d.monto)}</span> },
+        {
+            key: 'monto', label: 'Monto', align: 'right',
+            render: (d) => <span className="font-bold" style={{ color: 'var(--color-danger)' }}>{money(d.monto)}</span>,
+            // Es un DESCUENTO (dinero en contra del trabajador): al Excel va en negativo.
+            exportValue: (d) => -Number(d.monto ?? 0),
+        },
         {
             key: 'estado', label: 'Estado',
             render: (d) => (

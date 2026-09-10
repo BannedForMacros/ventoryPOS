@@ -123,6 +123,8 @@ export default function EstadoCuenta({ terceros, totales, kpis }: Props) {
             align: 'right',
             sortable: true,
             render: (t) => <Monto valor={t.le_debemos} color="var(--color-danger)" />,
+            // Pasivo (dinero en contra): al Excel en negativo para que la fila sume el neto.
+            exportValue: (t) => -Number(t.le_debemos ?? 0),
         },
         {
             key: 'su_anticipo',
@@ -130,6 +132,8 @@ export default function EstadoCuenta({ terceros, totales, kpis }: Props) {
             align: 'right',
             sortable: true,
             render: (t) => <Monto valor={t.su_anticipo} color="var(--color-warning)" />,
+            // Pasivo (se lo debemos al cliente): al Excel en negativo.
+            exportValue: (t) => -Number(t.su_anticipo ?? 0),
         },
         {
             key: 'nuestro_adelanto',

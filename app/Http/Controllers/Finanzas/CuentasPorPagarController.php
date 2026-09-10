@@ -41,7 +41,7 @@ class CuentasPorPagarController extends Controller
         // es real y se puede pagar por adelantado. Lo que decide si aparece aquí
         // sigue siendo el saldo (total - monto_pagado), no el estado de entrega.
         $query = Entrada::deEmpresa($user->empresa_id)
-            ->comprometido()
+            ->comprometido()->deudaPropia()
             ->with([
                 'proveedorRel', 'almacen',
                 'pagosParciales.metodoPago', 'pagosParciales.cuenta', 'pagosParciales.adelanto', 'pagosParciales.user',
@@ -79,14 +79,14 @@ class CuentasPorPagarController extends Controller
         $entradas = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25)->withQueryString();
 
         $totalPendiente = (float) Entrada::deEmpresa($user->empresa_id)
-            ->comprometido()
+            ->comprometido()->deudaPropia()
             ->where('estado_pago', '!=', 'pagado')
             ->selectRaw('COALESCE(SUM(GREATEST(total - monto_pagado, 0)), 0) as v')
             ->value('v');
 
         // KPIs de cabecera (universo pendiente, independiente del filtro visible)
         $basePendiente = Entrada::deEmpresa($user->empresa_id)
-            ->comprometido()
+            ->comprometido()->deudaPropia()
             ->where('estado_pago', '!=', 'pagado')
             ->whereRaw('total - monto_pagado > 0.01');
         $kpis = [
@@ -130,7 +130,7 @@ class CuentasPorPagarController extends Controller
         $user = $request->user();
 
         $query = Entrada::deEmpresa($user->empresa_id)
-            ->comprometido()
+            ->comprometido()->deudaPropia()
             ->with(['proveedorRel'])
             ->when($request->input('proveedor_id'), fn ($q, $v) => $q->where('proveedor_id', $v))
             ->when($request->input('fecha_desde'), fn ($q, $v) => $q->where('fecha', '>=', $v))
@@ -166,13 +166,16 @@ class CuentasPorPagarController extends Controller
                 ?? $e->proveedor
                 ?? '—';
 
+            // Signo contable: la compra (deuda) va en NEGATIVO, lo pagado en
+            // POSITIVO y el saldo en negativo. Así Total + Pagado = Saldo y las
+            // sumas de columna en Excel dan el neto real por pagar.
             $filas[] = [
                 optional($e->fecha)->format('d/m/Y') ?? '—',
                 $e->numero_documento ?? '—',
                 $proveedor,
-                (float) $e->total,
+                -(float) $e->total,
                 (float) $e->monto_pagado,
-                $saldo,
+                -$saldo,
                 ucfirst($e->estado_pago),
             ];
         }

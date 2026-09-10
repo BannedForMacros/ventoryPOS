@@ -101,6 +101,8 @@ export default function DevolucionesIndex({ devoluciones, filters, buscar }: Pro
         {
             key: 'monto_devolucion', label: 'Monto',
             render: (d) => <span className="font-mono text-sm">S/ {Number(d.monto_devolucion).toFixed(2)}</span>,
+            // Nota de crédito: dinero que sale/se descuenta → al Excel en negativo.
+            exportValue: (d) => -Number(d.monto_devolucion ?? 0),
         },
         {
             key: 'estado', label: 'Estado', sortable: true,

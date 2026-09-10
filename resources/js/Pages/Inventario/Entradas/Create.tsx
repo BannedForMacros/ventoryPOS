@@ -13,6 +13,7 @@ import Tabs from '@/Components/UI/Tabs';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
+import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
@@ -22,6 +23,7 @@ interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolea
 interface Producto { id: number; codigo: string | null; nombre: string; unidades: ProductoUnidad[]; }
 interface Almacen  { id: number; nombre: string; tipo: string; }
 interface Proveedor { id: number; razon_social: string | null; nombre_comercial: string | null; numero_documento: string | null; tipo_documento: string; }
+interface ClienteLite { id: number; tipo_documento: string | null; numero_documento: string | null; nombres: string | null; apellidos: string | null; razon_social: string | null; es_cliente_general?: boolean; }
 interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
 interface MetodoPagoForm { id: number; nombre: string; cuentas: CuentaMP[]; }
 
@@ -38,6 +40,7 @@ interface Props extends PageProps {
     almacenes: Almacen[];
     productos: Producto[];
     proveedores: Proveedor[];
+    clientes: ClienteLite[];
     metodosPago: MetodoPagoForm[];
     turnos: TurnoLite[];
     turnoActivoId: number | null;
@@ -88,7 +91,7 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 
-export default function EntradaCreate({ almacenes, productos, proveedores, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen, usaTransito, adelantos }: Props) {
+export default function EntradaCreate({ almacenes, productos, proveedores, clientes, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen, usaTransito, adelantos }: Props) {
     // Compra despachada pero que aún no llega: no toca stock hasta que se reciba.
     const [enTransito, setEnTransito] = useState(false);
     const [fechaLlegada, setFechaLlegada] = useState('');
@@ -103,6 +106,16 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
     const [listaProveedores, setListaProveedores] = useState<Proveedor[]>(proveedores);
     const [modalProveedor, setModalProveedor]     = useState(false);
     const [proveedorId, setProveedorId] = useState<number | ''>('');
+    // Facturación directa al cliente: el proveedor le cobra al cliente del
+    // negocio (la empresa solo intermedia). No genera cuenta por pagar propia.
+    const [facturadaACliente, setFacturadaACliente] = useState(false);
+    const [clienteId, setClienteId]                 = useState<number | ''>('');
+    const [listaClientes, setListaClientes]         = useState<ClienteLite[]>(clientes ?? []);
+    const [modalCliente, setModalCliente]           = useState(false);
+    const nombreCliente = (c: ClienteLite) => {
+        const nombre = c.razon_social || [c.nombres, c.apellidos].filter(Boolean).join(' ') || '—';
+        return `${nombre}${c.numero_documento ? ` · ${c.tipo_documento ?? ''} ${c.numero_documento}`.trimEnd() : ''}`;
+    };
     const [nroDoc, setNroDoc]           = useState('');
     const [tipo, setTipo]               = useState<string>('compra');
     const [fecha, setFecha]             = useState(hoyLocal());
@@ -228,6 +241,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
         if (!almacenId) errs.push('Selecciona el almacén destino');
         if (!tipo)      errs.push('Selecciona el tipo de entrada');
         if (!fecha)     errs.push('Indica la fecha');
+        if (facturadaACliente && !clienteId) errs.push('Selecciona el cliente al que se facturó la compra');
 
         if (detalles.length === 0) {
             errs.push('Agrega al menos un producto al detalle');
@@ -334,6 +348,8 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
             confirmar: confirmar && !enTransito,
             en_transito: enTransito,
             fecha_estimada_llegada: enTransito ? (fechaLlegada || null) : null,
+            facturada_a_cliente: facturadaACliente,
+            cliente_id: facturadaACliente ? (clienteId || null) : null,
             estado_pago:       estadoPago,
             pagos: estadoPago === 'pendiente' ? [] : pagos.map(p => ({
                 metodo_pago_id: p.modo === 'adelanto' ? null : p.metodo_pago_id,
@@ -425,9 +441,10 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                         <div>
                             <div className="flex items-end gap-2">
                                 <div className="flex-1 min-w-0">
-                                    <Select
+                                    <SearchableSelect
                                         label="Proveedor"
                                         placeholder="Sin proveedor"
+                                        searchPlaceholder="Buscar por nombre o RUC..."
                                         value={proveedorId}
                                         onChange={v => setProveedorId(v === '' ? '' : Number(v))}
                                         options={listaProveedores.map(p => ({
@@ -477,6 +494,39 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                             )}
                         </div>
                     )}
+
+                    {/* Compra que el proveedor factura y cobra DIRECTAMENTE al cliente
+                        del negocio (la empresa solo intermedia). La mercadería entra al
+                        inventario, pero la deuda no es de la empresa: no aparece en
+                        Cuentas por Pagar ni en el balance. */}
+                    <div className="space-y-3">
+                        <Switch
+                            label="Facturada directamente al cliente"
+                            description="El proveedor le factura y cobra al cliente del negocio; la empresa solo intermedia. Esta compra no genera deuda propia en Cuentas por Pagar."
+                            checked={facturadaACliente}
+                            onChange={v => { setFacturadaACliente(v); if (!v) setClienteId(''); }}
+                        />
+                        {facturadaACliente && (
+                            <div className="flex items-end gap-2 max-w-lg">
+                                <div className="flex-1 min-w-0">
+                                    <SearchableSelect
+                                        label="Cliente facturado"
+                                        required
+                                        placeholder="— Seleccionar cliente —"
+                                        searchPlaceholder="Buscar por nombre o documento..."
+                                        value={clienteId}
+                                        onChange={v => setClienteId(v === '' ? '' : Number(v))}
+                                        options={listaClientes.map(c => ({ value: c.id, label: nombreCliente(c) }))}
+                                        error={errors.cliente_id}
+                                    />
+                                </div>
+                                <Button type="button" variant="secondary" onClick={() => setModalCliente(true)}
+                                    title="Crear nuevo cliente">
+                                    <UserPlus size={15} className="mr-1" /> Nuevo
+                                </Button>
+                            </div>
+                        )}
+                    </div>
 
                     {/* Switch: modo factura. Decide dónde aparece el input de nro. documento. */}
                     <Switch
@@ -949,6 +999,18 @@ export default function EntradaCreate({ almacenes, productos, proveedores, metod
                         prev.some(p => p.id === nuevo.id) ? prev : [nuevo as Proveedor, ...prev]);
                     setProveedorId(nuevo.id);
                     setModalProveedor(false);
+                }}
+            />
+
+            {/* Alta de cliente sin salir de la entrada (facturación al cliente) */}
+            <ModalCrearCliente
+                isOpen={modalCliente}
+                onClose={() => setModalCliente(false)}
+                onCreated={nuevo => {
+                    setListaClientes(prev =>
+                        prev.some(c => c.id === nuevo.id) ? prev : [nuevo as unknown as ClienteLite, ...prev]);
+                    setClienteId(nuevo.id);
+                    setModalCliente(false);
                 }}
             />
         </AppLayout>

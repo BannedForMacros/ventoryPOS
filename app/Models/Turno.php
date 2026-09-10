@@ -16,6 +16,7 @@ class Turno extends Model
         'estado', 'fecha_apertura', 'fecha_cierre',
         'observacion_apertura', 'observacion_cierre',
         'efectivo_arrastre', 'destino_efectivo',
+        'correlativo_inicial',
     ];
 
     protected function casts(): array

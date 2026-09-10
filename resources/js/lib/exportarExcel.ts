@@ -37,10 +37,13 @@ export function valorCelda(v: unknown): CeldaExcel {
     if (typeof v === 'string') {
         const t = v.trim();
         if (t === '') return '';
-        const m = t.match(/^-?\s*(?:S\/\s*)?([\d,]+(?:\.\d{1,2})?)$/);
-        if (m && (m[1].includes(',') || (m[1].includes('.') && m[1].split('.')[1].length === 2))) {
-            const n = parseFloat(m[1].replace(/,/g, ''));
-            if (!Number.isNaN(n)) return n;
+        // El signo puede venir antes o después de "S/" ("-S/ 150" o "S/ -150"),
+        // y también como − (U+2212, el que pintan varios componentes de la UI).
+        // Antes el signo se descartaba y los negativos se exportaban positivos.
+        const m = t.match(/^([-−])?\s*(?:S\/\s*)?([-−])?\s*([\d,]+(?:\.\d{1,2})?)$/);
+        if (m && (m[3].includes(',') || (m[3].includes('.') && m[3].split('.')[1].length === 2))) {
+            const n = parseFloat(m[3].replace(/,/g, ''));
+            if (!Number.isNaN(n)) return (m[1] || m[2]) ? -n : n;
         }
         return v;
     }
@@ -89,7 +92,7 @@ export function descargarExcel(nombre: string, aoa: CeldaExcel[][], opts: Descar
             if (!money.has(c)) continue;
             const addr = XLSX.utils.encode_cell({ r, c });
             const celda = ws[addr];
-            if (celda && typeof celda.v === 'number') celda.z = '#,##0.00';
+            if (celda && typeof celda.v === 'number') celda.z = '#,##0.00;[Red]-#,##0.00';
         }
     }
 

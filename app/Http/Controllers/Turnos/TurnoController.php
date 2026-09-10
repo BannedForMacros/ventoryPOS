@@ -294,6 +294,7 @@ class TurnoController extends Controller
             'estado'                   => 'abierto',
             'fecha_apertura'           => now(),
             'observacion_apertura'     => $request->input('observacion_apertura'),
+            'correlativo_inicial'      => $request->input('correlativo_inicial') ?: null,
         ]);
 
         if ($fondosAdicionales > 0.009 && $arrastre !== null) {

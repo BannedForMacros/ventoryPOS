@@ -46,11 +46,23 @@ class Entrada extends Model
         'moneda',
         'tipo_cambio',
         'monto_moneda',
+        'facturada_a_cliente',
+        'cliente_id',
     ];
 
     public function proveedorRel(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Proveedor::class, 'proveedor_id');
+    }
+
+    /**
+     * Cliente al que el proveedor facturó directamente (facturada_a_cliente).
+     * La empresa solo intermedia: la mercadería entra al inventario pero la
+     * deuda no es suya, por eso estas entradas salen de CxP y del balance.
+     */
+    public function cliente(): BelongsTo
+    {
+        return $this->belongsTo(Cliente::class, 'cliente_id');
     }
 
     public function metodoPago(): BelongsTo
@@ -71,6 +83,7 @@ class Entrada extends Model
             'fecha_recepcion'        => 'date',
             'total'        => 'decimal:2',
             'monto_pagado' => 'decimal:2',
+            'facturada_a_cliente' => 'boolean',
             'tipo_cambio'  => 'decimal:6',
             'monto_moneda' => 'decimal:2',
         ];
@@ -152,6 +165,16 @@ class Entrada extends Model
     public function scopeComprometido(Builder $query): Builder
     {
         return $query->whereIn('estado', [self::ESTADO_CONFIRMADO, self::ESTADO_EN_TRANSITO]);
+    }
+
+    /**
+     * Deuda que realmente es de la empresa: excluye las entradas facturadas
+     * directamente al cliente (ahí quien paga al proveedor es el cliente).
+     * Aplicar junto con comprometido() en CxP y en el balance.
+     */
+    public function scopeDeudaPropia(Builder $query): Builder
+    {
+        return $query->where('facturada_a_cliente', false);
     }
 
     public function scopeDeEmpresa(Builder $query, int $empresaId): Builder

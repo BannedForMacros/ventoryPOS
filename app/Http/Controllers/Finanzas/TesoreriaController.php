@@ -120,7 +120,9 @@ class TesoreriaController extends Controller
                 $m->tipo === 'ingreso' ? 'Ingreso' : 'Egreso',
                 $m->descripcion,
                 $labels[$m->ref_tipo] ?? ($m->ref_tipo ?? '—'),
-                (float) $m->monto,
+                // Monto FIRMADO: los egresos van en negativo para que la suma de
+                // la columna en Excel dé el neto real y no un total inflado.
+                ($m->tipo === 'egreso' ? -1 : 1) * (float) $m->monto,
                 $m->user?->name ?? '—',
             ];
         }

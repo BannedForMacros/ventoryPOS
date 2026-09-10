@@ -25,8 +25,9 @@ use ZipArchive;
  */
 class Xlsx
 {
-    /** Formato monetario por defecto para las columnas numéricas. */
-    private const MONEDA = '#,##0.00';
+    /** Formato monetario por defecto: negativos con signo y en rojo, para que
+     *  egresos/deudas se distingan y las sumas de columna cuadren en Excel. */
+    private const MONEDA = '#,##0.00;[Red]-#,##0.00';
 
     /**
      * @param  array<int, string>  $headers  Nombres de columna (fila 0).
@@ -95,6 +96,9 @@ class Xlsx
         $xml .= '</row>';
 
         foreach ($filas as $ri => $fila) {
+            // El índice 0 es la cabecera (array_unshift de arriba) y ya se emitió
+            // con negrita como <row r="1">; repetirla duplicaba la fila 1 en el OOXML.
+            if ($ri === 0) continue;
             $r = $ri + 1;
             $xml .= '<row r="' . $r . '">';
             foreach ($fila as $c => $valor) {

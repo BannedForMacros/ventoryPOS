@@ -21,6 +21,13 @@ export interface Column<T extends Record<string, unknown>> {
     render?: (row: T) => React.ReactNode;
     /** Campo alterno para ordenar (p. ej. 'cliente.nombres' o un número crudo). */
     sortKey?: string;
+    /**
+     * Valor a usar en la exportación a Excel en lugar de row[key]. Necesario
+     * cuando el signo/formato vive solo en el render (ej. un egreso que la UI
+     * pinta en rojo pero cuyo dato crudo es positivo): sin esto el Excel
+     * exporta el crudo y las sumas de columna salen infladas.
+     */
+    exportValue?: (row: T) => unknown;
 }
 
 interface TableProps<T extends Record<string, unknown>> {
@@ -264,7 +271,7 @@ export default function Table<T extends Record<string, unknown>>({
         if (!sortedData.length) return;
         const aoa: (string | number | boolean | null | undefined)[][] = [columns.map(col => col.label)];
         sortedData.forEach(row => {
-            aoa.push(columns.map(col => valorCelda(row[col.key])));
+            aoa.push(columns.map(col => valorCelda(col.exportValue ? col.exportValue(row) : row[col.key])));
         });
         descargarExcel(exportFilename, aoa);
     };

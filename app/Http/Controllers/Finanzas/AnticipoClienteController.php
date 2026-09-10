@@ -216,7 +216,9 @@ class AnticipoClienteController extends Controller
             $pendiente = $a->tipo_valorizacion === 'material'
                 ? number_format((float) $a->cantidad_pendiente, 4, '.', '') . ' und'
                 : (float) $a->saldo;
-            $pasivo    = $a->estado === 'activo' ? (float) $a->valorPasivo() : 0.0;
+            // El pasivo es dinero/mercadería que la empresa le DEBE al cliente:
+            // en el Excel va con signo negativo para que las sumas cuadren.
+            $pasivo    = $a->estado === 'activo' ? -(float) $a->valorPasivo() : 0.0;
 
             $filas[] = [
                 $a->fecha->format('d/m/Y'),

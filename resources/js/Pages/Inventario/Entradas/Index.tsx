@@ -84,6 +84,10 @@ interface Entrada extends Record<string, unknown> {
     cuenta_id: number | null;
     metodo_pago?: { id: number; nombre: string } | null;
     cuenta?: { id: number; nombre: string } | null;
+    // Facturación directa al cliente: el proveedor le cobra al cliente del
+    // negocio; esta compra no genera deuda propia en CxP.
+    facturada_a_cliente?: boolean;
+    cliente?: { id: number; nombres: string | null; apellidos: string | null; razon_social: string | null } | null;
 }
 
 // M19: paginado server-side. El filtro de almacén/estado se mantiene client-side
@@ -281,9 +285,20 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
         },
         {
             key: 'proveedor', label: 'Proveedor', sortable: true,
-            render: (e) => e.proveedor
-                ? <span className="text-sm">{e.proveedor}</span>
-                : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
+            render: (e) => (
+                <div className="leading-tight">
+                    {e.proveedor
+                        ? <span className="text-sm">{e.proveedor}</span>
+                        : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+                    {e.facturada_a_cliente && (
+                        <div className="text-[11px]" style={{ color: 'var(--color-primary)' }}>
+                            Facturada a: {e.cliente
+                                ? (e.cliente.razon_social || [e.cliente.nombres, e.cliente.apellidos].filter(Boolean).join(' '))
+                                : 'cliente'}
+                        </div>
+                    )}
+                </div>
+            ),
         },
         {
             key: 'numero_documento', label: 'Nro. doc.', sortable: true,

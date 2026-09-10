@@ -12,6 +12,7 @@ import Switch from '@/Components/UI/Switch';
 import Badge from '@/Components/UI/Badge';
 import Callout from '@/Components/UI/Callout';
 import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
+import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
@@ -34,6 +35,7 @@ interface EntradaDetalleData {
 }
 
 interface Proveedor { id: number; razon_social: string | null; nombre_comercial: string | null; numero_documento: string | null; tipo_documento: string; }
+interface ClienteLite { id: number; tipo_documento: string | null; numero_documento: string | null; nombres: string | null; apellidos: string | null; razon_social: string | null; es_cliente_general?: boolean; }
 interface CuentaMP { id: number; nombre: string; banco: string | null; numero_cuenta: string | null; }
 interface MetodoPagoForm { id: number; nombre: string; cuentas: CuentaMP[]; }
 interface StockRow { almacen_id: number; producto_id: number; cantidad: string; }
@@ -61,6 +63,8 @@ interface EntradaData {
     tipo: string;
     fecha: string;
     estado: 'borrador' | 'confirmado';
+    facturada_a_cliente?: boolean;
+    cliente_id?: number | null;
     observacion: string | null;
     estado_pago: 'pendiente' | 'parcial' | 'pagado';
     metodo_pago_id: number | null;
@@ -84,6 +88,7 @@ interface Props extends PageProps {
     almacenes: Almacen[];
     productos: Producto[];
     proveedores: Proveedor[];
+    clientes: ClienteLite[];
     metodosPago: MetodoPagoForm[];
     turnos: TurnoLite[];
     pagoTurnoId: number | null;
@@ -124,7 +129,7 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
     return String(Math.round((t / q) * 10000) / 10000);
 }
 
-export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen, adelantos, permiteStockNegativo }: Props) {
+export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, clientes, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen, adelantos, permiteStockNegativo }: Props) {
     // "Afecta caja a:" — arranca en el turno actual de los pagos (si sigue
     // ABIERTO), para reflejar el estado real. Re-imputar solo ocurre si el
     // usuario TOCA el selector (turnoTocado), para no cambiarlo sin querer.
@@ -145,6 +150,15 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
     const [listaProveedores, setListaProveedores] = useState<Proveedor[]>(proveedores);
     const [modalProveedor, setModalProveedor]     = useState(false);
     const [proveedorId, setProveedorId] = useState<number | ''>(entrada.proveedor_id ?? '');
+    // Facturación directa al cliente (la empresa solo intermedia).
+    const [facturadaACliente, setFacturadaACliente] = useState(!!entrada.facturada_a_cliente);
+    const [clienteId, setClienteId]                 = useState<number | ''>(entrada.cliente_id ?? '');
+    const [listaClientes, setListaClientes]         = useState<ClienteLite[]>(clientes ?? []);
+    const [modalCliente, setModalCliente]           = useState(false);
+    const nombreCliente = (c: ClienteLite) => {
+        const nombre = c.razon_social || [c.nombres, c.apellidos].filter(Boolean).join(' ') || '—';
+        return `${nombre}${c.numero_documento ? ` · ${c.tipo_documento ?? ''} ${c.numero_documento}`.trimEnd() : ''}`;
+    };
     const [nroDoc, setNroDoc]           = useState(entrada.numero_documento ?? '');
     const [tipo, setTipo]               = useState(entrada.tipo);
     // Misma trampa de zona horaria que en Index.fmtFecha: el backend manda ISO UTC.
@@ -378,6 +392,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
     function validar(): string[] {
         const errs: string[] = [];
         if (!almacenId) errs.push('Selecciona el almacén destino');
+        if (facturadaACliente && !clienteId) errs.push('Selecciona el cliente al que se facturó la compra');
 
         pagosNuevos.forEach((p, idx) => {
             const n = idx + 1;
@@ -475,6 +490,8 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
             almacen_id: almacenId, proveedor_id: proveedorId || null,
             numero_documento: facturaPorItem ? null : (nroDoc || null),
             tipo, fecha, observacion,
+            facturada_a_cliente: facturadaACliente,
+            cliente_id: facturadaACliente ? (clienteId || null) : null,
             detalles: detalles.map(d => ({
                 producto_id: d.producto_id, unidad_medida_id: d.unidad_medida_id,
                 cantidad: d.cantidad, factor_conversion: d.factor_conversion, precio_costo: d.precio_costo,
@@ -573,9 +590,10 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                             ]} />
                         <div className="flex items-end gap-2">
                             <div className="flex-1 min-w-0">
-                                <Select
+                                <SearchableSelect
                                     label="Proveedor"
                                     placeholder="Sin proveedor"
+                                    searchPlaceholder="Buscar por nombre o RUC..."
                                     value={proveedorId}
                                     onChange={v => setProveedorId(v === '' ? '' : Number(v))}
                                     options={listaProveedores.map(p => ({
@@ -593,6 +611,37 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                             <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} />
                         )}
                         <Input label="Fecha" required type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
+                    </div>
+
+                    {/* Compra facturada y cobrada directamente al cliente del negocio:
+                        no genera deuda propia en Cuentas por Pagar ni en el balance. */}
+                    <div className="space-y-3">
+                        <Switch
+                            label="Facturada directamente al cliente"
+                            description="El proveedor le factura y cobra al cliente del negocio; la empresa solo intermedia. Esta compra no genera deuda propia en Cuentas por Pagar."
+                            checked={facturadaACliente}
+                            onChange={v => { setFacturadaACliente(v); if (!v) setClienteId(''); }}
+                        />
+                        {facturadaACliente && (
+                            <div className="flex items-end gap-2 max-w-lg">
+                                <div className="flex-1 min-w-0">
+                                    <SearchableSelect
+                                        label="Cliente facturado"
+                                        required
+                                        placeholder="— Seleccionar cliente —"
+                                        searchPlaceholder="Buscar por nombre o documento..."
+                                        value={clienteId}
+                                        onChange={v => setClienteId(v === '' ? '' : Number(v))}
+                                        options={listaClientes.map(c => ({ value: c.id, label: nombreCliente(c) }))}
+                                        error={errors.cliente_id}
+                                    />
+                                </div>
+                                <Button type="button" variant="secondary" onClick={() => setModalCliente(true)}
+                                    title="Crear nuevo cliente">
+                                    <UserPlus size={15} className="mr-1" /> Nuevo
+                                </Button>
+                            </div>
+                        )}
                     </div>
 
                     <Switch
@@ -1116,6 +1165,18 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                         prev.some(p => p.id === nuevo.id) ? prev : [nuevo as Proveedor, ...prev]);
                     setProveedorId(nuevo.id);
                     setModalProveedor(false);
+                }}
+            />
+
+            {/* Alta de cliente sin salir de la entrada (facturación al cliente) */}
+            <ModalCrearCliente
+                isOpen={modalCliente}
+                onClose={() => setModalCliente(false)}
+                onCreated={nuevo => {
+                    setListaClientes(prev =>
+                        prev.some(c => c.id === nuevo.id) ? prev : [nuevo as unknown as ClienteLite, ...prev]);
+                    setClienteId(nuevo.id);
+                    setModalCliente(false);
                 }}
             />
         </AppLayout>

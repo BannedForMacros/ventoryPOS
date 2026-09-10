@@ -1180,6 +1180,7 @@ class BalanceDiarioController extends Controller
             // posteriores se devuelven; compras posteriores no aparecen).
             case 'cxp': {
                 $entradas = Entrada::deEmpresa($empresaId)->confirmado()
+                    ->deudaPropia()
                     ->whereDate('fecha', '<=', $fecha)
                     ->with(['proveedorRel:id,razon_social,nombre_comercial', 'user:id,name',
                             'pagosParciales.metodoPago:id,nombre', 'pagosParciales.cuenta:id,nombre', 'pagosParciales.user:id,name'])

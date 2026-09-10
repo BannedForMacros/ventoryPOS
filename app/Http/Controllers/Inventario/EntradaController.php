@@ -160,7 +160,7 @@ class EntradaController extends Controller
 
         // M19: paginar (default 25/page) y preservar query string en navegación.
         $entradas = Entrada::whereIn('almacen_id', $almacenIds)
-            ->with(['almacen.local', 'user', 'proveedorRel', 'metodoPago', 'cuenta'])
+            ->with(['almacen.local', 'user', 'proveedorRel', 'cliente:id,nombres,apellidos,razon_social', 'metodoPago', 'cuenta'])
             ->when($request->almacen_id, fn ($q, $id) => $q->where('almacen_id', $id))
             ->when($request->estado, fn ($q, $e) => $q->where('estado', $e))
             ->when($request->fecha_desde, fn ($q, $f) => $q->whereDate('fecha', '>=', $f))
@@ -229,6 +229,13 @@ class EntradaController extends Controller
                 ->activo()
                 ->orderBy('razon_social')
                 ->get(['id', 'razon_social', 'nombre_comercial', 'numero_documento', 'tipo_documento']),
+            // Para "Facturada al cliente": el proveedor cobra directo al cliente
+            // del negocio y la empresa solo intermedia.
+            'clientes' => \App\Models\Cliente::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->orderByDesc('es_cliente_general')
+                ->orderBy('razon_social')->orderBy('nombres')
+                ->get(['id', 'tipo_documento', 'numero_documento', 'nombres', 'apellidos', 'razon_social', 'es_cliente_general']),
             'metodosPago' => MetodoPago::deEmpresa($empresaId)->activo()
                 ->with('cuentas:id,nombre,banco,numero_cuenta')
                 ->orderBy('nombre')->get(['id', 'nombre', 'tipo_id']),
@@ -264,6 +271,11 @@ class EntradaController extends Controller
             // es opcional (muchas veces el proveedor no promete una).
             'en_transito'            => 'nullable|boolean',
             'fecha_estimada_llegada' => 'nullable|date',
+            // Facturación directa al cliente: el proveedor le cobra al cliente
+            // del negocio; la empresa intermedia y esta compra NO genera CxP.
+            'facturada_a_cliente' => 'nullable|boolean',
+            'cliente_id'          => ['nullable', 'integer', 'required_if:facturada_a_cliente,true',
+                Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id)],
             'observacion'      => 'nullable|string',
             'detalles'         => 'required|array|min:1',
             'detalles.*.producto_id'       => 'required|exists:productos,id',
@@ -321,6 +333,8 @@ class EntradaController extends Controller
                 'numero_documento' => $data['numero_documento'] ?? null,
                 'tipo'             => $data['tipo'],
                 'fecha'            => $data['fecha'],
+                'facturada_a_cliente' => (bool) ($data['facturada_a_cliente'] ?? false),
+                'cliente_id'          => !empty($data['facturada_a_cliente']) ? ($data['cliente_id'] ?? null) : null,
                 'observacion'      => $data['observacion'] ?? null,
                 'estado'           => 'borrador',
                 'total'            => 0,
@@ -444,7 +458,7 @@ class EntradaController extends Controller
             ->get(['id', 'metodo_pago_id', 'cuenta_id', 'turno_id', 'monto', 'fecha', 'referencia', 'proveedor_adelanto_id']);
 
         return Inertia::render('Inventario/Entradas/Edit', [
-            'entrada'   => $entrada->load(['detalles.producto', 'detalles.unidadMedida', 'proveedorRel', 'metodoPago', 'cuenta']),
+            'entrada'   => $entrada->load(['detalles.producto', 'detalles.unidadMedida', 'proveedorRel', 'cliente', 'metodoPago', 'cuenta']),
             'pagosPrevios' => $pagosPrevios,
             // Editar/anular pagos ya registrados mueve tesorería → solo admin (igual
             // que CuentasPorPagarController::editarPago/eliminarPago).
@@ -463,6 +477,11 @@ class EntradaController extends Controller
                 ->activo()
                 ->orderBy('razon_social')
                 ->get(['id', 'razon_social', 'nombre_comercial', 'numero_documento', 'tipo_documento']),
+            'clientes' => \App\Models\Cliente::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->orderByDesc('es_cliente_general')
+                ->orderBy('razon_social')->orderBy('nombres')
+                ->get(['id', 'tipo_documento', 'numero_documento', 'nombres', 'apellidos', 'razon_social', 'es_cliente_general']),
             'metodosPago' => MetodoPago::deEmpresa($empresaId)->activo()
                 ->with('cuentas:id,nombre,banco,numero_cuenta')
                 ->orderBy('nombre')->get(['id', 'nombre', 'tipo_id']),
@@ -500,6 +519,9 @@ class EntradaController extends Controller
             'numero_documento' => 'nullable|string|max:50',
             'tipo'             => 'required|in:compra,ajuste,devolucion,otro',
             'fecha'            => 'required|date',
+            'facturada_a_cliente' => 'nullable|boolean',
+            'cliente_id'          => ['nullable', 'integer', 'required_if:facturada_a_cliente,true',
+                Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id)],
             'observacion'      => 'nullable|string',
             'detalles'         => 'required|array|min:1',
             'detalles.*.producto_id'       => 'required|exists:productos,id',
@@ -671,6 +693,8 @@ class EntradaController extends Controller
                     'numero_documento' => $data['numero_documento'] ?? null,
                     'tipo'             => $data['tipo'],
                     'fecha'            => $data['fecha'],
+                    'facturada_a_cliente' => (bool) ($data['facturada_a_cliente'] ?? false),
+                    'cliente_id'          => !empty($data['facturada_a_cliente']) ? ($data['cliente_id'] ?? null) : null,
                     'observacion'      => $data['observacion'] ?? null,
                 ]);
 

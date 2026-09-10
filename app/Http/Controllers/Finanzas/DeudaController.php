@@ -140,13 +140,17 @@ class DeudaController extends Controller
         foreach ($deudas as $d) {
             $metodos = $d->pagos->map(fn ($p) => $p->metodoPago?->nombre)->filter()->unique()->implode(' · ') ?: '—';
 
+            // Signo contable: lo que DEBEMOS va en negativo, lo que NOS DEBEN en
+            // positivo. Así la suma de la columna en Excel da el neto real.
+            $signo = $d->direccion === 'por_pagar' ? -1 : 1;
+
             $filas[] = [
                 $d->direccion === 'por_pagar' ? 'Debemos' : 'Nos deben',
                 $d->nombre,
                 $tipoLabel[$d->tipo] ?? $d->tipo,
                 $metodos,
-                (float) $d->monto_original,
-                (float) $d->saldo,
+                $signo * (float) $d->monto_original,
+                $signo * (float) $d->saldo,
                 $d->estado === 'activa' ? 'Activa' : ($d->estado === 'pagada' ? 'Pagada' : 'Anulada'),
             ];
         }

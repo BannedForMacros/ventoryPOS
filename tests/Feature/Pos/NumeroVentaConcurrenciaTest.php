@@ -15,6 +15,31 @@ it('genera V-0001 cuando no hay ventas previas en el turno', function () {
     expect(Venta::generarNumero($this->turno->id))->toBe('V-0001');
 });
 
+it('respeta el correlativo inicial configurado al abrir el turno (1001 → V-1001)', function () {
+    $this->turno->update(['correlativo_inicial' => 1001]);
+
+    expect(Venta::generarNumero($this->turno->id))->toBe('V-1001');
+});
+
+it('con correlativo inicial y ventas previas, sigue desde la última (V-1001 → V-1002)', function () {
+    $this->turno->update(['correlativo_inicial' => 1001]);
+
+    Venta::create([
+        'empresa_id' => $this->env->empresa->id,
+        'local_id'   => $this->env->local->id,
+        'turno_id'   => $this->turno->id,
+        'caja_id'    => $this->env->caja->id,
+        'user_id'    => $this->env->admin->id,
+        'cliente_id' => $this->env->clienteGeneral->id,
+        'numero'     => 'V-1001',
+        'tipo_comprobante' => 'ticket',
+        'subtotal' => 0, 'descuento_total' => 0, 'igv' => 0, 'total' => 0,
+        'estado' => 'completada', 'fecha_venta' => now(),
+    ]);
+
+    expect(Venta::generarNumero($this->turno->id))->toBe('V-1002');
+});
+
 it('si ya existe V-0001 en el turno, generarNumero devuelve V-0002', function () {
     Venta::create([
         'empresa_id'       => $this->env->empresa->id,

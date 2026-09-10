@@ -115,18 +115,35 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
     // (los montos van como NÚMEROS para poder sumarlos en Excel).
     const cabecera = [...cols.map(c => c.label), ...(hayUsuarios ? ['Usuario'] : []), montoLabel];
 
-    const filaDe = (it: DetalleItem): (string | number)[] => [
+    // El signo del item hereda el del GRUPO cuando el item no trae `tipo`
+    // propio: varios payloads del backend (CxP, planilla…) marcan 'egreso'
+    // solo a nivel de grupo, y sin la herencia esos montos salían POSITIVOS
+    // en el Excel aunque la UI los pinte con '−' (sumas descuadradas).
+    const filaDe = (it: DetalleItem, tipoGrupo?: string | null): (string | number)[] => [
         ...cols.map(c => String(it[c.campo] ?? '')),
         ...(hayUsuarios ? [it.user ?? ''] : []),
-        (it.tipo === 'egreso' ? -1 : 1) * Number(it.monto ?? 0),
+        ((it.tipo ?? tipoGrupo) === 'egreso' ? -1 : 1) * Number(it.monto ?? 0),
     ];
 
     const filasDe = (gruposExp: DetalleGrupo[], conFecha: boolean): (string | number)[][] => {
         const filas: (string | number)[][] = [conFecha ? ['Fecha', ...cabecera] : cabecera];
-        gruposExp.forEach(g => g.items.forEach(it =>
-            filas.push(conFecha
-                ? [g.esFecha ? g.titulo : `${g.titulo}${g.subtitulo ? ` ${g.subtitulo}` : ''}`, ...filaDe(it)]
-                : filaDe(it))));
+        gruposExp.forEach(g => {
+            const etiqueta = g.esFecha ? g.titulo : `${g.titulo}${g.subtitulo ? ` ${g.subtitulo}` : ''}`;
+            if (g.items.length === 0) {
+                // Grupo sin desglose (ej. inventario valorizado): antes el Excel
+                // salía vacío porque solo se exportaban items. Se emite el grupo.
+                const fila: (string | number)[] = [
+                    etiqueta,
+                    ...cols.slice(1).map(() => ''),
+                    ...(hayUsuarios ? [''] : []),
+                    (g.tipo === 'egreso' ? -1 : 1) * Number(g.monto ?? 0),
+                ];
+                filas.push(conFecha ? [etiqueta, ...fila] : fila);
+                return;
+            }
+            g.items.forEach(it =>
+                filas.push(conFecha ? [etiqueta, ...filaDe(it, g.tipo)] : filaDe(it, g.tipo)));
+        });
         return filas;
     };
 

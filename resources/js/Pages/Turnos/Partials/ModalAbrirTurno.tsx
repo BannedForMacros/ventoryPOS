@@ -28,6 +28,7 @@ interface AbrirForm {
     monto_apertura:             string;
     monto_fondos_adicionales:   string;
     monto_caja_chica:           string;
+    correlativo_inicial:        string;
     observacion_apertura:       string;
 }
 
@@ -36,6 +37,7 @@ const emptyForm = (): AbrirForm => ({
     monto_apertura:           '',
     monto_fondos_adicionales: '',
     monto_caja_chica:         '',
+    correlativo_inicial:      '',
     observacion_apertura:     '',
 });
 
@@ -209,6 +211,27 @@ export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, con
                             disabled={saving}
                         />
                     )}
+                </div>
+
+                <div className="space-y-2">
+                    <Input
+                        label="N° inicial de venta (opcional)"
+                        type="number"
+                        step="1"
+                        min="1"
+                        value={form.correlativo_inicial}
+                        onChange={e => setForm(f => ({ ...f, correlativo_inicial: e.target.value }))}
+                        placeholder="Ej. 1001"
+                        error={errors.correlativo_inicial}
+                        disabled={saving}
+                    />
+                    <div
+                        className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+                        style={{ backgroundColor: 'rgba(59,130,246,0.06)', color: 'var(--color-text-muted)' }}
+                    >
+                        <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
+                        Las ventas de este turno empezarán en ese número (ej. 1001 → V-1001, V-1002…). Si se deja vacío, empiezan en V-0001.
+                    </div>
                 </div>
 
                 {usaCajaChica && (

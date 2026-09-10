@@ -17,6 +17,7 @@ class AbrirTurnoRequest extends FormRequest
             'monto_apertura'            => ['required', 'numeric', 'min:0'],
             'monto_fondos_adicionales'  => ['nullable', 'numeric', 'min:0'],
             'monto_caja_chica'          => ['nullable', 'numeric', 'min:0'],
+            'correlativo_inicial'       => ['nullable', 'integer', 'min:1', 'max:9999999'],
             'observacion_apertura'      => ['nullable', 'string', 'max:500'],
         ];
     }
