@@ -86,6 +86,52 @@ it('cobra un abono consumiendo el anticipo: bajan deuda y anticipo, sin tesorer�
     expect(DB::table('cuenta_movimientos')->where('ref_tipo', 'venta_abono')->where('ref_id', $abono->id)->count())->toBe(0);
 });
 
+it('pago MIXTO: anticipo + pago adicional en la misma operación', function () {
+    $venta    = crearVentaCreditoAnt($this, 100);
+    $anticipo = crearAnticipoDinero($this, 60);
+    $efectivo = $this->env->metodo('efectivo');
+
+    $this->post(route('finanzas.cxc.abonar', $venta->id), [
+        'monto'               => 60,   // del anticipo (sin caja)
+        'monto_adicional'     => 40,   // efectivo (entra a caja)
+        'metodo_pago_id'      => $efectivo->id,
+        'fecha'               => now()->toDateString(),
+        'cliente_anticipo_id' => $anticipo->id,
+    ])->assertSessionHasNoErrors();
+
+    $venta->refresh();
+    expect((float) $venta->saldo_pendiente)->toBe(0.0);
+    expect((float) $venta->monto_pagado)->toBe(100.0);
+    expect((float) $anticipo->fresh()->saldo)->toBe(0.0);
+
+    // Dos abonos: uno del anticipo (sin tesorería) y uno de dinero (con tesorería).
+    $abonos = VentaAbono::where('venta_id', $venta->id)->get();
+    expect($abonos)->toHaveCount(2);
+    $delAnticipo = $abonos->firstWhere('cliente_anticipo_id', $anticipo->id);
+    $adicional   = $abonos->firstWhere('cliente_anticipo_id', null);
+    expect((float) $delAnticipo->monto)->toBe(60.0);
+    expect((float) $adicional->monto)->toBe(40.0);
+    expect($adicional->metodo_pago_id)->toBe($efectivo->id);
+    expect(DB::table('cuenta_movimientos')->where('ref_tipo', 'venta_abono')->where('ref_id', $delAnticipo->id)->count())->toBe(0);
+    expect(DB::table('cuenta_movimientos')->where('ref_tipo', 'venta_abono')->where('ref_id', $adicional->id)->count())->toBe(1);
+});
+
+it('pago mixto rechaza superar el saldo de la venta', function () {
+    $venta    = crearVentaCreditoAnt($this, 100);
+    $anticipo = crearAnticipoDinero($this, 80);
+
+    $this->post(route('finanzas.cxc.abonar', $venta->id), [
+        'monto'               => 80,
+        'monto_adicional'     => 30, // 80+30 > 100
+        'metodo_pago_id'      => $this->env->metodo('efectivo')->id,
+        'fecha'               => now()->toDateString(),
+        'cliente_anticipo_id' => $anticipo->id,
+    ])->assertSessionHasErrors('monto_adicional');
+
+    expect((float) $venta->fresh()->saldo_pendiente)->toBe(100.0);
+    expect((float) $anticipo->fresh()->saldo)->toBe(80.0);
+});
+
 it('rechaza cobrar más que el saldo del anticipo', function () {
     $venta    = crearVentaCreditoAnt($this, 100);
     $anticipo = crearAnticipoDinero($this, 30);

@@ -139,8 +139,13 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
     const [compensarEntradaId, setCompensarEntradaId] = useState<number | ''>('');
     // Cobrar consumiendo el anticipo del cliente: no entra dinero nuevo (ya
     // entró al crear el anticipo) — baja la deuda y el pasivo a la vez.
-    const [usarAnticipo, setUsarAnticipo] = useState(false);
-    const [anticipoId, setAnticipoId]     = useState<number | ''>('');
+    const [usarAnticipo, setUsarAnticipo]   = useState(false);
+    const [anticipoId, setAnticipoId]       = useState<number | ''>('');
+    // Pago MIXTO: lo que se toma del anticipo + un pago adicional opcional
+    // (efectivo/yape/etc.) en la misma operación, con desglose explícito.
+    const [montoAnticipo, setMontoAnticipo]   = useState('');
+    const [pagoAdicional, setPagoAdicional]   = useState(false);
+    const [montoAdicional, setMontoAdicional] = useState('');
 
     const anticiposDelCliente = abonando?.cliente
         ? anticiposClientes.filter(a => a.cliente_id === abonando.cliente!.id && Number(a.saldo) > 0)
@@ -149,9 +154,16 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
     const anticipoSel = usarAnticipo
         ? anticiposDelCliente.find(a => a.id === anticipoId)
         : undefined;
-    const topeAnticipo = abonando && anticipoSel
-        ? Math.round(Math.min(Number(abonando.saldo_pendiente), Number(anticipoSel.saldo)) * 100) / 100
-        : Number(abonando?.saldo_pendiente ?? 0);
+    // Números del desglose (todos en vivo, para que la cajera VEA qué pasa):
+    const saldoVenta        = Number(abonando?.saldo_pendiente ?? 0);
+    const anticipoSaldo     = Number(anticipoSel?.saldo ?? 0);
+    const topeAnticipo      = Math.round(Math.min(saldoVenta, anticipoSaldo) * 100) / 100;
+    const tomaAnticipo      = usarAnticipo ? (parseFloat(montoAnticipo) || 0) : 0;
+    const adicional         = usarAnticipo && pagoAdicional ? (parseFloat(montoAdicional) || 0) : 0;
+    const totalCobro        = Math.round((tomaAnticipo + adicional) * 100) / 100;
+    const restanteDeuda     = Math.max(0, Math.round((saldoVenta - totalCobro) * 100) / 100);
+    const sobraEnAnticipo   = Math.max(0, Math.round((anticipoSaldo - tomaAnticipo) * 100) / 100);
+    const anticipoCubreTodo = anticipoSel ? anticipoSaldo >= saldoVenta - 0.009 : false;
 
     const compraSeleccionada = comprasCompensables.find(c => c.id === compensarEntradaId) ?? null;
     const saldoCompra = (c: CompraCompensable) => Math.max(0, Number(c.total) - Number(c.monto_pagado));
@@ -239,6 +251,9 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
         setCompensarEntradaId('');
         setUsarAnticipo(false);
         setAnticipoId('');
+        setMontoAnticipo('');
+        setPagoAdicional(false);
+        setMontoAdicional('');
         setForm({
             monto: String(v.saldo_pendiente), fecha: hoy(), metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
             // Cobro entra normalmente a la caja del cajero: preselecciona el turno activo.
@@ -250,13 +265,16 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
         if (!abonando) return;
         setSaving(true);
         if (usarAnticipo) {
-            // Cobro consumiendo el anticipo del cliente: sin método/cuenta/caja.
+            // Cobro del anticipo (sin caja) + pago adicional opcional (sí entra a caja).
             router.post(route('finanzas.cxc.abonar', abonando.id), {
-                monto:               form.monto,
+                monto:               montoAnticipo,
+                monto_adicional:     pagoAdicional && adicional > 0 ? montoAdicional : null,
                 fecha:               form.fecha,
                 cliente_anticipo_id: anticipoId || null,
-                metodo_pago_id:      null,
-                cuenta_id:           null,
+                metodo_pago_id:      pagoAdicional ? (form.metodo_pago_id || null) : null,
+                cuenta_id:           pagoAdicional ? (form.cuenta_id || null) : null,
+                referencia:          pagoAdicional ? (form.referencia || null) : null,
+                turno_id:            pagoAdicional ? (form.turno_id || null) : null,
                 observacion:         form.observacion || null,
             } as any, {
                 onSuccess: () => { setAbonando(null); setSaving(false); },
@@ -415,11 +433,18 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                     <>
                         <Button variant="ghost" onClick={() => setAbonando(null)}>Cancelar</Button>
                         <Button onClick={submitAbono}
-                            disabled={saving || form.monto === '' || Number(form.monto) <= 0
-                                || Number(form.monto) > (usarAnticipo ? topeAnticipo : compensarActivo ? topeCompensar : Number(abonando?.saldo_pendiente ?? 0)) + 0.009
-                                || (compensarActivo && !compensarEntradaId)
-                                || (usarAnticipo && !anticipoId)}>
-                            {saving ? 'Guardando...' : usarAnticipo ? 'Cobrar del anticipo' : compensarActivo ? 'Compensar' : 'Registrar abono'}
+                            disabled={saving
+                                || (usarAnticipo
+                                    ? (!anticipoId || tomaAnticipo <= 0 || tomaAnticipo > topeAnticipo + 0.009
+                                        || totalCobro > saldoVenta + 0.009
+                                        || (pagoAdicional && (adicional <= 0 || !form.metodo_pago_id)))
+                                    : (form.monto === '' || Number(form.monto) <= 0
+                                        || Number(form.monto) > (compensarActivo ? topeCompensar : saldoVenta) + 0.009
+                                        || (compensarActivo && !compensarEntradaId)))}>
+                            {saving ? 'Guardando...'
+                                : usarAnticipo ? `Cobrar ${money(totalCobro)}`
+                                : compensarActivo ? 'Compensar'
+                                : 'Registrar abono'}
                         </Button>
                     </>
                 }
@@ -432,12 +457,17 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                             { label: 'Saldo pendiente', valor: money(abonando.saldo_pendiente), color: 'danger', destacado: true },
                         ]} />
                         <div className="grid grid-cols-2 gap-3">
-                            <Input label="Monto del abono" required type="number" min="0.01" step="0.01"
-                                max={Number(abonando.saldo_pendiente)}
-                                value={form.monto}
-                                onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
-                                error={errors.monto}
-                            />
+                            {/* Con anticipo activo el monto se maneja en el DESGLOSE de
+                                abajo (del anticipo + adicional): este input se oculta
+                                para que la cajera no vea dos montos y se confunda. */}
+                            {!usarAnticipo && (
+                                <Input label="Monto del abono" required type="number" min="0.01" step="0.01"
+                                    max={Number(abonando.saldo_pendiente)}
+                                    value={form.monto}
+                                    onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
+                                    error={errors.monto}
+                                />
+                            )}
                             <Input label="Fecha" required type="date"
                                 value={form.fecha}
                                 onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
@@ -446,7 +476,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                         </div>
 
                         {/* Nuevo saldo en vivo + validación de tope */}
-                        {form.monto !== '' && Number(form.monto) > 0 && (() => {
+                        {!usarAnticipo && form.monto !== '' && Number(form.monto) > 0 && (() => {
                             const saldo = Number(abonando.saldo_pendiente);
                             const montoNum = Number(form.monto);
                             const nuevo = Math.round((saldo - montoNum) * 100) / 100;
@@ -476,16 +506,18 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                                 setCompensarActivo(false);
                                                 setCompensarEntradaId('');
                                             }
-                                            // Con un solo anticipo lo elegimos y ajustamos el monto solos;
-                                            // al desmarcar, el monto vuelve al saldo de la venta.
+                                            // Con un solo anticipo lo elegimos y precargamos el monto
+                                            // AUTOMÁTICO: lo que la deuda necesite, nunca más.
                                             const unico = on && anticiposDelCliente.length === 1 ? anticiposDelCliente[0] : null;
                                             setAnticipoId(unico ? unico.id : '');
-                                            setForm(f => ({
-                                                ...f,
-                                                monto: unico && abonando
-                                                    ? Math.min(Number(abonando.saldo_pendiente), Number(unico.saldo)).toFixed(2)
-                                                    : (on ? f.monto : String(abonando?.saldo_pendiente ?? '')),
-                                            }));
+                                            setMontoAnticipo(unico && abonando
+                                                ? Math.min(Number(abonando.saldo_pendiente), Number(unico.saldo)).toFixed(2)
+                                                : '');
+                                            setPagoAdicional(false);
+                                            setMontoAdicional('');
+                                            if (!on) {
+                                                setForm(f => ({ ...f, monto: String(abonando?.saldo_pendiente ?? ''), metodo_pago_id: '', cuenta_id: '' }));
+                                            }
                                         }}
                                         className="h-4 w-4 accent-[var(--color-primary)]"
                                     />
@@ -496,29 +528,146 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
 
                         {usarAnticipo && (
                             <div className="space-y-3">
-                                <Select label="Anticipo a consumir" required
-                                    options={anticiposDelCliente.map(a => ({
-                                        value: String(a.id),
-                                        label: `Anticipo #${a.id} — ${new Date(a.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')} — saldo ${money(a.saldo)}`,
-                                    }))}
-                                    value={anticipoId === '' ? '' : String(anticipoId)}
-                                    onChange={v => {
-                                        const id = v === '' ? '' : Number(v);
-                                        setAnticipoId(id);
-                                        const a = anticiposDelCliente.find(x => x.id === id);
-                                        if (a && abonando) {
-                                            setForm(f => ({ ...f, monto: Math.min(Number(abonando.saldo_pendiente), Number(a.saldo)).toFixed(2) }));
-                                        }
-                                        setErrors({});
-                                    }}
-                                    placeholder="— Seleccionar —"
-                                    error={errors.cliente_anticipo_id}
-                                />
-                                {anticipoSel && (
-                                    <Callout variant="info" title={`Máximo cobrable de este anticipo: ${money(topeAnticipo)}`}>
-                                        Se cobra del anticipo #{anticipoSel.id}: baja la deuda del cliente y su anticipo a la vez, <strong>sin ningún movimiento de caja</strong> (ese dinero ya entró cuando lo dejó).
-                                    </Callout>
+                                {anticiposDelCliente.length > 1 && (
+                                    <Select label="Anticipo a consumir" required
+                                        options={anticiposDelCliente.map(a => ({
+                                            value: String(a.id),
+                                            label: `Anticipo #${a.id} — ${new Date(a.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')} — saldo ${money(a.saldo)}`,
+                                        }))}
+                                        value={anticipoId === '' ? '' : String(anticipoId)}
+                                        onChange={v => {
+                                            const id = v === '' ? '' : Number(v);
+                                            setAnticipoId(id);
+                                            const a = anticiposDelCliente.find(x => x.id === id);
+                                            setMontoAnticipo(a && abonando
+                                                ? Math.min(Number(abonando.saldo_pendiente), Number(a.saldo)).toFixed(2)
+                                                : '');
+                                            setErrors({});
+                                        }}
+                                        placeholder="— Seleccionar —"
+                                        error={errors.cliente_anticipo_id}
+                                    />
                                 )}
+
+                                {anticipoSel && (
+                                    <>
+                                        {/* Mensaje INTELIGENTE según alcance el anticipo o no */}
+                                        {anticipoCubreTodo ? (
+                                            <Callout variant="success" title="El anticipo alcanza para toda la deuda">
+                                                Se tomarán solo <strong>{money(topeAnticipo)}</strong> del anticipo #{anticipoSel.id} (lo que la deuda necesita).
+                                                {sobraEnAnticipo > 0.009 && <> Los <strong>{money(sobraEnAnticipo)}</strong> restantes SIGUEN a favor del cliente en su anticipo.</>}
+                                                {' '}Sin ningún movimiento de caja.
+                                            </Callout>
+                                        ) : (
+                                            <Callout variant="warning" title={`El anticipo solo cubre ${money(topeAnticipo)} de los ${money(saldoVenta)}`}>
+                                                Puedes cobrar el resto ahora mismo agregando un pago adicional abajo, o dejarlo como saldo pendiente de la venta.
+                                            </Callout>
+                                        )}
+
+                                        <Input label="Monto a tomar del anticipo (S/)" required type="number" min="0.01" step="0.01"
+                                            max={topeAnticipo}
+                                            value={montoAnticipo}
+                                            onChange={e => setMontoAnticipo(e.target.value)}
+                                            error={errors.monto}
+                                            hint={`Máximo ${money(topeAnticipo)} (saldo del anticipo: ${money(anticipoSaldo)})`}
+                                        />
+                                        {tomaAnticipo > topeAnticipo + 0.009 && (
+                                            <Callout variant="danger">
+                                                No puedes tomar más de {money(topeAnticipo)}: es lo que {anticipoSaldo < saldoVenta ? 'tiene el anticipo' : 'necesita la deuda'}.
+                                            </Callout>
+                                        )}
+
+                                        {/* Pago adicional en la MISMA operación (mixto) */}
+                                        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                                            <input type="checkbox" checked={pagoAdicional}
+                                                onChange={e => {
+                                                    const on = e.target.checked;
+                                                    setPagoAdicional(on);
+                                                    setErrors({});
+                                                    // Precarga el adicional con lo que falta para saldar.
+                                                    setMontoAdicional(on ? restanteDeuda.toFixed(2) : '');
+                                                    if (!on) setForm(f => ({ ...f, metodo_pago_id: '', cuenta_id: '', referencia: '' }));
+                                                }}
+                                                className="h-4 w-4 accent-[var(--color-primary)]"
+                                            />
+                                            <span style={{ color: 'var(--color-text)' }}>
+                                                Agregar un pago adicional ahora (efectivo, yape, transferencia…)
+                                            </span>
+                                        </label>
+
+                                        {pagoAdicional && (
+                                            <div className="space-y-3 rounded-xl p-3" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                                <Input label="Monto adicional (S/)" required type="number" min="0.01" step="0.01"
+                                                    max={Math.max(0, Math.round((saldoVenta - tomaAnticipo) * 100) / 100)}
+                                                    value={montoAdicional}
+                                                    onChange={e => setMontoAdicional(e.target.value)}
+                                                    error={errors.monto_adicional}
+                                                />
+                                                <PagoForm
+                                                    value={{
+                                                        metodo_pago_id: form.metodo_pago_id,
+                                                        cuenta_id: form.cuenta_id,
+                                                        referencia: form.referencia,
+                                                    }}
+                                                    onChange={v => setForm(f => ({
+                                                        ...f,
+                                                        metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
+                                                        cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
+                                                        referencia: v.referencia ?? '',
+                                                    }))}
+                                                    metodosPago={metodosPago}
+                                                    cuentas={cuentas}
+                                                    errors={errors}
+                                                    required={true}
+                                                    showObservacion={false}
+                                                />
+                                                <AfectaCajaSelect
+                                                    modulo="cxc" modo="libre" formato="largo"
+                                                    label="El pago adicional afecta caja a (turno)"
+                                                    sinTurnoLabel="Sin turno (no afecta caja)"
+                                                    turnos={turnos}
+                                                    value={form.turno_id === '' ? '' : Number(form.turno_id)}
+                                                    onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                                                    error={errors.turno_id}
+                                                    hint="Solo el pago adicional entra a caja; lo del anticipo no mueve caja."
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* DESGLOSE explícito: qué se cobra, de dónde y qué queda */}
+                                        <div className="rounded-xl p-3 space-y-1.5 text-sm" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                                            <div className="flex justify-between">
+                                                <span style={{ color: 'var(--color-text-muted)' }}>Del anticipo #{anticipoSel.id} (sin caja)</span>
+                                                <span className="font-semibold tabular-nums">{money(tomaAnticipo)}</span>
+                                            </div>
+                                            {pagoAdicional && adicional > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span style={{ color: 'var(--color-text-muted)' }}>
+                                                        Pago adicional{form.metodo_pago_id ? ` (${metodosPago.find(m => String(m.id) === form.metodo_pago_id)?.nombre ?? ''})` : ''} — entra a caja
+                                                    </span>
+                                                    <span className="font-semibold tabular-nums">{money(adicional)}</span>
+                                                </div>
+                                            )}
+                                            <div className="flex justify-between pt-1.5" style={{ borderTop: '1px solid var(--color-border)' }}>
+                                                <span className="font-semibold">Total del cobro</span>
+                                                <span className="font-bold tabular-nums" style={{ color: 'var(--color-primary)' }}>{money(totalCobro)}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span style={{ color: 'var(--color-text-muted)' }}>La venta queda</span>
+                                                {restanteDeuda <= 0.009
+                                                    ? <span className="font-semibold" style={{ color: 'var(--color-success)' }}>SALDADA ✓</span>
+                                                    : <span className="font-semibold" style={{ color: 'var(--color-danger)' }}>debiendo {money(restanteDeuda)}</span>}
+                                            </div>
+                                            {sobraEnAnticipo > 0.009 && (
+                                                <div className="flex justify-between">
+                                                    <span style={{ color: 'var(--color-text-muted)' }}>En su anticipo le queda</span>
+                                                    <span className="font-semibold tabular-nums" style={{ color: 'var(--color-success)' }}>{money(sobraEnAnticipo)}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+
                                 <Input label="Observación"
                                     value={form.observacion}
                                     onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}

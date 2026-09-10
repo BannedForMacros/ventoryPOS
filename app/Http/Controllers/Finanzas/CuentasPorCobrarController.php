@@ -215,6 +215,9 @@ class CuentasPorCobrarController extends Controller
             // Cobro consumiendo un anticipo de DINERO del cliente: no entra
             // dinero nuevo (ya entró al crear el anticipo) → sin tesorería.
             'cliente_anticipo_id' => ['nullable', 'integer', Rule::exists('cliente_anticipos', 'id')->where('empresa_id', $user->empresa_id)],
+            // Pago MIXTO: además del anticipo, un pago adicional con método/cuenta
+            // (ese sí entra a caja). 'monto' = lo tomado del anticipo.
+            'monto_adicional' => ['nullable', 'numeric', 'min:0.01'],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
             // "Afecta caja a:" — turno de cuya caja entra el cobro. null = "Sin turno".
@@ -222,8 +225,32 @@ class CuentasPorCobrarController extends Controller
         ]);
 
         // ── Cobro con anticipo del cliente (espejo del adelanto en CxP) ──
+        // Soporta pago MIXTO: 'monto' se toma del anticipo (sin caja) y
+        // 'monto_adicional' entra con método/cuenta como un abono normal.
         if (!empty($data['cliente_anticipo_id'])) {
-            DB::transaction(function () use ($venta, $user, $data) {
+            $montoAnticipo  = (float) $data['monto'];
+            $montoAdicional = (float) ($data['monto_adicional'] ?? 0);
+
+            if ($montoAdicional > 0.009 && empty($data['metodo_pago_id'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'metodo_pago_id' => 'Elige el método del pago adicional.',
+                ]);
+            }
+            if ($montoAnticipo + $montoAdicional > (float) $venta->saldo_pendiente + 0.009) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'monto_adicional' => 'Anticipo + pago adicional (S/ ' . number_format($montoAnticipo + $montoAdicional, 2)
+                        . ') superan el saldo pendiente (S/ ' . number_format((float) $venta->saldo_pendiente, 2) . ').',
+                ]);
+            }
+
+            // Turno del pago ADICIONAL (el del anticipo nunca toca caja).
+            $turnoIdAdicional = $montoAdicional > 0.009
+                ? ($request->has('turno_id')
+                    ? AfectaCaja::resolverTurno($user, 'cxc', $data['turno_id'] ?? null, 'libre')
+                    : $this->turnoSugerido($user))
+                : null;
+
+            DB::transaction(function () use ($venta, $user, $data, $montoAnticipo, $montoAdicional, $turnoIdAdicional) {
                 $anticipo = \App\Models\ClienteAnticipo::where('id', $data['cliente_anticipo_id'])
                     ->where('empresa_id', $user->empresa_id)
                     ->where('cliente_id', $venta->cliente_id)
@@ -235,18 +262,19 @@ class CuentasPorCobrarController extends Controller
                 if (!$anticipo) {
                     abort(422, 'El anticipo no está disponible para este cliente.');
                 }
-                if ((float) $data['monto'] > (float) $anticipo->saldo + 0.009) {
+                if ($montoAnticipo > (float) $anticipo->saldo + 0.009) {
                     throw \Illuminate\Validation\ValidationException::withMessages([
                         'monto' => 'El anticipo solo tiene S/ ' . number_format((float) $anticipo->saldo, 2)
                             . ' de saldo. Baja el monto y cobra el resto con otro método.',
                     ]);
                 }
 
+                // 1) Abono contra el anticipo — SIN tesorería (ese dinero ya entró).
                 $abono = VentaAbono::create([
                     'venta_id'            => $venta->id,
                     'user_id'             => $user->id,
                     'fecha'               => $data['fecha'],
-                    'monto'               => $data['monto'],
+                    'monto'               => $montoAnticipo,
                     'observacion'         => trim("Cobrado del anticipo #{$anticipo->id}. " . ($data['observacion'] ?? '')) ?: null,
                     'cliente_anticipo_id' => $anticipo->id,
                 ]);
@@ -259,32 +287,64 @@ class CuentasPorCobrarController extends Controller
                     'venta_abono_id' => $abono->id,
                     'user_id'        => $user->id,
                     'fecha'          => $data['fecha'],
-                    'monto'          => $data['monto'],
+                    'monto'          => $montoAnticipo,
                     'observacion'    => "Cobro de crédito — venta {$venta->numero}",
                 ]);
-                $nuevoSaldo = round((float) $anticipo->saldo - (float) $data['monto'], 2);
+                $nuevoSaldo = round((float) $anticipo->saldo - $montoAnticipo, 2);
                 $anticipo->update([
                     'saldo'  => max(0, $nuevoSaldo),
                     'estado' => $nuevoSaldo <= 0.01 ? 'aplicado' : 'activo',
                 ]);
 
-                // SIN tesorería: el dinero entró a caja el día del anticipo.
-                $pagado = round((float) $venta->monto_pagado + (float) $data['monto'], 2);
+                // 2) Pago ADICIONAL con método/cuenta — este SÍ entra a tesorería,
+                //    como cualquier abono normal.
+                if ($montoAdicional > 0.009) {
+                    $abonoAdicional = VentaAbono::create([
+                        'venta_id'       => $venta->id,
+                        'user_id'        => $user->id,
+                        'turno_id'       => $turnoIdAdicional,
+                        'metodo_pago_id' => $data['metodo_pago_id'],
+                        'cuenta_id'      => $data['cuenta_id'] ?? null,
+                        'fecha'          => $data['fecha'],
+                        'monto'          => $montoAdicional,
+                        'referencia'     => $data['referencia'] ?? null,
+                        'observacion'    => trim("Pago adicional al cobro con anticipo #{$anticipo->id}. " . ($data['observacion'] ?? '')) ?: null,
+                    ]);
+
+                    $clienteNombre = $venta->cliente?->razon_social
+                        ?? trim(($venta->cliente?->nombres ?? '') . ' ' . ($venta->cliente?->apellidos ?? ''));
+                    $this->tesoreria->registrar(
+                        $user->empresa_id,
+                        $data['cuenta_id'] ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? null),
+                        $user,
+                        $data['fecha'],
+                        'ingreso',
+                        $montoAdicional,
+                        "Abono venta {$venta->numero} — {$clienteNombre}",
+                        'venta_abono',
+                        $abonoAdicional->id,
+                    );
+                }
+
+                $pagado = round((float) $venta->monto_pagado + $montoAnticipo + $montoAdicional, 2);
                 $venta->update([
                     'monto_pagado'    => $pagado,
                     'saldo_pendiente' => max(0, round((float) $venta->total - $pagado, 2)),
                 ]);
 
                 AuditoriaService::log('cxc.abono_con_anticipo', $venta, [
-                    'numero'         => $venta->numero,
-                    'anticipo_id'    => $anticipo->id,
-                    'monto'          => (float) $data['monto'],
-                    'saldo_venta'    => (float) $venta->saldo_pendiente,
-                    'saldo_anticipo' => (float) $anticipo->saldo,
+                    'numero'          => $venta->numero,
+                    'anticipo_id'     => $anticipo->id,
+                    'monto_anticipo'  => $montoAnticipo,
+                    'monto_adicional' => $montoAdicional,
+                    'saldo_venta'     => (float) $venta->saldo_pendiente,
+                    'saldo_anticipo'  => (float) $anticipo->saldo,
                 ], $user);
             });
 
-            return back()->with('success', 'Abono cobrado del anticipo del cliente (sin mover caja).');
+            $msj = 'Abono cobrado del anticipo del cliente (sin mover caja)';
+            if ($montoAdicional > 0.009) $msj .= ' + pago adicional de S/ ' . number_format($montoAdicional, 2);
+            return back()->with('success', $msj . '.');
         }
 
         // Turno al que se imputa el abono (y si es efectivo, suma a esa caja):
