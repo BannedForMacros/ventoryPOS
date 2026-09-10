@@ -11,6 +11,8 @@ class EntradaPago extends Model
         'entrada_id', 'user_id', 'turno_id', 'metodo_pago_id', 'cuenta_id',
         'proveedor_adelanto_id', 'fecha', 'monto', 'referencia', 'observacion',
         'moneda', 'tipo_cambio', 'monto_moneda',
+        // Compensación CxC↔CxP: pago sin dinero, cancelado contra una venta al crédito.
+        'compensacion_grupo_id', 'compensacion_venta_id',
     ];
 
     protected function casts(): array
@@ -29,4 +31,8 @@ class EntradaPago extends Model
     public function metodoPago(): BelongsTo { return $this->belongsTo(MetodoPago::class, 'metodo_pago_id'); }
     public function cuenta(): BelongsTo     { return $this->belongsTo(Cuenta::class); }
     public function adelanto(): BelongsTo   { return $this->belongsTo(ProveedorAdelanto::class, 'proveedor_adelanto_id'); }
+    /** Venta al crédito contra la que se compensó este pago (sin movimiento de caja). */
+    public function compensacionVenta(): BelongsTo { return $this->belongsTo(Venta::class, 'compensacion_venta_id'); }
+
+    public function esCompensacion(): bool { return !empty($this->compensacion_grupo_id); }
 }

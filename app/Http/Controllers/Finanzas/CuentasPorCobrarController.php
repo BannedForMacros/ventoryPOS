@@ -102,6 +102,16 @@ class CuentasPorCobrarController extends Controller
             // Turno sugerido por defecto para el cobro: el propio abierto del usuario, o
             // el único abierto en su ámbito (misma auto-resolución que usa abonar()).
             'turnoActivoId'  => $this->turnoSugerido($user),
+            // Compras con saldo para "Compensar con una compra (CxP)": lo que el
+            // tercero nos debe se cancela contra lo que le debemos, sin mover caja.
+            'comprasCompensables' => \App\Models\Entrada::deEmpresa($user->empresa_id)
+                ->comprometido()
+                ->whereRaw('total - monto_pagado > 0.01')
+                ->with('proveedorRel:id,razon_social,nombre_comercial,numero_documento')
+                ->orderByDesc('fecha')
+                ->get(['id', 'correlativo', 'numero_documento', 'proveedor', 'proveedor_id', 'fecha', 'total', 'monto_pagado']),
+            'puedeCompensar' => $user->tienePermiso('finanzas.cuentas-por-cobrar', 'crear')
+                && $user->tienePermiso('finanzas.cuentas-por-pagar', 'crear'),
         ]);
     }
 
@@ -247,6 +257,58 @@ class CuentasPorCobrarController extends Controller
     }
 
     /**
+     * Compensa una venta al crédito (CxC) contra una compra con saldo (CxP):
+     * lo que el tercero nos debe se cancela contra lo que le debemos, SIN
+     * mover dinero de caja. Sirve en ambas direcciones (se llama igual desde
+     * la pantalla de CxC y la de CxP).
+     */
+    public function compensar(Request $request)
+    {
+        $user = $request->user();
+        // Toca ambos módulos: exigir permiso de crear en los dos.
+        abort_unless($user->tienePermiso('finanzas.cuentas-por-cobrar', 'crear')
+            && $user->tienePermiso('finanzas.cuentas-por-pagar', 'crear'), 403,
+            'Necesitas permiso de Cuentas por Cobrar y Cuentas por Pagar para compensar.');
+
+        $data = $request->validate([
+            'venta_id'    => ['required', 'integer', Rule::exists('ventas', 'id')->where('empresa_id', $user->empresa_id)],
+            'entrada_id'  => ['required', 'integer', Rule::exists('entradas', 'id')->where('empresa_id', $user->empresa_id)],
+            'monto'       => ['required', 'numeric', 'min:0.01'],
+            'fecha'       => ['required', 'date'],
+            'observacion' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $venta   = Venta::findOrFail($data['venta_id']);
+        $entrada = \App\Models\Entrada::findOrFail($data['entrada_id']);
+
+        abort_unless($venta->es_credito && $venta->estado === 'completada', 422, 'La venta no es una venta a crédito activa.');
+        abort_if((float) $venta->saldo_pendiente <= 0, 422, 'La venta ya está saldada.');
+        abort_unless(in_array($entrada->estado, [\App\Models\Entrada::ESTADO_CONFIRMADO, \App\Models\Entrada::ESTADO_EN_TRANSITO], true),
+            422, 'Solo se puede compensar contra compras confirmadas o en tránsito.');
+        abort_if($entrada->saldoPendiente() <= 0, 422, 'La compra ya está pagada.');
+
+        $maximo = round(min((float) $venta->saldo_pendiente, $entrada->saldoPendiente()), 2);
+        if ((float) $data['monto'] > $maximo + 0.009) {
+            return back()->withErrors([
+                'monto' => "El monto a compensar no puede superar S/ " . number_format($maximo, 2) . " (el menor de los dos saldos).",
+            ]);
+        }
+
+        DB::transaction(function () use ($venta, $entrada, $data, $user) {
+            app(\App\Services\CompensacionCxcCxpService::class)->crear(
+                $venta,
+                $entrada,
+                (float) $data['monto'],
+                $data['fecha'],
+                $data['observacion'] ?? null,
+                $user,
+            );
+        });
+
+        return back()->with('success', 'Compensación registrada: ambos saldos se redujeron sin mover caja.');
+    }
+
+    /**
      * Edita un abono ya registrado: monto, fecha, método/cuenta, referencia.
      * Revierte el ingreso original en tesorería y lo vuelve a asentar con los
      * datos nuevos; recalcula el saldo de la venta. Espejo del editar pago
@@ -257,6 +319,10 @@ class CuentasPorCobrarController extends Controller
         $user  = $request->user();
         $venta = $abono->venta;
         abort_if(!$venta || $venta->empresa_id !== $user->empresa_id, 403);
+        // Un abono por compensación no se edita (desalinearía el pago hermano
+        // de la compra): se anula — eso revierte ambos lados — y se recompensa.
+        abort_if($abono->esCompensacion(), 422,
+            'Este abono es una compensación con una compra: no se edita. Anúlalo (revierte ambos lados) y vuelve a compensar.');
 
         // Tope: el saldo actual + lo que ya aporta este abono.
         $maxMonto = round((float) $venta->saldo_pendiente + (float) $abono->monto, 2);
@@ -325,7 +391,15 @@ class CuentasPorCobrarController extends Controller
         ]);
 
         DB::transaction(function () use ($abono, $venta, $user, $data) {
-            $this->tesoreria->revertir('venta_abono', $abono->id);
+            if ($abono->esCompensacion()) {
+                // Compensación: no hubo dinero (nada que revertir en tesorería),
+                // pero el pago hermano de la COMPRA también debe revertirse para
+                // que los dos lados nunca queden desparejados.
+                app(\App\Services\CompensacionCxcCxpService::class)
+                    ->revertirLadoEntrada($abono->compensacion_grupo_id, $user);
+            } else {
+                $this->tesoreria->revertir('venta_abono', $abono->id);
+            }
 
             $pagado = round((float) $venta->monto_pagado - (float) $abono->monto, 2);
             $venta->update([

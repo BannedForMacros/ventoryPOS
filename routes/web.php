@@ -449,6 +449,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,ver')->get('cuentas-por-cobrar', [CuentasPorCobrarController::class, 'index'])->name('cxc.index');
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,ver')->get('cuentas-por-cobrar/exportar', [CuentasPorCobrarController::class, 'exportar'])->name('cxc.exportar');
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,crear')->post('cuentas-por-cobrar/{venta}/abonar', [CuentasPorCobrarController::class, 'abonar'])->name('cxc.abonar');
+        // Compensación CxC↔CxP: el permiso fino (crear en ambos módulos) se valida dentro.
+        Route::middleware('permiso:finanzas.cuentas-por-cobrar,ver')->post('compensaciones-cxc-cxp', [CuentasPorCobrarController::class, 'compensar'])->name('compensaciones.cxc-cxp');
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,editar')->put('cuentas-por-cobrar/abonos/{abono}', [CuentasPorCobrarController::class, 'editarAbono'])->name('cxc.abonos.update');
         Route::middleware('permiso:finanzas.cuentas-por-cobrar,eliminar')->delete('cuentas-por-cobrar/abonos/{abono}', [CuentasPorCobrarController::class, 'eliminarAbono'])->name('cxc.abonos.destroy');
 

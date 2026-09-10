@@ -267,14 +267,12 @@ class BalanceDiarioService
         // borra la deuda del balance del 11).
         $cxpActual = (float) Entrada::deEmpresa($empresaId)
             ->confirmado()
-            ->deudaPropia()
             ->whereDate('fecha', '<=', $fechaCorte)
             ->selectRaw('COALESCE(SUM(GREATEST(total - monto_pagado, 0)), 0) as v')
             ->value('v');
         $pagosCxpPost = (float) DB::table('entrada_pagos as ep')
             ->join('entradas as e', 'e.id', '=', 'ep.entrada_id')
             ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')
-            ->where('e.facturada_a_cliente', false)
             ->whereDate('e.fecha', '<=', $fechaCorte)
             ->where('ep.fecha', '>', $fechaCorte)
             ->sum('ep.monto');

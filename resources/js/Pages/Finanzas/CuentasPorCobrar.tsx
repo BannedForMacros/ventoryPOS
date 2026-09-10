@@ -15,6 +15,7 @@ import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import PagoForm from '@/Components/PagoForm';
+import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Timeline from '@/Components/UI/Timeline';
 import type { PageProps } from '@/types';
 
@@ -28,6 +29,8 @@ interface Abono {
     cuenta_id?: number | null;
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
+    // Abono por compensación con una compra (sin dinero): no se edita, solo se anula.
+    compensacion_grupo_id?: string | null;
     user?: { name: string } | null;
 }
 
@@ -61,7 +64,7 @@ interface VentaCxc extends Record<string, unknown> {
     observacion?: string | null;
     monto_pagado: string;
     saldo_pendiente: string;
-    cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string } | null;
+    cliente?: { id: number; nombres?: string; apellidos?: string; razon_social?: string; numero_documento?: string | null } | null;
     user?: { name: string } | null;
     caja?: { nombre: string } | null;
     items?: VentaItemCxc[];
@@ -78,6 +81,19 @@ interface TurnoLite {
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
+/** Compra con saldo contra la que se puede compensar esta CxC (sin mover caja). */
+interface CompraCompensable {
+    id: number;
+    correlativo: string | null;
+    numero_documento: string | null;
+    proveedor: string | null;
+    proveedor_id: number | null;
+    fecha: string;
+    total: string;
+    monto_pagado: string;
+    proveedor_rel?: { id: number; razon_social?: string | null; nombre_comercial?: string | null; numero_documento?: string | null } | null;
+}
+
 interface Props extends PageProps {
     ventas: Paginado<VentaCxc>;
     totalPendiente: number;
@@ -89,6 +105,8 @@ interface Props extends PageProps {
     puede: { editar: boolean; eliminar: boolean };
     turnos: TurnoLite[];
     turnoActivoId: number | null;
+    comprasCompensables: CompraCompensable[];
+    puedeCompensar: boolean;
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -98,7 +116,7 @@ const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const nombreCliente = (v: VentaCxc) =>
     v.cliente?.razon_social ?? (`${v.cliente?.nombres ?? ''} ${v.cliente?.apellidos ?? ''}`.trim() || '—');
 
-export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado, busqueda, metodosPago, cuentas, puede, turnos, turnoActivoId }: Props) {
+export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado, busqueda, metodosPago, cuentas, puede, turnos, turnoActivoId, comprasCompensables, puedeCompensar }: Props) {
     const { flash } = usePage<Props>().props;
     const [abonando, setAbonando] = useState<VentaCxc | null>(null);
     const [detalle, setDetalle]   = useState<VentaCxc | null>(null);
@@ -109,6 +127,30 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
     const [form, setForm] = useState({
         monto: '', fecha: hoy(), metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '', turno_id: '',
     });
+    // Compensar con una compra (CxP): el abono no entra como dinero, se cancela
+    // contra lo que le debemos al tercero como proveedor. Sin movimiento de caja.
+    const [compensarActivo, setCompensarActivo]       = useState(false);
+    const [compensarEntradaId, setCompensarEntradaId] = useState<number | ''>('');
+
+    const compraSeleccionada = comprasCompensables.find(c => c.id === compensarEntradaId) ?? null;
+    const saldoCompra = (c: CompraCompensable) => Math.max(0, Number(c.total) - Number(c.monto_pagado));
+    const nombreProveedorCompra = (c: CompraCompensable) =>
+        c.proveedor_rel?.razon_social ?? c.proveedor_rel?.nombre_comercial ?? c.proveedor ?? '—';
+    // Compras del MISMO RUC que el cliente de la venta van primero (es el caso típico:
+    // el tercero es cliente y proveedor a la vez), pero se puede elegir cualquiera.
+    const comprasOrdenadas = abonando
+        ? [...comprasCompensables].sort((a, b) => {
+            const ruc = abonando.cliente?.numero_documento ?? null;
+            const am = ruc && a.proveedor_rel?.numero_documento === ruc ? 0 : 1;
+            const bm = ruc && b.proveedor_rel?.numero_documento === ruc ? 0 : 1;
+            return am - bm;
+        })
+        : comprasCompensables;
+    const esMismoRuc = (c: CompraCompensable) =>
+        !!abonando?.cliente?.numero_documento && c.proveedor_rel?.numero_documento === abonando.cliente.numero_documento;
+    const topeCompensar = abonando && compraSeleccionada
+        ? Math.round(Math.min(Number(abonando.saldo_pendiente), saldoCompra(compraSeleccionada)) * 100) / 100
+        : Number(abonando?.saldo_pendiente ?? 0);
     // Edición / anulación de un abono ya registrado (según permisos).
     const [editandoAbono, setEditandoAbono] = useState<Abono | null>(null);
     const [anulandoAbono, setAnulandoAbono] = useState<Abono | null>(null);
@@ -172,6 +214,8 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
     function abrirAbono(v: VentaCxc) {
         setAbonando(v);
         setErrors({});
+        setCompensarActivo(false);
+        setCompensarEntradaId('');
         setForm({
             monto: String(v.saldo_pendiente), fecha: hoy(), metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
             // Cobro entra normalmente a la caja del cajero: preselecciona el turno activo.
@@ -182,6 +226,20 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
     function submitAbono() {
         if (!abonando) return;
         setSaving(true);
+        if (compensarActivo) {
+            // Compensación: no entra dinero — se cancela contra una compra.
+            router.post(route('finanzas.compensaciones.cxc-cxp'), {
+                venta_id:    abonando.id,
+                entrada_id:  compensarEntradaId || null,
+                monto:       form.monto,
+                fecha:       form.fecha,
+                observacion: form.observacion || null,
+            } as any, {
+                onSuccess: () => { setAbonando(null); setSaving(false); },
+                onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+            });
+            return;
+        }
         router.post(route('finanzas.cxc.abonar', abonando.id), {
             ...form,
             metodo_pago_id: form.metodo_pago_id || null,
@@ -320,8 +378,9 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                         <Button variant="ghost" onClick={() => setAbonando(null)}>Cancelar</Button>
                         <Button onClick={submitAbono}
                             disabled={saving || form.monto === '' || Number(form.monto) <= 0
-                                || Number(form.monto) > Number(abonando?.saldo_pendiente ?? 0) + 0.009}>
-                            {saving ? 'Guardando...' : 'Registrar abono'}
+                                || Number(form.monto) > (compensarActivo ? topeCompensar : Number(abonando?.saldo_pendiente ?? 0)) + 0.009
+                                || (compensarActivo && !compensarEntradaId)}>
+                            {saving ? 'Guardando...' : compensarActivo ? 'Compensar' : 'Registrar abono'}
                         </Button>
                     </>
                 }
@@ -363,42 +422,97 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                 ? <Callout variant="success" title="Con este abono la venta queda SALDADA" />
                                 : <Callout variant="info" title="Nuevo saldo pendiente" aside={money(nuevo)} />;
                         })()}
-                        <PagoForm
-                            value={{
-                                metodo_pago_id: form.metodo_pago_id,
-                                cuenta_id: form.cuenta_id,
-                                referencia: form.referencia,
-                            }}
-                            onChange={v => setForm(f => ({
-                                ...f,
-                                metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
-                                cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
-                                referencia: v.referencia ?? '',
-                            }))}
-                            metodosPago={metodosPago}
-                            cuentas={cuentas}
-                            errors={errors}
-                            required={true}
-                            showObservacion={false}
-                        />
-                        <Input label="Observación"
-                            value={form.observacion}
-                            onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
-                        />
+                        {/* Compensar contra una compra: el cobro NO entra como dinero,
+                            se cancela contra lo que le debemos al mismo tercero como
+                            proveedor. Cero movimientos de caja. */}
+                        {puedeCompensar && comprasCompensables.length > 0 && (
+                            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                                <input type="checkbox" checked={compensarActivo}
+                                    onChange={e => {
+                                        setCompensarActivo(e.target.checked);
+                                        setCompensarEntradaId('');
+                                        setErrors({});
+                                    }} />
+                                <span style={{ color: 'var(--color-text)' }}>
+                                    Compensar con una compra (Cuentas por Pagar) — sin mover caja
+                                </span>
+                            </label>
+                        )}
 
-                        {/* "Afecta caja a:" — a qué caja/turno entra el cobro (opt-in, modo
-                            libre). Preseleccionado con el turno activo; se auto-oculta si la
-                            empresa apaga el módulo 'cxc'. */}
-                        <AfectaCajaSelect
-                            modulo="cxc" modo="libre" formato="largo"
-                            label="Afecta caja a (turno)"
-                            sinTurnoLabel="Sin turno (no afecta caja)"
-                            turnos={turnos}
-                            value={form.turno_id === '' ? '' : Number(form.turno_id)}
-                            onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
-                            error={errors.turno_id}
-                            hint="A qué caja entra el efectivo, para que la consolidación de ese turno lo sume."
-                        />
+                        {compensarActivo ? (
+                            <div className="space-y-3">
+                                <SearchableSelect
+                                    label="Compra contra la que se compensa"
+                                    required
+                                    placeholder="— Seleccionar compra con saldo —"
+                                    searchPlaceholder="Buscar por proveedor, correlativo o documento..."
+                                    value={compensarEntradaId}
+                                    onChange={v => {
+                                        const id = v === '' ? '' : Number(v);
+                                        setCompensarEntradaId(id);
+                                        // Precarga el monto con el máximo compensable.
+                                        const c = comprasCompensables.find(x => x.id === id);
+                                        if (c && abonando) {
+                                            const tope = Math.min(Number(abonando.saldo_pendiente), saldoCompra(c));
+                                            setForm(f => ({ ...f, monto: tope.toFixed(2) }));
+                                        }
+                                    }}
+                                    options={comprasOrdenadas.map(c => ({
+                                        value: c.id,
+                                        label: `${c.correlativo ?? c.numero_documento ?? `#${c.id}`} — ${nombreProveedorCompra(c)} — saldo ${money(saldoCompra(c))}${esMismoRuc(c) ? ' · mismo RUC' : ''}`,
+                                    }))}
+                                    error={errors.entrada_id}
+                                />
+                                {compraSeleccionada && (
+                                    <Callout variant="info" title={`Máximo compensable: ${money(topeCompensar)}`}>
+                                        Se registrará un abono en esta venta y un pago en la compra {compraSeleccionada.correlativo ?? compraSeleccionada.numero_documento ?? ''} por el mismo monto, <strong>sin ningún movimiento de caja</strong>. Ambos saldos bajan a la vez.
+                                    </Callout>
+                                )}
+                                <Input label="Observación"
+                                    value={form.observacion}
+                                    onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
+                                />
+                            </div>
+                        ) : (
+                            <>
+                                <PagoForm
+                                    value={{
+                                        metodo_pago_id: form.metodo_pago_id,
+                                        cuenta_id: form.cuenta_id,
+                                        referencia: form.referencia,
+                                    }}
+                                    onChange={v => setForm(f => ({
+                                        ...f,
+                                        metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
+                                        cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
+                                        referencia: v.referencia ?? '',
+                                    }))}
+                                    metodosPago={metodosPago}
+                                    cuentas={cuentas}
+                                    errors={errors}
+                                    required={true}
+                                    showObservacion={false}
+                                />
+                                <Input label="Observación"
+                                    value={form.observacion}
+                                    onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
+                                />
+
+                                {/* "Afecta caja a:" — a qué caja/turno entra el cobro (opt-in, modo
+                                    libre). Preseleccionado con el turno activo; se auto-oculta si la
+                                    empresa apaga el módulo 'cxc'. */}
+                                <AfectaCajaSelect
+                                    modulo="cxc" modo="libre" formato="largo"
+                                    label="Afecta caja a (turno)"
+                                    sinTurnoLabel="Sin turno (no afecta caja)"
+                                    turnos={turnos}
+                                    value={form.turno_id === '' ? '' : Number(form.turno_id)}
+                                    onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                                    error={errors.turno_id}
+                                    hint="A qué caja entra el efectivo, para que la consolidación de ese turno lo sume."
+                                />
+                            </>
+                        )}
                     </div>
                 )}
             </Modal>
@@ -562,7 +676,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                                             <p className="font-medium" style={{ color: 'var(--color-text)' }}>
                                                                 {new Date(a.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')}
                                                                 <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
-                                                                    {[a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || '—'}
+                                                                    {[a.compensacion_grupo_id ? 'Compensación con compra (sin caja)' : null, a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || '—'}
                                                                 </span>
                                                             </p>
                                                             {(a.observacion || a.user?.name) && (
@@ -575,7 +689,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                                             +{money(a.monto)}
                                                         </span>
                                                         <div className="flex items-center gap-1 flex-shrink-0">
-                                                            {puede.editar && (
+                                                            {puede.editar && !a.compensacion_grupo_id && (
                                                                 <button onClick={() => abrirEditarAbono(a)}
                                                                     className="p-1.5 rounded-lg hover:bg-black/5" title="Editar abono"
                                                                     style={{ color: 'var(--color-primary)' }}>
@@ -617,7 +731,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                             fecha: new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
                                             badge: { texto: 'Abono', variant: 'success' as const },
                                             tipo: 'ingreso' as const,
-                                            detalle: [a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || undefined,
+                                            detalle: [a.compensacion_grupo_id ? 'Compensación con compra (sin caja)' : null, a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || undefined,
                                             user: a.user?.name,
                                             monto: Number(a.monto),
                                         })),

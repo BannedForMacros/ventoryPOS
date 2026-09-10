@@ -7,6 +7,7 @@ import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
+import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Table, { Column } from '@/Components/UI/Table';
 import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Badge from '@/Components/UI/Badge';
@@ -41,7 +42,10 @@ interface EntradaCxp extends Record<string, unknown> {
     total: string;
     monto_pagado: string;
     estado_pago: string;
-    proveedor_rel?: { id: number; razon_social?: string; nombre_comercial?: string } | null;
+    proveedor_rel?: { id: number; razon_social?: string; nombre_comercial?: string; numero_documento?: string | null } | null;
+    // Factura emitida a nombre de un cliente del negocio (informativo/filtro).
+    facturada_a_cliente?: boolean;
+    cliente?: { id: number; nombres: string | null; apellidos: string | null; razon_social: string | null } | null;
     almacen?: { nombre: string } | null;
     pagos_parciales: Pago[];
     // Mercadería que originó la deuda (para verla en la misma ventana).
@@ -56,6 +60,18 @@ interface EntradaCxp extends Record<string, unknown> {
 }
 
 interface AdelantoMin { id: number; proveedor_id: number; saldo: string; }
+
+/** Venta al crédito con saldo contra la que se puede compensar esta CxP (sin mover caja). */
+interface VentaCompensable {
+    id: number;
+    numero: string | null;
+    cliente_id: number | null;
+    fecha_venta: string;
+    total: string;
+    monto_pagado: string;
+    saldo_pendiente: string;
+    cliente?: { id: number; nombres?: string | null; apellidos?: string | null; razon_social?: string | null; numero_documento?: string | null } | null;
+}
 
 interface TurnoLite {
     id: number; user_id: number; caja_id: number; fecha_apertura: string;
@@ -73,6 +89,9 @@ interface Props extends PageProps {
     esAdmin?: boolean;
     estado: string;
     buscar?: string;
+    facturacion?: string;
+    ventasCompensables: VentaCompensable[];
+    puedeCompensar: boolean;
     metodosPago: { id: number; nombre: string; tipo_slug?: string | null; cuentas?: { id: number; nombre: string }[] }[];
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
     adelantos: AdelantoMin[];
@@ -89,13 +108,17 @@ const nombreProveedor = (e: EntradaCxp) =>
     e.proveedor_rel?.razon_social ?? e.proveedor_rel?.nombre_comercial ?? e.proveedor ?? '—';
 const saldoDe = (e: EntradaCxp) => Math.max(0, Number(e.total) - Number(e.monto_pagado));
 
-export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmin, estado, buscar, metodosPago, cuentas, adelantos, turnos }: Props) {
+export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmin, estado, buscar, facturacion, metodosPago, cuentas, adelantos, turnos, ventasCompensables, puedeCompensar }: Props) {
     const { flash } = usePage<Props>().props;
     const [abonando, setAbonando] = useState<EntradaCxp | null>(null);
     const [detalle, setDetalle]   = useState<EntradaCxp | null>(null);
     const [saving, setSaving]     = useState(false);
     const [errors, setErrors]     = useState<Record<string, string>>({});
     const [usarAdelanto, setUsarAdelanto] = useState(false);
+    // Compensar con una venta al crédito (CxC): el pago no sale como dinero, se
+    // cancela contra lo que el tercero nos debe como cliente. Sin mover caja.
+    const [usarCompensacion, setUsarCompensacion] = useState(false);
+    const [compensarVentaId, setCompensarVentaId] = useState<number | ''>('');
     const [form, setForm] = useState({
         monto: '', fecha: hoy(), metodo_pago_id: '', cuenta_id: '',
         proveedor_adelanto_id: '', referencia: '', observacion: '', turno_id: '',
@@ -171,7 +194,27 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
      * adelanto no alcanza, se cubre lo que da y el resto va en un segundo pago.
      */
     const saldoCompra = abonando ? saldoDe(abonando) : 0;
-    const topeMonto = adelantoSel
+    /** Venta elegida para compensar (si se marcó "compensar con una venta"). */
+    const ventaCompensarSel = usarCompensacion
+        ? ventasCompensables.find(v => v.id === compensarVentaId)
+        : undefined;
+    const nombreClienteVenta = (v: VentaCompensable) =>
+        v.cliente?.razon_social ?? (`${v.cliente?.nombres ?? ''} ${v.cliente?.apellidos ?? ''}`.trim() || '—');
+    // Ventas del MISMO RUC que el proveedor primero (el tercero es cliente y
+    // proveedor a la vez), pero se puede elegir cualquiera.
+    const ventasOrdenadas = abonando
+        ? [...ventasCompensables].sort((a, b) => {
+            const ruc = abonando.proveedor_rel?.numero_documento ?? null;
+            const am = ruc && a.cliente?.numero_documento === ruc ? 0 : 1;
+            const bm = ruc && b.cliente?.numero_documento === ruc ? 0 : 1;
+            return am - bm;
+        })
+        : ventasCompensables;
+    const esMismoRucVenta = (v: VentaCompensable) =>
+        !!abonando?.proveedor_rel?.numero_documento && v.cliente?.numero_documento === abonando.proveedor_rel.numero_documento;
+    const topeMonto = ventaCompensarSel
+        ? Math.min(saldoCompra, Number(ventaCompensarSel.saldo_pendiente))
+        : adelantoSel
         ? Math.min(saldoCompra, Number(adelantoSel.saldo))
         : saldoCompra;
 
@@ -188,6 +231,8 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
         setAbonando(e);
         setErrors({});
         setUsarAdelanto(false);
+        setUsarCompensacion(false);
+        setCompensarVentaId('');
         setForm({
             monto: saldoDe(e).toFixed(2), fecha: hoy(), metodo_pago_id: '', cuenta_id: '',
             proveedor_adelanto_id: '', referencia: '', observacion: '', turno_id: '',
@@ -196,6 +241,27 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
     function submitAbono() {
         if (!abonando) return;
+
+        // Compensación: el pago no sale como dinero — se cancela contra una
+        // venta al crédito del tercero. Mismo endpoint que usa CxC.
+        if (usarCompensacion) {
+            if (!compensarVentaId) {
+                setErrors({ venta_id: 'Selecciona la venta al crédito contra la que compensas.' });
+                return;
+            }
+            setSaving(true);
+            router.post(route('finanzas.compensaciones.cxc-cxp'), {
+                venta_id:    compensarVentaId,
+                entrada_id:  abonando.id,
+                monto:       form.monto,
+                fecha:       form.fecha,
+                observacion: form.observacion || null,
+            } as any, {
+                onSuccess: () => { setAbonando(null); setSaving(false); },
+                onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+            });
+            return;
+        }
 
         // Validación en el front: el backend rebota con "El adelanto no tiene
         // saldo suficiente" y el error caía debajo de un monto que el propio
@@ -230,7 +296,21 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
             render: (e) => <span className="text-sm">{fdate(e.fecha)}</span>,
         },
         { key: 'numero_documento', label: 'Documento', render: (e) => <span className="font-mono text-sm">{e.numero_documento ?? '—'}</span> },
-        { key: 'proveedor', label: 'Proveedor', render: (e) => <span className="font-medium">{nombreProveedor(e)}</span> },
+        {
+            key: 'proveedor', label: 'Proveedor',
+            render: (e) => (
+                <div className="leading-tight">
+                    <span className="font-medium">{nombreProveedor(e)}</span>
+                    {e.facturada_a_cliente && (
+                        <div className="text-[11px]" style={{ color: 'var(--color-primary)' }}>
+                            Facturada a: {e.cliente
+                                ? (e.cliente.razon_social || [e.cliente.nombres, e.cliente.apellidos].filter(Boolean).join(' '))
+                                : 'cliente'}
+                        </div>
+                    )}
+                </div>
+            ),
+        },
         { key: 'total', label: 'Total', align: 'right', render: (e) => <span>{money(e.total)}</span> },
         { key: 'monto_pagado', label: 'Pagado', align: 'right', render: (e) => <span style={{ color: 'var(--color-success, #16a34a)' }}>{money(e.monto_pagado)}</span> },
         {
@@ -305,12 +385,19 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
             <FiltrosCard cols={3}>
                 <Select label="Estado" value={estado}
-                    onChange={(v) => router.get(route('finanzas.cxp.index'), { estado: v, buscar: buscar || undefined }, { preserveState: true, replace: true })}
+                    onChange={(v) => router.get(route('finanzas.cxp.index'), { estado: v, buscar: buscar || undefined, facturacion: facturacion || undefined }, { preserveState: true, replace: true })}
                     options={[
                         { value: 'pendientes', label: 'Con saldo pendiente' },
                         { value: 'parciales',  label: 'Pago parcial' },
                         { value: 'pagadas',    label: 'Pagadas' },
                         { value: 'todas',      label: 'Todas las entradas' },
+                    ]} />
+                <Select label="Facturación" value={facturacion ?? ''}
+                    onChange={(v) => router.get(route('finanzas.cxp.index'), { estado, buscar: buscar || undefined, facturacion: v || undefined }, { preserveState: true, replace: true })}
+                    options={[
+                        { value: '',        label: 'Todas' },
+                        { value: 'empresa', label: 'A mi empresa' },
+                        { value: 'cliente', label: 'A cliente' },
                     ]} />
             </FiltrosCard>
 
@@ -322,7 +409,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                 initialSearch={buscar}
                 exportFilename="cuentas_por_pagar"
                 onServerSearch={(t) => router.get(route('finanzas.cxp.index'),
-                    { estado, buscar: t || undefined },
+                    { estado, buscar: t || undefined, facturacion: facturacion || undefined },
                     { preserveState: true, preserveScroll: true, replace: true })}
                 onExportExcel={() => {
                     const params = new URLSearchParams(window.location.search);
@@ -330,6 +417,8 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                     params.set('estado', estado);
                     if (buscar) params.set('buscar', buscar);
                     else params.delete('buscar');
+                    if (facturacion) params.set('facturacion', facturacion);
+                    else params.delete('facturacion');
                     const url = route('finanzas.cxp.exportar') + (params.toString() ? `?${params.toString()}` : '');
                     window.open(url, '_blank');
                 }}
@@ -347,10 +436,12 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                         <Button onClick={submitAbono}
                             disabled={saving || form.monto === '' || Number(form.monto) <= 0
                                 || (abonando !== null && Number(form.monto) > saldoDe(abonando) + 0.009)
-                                || (!usarAdelanto && !form.metodo_pago_id)
-                                || (usarAdelanto && !form.proveedor_adelanto_id)
-                                || (!!adelantoSel && Number(form.monto) > Number(adelantoSel.saldo) + 0.009)}>
-                            {saving ? 'Guardando...' : 'Registrar pago'}
+                                || (usarCompensacion
+                                    ? (!compensarVentaId || Number(form.monto) > topeMonto + 0.009)
+                                    : ((!usarAdelanto && !form.metodo_pago_id)
+                                        || (usarAdelanto && !form.proveedor_adelanto_id)
+                                        || (!!adelantoSel && Number(form.monto) > Number(adelantoSel.saldo) + 0.009)))}>
+                            {saving ? 'Guardando...' : usarCompensacion ? 'Compensar' : 'Registrar pago'}
                         </Button>
                     </>
                 }
@@ -413,7 +504,65 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                 : <Callout variant="info" title="Nuevo saldo pendiente" aside={money(nuevo)} />;
                         })()}
 
-                        {adelantosDisponibles.length > 0 && (
+                        {/* Compensar contra una venta al crédito: el pago NO sale como
+                            dinero, se cancela contra lo que el tercero nos debe como
+                            cliente. Cero movimientos de caja. */}
+                        {puedeCompensar && ventasCompensables.length > 0 && (
+                            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                                <input type="checkbox" checked={usarCompensacion}
+                                    onChange={e => {
+                                        const on = e.target.checked;
+                                        setUsarCompensacion(on);
+                                        setCompensarVentaId('');
+                                        setErrors({});
+                                        if (on) {
+                                            setUsarAdelanto(false);
+                                            setForm(f => ({ ...f, proveedor_adelanto_id: '', metodo_pago_id: '', cuenta_id: '' }));
+                                        } else {
+                                            setForm(f => ({ ...f, monto: saldoCompra.toFixed(2) }));
+                                        }
+                                    }}
+                                    className="h-4 w-4 accent-[var(--color-primary)]"
+                                />
+                                <span style={{ color: 'var(--color-text)' }}>
+                                    Compensar con una venta al crédito (Cuentas por Cobrar) — sin mover caja
+                                </span>
+                            </label>
+                        )}
+
+                        {usarCompensacion && (
+                            <div className="space-y-3">
+                                <SearchableSelect
+                                    label="Venta al crédito contra la que se compensa"
+                                    required
+                                    placeholder="— Seleccionar venta con saldo —"
+                                    searchPlaceholder="Buscar por cliente o número..."
+                                    value={compensarVentaId}
+                                    onChange={v => {
+                                        const id = v === '' ? '' : Number(v);
+                                        setCompensarVentaId(id);
+                                        const venta = ventasCompensables.find(x => x.id === id);
+                                        if (venta) {
+                                            const tope = Math.min(saldoCompra, Number(venta.saldo_pendiente));
+                                            setForm(f => ({ ...f, monto: tope.toFixed(2) }));
+                                        }
+                                        setErrors({});
+                                    }}
+                                    options={ventasOrdenadas.map(v => ({
+                                        value: v.id,
+                                        label: `${v.numero ?? `#${v.id}`} — ${nombreClienteVenta(v)} — saldo ${money(v.saldo_pendiente)}${esMismoRucVenta(v) ? ' · mismo RUC' : ''}`,
+                                    }))}
+                                    error={errors.venta_id}
+                                />
+                                {ventaCompensarSel && (
+                                    <Callout variant="info" title={`Máximo compensable: ${money(topeMonto)}`}>
+                                        Se registrará un pago en esta compra y un abono en la venta {ventaCompensarSel.numero ?? ''} por el mismo monto, <strong>sin ningún movimiento de caja</strong>. Ambos saldos bajan a la vez.
+                                    </Callout>
+                                )}
+                            </div>
+                        )}
+
+                        {!usarCompensacion && adelantosDisponibles.length > 0 && (
                             <Callout variant="info" title="Adelantos disponibles" aside={money(saldoAdelantosDisponibles)}>
                                 <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                                     <input type="checkbox" checked={usarAdelanto}
@@ -441,7 +590,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                             </Callout>
                         )}
 
-                        {usarAdelanto ? (
+                        {usarCompensacion ? null : usarAdelanto ? (
                             <Select label="Adelanto a consumir" required
                                 options={adelantosDisponibles.map(a => ({ value: String(a.id), label: `Adelanto #${a.id} — saldo ${money(a.saldo)}` }))}
                                 value={form.proveedor_adelanto_id}
@@ -489,18 +638,21 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                             </>
                         )}
 
-                        <Input label="Referencia (operación, voucher...)"
-                            value={form.referencia}
-                            onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))}
-                        />
+                        {!usarCompensacion && (
+                            <Input label="Referencia (operación, voucher...)"
+                                value={form.referencia}
+                                onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))}
+                            />
+                        )}
                         <Input label="Observación"
                             value={form.observacion}
                             onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
                         />
 
                         {/* "Afecta caja a:" — de qué caja/turno sale el efectivo (opt-in,
-                            modo libre). Se auto-oculta si la empresa apaga el módulo 'cxp'. */}
-                        <AfectaCajaSelect
+                            modo libre). Se auto-oculta si la empresa apaga el módulo 'cxp'.
+                            En compensación no aplica: no sale dinero de ninguna caja. */}
+                        {!usarCompensacion && <AfectaCajaSelect
                             modulo="cxp" modo="libre" formato="largo"
                             label="Afecta caja a (turno)"
                             sinTurnoLabel="Sin turno (no afecta caja)"

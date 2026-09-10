@@ -163,6 +163,8 @@ class EntradaController extends Controller
             ->with(['almacen.local', 'user', 'proveedorRel', 'cliente:id,nombres,apellidos,razon_social', 'metodoPago', 'cuenta'])
             ->when($request->almacen_id, fn ($q, $id) => $q->where('almacen_id', $id))
             ->when($request->estado, fn ($q, $e) => $q->where('estado', $e))
+            // Filtro por a nombre de quién salió la factura: 'empresa' | 'cliente'.
+            ->when($request->facturacion, fn ($q, $f) => $q->facturacion($f))
             ->when($request->fecha_desde, fn ($q, $f) => $q->whereDate('fecha', '>=', $f))
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
             // Búsqueda SERVER-SIDE sobre TODA la base (no solo la página visible):
@@ -194,7 +196,7 @@ class EntradaController extends Controller
             'resumenTransito' => $this->transito->habilitado($user->empresa)
                 ? $this->transito->resumen($user->empresa_id)
                 : null,
-            'filters'         => $request->only(['almacen_id', 'estado', 'fecha_desde', 'fecha_hasta', 'buscar']),
+            'filters'         => $request->only(['almacen_id', 'estado', 'fecha_desde', 'fecha_hasta', 'buscar', 'facturacion']),
             // Para el modal de quick-pago en el Index. Eager cuentas para evitar query
             // adicional al abrir el modal y permitir filtrar cuentas por metodo en cliente.
             'metodosPago'     => MetodoPago::deEmpresa($user->empresa_id)->activo()
@@ -229,8 +231,8 @@ class EntradaController extends Controller
                 ->activo()
                 ->orderBy('razon_social')
                 ->get(['id', 'razon_social', 'nombre_comercial', 'numero_documento', 'tipo_documento']),
-            // Para "Facturada al cliente": el proveedor cobra directo al cliente
-            // del negocio y la empresa solo intermedia.
+            // Para "Facturada al cliente": el comprobante sale a nombre de un
+            // cliente del negocio (informativo; la deuda sigue siendo de la empresa).
             'clientes' => \App\Models\Cliente::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->orderByDesc('es_cliente_general')
@@ -271,8 +273,8 @@ class EntradaController extends Controller
             // es opcional (muchas veces el proveedor no promete una).
             'en_transito'            => 'nullable|boolean',
             'fecha_estimada_llegada' => 'nullable|date',
-            // Facturación directa al cliente: el proveedor le cobra al cliente
-            // del negocio; la empresa intermedia y esta compra NO genera CxP.
+            // Factura a nombre de un cliente del negocio (informativo/filtro).
+            // La deuda con el proveedor sigue siendo de la empresa: CxP normal.
             'facturada_a_cliente' => 'nullable|boolean',
             'cliente_id'          => ['nullable', 'integer', 'required_if:facturada_a_cliente,true',
                 Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id)],
@@ -744,7 +746,12 @@ class EntradaController extends Controller
                 foreach ($anulados as $pagoId) {
                     $pago = $entrada->pagosParciales()->whereKey($pagoId)->first();
                     if (!$pago) continue;
-                    if ($pago->proveedor_adelanto_id) {
+                    if ($pago->esCompensacion()) {
+                        // Compensación CxC↔CxP: no hubo dinero; revertir también
+                        // el abono hermano de la venta para no dejarla desparejada.
+                        app(\App\Services\CompensacionCxcCxpService::class)
+                            ->revertirLadoVenta($pago->compensacion_grupo_id, $user);
+                    } elseif ($pago->proveedor_adelanto_id) {
                         $this->adelantos->revertirAplicacion($pago);
                     } else {
                         $this->tesoreria->revertir('entrada_pago', $pago->id);
@@ -759,6 +766,13 @@ class EntradaController extends Controller
                 foreach ($editados as $ed) {
                     $pago = $entrada->pagosParciales()->whereKey($ed['id'])->first();
                     if (!$pago) continue;
+                    // Compensación CxC↔CxP: no se edita (desalinearía el abono
+                    // hermano de la venta). Se anula y se vuelve a compensar.
+                    if ($pago->esCompensacion()) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'pagos_editados' => 'Un pago por compensación no se edita: anúlalo (revierte la venta también) y vuelve a compensar desde Cuentas por Pagar.',
+                        ]);
+                    }
                     $esAdelanto = !empty($pago->proveedor_adelanto_id);
                     // Los pagos con adelanto NO cambian de monto/método aquí (descuadraría
                     // el adelanto): solo el turno. Para cambiarlos: anular y re-registrar.

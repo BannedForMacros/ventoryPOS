@@ -106,8 +106,8 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
     const [listaProveedores, setListaProveedores] = useState<Proveedor[]>(proveedores);
     const [modalProveedor, setModalProveedor]     = useState(false);
     const [proveedorId, setProveedorId] = useState<number | ''>('');
-    // Facturación directa al cliente: el proveedor le cobra al cliente del
-    // negocio (la empresa solo intermedia). No genera cuenta por pagar propia.
+    // Factura a NOMBRE de un cliente del negocio (informativo/filtro): la
+    // deuda con el proveedor sigue siendo de la empresa, CxP normal.
     const [facturadaACliente, setFacturadaACliente] = useState(false);
     const [clienteId, setClienteId]                 = useState<number | ''>('');
     const [listaClientes, setListaClientes]         = useState<ClienteLite[]>(clientes ?? []);
@@ -495,14 +495,13 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                         </div>
                     )}
 
-                    {/* Compra que el proveedor factura y cobra DIRECTAMENTE al cliente
-                        del negocio (la empresa solo intermedia). La mercadería entra al
-                        inventario, pero la deuda no es de la empresa: no aparece en
-                        Cuentas por Pagar ni en el balance. */}
+                    {/* Compra cuya factura salió a NOMBRE de un cliente del negocio.
+                        Solo informativo/filtro: la deuda con el proveedor sigue siendo
+                        de la empresa y cuenta normal en CxP y balance. */}
                     <div className="space-y-3">
                         <Switch
                             label="Facturada directamente al cliente"
-                            description="El proveedor le factura y cobra al cliente del negocio; la empresa solo intermedia. Esta compra no genera deuda propia en Cuentas por Pagar."
+                            description="La factura del proveedor sale a NOMBRE de un cliente del negocio. Es solo informativo: la deuda y el pago al proveedor siguen siendo de la empresa (Cuentas por Pagar normal)."
                             checked={facturadaACliente}
                             onChange={v => { setFacturadaACliente(v); if (!v) setClienteId(''); }}
                         />

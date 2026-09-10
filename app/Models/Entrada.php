@@ -56,9 +56,9 @@ class Entrada extends Model
     }
 
     /**
-     * Cliente al que el proveedor facturó directamente (facturada_a_cliente).
-     * La empresa solo intermedia: la mercadería entra al inventario pero la
-     * deuda no es suya, por eso estas entradas salen de CxP y del balance.
+     * Cliente a cuyo NOMBRE salió la factura (facturada_a_cliente). Es solo
+     * informativo/filtro: la deuda con el proveedor sigue siendo de la
+     * empresa y la entrada cuenta normal en CxP y en el balance.
      */
     public function cliente(): BelongsTo
     {
@@ -168,13 +168,16 @@ class Entrada extends Model
     }
 
     /**
-     * Deuda que realmente es de la empresa: excluye las entradas facturadas
-     * directamente al cliente (ahí quien paga al proveedor es el cliente).
-     * Aplicar junto con comprometido() en CxP y en el balance.
+     * Filtro por a nombre de QUIÉN salió la factura: 'cliente' = comprobante
+     * emitido a un cliente del negocio, 'empresa' = a la propia empresa.
+     * OJO: es solo un filtro informativo — la deuda es de la empresa en
+     * ambos casos y NO debe excluirse de CxP ni del balance.
      */
-    public function scopeDeudaPropia(Builder $query): Builder
+    public function scopeFacturacion(Builder $query, ?string $filtro): Builder
     {
-        return $query->where('facturada_a_cliente', false);
+        if ($filtro === 'cliente') return $query->where('facturada_a_cliente', true);
+        if ($filtro === 'empresa') return $query->where('facturada_a_cliente', false);
+        return $query;
     }
 
     public function scopeDeEmpresa(Builder $query, int $empresaId): Builder

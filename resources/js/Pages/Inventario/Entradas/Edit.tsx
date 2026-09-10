@@ -150,7 +150,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
     const [listaProveedores, setListaProveedores] = useState<Proveedor[]>(proveedores);
     const [modalProveedor, setModalProveedor]     = useState(false);
     const [proveedorId, setProveedorId] = useState<number | ''>(entrada.proveedor_id ?? '');
-    // Facturación directa al cliente (la empresa solo intermedia).
+    // Factura a NOMBRE de un cliente del negocio (informativo; la deuda es de la empresa).
     const [facturadaACliente, setFacturadaACliente] = useState(!!entrada.facturada_a_cliente);
     const [clienteId, setClienteId]                 = useState<number | ''>(entrada.cliente_id ?? '');
     const [listaClientes, setListaClientes]         = useState<ClienteLite[]>(clientes ?? []);
@@ -613,12 +613,13 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                         <Input label="Fecha" required type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
                     </div>
 
-                    {/* Compra facturada y cobrada directamente al cliente del negocio:
-                        no genera deuda propia en Cuentas por Pagar ni en el balance. */}
+                    {/* Compra cuya factura salió a NOMBRE de un cliente del negocio.
+                        Solo informativo/filtro: la deuda con el proveedor sigue siendo
+                        de la empresa y cuenta normal en CxP y balance. */}
                     <div className="space-y-3">
                         <Switch
                             label="Facturada directamente al cliente"
-                            description="El proveedor le factura y cobra al cliente del negocio; la empresa solo intermedia. Esta compra no genera deuda propia en Cuentas por Pagar."
+                            description="La factura del proveedor sale a NOMBRE de un cliente del negocio. Es solo informativo: la deuda y el pago al proveedor siguen siendo de la empresa (Cuentas por Pagar normal)."
                             checked={facturadaACliente}
                             onChange={v => { setFacturadaACliente(v); if (!v) setClienteId(''); }}
                         />

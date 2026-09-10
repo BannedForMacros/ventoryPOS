@@ -41,9 +41,13 @@ class CuentasPorPagarController extends Controller
         // es real y se puede pagar por adelantado. Lo que decide si aparece aquí
         // sigue siendo el saldo (total - monto_pagado), no el estado de entrega.
         $query = Entrada::deEmpresa($user->empresa_id)
-            ->comprometido()->deudaPropia()
+            ->comprometido()
+            // Filtro informativo: a nombre de quién salió la factura del
+            // proveedor ('empresa' | 'cliente'). La deuda es de la empresa en
+            // ambos casos; esto solo permite separarlas para la auditoría.
+            ->when($request->input('facturacion'), fn ($q, $f) => $q->facturacion($f))
             ->with([
-                'proveedorRel', 'almacen',
+                'proveedorRel', 'almacen', 'cliente:id,nombres,apellidos,razon_social',
                 'pagosParciales.metodoPago', 'pagosParciales.cuenta', 'pagosParciales.adelanto', 'pagosParciales.user',
                 // Caja que afectó el pago (solo para MOSTRAR en la ventana; se edita con el lápiz).
                 'pagosParciales.turno:id,caja_id', 'pagosParciales.turno.caja:id,nombre',
@@ -79,14 +83,14 @@ class CuentasPorPagarController extends Controller
         $entradas = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25)->withQueryString();
 
         $totalPendiente = (float) Entrada::deEmpresa($user->empresa_id)
-            ->comprometido()->deudaPropia()
+            ->comprometido()
             ->where('estado_pago', '!=', 'pagado')
             ->selectRaw('COALESCE(SUM(GREATEST(total - monto_pagado, 0)), 0) as v')
             ->value('v');
 
         // KPIs de cabecera (universo pendiente, independiente del filtro visible)
         $basePendiente = Entrada::deEmpresa($user->empresa_id)
-            ->comprometido()->deudaPropia()
+            ->comprometido()
             ->where('estado_pago', '!=', 'pagado')
             ->whereRaw('total - monto_pagado > 0.01');
         $kpis = [
@@ -105,11 +109,22 @@ class CuentasPorPagarController extends Controller
             'esAdmin'        => (bool) $user->rol->es_admin,
             'estado'         => $request->input('estado', 'pendientes'),
             'buscar'         => $request->input('buscar', ''),
+            'facturacion'    => $request->input('facturacion', ''),
             'metodosPago'    => MetodoPago::deEmpresa($user->empresa_id)->activo()->with(['tipo:id,slug', 'cuentas' => fn ($q) => $q->where('cuentas.activo', true)])->orderBy('nombre')->get()->map(fn ($m) => ['id' => $m->id, 'nombre' => $m->nombre, 'tipo_slug' => $m->tipo?->slug, 'cuentas' => $m->cuentas->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre])->values()]),
             'cuentas'        => Cuenta::deEmpresa($user->empresa_id)->activo()->orderByDesc('es_efectivo')->orderBy('nombre')->get(['id', 'nombre', 'es_efectivo']),
             // Adelantos con saldo para ofrecer "pagar consumiendo adelanto".
             'adelantos'      => ProveedorAdelanto::deEmpresa($user->empresa_id)->activo()
                 ->where('saldo', '>', 0)->get(['id', 'proveedor_id', 'saldo']),
+            // Ventas al crédito con saldo para "Pagar compensando con una venta
+            // (CxC)": lo que le debemos al tercero se cancela contra lo que él
+            // nos debe como cliente, sin mover caja.
+            'ventasCompensables' => \App\Models\Venta::deEmpresa($user->empresa_id)
+                ->conSaldoPendiente()
+                ->with('cliente:id,nombres,apellidos,razon_social,numero_documento')
+                ->orderByDesc('fecha_venta')
+                ->get(['id', 'numero', 'cliente_id', 'fecha_venta', 'total', 'monto_pagado', 'saldo_pendiente']),
+            'puedeCompensar' => $user->tienePermiso('finanzas.cuentas-por-cobrar', 'crear')
+                && $user->tienePermiso('finanzas.cuentas-por-pagar', 'crear'),
             // "Afecta caja a:" — SOLO turnos ABIERTOS (un turno cerrado ya tiene su
             // efectivo esperado congelado, no reflejaría el cambio). null = no
             // afecta ninguna caja.
@@ -130,8 +145,9 @@ class CuentasPorPagarController extends Controller
         $user = $request->user();
 
         $query = Entrada::deEmpresa($user->empresa_id)
-            ->comprometido()->deudaPropia()
-            ->with(['proveedorRel'])
+            ->comprometido()
+            ->with(['proveedorRel', 'cliente:id,nombres,apellidos,razon_social'])
+            ->when($request->input('facturacion'), fn ($q, $f) => $q->facturacion($f))
             ->when($request->input('proveedor_id'), fn ($q, $v) => $q->where('proveedor_id', $v))
             ->when($request->input('fecha_desde'), fn ($q, $v) => $q->where('fecha', '>=', $v))
             ->when($request->input('fecha_hasta'), fn ($q, $v) => $q->where('fecha', '<=', $v))
@@ -156,7 +172,7 @@ class CuentasPorPagarController extends Controller
 
         $entradas = $query->orderByDesc('fecha')->orderByDesc('id')->get();
 
-        $headers = ['Fecha', 'Documento', 'Proveedor', 'Total', 'Pagado', 'Saldo', 'Estado'];
+        $headers = ['Fecha', 'Documento', 'Proveedor', 'Facturada a', 'Total', 'Pagado', 'Saldo', 'Estado'];
         $filas = [];
 
         foreach ($entradas as $e) {
@@ -165,6 +181,11 @@ class CuentasPorPagarController extends Controller
                 ?? $e->proveedorRel?->nombre_comercial
                 ?? $e->proveedor
                 ?? '—';
+            $facturadaA = $e->facturada_a_cliente
+                ? ($e->cliente?->razon_social
+                    ?: trim(($e->cliente?->nombres ?? '') . ' ' . ($e->cliente?->apellidos ?? ''))
+                    ?: 'Cliente')
+                : 'Mi empresa';
 
             // Signo contable: la compra (deuda) va en NEGATIVO, lo pagado en
             // POSITIVO y el saldo en negativo. Así Total + Pagado = Saldo y las
@@ -173,6 +194,7 @@ class CuentasPorPagarController extends Controller
                 optional($e->fecha)->format('d/m/Y') ?? '—',
                 $e->numero_documento ?? '—',
                 $proveedor,
+                $facturadaA,
                 -(float) $e->total,
                 (float) $e->monto_pagado,
                 -$saldo,
@@ -180,7 +202,7 @@ class CuentasPorPagarController extends Controller
             ];
         }
 
-        return Xlsx::descargar($headers, $filas, 'cuentas_por_pagar', [3 => true, 4 => true, 5 => true]);
+        return Xlsx::descargar($headers, $filas, 'cuentas_por_pagar', [4 => true, 5 => true, 6 => true]);
     }
 
     /**
@@ -277,6 +299,10 @@ class CuentasPorPagarController extends Controller
 
         abort_if(!$entrada || $entrada->empresa_id !== $user->empresa_id, 403);
         abort_unless($user->rol->es_admin, 403, 'Solo un administrador puede editar pagos registrados.');
+        // Un pago por compensación no se edita (desalinearía el abono hermano
+        // de la venta): se anula — eso revierte ambos lados — y se recompensa.
+        abort_if($pago->esCompensacion(), 422,
+            'Este pago es una compensación con una venta al crédito: no se edita. Anúlalo (revierte ambos lados) y vuelve a compensar.');
 
         $esAdelanto = !empty($pago->proveedor_adelanto_id);
 
@@ -377,8 +403,14 @@ class CuentasPorPagarController extends Controller
         ]);
 
         DB::transaction(function () use ($pago, $entrada, $user, $data) {
-            // Pago vía adelanto: devolver el saldo al adelanto y borrar su aplicación.
-            if ($pago->proveedor_adelanto_id) {
+            if ($pago->esCompensacion()) {
+                // Compensación: no salió dinero (nada en tesorería), pero el
+                // abono hermano de la VENTA también se revierte para que los
+                // dos lados nunca queden desparejados.
+                app(\App\Services\CompensacionCxcCxpService::class)
+                    ->revertirLadoVenta($pago->compensacion_grupo_id, $user);
+            } elseif ($pago->proveedor_adelanto_id) {
+                // Pago vía adelanto: devolver el saldo al adelanto y borrar su aplicación.
                 $this->adelantos->revertirAplicacion($pago);
             } else {
                 // Pago con dinero: revertir el egreso de tesorería.

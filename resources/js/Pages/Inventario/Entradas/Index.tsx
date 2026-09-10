@@ -129,6 +129,8 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
     const [anulSaving, setAnulSaving] = useState(false);
     const [filtrAlmacen, setFiltrAlmacen] = useState(filters.almacen_id ?? '');
     const [filtrEstado, setFiltrEstado]   = useState(filters.estado ?? '');
+    // A nombre de quién salió la factura: '' todas | 'empresa' | 'cliente'.
+    const [filtrFacturacion, setFiltrFacturacion] = useState(filters.facturacion ?? '');
     // Search vive a nivel de página para compartirse entre la vista de cards (mobile)
     // y la tabla (desktop). El Table interno recibe searchable=false para no duplicar.
     // Se inicializa desde el server para conservar el término al paginar/recargar.
@@ -147,12 +149,13 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                     buscar: search || undefined,
                     almacen_id: filtrAlmacen || undefined,
                     estado: filtrEstado || undefined,
+                    facturacion: filtrFacturacion || undefined,
                 },
                 { preserveState: true, preserveScroll: true, replace: true },
             );
         }, 500);
         return () => clearTimeout(t);
-    }, [search, filtrAlmacen, filtrEstado]);
+    }, [search, filtrAlmacen, filtrEstado, filtrFacturacion]);
 
     // Modal Ver detalle: id de la entrada cuya info se está mostrando + payload del fetch.
     const [verEntradaId, setVerEntradaId]   = useState<number | null>(null);
@@ -490,6 +493,16 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                         { value: 'borrador',   label: 'Borrador' },
                         { value: 'en_transito', label: 'En camino' },
                         { value: 'confirmado', label: 'Confirmado' },
+                    ]}
+                />
+                <Select
+                    label="Facturación"
+                    value={filtrFacturacion}
+                    onChange={v => setFiltrFacturacion(String(v))}
+                    options={[
+                        { value: '',        label: 'Todas' },
+                        { value: 'empresa', label: 'A mi empresa' },
+                        { value: 'cliente', label: 'A cliente' },
                     ]}
                 />
             </FiltrosCard>
