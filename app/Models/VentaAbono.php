@@ -13,6 +13,8 @@ class VentaAbono extends Model
         'moneda', 'tipo_cambio', 'monto_moneda',
         // Compensación CxC↔CxP: abono sin dinero, cancelado contra una compra.
         'compensacion_grupo_id', 'compensacion_entrada_id',
+        // Abono cobrado consumiendo un anticipo del cliente (sin dinero nuevo).
+        'cliente_anticipo_id',
     ];
 
     protected function casts(): array
@@ -32,6 +34,10 @@ class VentaAbono extends Model
     public function cuenta(): BelongsTo     { return $this->belongsTo(Cuenta::class); }
     /** Compra contra la que se compensó este abono (sin movimiento de caja). */
     public function compensacionEntrada(): BelongsTo { return $this->belongsTo(Entrada::class, 'compensacion_entrada_id'); }
+    /** Anticipo del cliente que se consumió para cobrar este abono. */
+    public function anticipo(): BelongsTo { return $this->belongsTo(ClienteAnticipo::class, 'cliente_anticipo_id'); }
 
     public function esCompensacion(): bool { return !empty($this->compensacion_grupo_id); }
+
+    public function esConAnticipo(): bool { return !empty($this->cliente_anticipo_id); }
 }

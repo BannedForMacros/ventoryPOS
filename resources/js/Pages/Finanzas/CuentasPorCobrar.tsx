@@ -31,8 +31,13 @@ interface Abono {
     cuenta?: { nombre: string } | null;
     // Abono por compensación con una compra (sin dinero): no se edita, solo se anula.
     compensacion_grupo_id?: string | null;
+    // Abono cobrado consumiendo un anticipo del cliente (sin dinero nuevo).
+    cliente_anticipo_id?: number | null;
     user?: { name: string } | null;
 }
+
+/** Anticipo de DINERO del cliente con saldo, usable para cobrar su deuda. */
+interface AnticipoCliente { id: number; cliente_id: number; fecha: string; saldo: string; }
 
 interface PagoInicial {
     id: number;
@@ -107,6 +112,7 @@ interface Props extends PageProps {
     turnoActivoId: number | null;
     comprasCompensables: CompraCompensable[];
     puedeCompensar: boolean;
+    anticiposClientes: AnticipoCliente[];
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -116,7 +122,7 @@ const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 const nombreCliente = (v: VentaCxc) =>
     v.cliente?.razon_social ?? (`${v.cliente?.nombres ?? ''} ${v.cliente?.apellidos ?? ''}`.trim() || '—');
 
-export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado, busqueda, metodosPago, cuentas, puede, turnos, turnoActivoId, comprasCompensables, puedeCompensar }: Props) {
+export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado, busqueda, metodosPago, cuentas, puede, turnos, turnoActivoId, comprasCompensables, puedeCompensar, anticiposClientes }: Props) {
     const { flash } = usePage<Props>().props;
     const [abonando, setAbonando] = useState<VentaCxc | null>(null);
     const [detalle, setDetalle]   = useState<VentaCxc | null>(null);
@@ -131,6 +137,21 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
     // contra lo que le debemos al tercero como proveedor. Sin movimiento de caja.
     const [compensarActivo, setCompensarActivo]       = useState(false);
     const [compensarEntradaId, setCompensarEntradaId] = useState<number | ''>('');
+    // Cobrar consumiendo el anticipo del cliente: no entra dinero nuevo (ya
+    // entró al crear el anticipo) — baja la deuda y el pasivo a la vez.
+    const [usarAnticipo, setUsarAnticipo] = useState(false);
+    const [anticipoId, setAnticipoId]     = useState<number | ''>('');
+
+    const anticiposDelCliente = abonando?.cliente
+        ? anticiposClientes.filter(a => a.cliente_id === abonando.cliente!.id && Number(a.saldo) > 0)
+        : [];
+    const saldoAnticiposDisponibles = anticiposDelCliente.reduce((s, a) => s + Number(a.saldo), 0);
+    const anticipoSel = usarAnticipo
+        ? anticiposDelCliente.find(a => a.id === anticipoId)
+        : undefined;
+    const topeAnticipo = abonando && anticipoSel
+        ? Math.round(Math.min(Number(abonando.saldo_pendiente), Number(anticipoSel.saldo)) * 100) / 100
+        : Number(abonando?.saldo_pendiente ?? 0);
 
     const compraSeleccionada = comprasCompensables.find(c => c.id === compensarEntradaId) ?? null;
     const saldoCompra = (c: CompraCompensable) => Math.max(0, Number(c.total) - Number(c.monto_pagado));
@@ -216,6 +237,8 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
         setErrors({});
         setCompensarActivo(false);
         setCompensarEntradaId('');
+        setUsarAnticipo(false);
+        setAnticipoId('');
         setForm({
             monto: String(v.saldo_pendiente), fecha: hoy(), metodo_pago_id: '', cuenta_id: '', referencia: '', observacion: '',
             // Cobro entra normalmente a la caja del cajero: preselecciona el turno activo.
@@ -226,6 +249,21 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
     function submitAbono() {
         if (!abonando) return;
         setSaving(true);
+        if (usarAnticipo) {
+            // Cobro consumiendo el anticipo del cliente: sin método/cuenta/caja.
+            router.post(route('finanzas.cxc.abonar', abonando.id), {
+                monto:               form.monto,
+                fecha:               form.fecha,
+                cliente_anticipo_id: anticipoId || null,
+                metodo_pago_id:      null,
+                cuenta_id:           null,
+                observacion:         form.observacion || null,
+            } as any, {
+                onSuccess: () => { setAbonando(null); setSaving(false); },
+                onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+            });
+            return;
+        }
         if (compensarActivo) {
             // Compensación: no entra dinero — se cancela contra una compra.
             router.post(route('finanzas.compensaciones.cxc-cxp'), {
@@ -378,9 +416,10 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                         <Button variant="ghost" onClick={() => setAbonando(null)}>Cancelar</Button>
                         <Button onClick={submitAbono}
                             disabled={saving || form.monto === '' || Number(form.monto) <= 0
-                                || Number(form.monto) > (compensarActivo ? topeCompensar : Number(abonando?.saldo_pendiente ?? 0)) + 0.009
-                                || (compensarActivo && !compensarEntradaId)}>
-                            {saving ? 'Guardando...' : compensarActivo ? 'Compensar' : 'Registrar abono'}
+                                || Number(form.monto) > (usarAnticipo ? topeAnticipo : compensarActivo ? topeCompensar : Number(abonando?.saldo_pendiente ?? 0)) + 0.009
+                                || (compensarActivo && !compensarEntradaId)
+                                || (usarAnticipo && !anticipoId)}>
+                            {saving ? 'Guardando...' : usarAnticipo ? 'Cobrar del anticipo' : compensarActivo ? 'Compensar' : 'Registrar abono'}
                         </Button>
                     </>
                 }
@@ -422,10 +461,75 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                 ? <Callout variant="success" title="Con este abono la venta queda SALDADA" />
                                 : <Callout variant="info" title="Nuevo saldo pendiente" aside={money(nuevo)} />;
                         })()}
+                        {/* Cobrar del anticipo del cliente: el dinero ya entró cuando
+                            dejó el anticipo — baja su deuda y su anticipo a la vez,
+                            sin mover caja. */}
+                        {anticiposDelCliente.length > 0 && (
+                            <Callout variant="info" title="Este cliente tiene anticipos de dinero" aside={money(saldoAnticiposDisponibles)}>
+                                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                                    <input type="checkbox" checked={usarAnticipo}
+                                        onChange={e => {
+                                            const on = e.target.checked;
+                                            setUsarAnticipo(on);
+                                            setErrors({});
+                                            if (on) {
+                                                setCompensarActivo(false);
+                                                setCompensarEntradaId('');
+                                            }
+                                            // Con un solo anticipo lo elegimos y ajustamos el monto solos;
+                                            // al desmarcar, el monto vuelve al saldo de la venta.
+                                            const unico = on && anticiposDelCliente.length === 1 ? anticiposDelCliente[0] : null;
+                                            setAnticipoId(unico ? unico.id : '');
+                                            setForm(f => ({
+                                                ...f,
+                                                monto: unico && abonando
+                                                    ? Math.min(Number(abonando.saldo_pendiente), Number(unico.saldo)).toFixed(2)
+                                                    : (on ? f.monto : String(abonando?.saldo_pendiente ?? '')),
+                                            }));
+                                        }}
+                                        className="h-4 w-4 accent-[var(--color-primary)]"
+                                    />
+                                    <span style={{ color: 'var(--color-text)' }}>Cobrar consumiendo el anticipo del cliente (sin mover caja)</span>
+                                </label>
+                            </Callout>
+                        )}
+
+                        {usarAnticipo && (
+                            <div className="space-y-3">
+                                <Select label="Anticipo a consumir" required
+                                    options={anticiposDelCliente.map(a => ({
+                                        value: String(a.id),
+                                        label: `Anticipo #${a.id} — ${new Date(a.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')} — saldo ${money(a.saldo)}`,
+                                    }))}
+                                    value={anticipoId === '' ? '' : String(anticipoId)}
+                                    onChange={v => {
+                                        const id = v === '' ? '' : Number(v);
+                                        setAnticipoId(id);
+                                        const a = anticiposDelCliente.find(x => x.id === id);
+                                        if (a && abonando) {
+                                            setForm(f => ({ ...f, monto: Math.min(Number(abonando.saldo_pendiente), Number(a.saldo)).toFixed(2) }));
+                                        }
+                                        setErrors({});
+                                    }}
+                                    placeholder="— Seleccionar —"
+                                    error={errors.cliente_anticipo_id}
+                                />
+                                {anticipoSel && (
+                                    <Callout variant="info" title={`Máximo cobrable de este anticipo: ${money(topeAnticipo)}`}>
+                                        Se cobra del anticipo #{anticipoSel.id}: baja la deuda del cliente y su anticipo a la vez, <strong>sin ningún movimiento de caja</strong> (ese dinero ya entró cuando lo dejó).
+                                    </Callout>
+                                )}
+                                <Input label="Observación"
+                                    value={form.observacion}
+                                    onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
+                                />
+                            </div>
+                        )}
+
                         {/* Compensar contra una compra: el cobro NO entra como dinero,
                             se cancela contra lo que le debemos al mismo tercero como
                             proveedor. Cero movimientos de caja. */}
-                        {puedeCompensar && comprasCompensables.length > 0 && (
+                        {!usarAnticipo && puedeCompensar && comprasCompensables.length > 0 && (
                             <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                                 <input type="checkbox" checked={compensarActivo}
                                     onChange={e => {
@@ -439,7 +543,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                             </label>
                         )}
 
-                        {compensarActivo ? (
+                        {usarAnticipo ? null : compensarActivo ? (
                             <div className="space-y-3">
                                 <SearchableSelect
                                     label="Compra contra la que se compensa"
@@ -676,7 +780,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                                             <p className="font-medium" style={{ color: 'var(--color-text)' }}>
                                                                 {new Date(a.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')}
                                                                 <span className="ml-2 font-normal" style={{ color: 'var(--color-text-muted)' }}>
-                                                                    {[a.compensacion_grupo_id ? 'Compensación con compra (sin caja)' : null, a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || '—'}
+                                                                    {[a.compensacion_grupo_id ? 'Compensación con compra (sin caja)' : null, a.cliente_anticipo_id ? `Consumió anticipo #${a.cliente_anticipo_id} (sin caja)` : null, a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || '—'}
                                                                 </span>
                                                             </p>
                                                             {(a.observacion || a.user?.name) && (
@@ -689,7 +793,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                                             +{money(a.monto)}
                                                         </span>
                                                         <div className="flex items-center gap-1 flex-shrink-0">
-                                                            {puede.editar && !a.compensacion_grupo_id && (
+                                                            {puede.editar && !a.compensacion_grupo_id && !a.cliente_anticipo_id && (
                                                                 <button onClick={() => abrirEditarAbono(a)}
                                                                     className="p-1.5 rounded-lg hover:bg-black/5" title="Editar abono"
                                                                     style={{ color: 'var(--color-primary)' }}>
@@ -731,7 +835,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                             fecha: new Date(a.fecha + 'T00:00:00').toLocaleDateString('es-PE'),
                                             badge: { texto: 'Abono', variant: 'success' as const },
                                             tipo: 'ingreso' as const,
-                                            detalle: [a.compensacion_grupo_id ? 'Compensación con compra (sin caja)' : null, a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || undefined,
+                                            detalle: [a.compensacion_grupo_id ? 'Compensación con compra (sin caja)' : null, a.cliente_anticipo_id ? `Consumió anticipo #${a.cliente_anticipo_id} (sin caja)` : null, a.metodo_pago?.nombre, a.cuenta?.nombre, a.referencia].filter(Boolean).join(' · ') || undefined,
                                             user: a.user?.name,
                                             monto: Number(a.monto),
                                         })),

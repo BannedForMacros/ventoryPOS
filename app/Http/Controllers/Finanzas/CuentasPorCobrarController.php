@@ -112,6 +112,13 @@ class CuentasPorCobrarController extends Controller
                 ->get(['id', 'correlativo', 'numero_documento', 'proveedor', 'proveedor_id', 'fecha', 'total', 'monto_pagado']),
             'puedeCompensar' => $user->tienePermiso('finanzas.cuentas-por-cobrar', 'crear')
                 && $user->tienePermiso('finanzas.cuentas-por-pagar', 'crear'),
+            // Anticipos de DINERO con saldo, por cliente: para cobrar la deuda
+            // consumiendo el anticipo (espejo del adelanto de proveedor en CxP).
+            'anticiposClientes' => \App\Models\ClienteAnticipo::deEmpresa($user->empresa_id)
+                ->activo()
+                ->where('tipo_valorizacion', 'monto')
+                ->where('saldo', '>', 0)
+                ->get(['id', 'cliente_id', 'fecha', 'saldo']),
         ]);
     }
 
@@ -202,13 +209,83 @@ class CuentasPorCobrarController extends Controller
         $data = $request->validate([
             'monto'          => ['required', 'numeric', 'min:0.01', 'max:' . (float) $venta->saldo_pendiente],
             'fecha'          => ['required', 'date'],
-            'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            // Sin método cuando se cobra consumiendo el anticipo del cliente.
+            'metodo_pago_id' => ['required_without:cliente_anticipo_id', 'nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
+            // Cobro consumiendo un anticipo de DINERO del cliente: no entra
+            // dinero nuevo (ya entró al crear el anticipo) → sin tesorería.
+            'cliente_anticipo_id' => ['nullable', 'integer', Rule::exists('cliente_anticipos', 'id')->where('empresa_id', $user->empresa_id)],
             'referencia'     => ['nullable', 'string', 'max:200'],
             'observacion'    => ['nullable', 'string', 'max:500'],
             // "Afecta caja a:" — turno de cuya caja entra el cobro. null = "Sin turno".
             'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
+
+        // ── Cobro con anticipo del cliente (espejo del adelanto en CxP) ──
+        if (!empty($data['cliente_anticipo_id'])) {
+            DB::transaction(function () use ($venta, $user, $data) {
+                $anticipo = \App\Models\ClienteAnticipo::where('id', $data['cliente_anticipo_id'])
+                    ->where('empresa_id', $user->empresa_id)
+                    ->where('cliente_id', $venta->cliente_id)
+                    ->where('tipo_valorizacion', 'monto')
+                    ->where('estado', 'activo')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$anticipo) {
+                    abort(422, 'El anticipo no está disponible para este cliente.');
+                }
+                if ((float) $data['monto'] > (float) $anticipo->saldo + 0.009) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'monto' => 'El anticipo solo tiene S/ ' . number_format((float) $anticipo->saldo, 2)
+                            . ' de saldo. Baja el monto y cobra el resto con otro método.',
+                    ]);
+                }
+
+                $abono = VentaAbono::create([
+                    'venta_id'            => $venta->id,
+                    'user_id'             => $user->id,
+                    'fecha'               => $data['fecha'],
+                    'monto'               => $data['monto'],
+                    'observacion'         => trim("Cobrado del anticipo #{$anticipo->id}. " . ($data['observacion'] ?? '')) ?: null,
+                    'cliente_anticipo_id' => $anticipo->id,
+                ]);
+
+                // Aplicación trazada + saldo del anticipo (mismo patrón que el POS).
+                $anticipo->aplicaciones()->create([
+                    'empresa_id'     => $venta->empresa_id,
+                    'numero'         => \App\Models\ClienteAnticipoAplicacion::generarNumero($venta->empresa_id),
+                    'venta_id'       => $venta->id,
+                    'venta_abono_id' => $abono->id,
+                    'user_id'        => $user->id,
+                    'fecha'          => $data['fecha'],
+                    'monto'          => $data['monto'],
+                    'observacion'    => "Cobro de crédito — venta {$venta->numero}",
+                ]);
+                $nuevoSaldo = round((float) $anticipo->saldo - (float) $data['monto'], 2);
+                $anticipo->update([
+                    'saldo'  => max(0, $nuevoSaldo),
+                    'estado' => $nuevoSaldo <= 0.01 ? 'aplicado' : 'activo',
+                ]);
+
+                // SIN tesorería: el dinero entró a caja el día del anticipo.
+                $pagado = round((float) $venta->monto_pagado + (float) $data['monto'], 2);
+                $venta->update([
+                    'monto_pagado'    => $pagado,
+                    'saldo_pendiente' => max(0, round((float) $venta->total - $pagado, 2)),
+                ]);
+
+                AuditoriaService::log('cxc.abono_con_anticipo', $venta, [
+                    'numero'         => $venta->numero,
+                    'anticipo_id'    => $anticipo->id,
+                    'monto'          => (float) $data['monto'],
+                    'saldo_venta'    => (float) $venta->saldo_pendiente,
+                    'saldo_anticipo' => (float) $anticipo->saldo,
+                ], $user);
+            });
+
+            return back()->with('success', 'Abono cobrado del anticipo del cliente (sin mover caja).');
+        }
 
         // Turno al que se imputa el abono (y si es efectivo, suma a esa caja):
         // si el front manda 'turno_id' (aunque sea null = "Sin turno"), se respeta
@@ -323,6 +400,10 @@ class CuentasPorCobrarController extends Controller
         // de la compra): se anula — eso revierte ambos lados — y se recompensa.
         abort_if($abono->esCompensacion(), 422,
             'Este abono es una compensación con una compra: no se edita. Anúlalo (revierte ambos lados) y vuelve a compensar.');
+        // Un abono cobrado de un anticipo tampoco: el saldo del anticipo y su
+        // aplicación quedarían desalineados. Anular y volver a registrar.
+        abort_if($abono->esConAnticipo(), 422,
+            'Este abono consumió un anticipo del cliente: no se edita. Anúlalo (el anticipo recupera su saldo) y regístralo de nuevo.');
 
         // Tope: el saldo actual + lo que ya aporta este abono.
         $maxMonto = round((float) $venta->saldo_pendiente + (float) $abono->monto, 2);
@@ -397,6 +478,23 @@ class CuentasPorCobrarController extends Controller
                 // que los dos lados nunca queden desparejados.
                 app(\App\Services\CompensacionCxcCxpService::class)
                     ->revertirLadoEntrada($abono->compensacion_grupo_id, $user);
+            } elseif ($abono->esConAnticipo()) {
+                // Cobro con anticipo: sin tesorería que revertir; el anticipo
+                // recupera su saldo y se borra la aplicación enlazada.
+                $anticipo = \App\Models\ClienteAnticipo::whereKey($abono->cliente_anticipo_id)
+                    ->lockForUpdate()->first();
+                if ($anticipo) {
+                    $anticipo->aplicaciones()->where('venta_abono_id', $abono->id)->delete();
+                    $anticipo->update([
+                        'saldo'  => round((float) $anticipo->saldo + (float) $abono->monto, 2),
+                        'estado' => 'activo',
+                    ]);
+                    AuditoriaService::log('anticipo_cliente.cobro_revertido', $anticipo, [
+                        'abono_id' => $abono->id,
+                        'monto'    => (float) $abono->monto,
+                        'saldo'    => (float) $anticipo->saldo,
+                    ], $user);
+                }
             } else {
                 $this->tesoreria->revertir('venta_abono', $abono->id);
             }
