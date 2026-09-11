@@ -404,11 +404,11 @@ class CuentasPorPagarController extends Controller
 
         DB::transaction(function () use ($pago, $entrada, $user, $data) {
             if ($pago->esCompensacion()) {
-                // Compensación: no salió dinero (nada en tesorería), pero el
-                // abono hermano de la VENTA también se revierte para que los
-                // dos lados nunca queden desparejados.
+                // Compensación: no salió dinero (nada en tesorería), pero la
+                // contraparte (abono de VENTA o movimiento de DEUDA) también
+                // se revierte para que los dos lados nunca queden desparejados.
                 app(\App\Services\CompensacionCxcCxpService::class)
-                    ->revertirLadoVenta($pago->compensacion_grupo_id, $user);
+                    ->revertirContraparteDesdeEntrada($pago->compensacion_grupo_id, $user);
             } elseif ($pago->proveedor_adelanto_id) {
                 // Pago vía adelanto: devolver el saldo al adelanto y borrar su aplicación.
                 $this->adelantos->revertirAplicacion($pago);

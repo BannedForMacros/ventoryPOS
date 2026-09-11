@@ -15,7 +15,7 @@ class ClienteAnticipoAplicacion extends Model
         'cliente_anticipo_id', 'empresa_id', 'numero', 'venta_id', 'user_id',
         'fecha', 'monto', 'cantidad', 'observacion', 'metodo_pago_id', 'cuenta_id',
         // Abono de CxC que consumió el anticipo (para revertir en pareja al anular).
-        'venta_abono_id',
+        'venta_abono_id', 'deuda_pago_id',
     ];
 
     /**

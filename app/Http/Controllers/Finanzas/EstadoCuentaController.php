@@ -236,6 +236,33 @@ class EstadoCuentaController extends Controller
             }
         }
 
+        // ── Deudas/préstamos vinculados al tercero ───────────────────────────
+        if ($t['cliente_id'] || $t['proveedor_id']) {
+            $deudas = DB::table('deudas')
+                ->where('empresa_id', $empresaId)
+                ->where('estado', 'activa')
+                ->where('saldo', '>', 0)
+                ->where(function ($q) use ($t) {
+                    if ($t['cliente_id'])   $q->orWhere('cliente_id', $t['cliente_id']);
+                    if ($t['proveedor_id']) $q->orWhere('proveedor_id', $t['proveedor_id']);
+                })
+                ->get(['id', 'nombre', 'direccion', 'saldo', 'fecha_inicio']);
+
+            foreach ($deudas as $d) {
+                $porCobrar = $d->direccion === 'por_cobrar';
+                $movs[] = [
+                    'fecha'     => substr((string) $d->fecha_inicio, 0, 10),
+                    'tipo'      => 'deuda',
+                    'etiqueta'  => $porCobrar ? 'Préstamo por cobrar' : 'Préstamo por pagar',
+                    'documento' => 'DEU-' . $d->id,
+                    'detalle'   => $d->nombre,
+                    // positivo = a nuestro favor (nos debe), negativo = en contra.
+                    'monto'     => ($porCobrar ? 1 : -1) * round((float) $d->saldo, 2),
+                    'variant'   => $porCobrar ? 'primary' : 'danger',
+                ];
+            }
+        }
+
         // Orden cronológico y saldo corriendo.
         usort($movs, fn ($a, $b) => [$a['fecha'], $a['tipo']] <=> [$b['fecha'], $b['tipo']]);
 

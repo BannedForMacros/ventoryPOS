@@ -38,6 +38,9 @@ class DeudaController extends Controller
             ->with([
                 'pagos' => fn ($q) => $q->with(['metodoPago:id,nombre', 'cuenta:id,nombre', 'user:id,name', 'turno:id'])->orderBy('fecha', 'desc')->orderBy('id', 'desc'),
                 'desembolso.cuenta',
+                // Tercero vinculado (opcional): badge en el listado + cruces.
+                'cliente:id,nombres,apellidos,razon_social,numero_documento',
+                'proveedor:id,razon_social,nombre_comercial,numero_documento',
             ])
             ->when($request->input('direccion'), fn ($q, $v) => $q->where('direccion', $v))
             ->when($request->input('tipo'), fn ($q, $v) => $q->where('tipo', $v))
@@ -46,7 +49,16 @@ class DeudaController extends Controller
                 $t = trim($texto);
                 $q->where(fn ($sub) => $sub
                     ->where('nombre', 'ilike', "%{$t}%")
-                    ->orWhere('observacion', 'ilike', "%{$t}%"));
+                    ->orWhere('observacion', 'ilike', "%{$t}%")
+                    ->orWhereHas('cliente', fn ($c) => $c
+                        ->where('nombres', 'ilike', "%{$t}%")
+                        ->orWhere('apellidos', 'ilike', "%{$t}%")
+                        ->orWhere('razon_social', 'ilike', "%{$t}%")
+                        ->orWhere('numero_documento', 'ilike', "%{$t}%"))
+                    ->orWhereHas('proveedor', fn ($p) => $p
+                        ->where('razon_social', 'ilike', "%{$t}%")
+                        ->orWhere('nombre_comercial', 'ilike', "%{$t}%")
+                        ->orWhere('numero_documento', 'ilike', "%{$t}%")));
             });
 
         // Filtro de estado: 'activas' (default), 'pagadas', 'anuladas' o 'todas'.
@@ -96,6 +108,31 @@ class DeudaController extends Controller
                 ->where('estado', 'abierto')
                 ->orderByDesc('fecha_apertura')->limit(40)
                 ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
+            // Terceros para el vínculo OPCIONAL de la deuda (selector con buscador).
+            'clientes'    => \App\Models\Cliente::where('empresa_id', $user->empresa_id)
+                ->where('activo', true)
+                ->orderBy('razon_social')->orderBy('nombres')
+                ->get(['id', 'tipo_documento', 'numero_documento', 'nombres', 'apellidos', 'razon_social']),
+            'proveedores' => \App\Models\Proveedor::deEmpresa($user->empresa_id)
+                ->activo()
+                ->orderBy('razon_social')
+                ->get(['id', 'tipo_documento', 'numero_documento', 'razon_social', 'nombre_comercial']),
+            // Cruces para deudas VINCULADAS (mismo dato que CxC/CxP):
+            //  - anticipos de dinero por cliente (cobrar deuda por cobrar del anticipo)
+            //  - ventas CxC con saldo (compensar deuda por pagar del cliente)
+            //  - compras CxP con saldo (compensar deuda por cobrar del proveedor)
+            'anticiposClientes' => \App\Models\ClienteAnticipo::deEmpresa($user->empresa_id)
+                ->activo()->where('tipo_valorizacion', 'monto')->where('saldo', '>', 0)
+                ->get(['id', 'cliente_id', 'fecha', 'saldo']),
+            'ventasCompensables' => \App\Models\Venta::deEmpresa($user->empresa_id)
+                ->conSaldoPendiente()
+                ->orderByDesc('fecha_venta')
+                ->get(['id', 'numero', 'cliente_id', 'fecha_venta', 'total', 'monto_pagado', 'saldo_pendiente']),
+            'comprasCompensables' => \App\Models\Entrada::deEmpresa($user->empresa_id)
+                ->comprometido()
+                ->whereRaw('total - monto_pagado > 0.01')
+                ->orderByDesc('fecha')
+                ->get(['id', 'correlativo', 'numero_documento', 'proveedor', 'proveedor_id', 'fecha', 'total', 'monto_pagado']),
         ]);
     }
 
@@ -285,6 +322,9 @@ class DeudaController extends Controller
             'direccion'         => ['required', Rule::in(['por_pagar', 'por_cobrar'])],
             'tipo'              => ['required', Rule::in(['bancaria', 'personal', 'trabajador', 'otro'])],
             'nombre'            => ['required', 'string', 'max:200'],
+            // Tercero vinculado OPCIONAL (a lo más uno): habilita cruces y estado de cuenta.
+            'cliente_id'        => ['nullable', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id), 'prohibits:proveedor_id'],
+            'proveedor_id'      => ['nullable', 'integer', Rule::exists('proveedores', 'id')->where('empresa_id', $user->empresa_id)],
             'monto_original'    => ['required', 'numeric', 'min:0.01'],
             'fecha_inicio'      => ['required', 'date'],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
@@ -315,6 +355,8 @@ class DeudaController extends Controller
                 'direccion'         => $data['direccion'],
                 'tipo'              => $data['tipo'],
                 'nombre'            => $data['nombre'],
+                'cliente_id'        => $data['cliente_id'] ?? null,
+                'proveedor_id'      => $data['proveedor_id'] ?? null,
                 'monto_original'    => $data['monto_original'],
                 'fecha_inicio'      => $data['fecha_inicio'],
                 'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
@@ -368,15 +410,27 @@ class DeudaController extends Controller
         abort_if($deuda->empresa_id !== $user->empresa_id, 403);
         abort_unless($deuda->estado === 'activa', 422, 'La deuda no está activa.');
 
+        // Cruces (solo deudas VINCULADAS a un tercero, tipo amortización, sin
+        // método de pago porque NO mueve caja):
+        //  - cliente_anticipo_id: cobrar la deuda por cobrar del anticipo del cliente.
+        //  - compensar_venta_id:  compensar deuda por pagar con una venta CxC del cliente.
+        //  - compensar_entrada_id: compensar deuda por cobrar con una compra CxP del proveedor.
+        $esCruce = $request->filled('cliente_anticipo_id')
+            || $request->filled('compensar_venta_id')
+            || $request->filled('compensar_entrada_id');
+
         $rules = [
             'tipo'           => ['required', Rule::in(['amortizacion', 'incremento'])],
             'fecha'          => ['required', 'date'],
             'monto'          => ['required', 'numeric', 'min:0.01'],
-            'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'metodo_pago_id' => [$esCruce ? 'nullable' : 'required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'observacion'    => ['nullable', 'string', 'max:500'],
             // "Afecta caja a:" — turno cuya caja mueve el efectivo de esta cuota.
             'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
+            'cliente_anticipo_id'  => ['nullable', 'integer', 'prohibits:compensar_venta_id,compensar_entrada_id', Rule::exists('cliente_anticipos', 'id')->where('empresa_id', $user->empresa_id)],
+            'compensar_venta_id'   => ['nullable', 'integer', 'prohibits:compensar_entrada_id', Rule::exists('ventas', 'id')->where('empresa_id', $user->empresa_id)],
+            'compensar_entrada_id' => ['nullable', 'integer', Rule::exists('entradas', 'id')->where('empresa_id', $user->empresa_id)],
         ];
 
         if ($request->input('tipo') === 'amortizacion') {
@@ -384,6 +438,12 @@ class DeudaController extends Controller
         }
 
         $data = $request->validate($rules);
+
+        if ($esCruce) {
+            abort_unless($data['tipo'] === 'amortizacion', 422, 'Los cruces solo aplican a amortizaciones.');
+            return $this->registrarCruce($deuda, $data, $user);
+        }
+
         $data['turno_id'] = AfectaCaja::resolverTurno($user, 'deuda', $data['turno_id'] ?? null);
 
         DB::transaction(function () use ($deuda, $user, $data) {
@@ -421,6 +481,117 @@ class DeudaController extends Controller
     }
 
     /**
+     * Amortiza la deuda CRUZANDO con otro módulo (sin mover caja):
+     * anticipo del cliente, venta CxC o compra CxP del tercero vinculado.
+     */
+    private function registrarCruce(Deuda $deuda, array $data, \App\Models\User $user)
+    {
+        $monto = (float) $data['monto'];
+        $comp  = app(\App\Services\CompensacionCxcCxpService::class);
+
+        // ── Cobrar del ANTICIPO del cliente vinculado (deuda por cobrar) ─────
+        if (!empty($data['cliente_anticipo_id'])) {
+            abort_unless($deuda->direccion === Deuda::DIRECCION_POR_COBRAR, 422,
+                'Solo una deuda POR COBRAR se cobra con el anticipo del cliente.');
+            abort_unless($deuda->cliente_id, 422, 'La deuda no está vinculada a un cliente.');
+
+            DB::transaction(function () use ($deuda, $data, $user, $monto) {
+                $anticipo = \App\Models\ClienteAnticipo::where('id', $data['cliente_anticipo_id'])
+                    ->where('empresa_id', $user->empresa_id)
+                    ->where('cliente_id', $deuda->cliente_id)
+                    ->where('tipo_valorizacion', 'monto')
+                    ->where('estado', 'activo')
+                    ->lockForUpdate()
+                    ->first();
+
+                abort_unless($anticipo !== null, 422, 'El anticipo no está disponible para el cliente vinculado.');
+                if ($monto > (float) $anticipo->saldo + 0.009) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'monto' => 'El anticipo solo tiene S/ ' . number_format((float) $anticipo->saldo, 2) . ' de saldo.',
+                    ]);
+                }
+
+                $pago = $deuda->pagos()->create([
+                    'user_id'             => $user->id,
+                    'fecha'               => $data['fecha'],
+                    'tipo'                => 'amortizacion',
+                    'monto'               => $monto,
+                    'observacion'         => trim("Cobrado del anticipo #{$anticipo->id}. " . ($data['observacion'] ?? '')) ?: null,
+                    'cliente_anticipo_id' => $anticipo->id,
+                ]);
+
+                $anticipo->aplicaciones()->create([
+                    'empresa_id'    => $deuda->empresa_id,
+                    'numero'        => \App\Models\ClienteAnticipoAplicacion::generarNumero($deuda->empresa_id),
+                    'deuda_pago_id' => $pago->id,
+                    'user_id'       => $user->id,
+                    'fecha'         => $data['fecha'],
+                    'monto'         => $monto,
+                    'observacion'   => "Cobro de deuda «{$deuda->nombre}»",
+                ]);
+                $nuevoSaldo = round((float) $anticipo->saldo - $monto, 2);
+                $anticipo->update([
+                    'saldo'  => max(0, $nuevoSaldo),
+                    'estado' => $nuevoSaldo <= 0.01 ? 'aplicado' : 'activo',
+                ]);
+
+                // SIN tesorería: el dinero del anticipo ya entró en su día.
+                $deuda->recalcularSaldo();
+
+                AuditoriaService::log('deuda.cobrada_con_anticipo', $deuda, [
+                    'anticipo_id'    => $anticipo->id,
+                    'monto'          => $monto,
+                    'saldo_deuda'    => (float) $deuda->saldo,
+                    'saldo_anticipo' => (float) $anticipo->saldo,
+                ], $user);
+            });
+
+            return back()->with('success', 'Cuota cobrada del anticipo del cliente (sin mover caja).');
+        }
+
+        // ── Compensar con una VENTA CxC del cliente vinculado (deuda por pagar) ─
+        if (!empty($data['compensar_venta_id'])) {
+            abort_unless($deuda->direccion === Deuda::DIRECCION_POR_PAGAR, 422,
+                'Solo una deuda POR PAGAR se compensa con lo que el cliente nos debe (CxC).');
+            abort_unless($deuda->cliente_id, 422, 'La deuda no está vinculada a un cliente.');
+
+            $venta = \App\Models\Venta::findOrFail($data['compensar_venta_id']);
+            abort_unless($venta->cliente_id === $deuda->cliente_id, 422, 'La venta no es del cliente vinculado a esta deuda.');
+            abort_unless($venta->es_credito && $venta->estado === 'completada', 422, 'La venta no es una venta a crédito activa.');
+            abort_if((float) $venta->saldo_pendiente <= 0, 422, 'La venta ya está saldada.');
+            if ($monto > (float) $venta->saldo_pendiente + 0.009) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'monto' => 'La venta solo tiene S/ ' . number_format((float) $venta->saldo_pendiente, 2) . ' de saldo.',
+                ]);
+            }
+
+            DB::transaction(fn () => $comp->compensarDeudaConVenta($deuda, $venta, $monto, $data['fecha'], $data['observacion'] ?? null, $user));
+
+            return back()->with('success', 'Deuda compensada contra la venta al crédito (sin mover caja).');
+        }
+
+        // ── Compensar con una COMPRA CxP del proveedor vinculado (deuda por cobrar) ─
+        abort_unless($deuda->direccion === Deuda::DIRECCION_POR_COBRAR, 422,
+            'Solo una deuda POR COBRAR se compensa con lo que le debemos al proveedor (CxP).');
+        abort_unless($deuda->proveedor_id, 422, 'La deuda no está vinculada a un proveedor.');
+
+        $entrada = \App\Models\Entrada::findOrFail($data['compensar_entrada_id']);
+        abort_unless($entrada->proveedor_id === $deuda->proveedor_id, 422, 'La compra no es del proveedor vinculado a esta deuda.');
+        abort_unless(in_array($entrada->estado, [\App\Models\Entrada::ESTADO_CONFIRMADO, \App\Models\Entrada::ESTADO_EN_TRANSITO], true),
+            422, 'Solo se puede compensar contra compras confirmadas o en tránsito.');
+        abort_if($entrada->saldoPendiente() <= 0, 422, 'La compra ya está pagada.');
+        if ($monto > $entrada->saldoPendiente() + 0.009) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'monto' => 'La compra solo tiene S/ ' . number_format($entrada->saldoPendiente(), 2) . ' de saldo.',
+            ]);
+        }
+
+        DB::transaction(fn () => $comp->compensarDeudaConEntrada($deuda, $entrada, $monto, $data['fecha'], $data['observacion'] ?? null, $user));
+
+        return back()->with('success', 'Deuda compensada contra la compra (sin mover caja).');
+    }
+
+    /**
      * Edita un movimiento ya registrado de una deuda (fecha, tipo, monto,
      * método/cuenta u observación). Revierte el asiento anterior en tesorería,
      * actualiza el pago, recalcula el saldo y registra el nuevo asiento.
@@ -431,6 +602,10 @@ class DeudaController extends Controller
         $deuda = $pago->deuda;
         abort_if(!$deuda || $deuda->empresa_id !== $user->empresa_id, 403);
         abort_unless($deuda->estado === 'activa', 422, 'La deuda no está activa.');
+        // Un movimiento cruzado con otro módulo (anticipo/CxC/CxP) no se edita:
+        // desalinearía a la contraparte. Se anula (revierte ambos lados) y se rehace.
+        abort_if($pago->esCruce(), 422,
+            'Este movimiento cruza con otro módulo (anticipo/venta/compra): no se edita. Anúlalo — revierte ambos lados — y regístralo de nuevo.');
 
         // Límite para amortizaciones: no puede hacer que el saldo quede negativo.
         $incrementosOtros = (float) $deuda->pagos()->where('tipo', 'incremento')->where('id', '!=', $pago->id)->sum('monto');
@@ -543,6 +718,8 @@ class DeudaController extends Controller
         $data = $request->validate([
             'tipo'              => ['required', Rule::in(['bancaria', 'personal', 'trabajador', 'otro'])],
             'nombre'            => ['required', 'string', 'max:200'],
+            'cliente_id'        => ['nullable', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id), 'prohibits:proveedor_id'],
+            'proveedor_id'      => ['nullable', 'integer', Rule::exists('proveedores', 'id')->where('empresa_id', $user->empresa_id)],
             'monto_original'    => ['required', 'numeric', 'min:0.01', 'gte:' . max(0.01, $amortizadoNeto)],
             'fecha_inicio'      => ['required', 'date'],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
@@ -681,6 +858,41 @@ class DeudaController extends Controller
         ]);
 
         DB::transaction(function () use ($pago, $deuda, $user, $data) {
+            // Cruce con otro módulo: revertir también a la contraparte
+            // (anticipo del cliente / abono de venta / pago de compra). SIN
+            // tesorería: estos movimientos nunca movieron caja.
+            if ($pago->esCruce()) {
+                $comp = app(\App\Services\CompensacionCxcCxpService::class);
+
+                if ($pago->cliente_anticipo_id) {
+                    $anticipo = \App\Models\ClienteAnticipo::whereKey($pago->cliente_anticipo_id)
+                        ->lockForUpdate()->first();
+                    if ($anticipo) {
+                        $anticipo->aplicaciones()->where('deuda_pago_id', $pago->id)->delete();
+                        $anticipo->update([
+                            'saldo'  => round((float) $anticipo->saldo + (float) $pago->monto, 2),
+                            'estado' => 'activo',
+                        ]);
+                    }
+                } elseif ($pago->compensacion_venta_id) {
+                    $comp->revertirLadoVenta($pago->compensacion_grupo_id, $user);
+                } elseif ($pago->compensacion_entrada_id) {
+                    $comp->revertirLadoEntrada($pago->compensacion_grupo_id, $user);
+                }
+
+                $pago->delete();
+                $deuda->recalcularSaldo();
+
+                AuditoriaService::log('deuda.cruce_anulado', $deuda, [
+                    'motivo'  => $data['motivo'],
+                    'pago_id' => $pago->id,
+                    'monto'   => (float) $pago->monto,
+                    'saldo'   => (float) $deuda->saldo,
+                ], $user);
+
+                return;
+            }
+
             // Si es una compensación, eliminamos el par de movimientos.
             if ($pago->tipo === 'compensacion' && $pago->compensacion_grupo_id) {
                 $grupoId = $pago->compensacion_grupo_id;
@@ -747,6 +959,8 @@ class DeudaController extends Controller
                 'cuenta'       => $p->cuenta ? ['nombre' => $p->cuenta->nombre] : null,
                 'user'         => $p->user ? ['name' => $p->user->name] : null,
                 'compensacion_deuda' => $p->compensacionDeuda ? ['id' => $p->compensacionDeuda->id, 'nombre' => $p->compensacionDeuda->nombre] : null,
+                // Cruce con otro módulo: no editable (solo anular, revierte ambos lados).
+                'es_cruce'     => $p->esCruce(),
                 'eliminado'    => ! is_null($p->deleted_at),
                 'deleted_at'   => $p->deleted_at?->format('d/m/Y H:i'),
             ]);

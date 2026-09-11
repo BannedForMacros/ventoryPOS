@@ -747,10 +747,10 @@ class EntradaController extends Controller
                     $pago = $entrada->pagosParciales()->whereKey($pagoId)->first();
                     if (!$pago) continue;
                     if ($pago->esCompensacion()) {
-                        // Compensación CxC↔CxP: no hubo dinero; revertir también
-                        // el abono hermano de la venta para no dejarla desparejada.
+                        // Compensación: no hubo dinero; revertir también a la
+                        // contraparte (abono de venta o movimiento de deuda).
                         app(\App\Services\CompensacionCxcCxpService::class)
-                            ->revertirLadoVenta($pago->compensacion_grupo_id, $user);
+                            ->revertirContraparteDesdeEntrada($pago->compensacion_grupo_id, $user);
                     } elseif ($pago->proveedor_adelanto_id) {
                         $this->adelantos->revertirAplicacion($pago);
                     } else {

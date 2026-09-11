@@ -534,10 +534,10 @@ class CuentasPorCobrarController extends Controller
         DB::transaction(function () use ($abono, $venta, $user, $data) {
             if ($abono->esCompensacion()) {
                 // Compensación: no hubo dinero (nada que revertir en tesorería),
-                // pero el pago hermano de la COMPRA también debe revertirse para
-                // que los dos lados nunca queden desparejados.
+                // pero la contraparte (pago de COMPRA o movimiento de DEUDA)
+                // también debe revertirse para no quedar desparejada.
                 app(\App\Services\CompensacionCxcCxpService::class)
-                    ->revertirLadoEntrada($abono->compensacion_grupo_id, $user);
+                    ->revertirContraparteDesdeVenta($abono->compensacion_grupo_id, $user);
             } elseif ($abono->esConAnticipo()) {
                 // Cobro con anticipo: sin tesorería que revertir; el anticipo
                 // recupera su saldo y se borra la aplicación enlazada.

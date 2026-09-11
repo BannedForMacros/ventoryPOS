@@ -191,6 +191,34 @@ class EstadoCuentaService
                 $terceros[$clave]['nuestro_adelanto'] = round((float) $r->total, 2);
             });
 
+        // ── 5. Deudas/préstamos VINCULADOS a un tercero ──────────────────────
+        // Solo las deudas con cliente_id/proveedor_id entran aquí (el vínculo
+        // es opcional). por_cobrar → nos debe; por_pagar → le debemos.
+        DB::table('deudas')
+            ->where('empresa_id', $empresaId)
+            ->where('estado', 'activa')
+            ->where('saldo', '>', 0)
+            ->where(fn ($q) => $q->whereNotNull('cliente_id')->orWhereNotNull('proveedor_id'))
+            ->get(['id', 'direccion', 'saldo', 'fecha_inicio', 'cliente_id', 'proveedor_id'])
+            ->each(function ($d) use (&$terceros, $claveDeCliente, $claveDeProveedor, $fila) {
+                $clave = $d->cliente_id
+                    ? ($claveDeCliente[$d->cliente_id] ?? null)
+                    : ($claveDeProveedor[$d->proveedor_id] ?? null);
+                if (!$clave) {
+                    return;
+                }
+                $fila($clave);
+                $saldo = round((float) $d->saldo, 2);
+                if ($d->direccion === 'por_cobrar') {
+                    $terceros[$clave]['nos_debe']        += $saldo;
+                    $terceros[$clave]['docs_por_cobrar'] += 1;
+                } else {
+                    $terceros[$clave]['le_debemos']     += $saldo;
+                    $terceros[$clave]['docs_por_pagar'] += 1;
+                }
+                $terceros[$clave]['mas_antiguo'] = self::menorFecha($terceros[$clave]['mas_antiguo'], $d->fecha_inicio);
+            });
+
         // ── Neto y roles ─────────────────────────────────────────────────────
         return collect($terceros)
             ->map(function (array $t) {

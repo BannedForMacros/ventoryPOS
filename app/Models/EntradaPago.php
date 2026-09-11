@@ -12,7 +12,7 @@ class EntradaPago extends Model
         'proveedor_adelanto_id', 'fecha', 'monto', 'referencia', 'observacion',
         'moneda', 'tipo_cambio', 'monto_moneda',
         // Compensación CxC↔CxP: pago sin dinero, cancelado contra una venta al crédito.
-        'compensacion_grupo_id', 'compensacion_venta_id',
+        'compensacion_grupo_id', 'compensacion_venta_id', 'compensacion_deuda_id',
     ];
 
     protected function casts(): array

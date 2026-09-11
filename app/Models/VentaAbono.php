@@ -12,7 +12,7 @@ class VentaAbono extends Model
         'fecha', 'monto', 'referencia', 'observacion',
         'moneda', 'tipo_cambio', 'monto_moneda',
         // Compensación CxC↔CxP: abono sin dinero, cancelado contra una compra.
-        'compensacion_grupo_id', 'compensacion_entrada_id',
+        'compensacion_grupo_id', 'compensacion_entrada_id', 'compensacion_deuda_id',
         // Abono cobrado consumiendo un anticipo del cliente (sin dinero nuevo).
         'cliente_anticipo_id',
     ];

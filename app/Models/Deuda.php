@@ -20,6 +20,10 @@ class Deuda extends Model
         'moneda', 'tipo_cambio', 'monto_moneda',
         // "Afecta caja": turno cuya caja recibió/entregó el desembolso inicial.
         'turno_id',
+        // Tercero vinculado (OPCIONAL): habilita los cruces con anticipos,
+        // CxC y CxP, y suma la deuda al Estado de Cuenta del tercero. Las
+        // deudas sin vínculo siguen funcionando igual con su nombre libre.
+        'cliente_id', 'proveedor_id',
     ];
 
     protected function casts(): array
@@ -37,6 +41,9 @@ class Deuda extends Model
     public function empresa(): BelongsTo { return $this->belongsTo(Empresa::class); }
     public function user(): BelongsTo    { return $this->belongsTo(User::class); }
     public function pagos(): HasMany     { return $this->hasMany(DeudaPago::class); }
+    /** Tercero vinculado (opcional): habilita los cruces y el estado de cuenta. */
+    public function cliente(): BelongsTo   { return $this->belongsTo(Cliente::class); }
+    public function proveedor(): BelongsTo { return $this->belongsTo(Proveedor::class); }
 
     /**
      * Desembolso inicial registrado en tesorería (solo si la deuda afectó caja).

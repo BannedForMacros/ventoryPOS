@@ -34,6 +34,11 @@ interface Pago {
     turno_id?: number | null;
     user?: { name: string } | null;
     compensacion_deuda?: { id: number; nombre: string } | null;
+    // Cruces con otros módulos (no se editan, solo se anulan — revierte ambos lados).
+    cliente_anticipo_id?: number | null;
+    compensacion_venta_id?: number | null;
+    compensacion_entrada_id?: number | null;
+    es_cruce?: boolean;
     eliminado?: boolean;
     deleted_at?: string | null;
 }
@@ -51,7 +56,18 @@ interface Deuda extends Record<string, unknown> {
     observacion: string | null;
     pagos: Pago[];
     desembolso?: { cuenta?: { nombre: string } | null } | null;
+    // Tercero vinculado (opcional): habilita los cruces con anticipos/CxC/CxP.
+    cliente_id?: number | null;
+    proveedor_id?: number | null;
+    cliente?: { id: number; nombres?: string | null; apellidos?: string | null; razon_social?: string | null; numero_documento?: string | null } | null;
+    proveedor?: { id: number; razon_social?: string | null; nombre_comercial?: string | null; numero_documento?: string | null } | null;
 }
+
+interface TerceroCliente { id: number; tipo_documento?: string | null; numero_documento: string | null; nombres: string | null; apellidos: string | null; razon_social: string | null; }
+interface TerceroProveedor { id: number; tipo_documento?: string | null; numero_documento: string | null; razon_social: string | null; nombre_comercial: string | null; }
+interface AnticipoCliente { id: number; cliente_id: number; fecha: string; saldo: string; }
+interface VentaCompensable { id: number; numero: string | null; cliente_id: number | null; total: string; monto_pagado: string; saldo_pendiente: string; }
+interface CompraCompensable { id: number; correlativo: string | null; numero_documento: string | null; proveedor: string | null; proveedor_id: number | null; total: string; monto_pagado: string; }
 
 interface Paginado<T> { data: T[]; total: number; }
 
@@ -64,6 +80,11 @@ interface Props extends PageProps {
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
     turnos: TurnoLite[];
     puede: { editar: boolean; eliminar: boolean; compensar: boolean };
+    clientes: TerceroCliente[];
+    proveedores: TerceroProveedor[];
+    anticiposClientes: AnticipoCliente[];
+    ventasCompensables: VentaCompensable[];
+    comprasCompensables: CompraCompensable[];
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -77,6 +98,8 @@ const TIPO_LABEL: Record<string, string> = {
 
 const emptyForm = () => ({
     direccion: 'por_pagar', tipo: 'bancaria', nombre: '',
+    // Tercero vinculado OPCIONAL: 'c:ID' cliente, 'p:ID' proveedor, '' ninguno.
+    tercero: '' as string,
     monto_original: '', fecha_inicio: hoy(), fecha_vencimiento: '', observacion: '',
     // Desembolso: por defecto SÍ mueve el dinero en caja al crear la deuda.
     registrar_caja: true, metodo_pago_id: '', cuenta_id: '',
@@ -84,7 +107,7 @@ const emptyForm = () => ({
     turno_afecta: '' as number | '',
 });
 
-export default function Deudas({ deudas, totales, estado, buscar, metodosPago, cuentas, turnos, puede }: Props) {
+export default function Deudas({ deudas, totales, estado, buscar, metodosPago, cuentas, turnos, puede, clientes, proveedores, anticiposClientes, ventasCompensables, comprasCompensables }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo] = useState(false);
     const [pagando, setPagando]       = useState<Deuda | null>(null);
@@ -97,7 +120,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     const [motivoAnular, setMotivoAnular] = useState('');
     // Edición / eliminación / reactivación (según permisos).
     const [editando, setEditando]         = useState<Deuda | null>(null);
-    const [formEditar, setFormEditar]     = useState({ tipo: 'bancaria', nombre: '', monto_original: '', fecha_inicio: hoy(), fecha_vencimiento: '', observacion: '' });
+    const [formEditar, setFormEditar]     = useState({ tipo: 'bancaria', nombre: '', tercero: '' as string, monto_original: '', fecha_inicio: hoy(), fecha_vencimiento: '', observacion: '' });
     const [eliminando, setEliminando]     = useState<Deuda | null>(null);
     const [reactivando, setReactivando]   = useState<Deuda | null>(null);
     const [eliminandoPago, setEliminandoPago] = useState<Pago | null>(null);
@@ -130,12 +153,73 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     });
     const [maximoCompensar, setMaximoCompensar] = useState<number | null>(null);
 
+    // ── Tercero vinculado (opcional) ─────────────────────────────────────
+    // Un solo selector con clientes Y proveedores: 'c:ID' / 'p:ID'.
+    const nombreDeCliente = (c: TerceroCliente) =>
+        c.razon_social || [c.nombres, c.apellidos].filter(Boolean).join(' ') || '—';
+    const nombreDeProveedor = (p: TerceroProveedor) =>
+        p.razon_social || p.nombre_comercial || '—';
+    const terceroOptions = [
+        ...clientes.map(c => ({
+            value: `c:${c.id}`,
+            label: `${nombreDeCliente(c)}${c.numero_documento ? ` · ${c.numero_documento}` : ''} — Cliente`,
+        })),
+        ...proveedores.map(p => ({
+            value: `p:${p.id}`,
+            label: `${nombreDeProveedor(p)}${p.numero_documento ? ` · ${p.numero_documento}` : ''} — Proveedor`,
+        })),
+    ];
+    const terceroPayload = (tercero: string) => ({
+        cliente_id:   tercero.startsWith('c:') ? Number(tercero.slice(2)) : null,
+        proveedor_id: tercero.startsWith('p:') ? Number(tercero.slice(2)) : null,
+    });
+    const nombreTerceroDeuda = (d: Deuda): string | null => d.cliente
+        ? (d.cliente.razon_social || [d.cliente.nombres, d.cliente.apellidos].filter(Boolean).join(' '))
+        : d.proveedor
+        ? (d.proveedor.razon_social || d.proveedor.nombre_comercial || null)
+        : null;
+
+    // ── Cruces del movimiento (deuda vinculada, amortización, sin caja) ──
+    // '' = dinero normal; 'anticipo' | 'venta' | 'entrada' = cruce.
+    const [cruceModo, setCruceModo]   = useState<'' | 'anticipo' | 'venta' | 'entrada'>('');
+    const [cruceRefId, setCruceRefId] = useState<number | ''>('');
+
+    const anticiposDeuda = pagando?.cliente_id
+        ? anticiposClientes.filter(a => a.cliente_id === pagando.cliente_id && Number(a.saldo) > 0)
+        : [];
+    const ventasDeuda = pagando?.cliente_id
+        ? ventasCompensables.filter(v => v.cliente_id === pagando.cliente_id)
+        : [];
+    const comprasDeuda = pagando?.proveedor_id
+        ? comprasCompensables.filter(c => c.proveedor_id === pagando.proveedor_id)
+        : [];
+    // Qué cruces aplican según la dirección de la deuda:
+    //  por_cobrar → cobrar del anticipo del cliente, o compensar con compra CxP.
+    //  por_pagar  → compensar con venta CxC del cliente.
+    const puedeAnticipo = pagando?.direccion === 'por_cobrar' && anticiposDeuda.length > 0;
+    const puedeVenta    = pagando?.direccion === 'por_pagar' && ventasDeuda.length > 0;
+    const puedeEntrada  = pagando?.direccion === 'por_cobrar' && comprasDeuda.length > 0;
+    const hayCruces     = puedeAnticipo || puedeVenta || puedeEntrada;
+
+    const saldoCruceRef = (): number => {
+        if (cruceModo === 'anticipo') return Number(anticiposDeuda.find(a => a.id === cruceRefId)?.saldo ?? 0);
+        if (cruceModo === 'venta')    return Number(ventasDeuda.find(v => v.id === cruceRefId)?.saldo_pendiente ?? 0);
+        if (cruceModo === 'entrada') {
+            const c = comprasDeuda.find(x => x.id === cruceRefId);
+            return c ? Math.max(0, Number(c.total) - Number(c.monto_pagado)) : 0;
+        }
+        return 0;
+    };
+    const topeCruce = pagando && cruceModo && cruceRefId
+        ? Math.round(Math.min(Number(pagando.saldo), saldoCruceRef()) * 100) / 100
+        : null;
 
     function abrirEditar(d: Deuda) {
         setErrors({});
         setFormEditar({
             tipo:              d.tipo,
             nombre:            d.nombre,
+            tercero:           d.cliente_id ? `c:${d.cliente_id}` : d.proveedor_id ? `p:${d.proveedor_id}` : '',
             monto_original:    String(Number(d.monto_original)),
             fecha_inicio:      d.fecha_inicio.slice(0, 10),
             fecha_vencimiento: d.fecha_vencimiento ? d.fecha_vencimiento.slice(0, 10) : '',
@@ -149,6 +233,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         setSaving(true);
         router.put(route('finanzas.deudas.update', editando.id), {
             ...formEditar,
+            ...terceroPayload(formEditar.tercero),
             fecha_vencimiento: formEditar.fecha_vencimiento || null,
             observacion:       formEditar.observacion || null,
         } as any, {
@@ -260,6 +345,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         setSaving(true);
         router.post(route('finanzas.deudas.store'), {
             ...form,
+            ...terceroPayload(form.tercero),
             fecha_vencimiento: form.fecha_vencimiento || null,
             metodo_pago_id: form.registrar_caja ? (form.metodo_pago_id || null) : null,
             cuenta_id:      form.registrar_caja ? (form.cuenta_id || null) : null,
@@ -274,6 +360,22 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     function submitPago() {
         if (!pagando) return;
         setSaving(true);
+        if (cruceModo && cruceRefId) {
+            // Cruce con otro módulo: sin método/cuenta/caja — no mueve dinero.
+            router.post(route('finanzas.deudas.pago', pagando.id), {
+                tipo:                 'amortizacion',
+                fecha:                formPago.fecha,
+                monto:                formPago.monto,
+                observacion:          formPago.observacion || null,
+                cliente_anticipo_id:  cruceModo === 'anticipo' ? cruceRefId : null,
+                compensar_venta_id:   cruceModo === 'venta' ? cruceRefId : null,
+                compensar_entrada_id: cruceModo === 'entrada' ? cruceRefId : null,
+            } as any, {
+                onSuccess: () => { setPagando(null); setSaving(false); },
+                onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+            });
+            return;
+        }
         router.post(route('finanzas.deudas.pago', pagando.id), {
             ...formPago,
             metodo_pago_id: formPago.metodo_pago_id || null,
@@ -286,7 +388,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
     }
 
     function abrirEditarPago(p: Pago) {
-        if (p.tipo === 'compensacion') return;
+        if (p.tipo === 'compensacion' || p.es_cruce || p.cliente_anticipo_id || p.compensacion_venta_id || p.compensacion_entrada_id) return;
         setErrors({});
         setFormEditarPago({
             tipo: p.tipo,
@@ -335,7 +437,19 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 ? <Badge variant="danger">Debemos</Badge>
                 : <Badge variant="success">Nos deben</Badge>,
         },
-        { key: 'nombre', label: 'Nombre', sortable: true, render: (d) => <span className="font-medium">{d.nombre}</span> },
+        {
+            key: 'nombre', label: 'Nombre', sortable: true,
+            render: (d) => (
+                <div className="leading-tight">
+                    <span className="font-medium">{d.nombre}</span>
+                    {nombreTerceroDeuda(d) && (
+                        <div className="text-[11px]" style={{ color: 'var(--color-primary)' }}>
+                            {d.cliente ? 'Cliente' : 'Proveedor'}: {nombreTerceroDeuda(d)}
+                        </div>
+                    )}
+                </div>
+            ),
+        },
         { key: 'tipo', label: 'Tipo', render: (d) => <span className="text-sm">{TIPO_LABEL[d.tipo] ?? d.tipo}</span> },
         {
             // Método(s) de pago usados en los movimientos de esta deuda/préstamo.
@@ -374,7 +488,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                     </button>
                     {d.estado === 'activa' && (
                         <>
-                            <button onClick={() => { setErrors({}); setFormPago({ tipo: 'amortizacion', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', observacion: '', turno_afecta: '' }); setPagando(d); }}
+                            <button onClick={() => { setErrors({}); setFormPago({ tipo: 'amortizacion', fecha: hoy(), monto: '', metodo_pago_id: '', cuenta_id: '', observacion: '', turno_afecta: '' }); setCruceModo(''); setCruceRefId(''); setPagando(d); }}
                                 className="p-1.5 rounded-lg hover:bg-black/5" title="Registrar movimiento"
                                 style={{ color: 'var(--color-primary)' }}>
                                 <Coins size={15} />
@@ -508,6 +622,25 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                         onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
                         error={errors.nombre}
                     />
+                    {/* Vínculo OPCIONAL con un tercero registrado: habilita cruces
+                        (anticipos, CxC, CxP) y el estado de cuenta. Si no se elige,
+                        la deuda funciona igual que siempre con el nombre libre. */}
+                    <SearchableSelect
+                        label="¿Es un cliente o proveedor registrado? (opcional)"
+                        placeholder="— Sin vincular (nombre libre) —"
+                        searchPlaceholder="Buscar por nombre o documento..."
+                        value={form.tercero}
+                        onChange={v => setForm(f => {
+                            const val = String(v);
+                            // Autollenar el nombre si estaba vacío (comodidad).
+                            const opt = terceroOptions.find(o => o.value === val);
+                            const nombreAuto = opt ? opt.label.replace(/ — (Cliente|Proveedor)$/, '').replace(/ · [^—]*$/, '').trim() : '';
+                            return { ...f, tercero: val, nombre: f.nombre || nombreAuto };
+                        })}
+                        options={terceroOptions}
+                        error={errors.cliente_id ?? errors.proveedor_id}
+                        hint="Vincularla permite cruzarla con sus anticipos, ventas al crédito o compras, y verla en su Estado de Cuenta."
+                    />
                     <div className="grid grid-cols-2 gap-3">
                         <Input label="Monto" required type="number" min="0.01" step="0.01" value={form.monto_original}
                             onChange={e => setForm(f => ({ ...f, monto_original: e.target.value }))} error={errors.monto_original} />
@@ -621,7 +754,13 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setPagando(null)}>Cancelar</Button>
-                        <Button onClick={submitPago} disabled={saving}>{saving ? 'Guardando...' : 'Registrar'}</Button>
+                        <Button onClick={submitPago}
+                            disabled={saving
+                                || (cruceModo !== '' && (!cruceRefId || !formPago.monto
+                                    || Number(formPago.monto) <= 0
+                                    || (topeCruce !== null && Number(formPago.monto) > topeCruce + 0.009)))}>
+                            {saving ? 'Guardando...' : cruceModo !== '' ? 'Registrar (sin mover caja)' : 'Registrar'}
+                        </Button>
                     </>
                 }
             >
@@ -636,41 +775,126 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                 { value: 'incremento',   label: 'Incremento (sube el saldo)' },
                             ]}
                             value={formPago.tipo}
-                            onChange={v => setFormPago(f => ({ ...f, tipo: String(v) }))}
+                            onChange={v => { setFormPago(f => ({ ...f, tipo: String(v) })); if (String(v) !== 'amortizacion') { setCruceModo(''); setCruceRefId(''); } }}
                         />
-                        <div className="grid grid-cols-2 gap-3">
-                            <Input label="Fecha" required type="date" value={formPago.fecha}
-                                onChange={e => setFormPago(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
-                            <Input label="Monto" required type="number" min="0.01" step="0.01" value={formPago.monto}
-                                onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
-                        </div>
-                        <PagoForm
-                            value={{
-                                metodo_pago_id: formPago.metodo_pago_id,
-                                cuenta_id: formPago.cuenta_id,
-                                observacion: formPago.observacion,
-                            }}
-                            onChange={v => setFormPago(f => ({
-                                ...f,
-                                metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
-                                cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
-                                observacion: v.observacion ?? '',
-                            }))}
-                            metodosPago={metodosPago}
-                            cuentas={cuentas}
-                            errors={errors}
-                            required={true}
-                            showReferencia={false}
-                            labels={{ observacion: 'Observación' }}
-                        />
-                        <AfectaCajaSelect
-                            modulo="deuda"
-                            turnos={turnos}
-                            value={formPago.turno_afecta}
-                            onChange={v => setFormPago(f => ({ ...f, turno_afecta: v }))}
-                            error={errors.turno_id}
-                            hint='La cuota en efectivo entra/sale de la caja de este turno. "Sin turno" solo la registra.'
-                        />
+                        {/* Cruces (solo deuda VINCULADA + amortización): cobrar del
+                            anticipo del cliente o compensar con CxC/CxP. Sin caja. */}
+                        {formPago.tipo === 'amortizacion' && hayCruces && (
+                            <Select label="¿Cómo se paga/cobra esta cuota?" required
+                                options={[
+                                    { value: '', label: 'Con dinero (método de pago)' },
+                                    ...(puedeAnticipo ? [{ value: 'anticipo', label: 'Consumiendo el anticipo del cliente — sin mover caja' }] : []),
+                                    ...(puedeVenta ? [{ value: 'venta', label: 'Compensando con una venta al crédito (CxC) — sin mover caja' }] : []),
+                                    ...(puedeEntrada ? [{ value: 'entrada', label: 'Compensando con una compra (CxP) — sin mover caja' }] : []),
+                                ]}
+                                value={cruceModo}
+                                onChange={v => { setCruceModo(v as any); setCruceRefId(''); setErrors({}); }}
+                            />
+                        )}
+
+                        {cruceModo !== '' ? (
+                            <div className="space-y-3">
+                                {cruceModo === 'anticipo' && (
+                                    <SearchableSelect label="Anticipo a consumir" required
+                                        placeholder="— Seleccionar anticipo —"
+                                        options={anticiposDeuda.map(a => ({ value: a.id, label: `Anticipo #${a.id} — saldo ${money(a.saldo)}` }))}
+                                        value={cruceRefId}
+                                        onChange={v => {
+                                            const id = v === '' ? '' : Number(v);
+                                            setCruceRefId(id);
+                                            const a = anticiposDeuda.find(x => x.id === id);
+                                            if (a && pagando) setFormPago(f => ({ ...f, monto: Math.min(Number(pagando.saldo), Number(a.saldo)).toFixed(2) }));
+                                        }}
+                                        error={errors.cliente_anticipo_id}
+                                    />
+                                )}
+                                {cruceModo === 'venta' && (
+                                    <SearchableSelect label="Venta al crédito contra la que se compensa" required
+                                        placeholder="— Seleccionar venta con saldo —"
+                                        searchPlaceholder="Buscar por número..."
+                                        options={ventasDeuda.map(v => ({ value: v.id, label: `${v.numero ?? `#${v.id}`} — saldo ${money(v.saldo_pendiente)}` }))}
+                                        value={cruceRefId}
+                                        onChange={v => {
+                                            const id = v === '' ? '' : Number(v);
+                                            setCruceRefId(id);
+                                            const vv = ventasDeuda.find(x => x.id === id);
+                                            if (vv && pagando) setFormPago(f => ({ ...f, monto: Math.min(Number(pagando.saldo), Number(vv.saldo_pendiente)).toFixed(2) }));
+                                        }}
+                                        error={errors.compensar_venta_id}
+                                    />
+                                )}
+                                {cruceModo === 'entrada' && (
+                                    <SearchableSelect label="Compra contra la que se compensa" required
+                                        placeholder="— Seleccionar compra con saldo —"
+                                        searchPlaceholder="Buscar por correlativo o documento..."
+                                        options={comprasDeuda.map(c => ({
+                                            value: c.id,
+                                            label: `${c.correlativo ?? c.numero_documento ?? `#${c.id}`} — saldo ${money(Math.max(0, Number(c.total) - Number(c.monto_pagado)))}`,
+                                        }))}
+                                        value={cruceRefId}
+                                        onChange={v => {
+                                            const id = v === '' ? '' : Number(v);
+                                            setCruceRefId(id);
+                                            const c = comprasDeuda.find(x => x.id === id);
+                                            if (c && pagando) setFormPago(f => ({ ...f, monto: Math.min(Number(pagando.saldo), Math.max(0, Number(c.total) - Number(c.monto_pagado))).toFixed(2) }));
+                                        }}
+                                        error={errors.compensar_entrada_id}
+                                    />
+                                )}
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Input label="Fecha" required type="date" value={formPago.fecha}
+                                        onChange={e => setFormPago(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                                    <Input label="Monto" required type="number" min="0.01" step="0.01"
+                                        max={topeCruce ?? Number(pagando.saldo)}
+                                        value={formPago.monto}
+                                        onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                                </div>
+                                {topeCruce !== null && (
+                                    <Callout variant="info" title={`Máximo: ${money(topeCruce)} (el menor de los dos saldos)`}>
+                                        Bajan los dos saldos a la vez, <strong>sin ningún movimiento de caja</strong>. Si queda saldo en la deuda o en la contraparte, sigue vivo y visible en su módulo.
+                                    </Callout>
+                                )}
+                                <Input label="Observación" value={formPago.observacion}
+                                    onChange={e => setFormPago(f => ({ ...f, observacion: e.target.value }))} />
+                            </div>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Input label="Fecha" required type="date" value={formPago.fecha}
+                                        onChange={e => setFormPago(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
+                                    <Input label="Monto" required type="number" min="0.01" step="0.01" value={formPago.monto}
+                                        onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                                </div>
+                                <PagoForm
+                                    value={{
+                                        metodo_pago_id: formPago.metodo_pago_id,
+                                        cuenta_id: formPago.cuenta_id,
+                                        observacion: formPago.observacion,
+                                    }}
+                                    onChange={v => setFormPago(f => ({
+                                        ...f,
+                                        metodo_pago_id: v.metodo_pago_id ? String(v.metodo_pago_id) : '',
+                                        cuenta_id: v.cuenta_id ? String(v.cuenta_id) : '',
+                                        observacion: v.observacion ?? '',
+                                    }))}
+                                    metodosPago={metodosPago}
+                                    cuentas={cuentas}
+                                    errors={errors}
+                                    required={true}
+                                    showReferencia={false}
+                                    labels={{ observacion: 'Observación' }}
+                                />
+                                <AfectaCajaSelect
+                                    modulo="deuda"
+                                    turnos={turnos}
+                                    value={formPago.turno_afecta}
+                                    onChange={v => setFormPago(f => ({ ...f, turno_afecta: v }))}
+                                    error={errors.turno_id}
+                                    hint='La cuota en efectivo entra/sale de la caja de este turno. "Sin turno" solo la registra.'
+                                />
+                            </>
+                        )}
                     </div>
                 )}
             </Modal>
@@ -814,7 +1038,8 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                             </span>
                                             {!p.eliminado && (
                                                 <div className="flex items-center gap-1">
-                                                    {p.tipo !== 'compensacion' && (
+                                                    {/* Compensaciones y cruces (anticipo/CxC/CxP) no se editan: solo anular. */}
+                                                    {p.tipo !== 'compensacion' && !p.es_cruce && !p.cliente_anticipo_id && !p.compensacion_venta_id && !p.compensacion_entrada_id && (
                                                         <button onClick={() => abrirEditarPago(p)}
                                                             className="p-1.5 rounded-lg hover:bg-black/5 flex-shrink-0" title="Editar movimiento"
                                                             style={{ color: 'var(--color-primary)' }}>
@@ -909,6 +1134,16 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                             value={formEditar.nombre}
                             onChange={e => setFormEditar(f => ({ ...f, nombre: e.target.value }))}
                             error={errors.nombre}
+                        />
+                        <SearchableSelect
+                            label="¿Es un cliente o proveedor registrado? (opcional)"
+                            placeholder="— Sin vincular (nombre libre) —"
+                            searchPlaceholder="Buscar por nombre o documento..."
+                            value={formEditar.tercero}
+                            onChange={v => setFormEditar(f => ({ ...f, tercero: String(v) }))}
+                            options={terceroOptions}
+                            error={errors.cliente_id ?? errors.proveedor_id}
+                            hint="Puedes vincular deudas antiguas aquí: habilita los cruces y el estado de cuenta del tercero."
                         />
                         <div className="grid grid-cols-2 gap-3">
                             <Input label="Monto original" required type="number" min="0.01" step="0.01" value={formEditar.monto_original}
