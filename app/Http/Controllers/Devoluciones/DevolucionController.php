@@ -282,7 +282,12 @@ class DevolucionController extends Controller
     {
         abort_if($devolucion->empresa_id !== $request->user()->empresa_id, 403);
 
-        $devolucion->anular();
+        try {
+            $devolucion->anular();
+        } catch (\LogicException $e) {
+            // Ej.: el vale/crédito de la devolución ya fue usado por el cliente.
+            return redirect()->back()->with('error', $e->getMessage());
+        }
 
         return redirect()->back()->with('success', 'Devolución anulada.');
     }

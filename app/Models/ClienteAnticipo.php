@@ -16,6 +16,8 @@ class ClienteAnticipo extends Model
         'estado', 'observacion',
         'moneda', 'tipo_cambio', 'monto_moneda',
         'venta_id', 'fecha_entrega_estimada',
+        // Vale/crédito nacido de una devolución (se revierte al anularla).
+        'devolucion_id',
         'turno_id', 'turno_devolucion_id',
     ];
 
@@ -40,6 +42,8 @@ class ClienteAnticipo extends Model
     public function cuenta(): BelongsTo     { return $this->belongsTo(Cuenta::class); }
     public function producto(): BelongsTo   { return $this->belongsTo(Producto::class); }
     public function venta(): BelongsTo      { return $this->belongsTo(Venta::class); }
+    /** Devolución que originó este vale/crédito a favor (si nació de una). */
+    public function devolucion(): BelongsTo { return $this->belongsTo(Devolucion::class, 'devolucion_id'); }
     public function turno(): BelongsTo      { return $this->belongsTo(Turno::class); }
     public function turnoDevolucion(): BelongsTo { return $this->belongsTo(Turno::class, 'turno_devolucion_id'); }
     public function aplicaciones(): HasMany { return $this->hasMany(ClienteAnticipoAplicacion::class); }

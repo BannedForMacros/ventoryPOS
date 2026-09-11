@@ -10,6 +10,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import Badge from '@/Components/UI/Badge';
+import Callout from '@/Components/UI/Callout';
 import type { MetodoPago, PageProps } from '@/types';
 
 interface Motivo { id: number; nombre: string; afecta_restock_default: 'permite' | 'impide' | 'obliga_merma' }
@@ -382,12 +383,20 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
                                     options={[
                                         { value: 'efectivo',        label: 'Efectivo' },
                                         { value: 'mismo_metodo',    label: 'Mismo método de pago' },
-                                        { value: 'vale_credito',    label: 'Vale / Crédito a favor' },
+                                        { value: 'vale_credito',    label: 'Vale / Crédito a favor (se crea como anticipo)' },
                                         { value: 'cambio_producto', label: 'Cambio por otro producto' },
                                         { value: 'sin_reembolso',   label: 'Sin reembolso (queda registro)' },
                                     ]}
                                 />
                             </div>
+
+                            {/* El vale ya no es solo una etiqueta: se convierte en un
+                                anticipo REAL del cliente, usable en POS y CxC. */}
+                            {formaReembolso === 'vale_credito' && (
+                                <Callout variant="info" title={`Se creará un anticipo de S/ ${totalDevolucion.toFixed(2)} a favor de ${venta?.cliente?.nombre_completo ?? 'este cliente'}`}>
+                                    No sale dinero de caja. El crédito quedará registrado en <strong>Finanzas → Anticipos</strong> y el cliente podrá usarlo para pagar en el POS o para cancelar sus cuentas por cobrar. Si se anula la devolución, el vale se anula también (siempre que no se haya usado).
+                                </Callout>
+                            )}
 
                             <Input label="Observación general" value={observacion} onChange={e => setObservacion(e.target.value)} />
 

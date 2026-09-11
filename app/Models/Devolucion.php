@@ -57,6 +57,11 @@ class Devolucion extends Model
     public function motivo(): BelongsTo         { return $this->belongsTo(DevolucionMotivo::class, 'motivo_id'); }
     public function detalles(): HasMany         { return $this->hasMany(DevolucionDetalle::class); }
     public function pagos(): HasMany            { return $this->hasMany(DevolucionPago::class); }
+    /** Anticipo creado automáticamente cuando el reembolso fue "vale/crédito a favor". */
+    public function valeAnticipo(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(ClienteAnticipo::class, 'devolucion_id');
+    }
 
     public function scopePendiente(Builder $q): Builder   { return $q->where('estado', 'pendiente'); }
     public function scopeCompletada(Builder $q): Builder  { return $q->where('estado', 'completada'); }
@@ -138,6 +143,35 @@ class Devolucion extends Model
                 // desde el módulo Salidas referenciando la devolución.
             }
 
+            // Vale/crédito a favor → se crea un ANTICIPO de dinero real del
+            // cliente (aparece en Finanzas → Anticipos y sirve para pagar en
+            // el POS o cobrar sus cuentas por cobrar). SIN tesorería: la plata
+            // ya entró con la venta original, aquí solo cambia de "venta" a
+            // "saldo a favor del cliente". Antes esto era solo una etiqueta y
+            // el vale vivía en la memoria de la cajera.
+            if ($this->forma_reembolso === 'vale_credito' && (float) $this->monto_devolucion > 0.009) {
+                $this->loadMissing('venta');
+                $anticipo = ClienteAnticipo::create([
+                    'empresa_id'        => $this->empresa_id,
+                    'cliente_id'        => $this->venta->cliente_id,
+                    'user_id'           => $this->user_id,
+                    'devolucion_id'     => $this->id,
+                    'fecha'             => now()->toDateString(),
+                    'monto'             => (float) $this->monto_devolucion,
+                    'saldo'             => (float) $this->monto_devolucion,
+                    'tipo_valorizacion' => 'monto',
+                    'estado'            => 'activo',
+                    'observacion'       => "Vale por devolución {$this->numero} — venta {$this->venta?->numero}",
+                ]);
+
+                \App\Services\AuditoriaService::log('anticipo_cliente.creado', $anticipo, [
+                    'origen'        => 'devolucion_vale_credito',
+                    'devolucion_id' => $this->id,
+                    'venta_id'      => $this->venta_id,
+                    'monto'         => (float) $this->monto_devolucion,
+                ], auth()->user());
+            }
+
             // F7 — Tesorería: si el reembolso devuelve dinero (efectivo o al
             // mismo método), el egreso sale de la cuenta correspondiente.
             // vale_credito / cambio_producto / sin_reembolso no mueven caja.
@@ -167,8 +201,35 @@ class Devolucion extends Model
     {
         if ($this->esAnulada()) return;
 
-        DB::transaction(function () {
+        // Si el vale ya se gastó (total o parcialmente) no se puede anular la
+        // devolución: el cliente ya usó ese crédito. Chequeo ANTES de la
+        // transacción para dar un mensaje claro sin efectos a medias.
+        $vale = $this->valeAnticipo()->first();
+        if ($vale && $vale->estado === 'activo' && (float) $vale->saldo < (float) $vale->monto - 0.009) {
+            throw new LogicException(
+                "No se puede anular: el vale de esta devolución ya fue usado en parte "
+                . '(quedan S/ ' . number_format((float) $vale->saldo, 2) . ' de S/ ' . number_format((float) $vale->monto, 2) . '). '
+                . 'Anula primero los consumos del anticipo en Finanzas → Anticipos.'
+            );
+        }
+        if ($vale && $vale->estado === 'aplicado') {
+            throw new LogicException(
+                'No se puede anular: el vale de esta devolución ya fue consumido por completo. '
+                . 'Anula primero los consumos del anticipo en Finanzas → Anticipos.'
+            );
+        }
+
+        DB::transaction(function () use ($vale) {
             $estadoPrevio = $this->estado;
+
+            // El vale sin usar se anula junto con la devolución.
+            if ($vale && $vale->estado === 'activo') {
+                $vale->update(['estado' => 'anulado']);
+                \App\Services\AuditoriaService::log('anticipo_cliente.anulado', $vale, [
+                    'origen'        => 'devolucion_anulada',
+                    'devolucion_id' => $this->id,
+                ], auth()->user());
+            }
 
             // F7 — Revertir el egreso de tesorería del reembolso (si lo hubo).
             app(\App\Services\TesoreriaService::class)->revertir('devolucion', $this->id);
