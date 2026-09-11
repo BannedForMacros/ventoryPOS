@@ -88,6 +88,10 @@ export default function ModalModificarPedido({ isOpen, onClose, ventaId }: Props
 
     // Nuevo pendiente por línea existente (texto del input).
     const [cantidades, setCantidades] = useState<Record<number, string>>({});
+    // Precio editable de lo pendiente (sugerido: el de la venta) y de lo que se
+    // agregue a esa misma línea (sugerido: el precio de hoy).
+    const [precios, setPrecios]           = useState<Record<number, string>>({});
+    const [preciosExtra, setPreciosExtra] = useState<Record<number, string>>({});
     const [nuevas, setNuevas]         = useState<LineaNueva[]>([]);
     const [motivo, setMotivo]         = useState('');
 
@@ -119,6 +123,8 @@ export default function ModalModificarPedido({ isOpen, onClose, ventaId }: Props
             .then(({ data }) => {
                 setDatos(data);
                 setCantidades(Object.fromEntries(data.pendientes.map(p => [p.id, fmtCant(p.cantidad_pendiente)])));
+                setPrecios(Object.fromEntries(data.pendientes.map(p => [p.id, String(p.precio_unitario)])));
+                setPreciosExtra(Object.fromEntries(data.pendientes.map(p => [p.id, String(p.precio_hoy)])));
                 setTurnoId(data.turno_activo_id ?? '');
                 // Cliente General no puede quedarse con saldo a favor.
                 setDestino(data.venta.cliente?.es_cliente_general ? 'devolver' : 'saldo_favor');
@@ -144,43 +150,62 @@ export default function ModalModificarPedido({ isOpen, onClose, ventaId }: Props
     }, [q, isOpen, ventaId]);
 
     // ── Cálculo en vivo ───────────────────────────────────────────────
+    const precioDe      = (p: Pendiente) => num(precios[p.id] ?? p.precio_unitario);
+    const precioExtraDe = (p: Pendiente) => num(preciosExtra[p.id] ?? p.precio_hoy);
+
     const calc = useMemo(() => {
         if (!datos) return null;
-        const reducciones: { id: number; cantidad_pendiente: number }[] = [];
-        const excesos: { producto_id: number; producto_unidad_id: number; cantidad: number; precio_unitario: number; incluye_igv: boolean; nombre: string }[] = [];
-        const cantidadVi: Record<number, number> = Object.fromEntries(datos.venta_items.map(v => [v.id, v.cantidad]));
+        const items: { id: number; cantidad_pendiente: number; precio_unitario: number }[] = [];
+        const excesos: { producto_id: number; producto_unidad_id: number; cantidad: number; precio_unitario: number }[] = [];
+        // Lo pendiente se saca de su línea de venta y se vuelve a sumar con la
+        // cantidad y el precio nuevos; lo llevado y lo ya entregado conservan
+        // su precio original (por eso se restan aparte).
+        const pendientePorVi: Record<number, number> = {};
+        const recalculadas: { precio: number; desc: number; cantidad: number; incluyeIgv: boolean }[] = [];
+        let cambios = 0;
 
         for (const p of datos.pendientes) {
             if (!p.modificable) continue;
-            const nuevo = Math.max(0, num(cantidades[p.id] ?? p.cantidad_pendiente));
-            if (nuevo < p.cantidad_pendiente - 0.00009) {
-                reducciones.push({ id: p.id, cantidad_pendiente: r4(nuevo) });
-                if (p.venta_item_id) cantidadVi[p.venta_item_id] = r4((cantidadVi[p.venta_item_id] ?? 0) - (p.cantidad_pendiente - nuevo));
-            } else if (nuevo > p.cantidad_pendiente + 0.00009) {
-                excesos.push({
-                    producto_id: p.producto_id, producto_unidad_id: p.producto_unidad_id,
-                    cantidad: r4(nuevo - p.cantidad_pendiente), precio_unitario: p.precio_hoy,
-                    incluye_igv: p.incluye_igv, nombre: p.producto_nombre,
-                });
+            if (p.venta_item_id) pendientePorVi[p.venta_item_id] = r4((pendientePorVi[p.venta_item_id] ?? 0) + p.cantidad_pendiente);
+
+            const nuevo       = Math.max(0, num(cantidades[p.id] ?? p.cantidad_pendiente));
+            const conservado  = r4(Math.min(nuevo, p.cantidad_pendiente));
+            const exceso      = r4(Math.max(0, nuevo - p.cantidad_pendiente));
+            const precio      = precioDe(p);
+            const precioExtra = precioExtraDe(p);
+
+            const bajo       = conservado < p.cantidad_pendiente - 0.00009;
+            const repreciado = Math.abs(precio - p.precio_unitario) > 0.005 && conservado > 0.00009;
+            if (bajo || repreciado) { items.push({ id: p.id, cantidad_pendiente: conservado, precio_unitario: precio }); cambios++; }
+            if (exceso > 0.00009) {
+                excesos.push({ producto_id: p.producto_id, producto_unidad_id: p.producto_unidad_id, cantidad: exceso, precio_unitario: precioExtra });
+                cambios++;
             }
+
+            if (conservado > 0.00009) recalculadas.push({ precio, desc: 0, cantidad: conservado, incluyeIgv: p.incluye_igv });
+            if (exceso > 0.00009)     recalculadas.push({ precio: precioExtra, desc: 0, cantidad: exceso, incluyeIgv: p.incluye_igv });
         }
 
         const agregadas = nuevas
             .map(n => ({ n, cantidad: num(n.cantidad), precio: num(n.precio_unitario) }))
             .filter(x => x.cantidad > 0);
+        cambios += agregadas.length;
 
         const lineas = [
-            ...datos.venta_items.map(v => ({ precio: v.precio_unitario, desc: v.descuento_item, cantidad: Math.max(0, cantidadVi[v.id] ?? v.cantidad), incluyeIgv: v.incluye_igv })),
-            ...excesos.map(e => ({ precio: e.precio_unitario, desc: 0, cantidad: e.cantidad, incluyeIgv: e.incluye_igv })),
+            ...datos.venta_items.map(v => ({
+                precio: v.precio_unitario, desc: v.descuento_item,
+                cantidad: Math.max(0, r4(v.cantidad - (pendientePorVi[v.id] ?? 0))),
+                incluyeIgv: v.incluye_igv,
+            })),
+            ...recalculadas,
             ...agregadas.map(a => ({ precio: a.precio, desc: 0, cantidad: a.cantidad, incluyeIgv: a.n.incluye_igv })),
         ];
 
         const totalNuevo = calcularTotalVenta(lineas, datos.venta.descuento_total, datos.venta.tasa_igv);
         const saldo = r2(totalNuevo - datos.venta.pagado);
-        const hayCambios = reducciones.length > 0 || excesos.length > 0 || agregadas.length > 0;
 
-        return { reducciones, excesos, agregadas, totalNuevo, saldo, hayCambios };
-    }, [datos, cantidades, nuevas]);
+        return { items, excesos, agregadas, totalNuevo, saldo, hayCambios: cambios > 0 };
+    }, [datos, cantidades, precios, preciosExtra, nuevas]);
 
     const falta = calc && calc.saldo > 0.009 ? calc.saldo : 0;
     const sobra = calc && calc.saldo < -0.009 ? r2(-calc.saldo) : 0;
@@ -240,7 +265,7 @@ export default function ModalModificarPedido({ isOpen, onClose, ventaId }: Props
         const moverDinero = (falta > 0 && pagoAhora > 0) || (sobra > 0 && destino === 'devolver');
         router.post(route('ventas.modificar-pedido', datos.venta.id), {
             motivo: motivo.trim(),
-            items: calc.reducciones,
+            items: calc.items,
             nuevos,
             cobro_anticipo_id:    falta > 0 && usarAnticipo ? (anticipoId || null) : null,
             cobro_monto_anticipo: falta > 0 && usarAnticipo ? tomaAnticipo : null,
@@ -321,48 +346,67 @@ export default function ModalModificarPedido({ isOpen, onClose, ventaId }: Props
                             <table className="w-full text-sm min-w-[560px]">
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
-                                        {['Producto', 'Pendiente', 'Nuevo pendiente', 'Precio', 'Importe', ''].map(h => (
+                                        {['Producto', 'Pendiente', 'Nuevo pendiente', 'Precio (editable)', 'Importe', ''].map(h => (
                                             <th key={h} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{h}</th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {datos.pendientes.map((p, idx) => {
-                                        const nuevo = Math.max(0, num(cantidades[p.id] ?? p.cantidad_pendiente));
-                                        const exceso = r4(nuevo - p.cantidad_pendiente);
-                                        const conservado = Math.min(nuevo, p.cantidad_pendiente);
-                                        const importe = r2(conservado * p.precio_unitario + Math.max(0, exceso) * p.precio_hoy);
-                                        const cambiado = Math.abs(exceso) > 0.00009;
+                                        const nuevo       = Math.max(0, num(cantidades[p.id] ?? p.cantidad_pendiente));
+                                        const conservado  = Math.min(nuevo, p.cantidad_pendiente);
+                                        const exceso      = r4(Math.max(0, nuevo - p.cantidad_pendiente));
+                                        const precio      = precioDe(p);
+                                        const precioExtra = precioExtraDe(p);
+                                        const importe     = r2(conservado * precio + exceso * precioExtra);
+                                        const tocada      = Math.abs(nuevo - p.cantidad_pendiente) > 0.00009 || Math.abs(precio - p.precio_unitario) > 0.005;
                                         return (
                                             <tr key={p.id} style={{ borderBottom: idx < datos.pendientes.length - 1 ? '1px solid var(--color-border)' : undefined }}>
-                                                <td className="px-3 py-2">
+                                                <td className="px-3 py-2 align-top">
                                                     <span className="font-medium" style={{ color: 'var(--color-text)' }}>{p.producto_nombre}</span>
                                                     <span className="block text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                                         {p.unidad_nombre}{p.entregado > 0 ? ` · ya entregado ${fmtCant(p.entregado)}` : ''}
                                                     </span>
                                                     {!p.modificable && <span className="block text-[11px]" style={{ color: 'var(--color-warning)' }}>Cambio de producto antiguo: usa «Cancelar pendiente» en Anticipos</span>}
                                                 </td>
-                                                <td className="px-3 py-2 tabular-nums">{fmtCant(p.cantidad_pendiente)}</td>
-                                                <td className="px-3 py-2 w-40">
+                                                <td className="px-3 py-2 align-top tabular-nums">
+                                                    {fmtCant(p.cantidad_pendiente)}
+                                                    <span className="block text-[11px]" style={{ color: 'var(--color-text-muted)' }}>a {money(p.precio_unitario)}</span>
+                                                </td>
+                                                <td className="px-3 py-2 align-top w-36">
                                                     <Input type="number" min="0" step="any" value={cantidades[p.id] ?? ''} disabled={!p.modificable || saving}
                                                         onChange={e => setCantidades(c => ({ ...c, [p.id]: e.target.value }))} />
+                                                </td>
+                                                <td className="px-3 py-2 align-top w-44">
+                                                    <Input type="number" min="0" step="0.01" value={precios[p.id] ?? ''} disabled={!p.modificable || saving}
+                                                        onChange={e => setPrecios(c => ({ ...c, [p.id]: e.target.value }))} error={errors[`items.${idx}.precio_unitario`]} />
+                                                    {p.modificable && Math.abs(p.precio_hoy - precio) > 0.005 && (
+                                                        <button type="button" onClick={() => setPrecios(c => ({ ...c, [p.id]: String(p.precio_hoy) }))}
+                                                            className="mt-1 inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-medium border transition-colors hover:bg-black/5"
+                                                            style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)' }}
+                                                            title="Usar el precio de hoy para lo que queda pendiente">
+                                                            hoy {money(p.precio_hoy)} · usar
+                                                        </button>
+                                                    )}
                                                     {exceso > 0.00009 && (
-                                                        <span className="block text-[11px] mt-1" style={{ color: 'var(--color-primary)' }}>
-                                                            +{fmtCant(exceso)} al precio de hoy {money(p.precio_hoy)}
-                                                        </span>
+                                                        <div className="mt-1.5">
+                                                            <span className="block text-[11px] mb-0.5" style={{ color: 'var(--color-primary)' }}>
+                                                                Precio de {fmtCant(exceso)} adicional(es)
+                                                            </span>
+                                                            <Input type="number" min="0" step="0.01" value={preciosExtra[p.id] ?? ''} disabled={saving}
+                                                                onChange={e => setPreciosExtra(c => ({ ...c, [p.id]: e.target.value }))} />
+                                                        </div>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2 tabular-nums">
-                                                    {money(p.precio_unitario)}
-                                                    {Math.abs(p.precio_hoy - p.precio_unitario) > 0.005 && (
-                                                        <span className="block text-[11px]" style={{ color: 'var(--color-text-muted)' }}>hoy {money(p.precio_hoy)}</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2 tabular-nums font-semibold">{money(importe)}</td>
-                                                <td className="px-3 py-2 text-right whitespace-nowrap">
-                                                    {p.modificable && (cambiado ? (
-                                                        <button type="button" className="p-1.5 rounded-lg hover:bg-black/5" title="Deshacer"
-                                                            onClick={() => setCantidades(c => ({ ...c, [p.id]: fmtCant(p.cantidad_pendiente) }))}
+                                                <td className="px-3 py-2 align-top tabular-nums font-semibold">{money(importe)}</td>
+                                                <td className="px-3 py-2 align-top text-right whitespace-nowrap">
+                                                    {p.modificable && (tocada ? (
+                                                        <button type="button" className="p-1.5 rounded-lg hover:bg-black/5" title="Deshacer los cambios de esta línea"
+                                                            onClick={() => {
+                                                                setCantidades(c => ({ ...c, [p.id]: fmtCant(p.cantidad_pendiente) }));
+                                                                setPrecios(c => ({ ...c, [p.id]: String(p.precio_unitario) }));
+                                                                setPreciosExtra(c => ({ ...c, [p.id]: String(p.precio_hoy) }));
+                                                            }}
                                                             style={{ color: 'var(--color-text-muted)' }}><Undo2 size={14} /></button>
                                                     ) : (
                                                         <button type="button" className="p-1.5 rounded-lg hover:bg-black/5" title="Quitar del pedido"
@@ -524,9 +568,9 @@ export default function ModalModificarPedido({ isOpen, onClose, ventaId }: Props
 
                             {/* Desglose final explícito */}
                             <div className="rounded-xl p-3 space-y-1.5 text-sm" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
-                                {calc.reducciones.length + calc.excesos.length + calc.agregadas.length > 0 && (
+                                {calc.items.length + calc.excesos.length + calc.agregadas.length > 0 && (
                                     <div className="flex flex-wrap gap-1.5 pb-1.5" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                        {calc.reducciones.length > 0 && <Badge variant="warning">{calc.reducciones.length} línea(s) reducida(s)</Badge>}
+                                        {calc.items.length > 0 && <Badge variant="warning">{calc.items.length} línea(s) cambiada(s)</Badge>}
                                         {calc.excesos.length + calc.agregadas.length > 0 && <Badge variant="primary">{calc.excesos.length + calc.agregadas.length} producto(s) agregado(s)</Badge>}
                                     </div>
                                 )}

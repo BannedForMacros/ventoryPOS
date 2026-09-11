@@ -56,6 +56,8 @@ class PedidoPendienteController extends Controller
             'items'                         => ['nullable', 'array'],
             'items.*.id'                    => ['required', 'integer'],
             'items.*.cantidad_pendiente'    => ['required', 'numeric', 'min:0'],
+            // Precio del pendiente: sugerido el de la venta, pero editable.
+            'items.*.precio_unitario'       => ['nullable', 'numeric', 'min:0'],
             'nuevos'                        => ['nullable', 'array', 'max:50'],
             'nuevos.*.producto_id'          => ['required', 'integer'],
             'nuevos.*.producto_unidad_id'   => ['required', 'integer'],

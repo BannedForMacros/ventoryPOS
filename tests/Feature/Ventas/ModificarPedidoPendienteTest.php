@@ -391,3 +391,84 @@ it('«Cambiar producto» de Anticipos ya no crea stock fantasma al Recalcular', 
 
     assertRecalculoCuadra($this, $fierro, $cemento);
 });
+
+it('cambia el precio de una línea 100% pendiente sin partirla', function () {
+    [$venta, $anticipo, $itemFierro, $fierro, $tubo, $cemento] = ventaConPedido($this);
+
+    // Línea solo pendiente: 2 cemento a 25 (queda al crédito).
+    $this->post(route('ventas.modificar-pedido', $venta), [
+        'motivo' => 'Agrega cemento', 'dejar_credito' => true,
+        'nuevos' => [['producto_id' => $cemento->id, 'producto_unidad_id' => $cemento->unidadBase->id, 'cantidad' => 2, 'precio_unitario' => 25]],
+    ])->assertSessionHasNoErrors();
+    $itemCemento = ClienteAnticipoItem::where('cliente_anticipo_id', $anticipo->id)->where('producto_id', $cemento->id)->firstOrFail();
+    $viCementoId = $itemCemento->venta_item_id;
+
+    // Sube el precio del pendiente de 25 a 30 y cobra los 10 de diferencia.
+    $this->post(route('ventas.modificar-pedido', $venta), [
+        'motivo'           => 'Corrige el precio del cemento',
+        'items'            => [['id' => $itemCemento->id, 'cantidad_pendiente' => 2, 'precio_unitario' => 30]],
+        'cobro_monto_pago' => 10,
+        'metodo_pago_id'   => $this->env->metodo('efectivo')->id,
+    ])->assertSessionHasNoErrors();
+
+    $itemCemento->refresh();
+    expect((float) $itemCemento->precio_unitario)->toBe(30.0);
+    expect($itemCemento->venta_item_id)->toBe($viCementoId);                       // misma línea, no se partió
+    expect((float) VentaItem::find($viCementoId)->precio_unitario)->toBe(30.0);
+    expect(VentaItem::where('venta_id', $venta->id)->where('producto_id', $cemento->id)->count())->toBe(1);
+    expect((float) $venta->fresh()->total)->toBe(300.0);                           // 240 + 2×30
+    expect((float) $anticipo->fresh()->saldo)->toBe(200.0);                        // 7×20 + 2×30
+    assertRecalculoCuadra($this, $cemento);
+});
+
+it('al cambiar el precio, lo ya entregado conserva el suyo y el pendiente va aparte', function () {
+    [$venta, $anticipo, $itemFierro, $fierro] = ventaConPedido($this);
+
+    // Se entregan 3 de los 7 pendientes a 20.
+    app(EntregaPendienteService::class)->aplicarEntregaMaterial($anticipo->fresh('items'), [
+        'fecha' => now()->toDateString(),
+        'items' => [['id' => $itemFierro->id, 'cantidad' => 3]],
+    ], $this->env->admin);
+
+    // Los 4 que quedan suben a 25 (+20) y se cobran.
+    $this->post(route('ventas.modificar-pedido', $venta), [
+        'motivo'           => 'El fierro subió de precio',
+        'items'            => [['id' => $itemFierro->id, 'cantidad_pendiente' => 4, 'precio_unitario' => 25]],
+        'cobro_monto_pago' => 20,
+        'metodo_pago_id'   => $this->env->metodo('efectivo')->id,
+    ])->assertSessionHasNoErrors();
+
+    // La línea vieja se queda con 3 llevados + 3 entregados a 20; el pendiente va en una nueva a 25.
+    $viejo = VentaItem::find($itemFierro->venta_item_id);
+    expect((float) $viejo->cantidad)->toBe(6.0);
+    expect((float) $viejo->precio_unitario)->toBe(20.0);
+    $itemFierro->refresh();
+    expect((float) $itemFierro->cantidad_pendiente)->toBe(0.0);
+    expect((float) $itemFierro->cantidad)->toBe(3.0);                               // conserva su historia de entrega
+
+    $nuevoItem = ClienteAnticipoItem::where('cliente_anticipo_id', $anticipo->id)
+        ->where('producto_id', $fierro->id)->where('id', '!=', $itemFierro->id)->firstOrFail();
+    expect((float) $nuevoItem->cantidad_pendiente)->toBe(4.0);
+    expect((float) $nuevoItem->precio_unitario)->toBe(25.0);
+    expect((float) VentaItem::find($nuevoItem->venta_item_id)->precio_unitario)->toBe(25.0);
+
+    expect((float) $venta->fresh()->total)->toBe(260.0);                            // 6×20 + 4×25 + 4×10
+    expect((float) $anticipo->fresh()->saldo)->toBe(100.0);                         // 4×25
+    expect((float) Stock::where('producto_id', $fierro->id)->value('cantidad'))->toBe(44.0);
+    assertRecalculoCuadra($this, $fierro);
+});
+
+it('bajar el precio del pendiente deja la diferencia a favor del cliente', function () {
+    [$venta, $anticipo, $itemFierro, $fierro] = ventaConPedido($this);
+
+    // Los 7 pendientes bajan de 20 a 18 (−14 a favor del cliente).
+    $this->post(route('ventas.modificar-pedido', $venta), [
+        'motivo' => 'Le respetamos la oferta',
+        'items'  => [['id' => $itemFierro->id, 'cantidad_pendiente' => 7, 'precio_unitario' => 18]],
+    ])->assertSessionHasNoErrors();
+
+    expect((float) $venta->fresh()->total)->toBe(226.0);                            // 3×20 + 7×18 + 4×10
+    $saldoFavor = ClienteAnticipo::where('venta_origen_id', $venta->id)->firstOrFail();
+    expect((float) $saldoFavor->saldo)->toBe(14.0);
+    assertRecalculoCuadra($this, $fierro);
+});

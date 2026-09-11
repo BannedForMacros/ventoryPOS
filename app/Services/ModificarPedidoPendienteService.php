@@ -197,7 +197,14 @@ class ModificarPedidoPendienteService
                 }
 
                 $reducir = round($actual - $nuevo, 4);
-                if ($reducir <= self::EPS_CANT) continue;
+                $precioNuevo = isset($linea['precio_unitario']) && $linea['precio_unitario'] !== ''
+                    ? round((float) $linea['precio_unitario'], 2)
+                    : null;
+                $repreciar = $precioNuevo !== null
+                    && abs($precioNuevo - (float) $item->precio_unitario) > 0.005
+                    && $nuevo > self::EPS_CANT;
+
+                if ($reducir <= self::EPS_CANT && !$repreciar) continue;
 
                 $ventaItem = $item->venta_item_id
                     ? VentaItem::where('id', $item->venta_item_id)->where('venta_id', $venta->id)->lockForUpdate()->first()
@@ -208,8 +215,16 @@ class ModificarPedidoPendienteService
                     ]);
                 }
 
-                $this->reducirLinea($ventaItem, $item, $reducir);
-                $cambios++;
+                if ($reducir > self::EPS_CANT) {
+                    $this->reducirLinea($ventaItem, $item, $reducir);
+                    $cambios++;
+                }
+
+                if ($repreciar && $item->exists && (float) $item->cantidad_pendiente > self::EPS_CANT) {
+                    $anticipoDeItem = $anticipos->firstWhere('id', $item->cliente_anticipo_id);
+                    $this->repreciarLinea($venta, $anticipoDeItem, $ventaItem, $item, $precioNuevo);
+                    $cambios++;
+                }
             }
 
             // ── 2) Agregar productos (o aumentar cantidades) ───────────────
@@ -328,6 +343,53 @@ class ModificarPedidoPendienteService
         if ((float) $vi->cantidad <= self::EPS_CANT
             && !DB::table('devoluciones_detalle')->where('venta_item_id', $vi->id)->exists()) {
             $vi->delete();
+        }
+    }
+
+    /**
+     * Cambia el precio de lo que sigue PENDIENTE. Lo ya llevado o entregado
+     * conserva el precio al que se vendió: si esa parte existe, la línea se
+     * separa en dos (lo entregado con su precio viejo, lo pendiente con el
+     * nuevo). Si toda la línea está pendiente, simplemente se reprecia.
+     */
+    private function repreciarLinea(Venta $venta, ?ClienteAnticipo $anticipo, VentaItem $vi, ClienteAnticipoItem $item, float $precio): void
+    {
+        $pendiente   = (float) $item->cantidad_pendiente;
+        $noPendiente = round((float) $vi->cantidad - $pendiente, 4);
+
+        if ($noPendiente <= self::EPS_CANT) {
+            // El descuento por línea se absorbe en el precio nuevo (es el neto).
+            $vi->update([
+                'precio_unitario' => $precio,
+                'descuento_item'  => 0,
+                'subtotal'        => round($precio * (float) $vi->cantidad, 2),
+            ]);
+            $item->update(['precio_unitario' => $precio]);
+
+            return;
+        }
+
+        // Separar: la línea vieja se queda con lo llevado/entregado y su precio.
+        $vi->cantidad      = $noPendiente;
+        $vi->cantidad_base = round($noPendiente * (float) $vi->factor_conversion, 4);
+        $vi->subtotal      = round(((float) $vi->precio_unitario - (float) $vi->descuento_item) * $noPendiente, 2);
+        $vi->save();
+
+        $entregado = round((float) $item->cantidad - $pendiente, 4);
+        $conHistoria = DB::table('cliente_anticipo_aplicacion_items')->where('cliente_anticipo_item_id', $item->id)->exists()
+            || $item->cancelaciones()->exists();
+        if ($entregado > self::EPS_CANT || $conHistoria) {
+            $item->update(['cantidad' => max(0, $entregado), 'cantidad_pendiente' => 0]);
+        } else {
+            $item->delete();
+        }
+
+        $producto = Producto::find($item->producto_id);
+        $unidad   = ProductoUnidad::find($item->producto_unidad_id);
+        $almacen  = $this->scope->almacenVentasDeLocal($venta->empresa_id, $venta->local_id);
+        if ($anticipo && $producto && $unidad) {
+            $anticipo->unsetRelation('items');
+            $this->agregarLinea($venta, $anticipo, $producto, $unidad, $pendiente, $precio, $almacen?->id);
         }
     }
 
