@@ -5,13 +5,14 @@ import toast from 'react-hot-toast';
 import {
     ArrowLeft, XCircle, Receipt, User, ShoppingBag,
     CreditCard, Percent, Calendar, Store, UserCheck, Printer,
-    FileCheck2, Download, RefreshCw, KeyRound, AlertTriangle, FileText,
+    FileCheck2, Download, RefreshCw, KeyRound, AlertTriangle, FileText, PackageOpen, History,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
+import ModalModificarPedido from '@/Components/Ventas/ModalModificarPedido';
 import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import {
     rutaComprobante, metaEstado, estadoEnCurso, puedeReintentar, etiquetaTipoSunat, etiquetaComprobante,
@@ -19,9 +20,25 @@ import {
 } from '@/lib/comprobanteElectronico';
 import type { PageProps, Venta, VentaItem, VentaPago, DescuentoLog, ComprobanteElectronico } from '@/types';
 
+/** Registro de auditoría de una modificación del pedido pendiente. */
+interface ModificacionPedido {
+    id: number;
+    user_name: string | null;
+    created_at: string;
+    contexto: {
+        motivo?: string;
+        total_antes?: number;
+        total_nuevo?: number;
+        diferencia?: number;
+        liquidacion?: { tipo: string; del_anticipo?: number; pago?: number; al_credito?: number; excedente?: number; anticipo_id?: number };
+    } | null;
+}
+
 interface Props extends PageProps {
     venta: Venta;
     ticketImpresion?: TicketPayload | null;
+    puedeModificarPedido?: boolean;
+    modificacionesPedido?: ModificacionPedido[];
 }
 
 function SectionCard({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
@@ -54,7 +71,8 @@ function InfoRow({ label, value, muted }: { label: string; value: React.ReactNod
     );
 }
 
-export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
+export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [] }: Props) {
+    const [modalPedido, setModalPedido] = useState(false);
     const { auth } = usePage<Props>().props;
     const esAdmin  = auth.user.rol?.es_admin ?? false;
     const empresa  = auth.user.empresa as { venta_edicion_minutos?: number; cajera_puede_anular?: boolean } | undefined;
@@ -224,6 +242,12 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                                 PDF
                             </Button>
                         </a>
+                        {puedeModificarPedido && (
+                            <Button variant="primary" size="sm" startContent={<PackageOpen size={15} />} onClick={() => setModalPedido(true)}
+                                title="Cambiar lo que el cliente dejó pendiente por entregar">
+                                <span className="hidden sm:inline">Modificar pedido</span>
+                            </Button>
+                        )}
                         {puedeAnular() && venta.estado !== 'anulada' && (
                             <Button variant="danger" size="sm" startContent={<XCircle size={15} />} onClick={anular}>
                                 <span className="hidden sm:inline">Anular</span>
@@ -282,6 +306,36 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                             )}
                         </div>
                     </SectionCard>
+
+                    {/* Historial de modificaciones del pedido pendiente */}
+                    {modificacionesPedido.length > 0 && (
+                        <SectionCard icon={History} title={`Modificaciones del pedido (${modificacionesPedido.length})`}>
+                            <div className="space-y-2">
+                                {modificacionesPedido.map(m => {
+                                    const c = m.contexto ?? {};
+                                    const l = c.liquidacion;
+                                    const dinero = !l ? '' : l.tipo === 'cobro'
+                                        ? `Cobrado S/ ${((l.del_anticipo ?? 0) + (l.pago ?? 0)).toFixed(2)}${(l.al_credito ?? 0) > 0.009 ? ` · al crédito S/ ${(l.al_credito ?? 0).toFixed(2)}` : ''}`
+                                        : l.tipo === 'saldo_favor' ? `S/ ${(l.excedente ?? 0).toFixed(2)} a favor (anticipo #${l.anticipo_id})`
+                                        : l.tipo === 'devolver' ? `Devuelto S/ ${(l.excedente ?? 0).toFixed(2)}`
+                                        : 'Sin diferencia de dinero';
+                                    return (
+                                        <div key={m.id} className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <span className="font-medium">{c.motivo ?? 'Modificación'}</span>
+                                                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {new Date(m.created_at).toLocaleString('es-PE')} · {m.user_name ?? '—'}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                                Total S/ {Number(c.total_antes ?? 0).toFixed(2)} → S/ {Number(c.total_nuevo ?? 0).toFixed(2)} · {dinero}
+                                            </p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </SectionCard>
+                    )}
 
                     {/* Items */}
                     <SectionCard icon={ShoppingBag} title={`Productos (${items.length})`}>
@@ -524,6 +578,7 @@ export default function VentasShow({ venta, flash, ticketImpresion }: Props) {
                     )}
                 </div>
             </Modal>
+            <ModalModificarPedido isOpen={modalPedido} onClose={() => setModalPedido(false)} ventaId={venta.id} />
         </AppLayout>
     );
 }

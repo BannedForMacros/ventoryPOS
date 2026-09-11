@@ -491,6 +491,12 @@ class VentaService
                 abort(422, 'No se puede editar una venta anulada.');
             }
 
+            // La edición rehace los pagos desde cero y no conoce el saldo a favor
+            // o la devolución que dejó una modificación de pedido: se descuadraría.
+            if (\App\Models\ClienteAnticipo::where('venta_origen_id', $venta->id)->where('estado', '<>', 'anulado')->exists()) {
+                abort(422, 'Esta venta tuvo una modificación de pedido con saldo a favor o devolución. Para cambiarla usa «Modificar pedido» o anúlala.');
+            }
+
             // Revertir anticipos de efectito aplicados a esta venta antes de
             // recalcular: así el saldo queda disponible y se re-aplica según
             // el nuevo payload (si viene anticipo_id).
@@ -643,6 +649,11 @@ class VentaService
 
             $venta->loadMissing('local');
 
+            // Saldos a favor / devoluciones nacidos de MODIFICAR el pedido de esta
+            // venta: anular la venta revierte todo su dinero, así que ese excedente
+            // también se revierte (si no, el cliente cobraría dos veces).
+            $this->revertirExcedentesDeModificacion($venta, $user);
+
             // Restaurar el stock en el almacén del local de la venta (no el del
             // usuario que anula: un admin puede anular ventas de otros locales).
             $almacen = $this->scope->almacenVentasDeLocal($venta->empresa_id, $venta->local_id)
@@ -717,6 +728,33 @@ class VentaService
                 'motivo'           => $motivo,
             ], $user);
         });
+    }
+
+    /**
+     * Revierte los anticipos de dinero creados al modificar el pedido de la venta
+     * (saldo a favor o devolución en el acto). Si el saldo a favor ya se usó, la
+     * anulación se bloquea: primero hay que revertir ese uso.
+     */
+    private function revertirExcedentesDeModificacion(Venta $venta, User $user): void
+    {
+        $excedentes = ClienteAnticipo::where('venta_origen_id', $venta->id)
+            ->where('estado', '<>', 'anulado')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($excedentes as $ant) {
+            if ($ant->aplicaciones()->exists()) {
+                abort(422, "El saldo a favor #{$ant->id} generado al modificar este pedido ya fue usado. Anula primero ese uso y luego la venta.");
+            }
+            if ($ant->estado === 'devuelto') {
+                $this->tesoreria->revertir('cliente_anticipo_devolucion', $ant->id);
+            }
+            $ant->update(['estado' => 'anulado', 'turno_devolucion_id' => null]);
+
+            \App\Services\AuditoriaService::log('anticipo_cliente.anulado', $ant, [
+                'motivo' => "Anulación de la venta {$venta->numero}: se revierte el excedente de su modificación de pedido",
+            ], $user);
+        }
     }
 
     /**

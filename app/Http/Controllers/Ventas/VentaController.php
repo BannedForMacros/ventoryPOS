@@ -1289,6 +1289,14 @@ class VentaController extends Controller
 
         return Inertia::render('Ventas/Show', [
             'venta' => $venta,
+            // "Modificar pedido": cambiar lo pendiente por entregar días después.
+            'puedeModificarPedido' => $request->user()->tienePermiso('ventas', 'crear')
+                && app(\App\Services\ModificarPedidoPendienteService::class)->motivoBloqueo($venta) === null,
+            'modificacionesPedido' => \App\Models\Auditoria::where('modelo_tipo', Venta::class)
+                ->where('modelo_id', $venta->id)
+                ->where('accion', 'venta.pedido_modificado')
+                ->orderByDesc('created_at')
+                ->get(['id', 'user_name', 'created_at', 'contexto']),
             // Payload listo para el agente local de impresión (VentoryPrint.exe).
             'ticketImpresion' => app(TicketPrintService::class)->payloadDeVenta($venta),
         ]);

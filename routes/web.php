@@ -374,6 +374,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // (el guard de tiempo lo aplica el controlador). Reutiliza el editor del POS.
         Route::middleware(['permiso:ventas,editar', 'throttle:60,1'])->put('/{venta}', [VentaController::class, 'update'])->name('update');
         Route::middleware('permiso:ventas,editar')->post('/{venta}/anular', [VentaController::class, 'anular'])->name('anular');
+        // Modificar el pedido PENDIENTE POR ENTREGAR días después (la cajera, sin
+        // límite de tiempo: la diferencia se liquida HOY y la caja original no se toca).
+        Route::middleware('permiso:ventas,crear')->get('/{venta}/pedido-pendiente', [\App\Http\Controllers\Ventas\PedidoPendienteController::class, 'datos'])->name('pedido-pendiente');
+        Route::middleware(['permiso:ventas,crear', 'throttle:30,1'])->post('/{venta}/modificar-pedido', [\App\Http\Controllers\Ventas\PedidoPendienteController::class, 'modificar'])->name('modificar-pedido');
 
         // ── Comprobante electrónico (SUNAT vía FacturaMac) ────────────────
         // `estado` lo consulta el POS cada pocos segundos tras cerrar la venta:

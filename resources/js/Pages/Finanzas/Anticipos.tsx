@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus, Pencil, Users, Package, Coins, Trash2, RotateCcw } from 'lucide-react';
+import { Plus, Eye, PackageCheck, Ban, PiggyBank, Printer, FileDown, UserPlus, Pencil, Users, Package, Coins, Trash2, RotateCcw, PackageOpen } from 'lucide-react';
 import { imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -21,6 +21,7 @@ import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import PagoForm from '@/Components/PagoForm';
 import Timeline from '@/Components/UI/Timeline';
 import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
+import ModalModificarPedido from '@/Components/Ventas/ModalModificarPedido';
 import type { PageProps, Cliente } from '@/types';
 
 interface AplicacionItem {
@@ -116,7 +117,7 @@ interface Props extends PageProps {
     cuentas: { id: number; nombre: string; es_efectivo?: boolean }[];
     turnos: TurnoLite[];
     turnoActivoId: number | null;
-    puede?: { editar: boolean };
+    puede?: { editar: boolean; modificar_pedido?: boolean };
 }
 
 import { hoyLocal } from '@/lib/fechas';
@@ -160,6 +161,8 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     const [aplicando, setAplicando]     = useState<Anticipo | null>(null);
     const [anulando, setAnulando]       = useState<Anticipo | null>(null);
     const [detalle, setDetalle]         = useState<Anticipo | null>(null);
+    // "Modificar pedido" de la venta vinculada (id de venta o null).
+    const [modificarPedidoVentaId, setModificarPedidoVentaId] = useState<number | null>(null);
     const [saving, setSaving]           = useState(false);
     const [errors, setErrors]           = useState<Record<string, string>>({});
     const [form, setForm]               = useState(emptyForm());
@@ -1043,12 +1046,23 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         {/* Desglose de productos pendientes (anticipos del POS) */}
                         {esMultiItem(detalle) && (
                             <div>
-                                <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Productos {detalle.venta?.numero ? `de la venta ${detalle.venta.numero}` : 'comprometidos'}
-                                    {detalle.fecha_entrega_estimada
-                                        ? ` · entrega estimada ${new Date(detalle.fecha_entrega_estimada + 'T00:00:00').toLocaleDateString('es-PE')}`
-                                        : ''}
-                                </p>
+                                <div className="flex items-center justify-between gap-2 mb-1.5">
+                                    <p className="text-xs font-semibold" style={{ color: 'var(--color-text-muted)' }}>
+                                        Productos {detalle.venta?.numero ? `de la venta ${detalle.venta.numero}` : 'comprometidos'}
+                                        {detalle.fecha_entrega_estimada
+                                            ? ` · entrega estimada ${new Date(detalle.fecha_entrega_estimada + 'T00:00:00').toLocaleDateString('es-PE')}`
+                                            : ''}
+                                    </p>
+                                    {puede?.modificar_pedido && detalle.estado === 'activo' && detalle.venta?.id
+                                        && (detalle.items ?? []).some(it => Number(it.cantidad_pendiente) > 0.0001) && (
+                                        <button onClick={() => setModificarPedidoVentaId(detalle.venta!.id)}
+                                            title="Cambiar productos o cantidades de lo pendiente, con la diferencia de dinero liquidada hoy"
+                                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold border transition-colors hover:bg-black/5"
+                                            style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>
+                                            <PackageOpen size={12} /> Modificar pedido
+                                        </button>
+                                    )}
+                                </div>
                                 <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
                                     {(detalle.items ?? []).map((it, idx) => {
                                         const pendiente = Number(it.cantidad_pendiente);
@@ -1421,6 +1435,11 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                     setModalCrearCliente(false);
                     toast.success(`Cliente "${nombreCliente(c as unknown as { nombres?: string; apellidos?: string; razon_social?: string })}" creado y seleccionado.`);
                 }}
+            />
+            <ModalModificarPedido
+                isOpen={modificarPedidoVentaId !== null}
+                onClose={() => { setModificarPedidoVentaId(null); setDetalle(null); }}
+                ventaId={modificarPedidoVentaId}
             />
         </AppLayout>
     );

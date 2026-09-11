@@ -149,6 +149,8 @@ class AnticipoClienteController extends Controller
             // middleware. Configurable por rol, no hardcodeado.
             'puede' => [
                 'editar' => $user->tienePermiso('finanzas.anticipos', 'editar'),
+                // "Modificar pedido" de la venta (mismo permiso que el POS).
+                'modificar_pedido' => $user->tienePermiso('ventas', 'crear'),
             ],
         ]);
     }
@@ -615,6 +617,27 @@ class AnticipoClienteController extends Controller
         abort_if($nuevaUnidad === null, 422, 'El producto destino no tiene unidades configuradas.');
 
         DB::transaction(function () use ($anticipo, $item, $user, $cantidad, $nuevoProducto, $nuevaUnidad, $data) {
+            // Línea enlazada a la venta: se mueve también en venta_items para que
+            // el "Recalcular" de stock cuadre (antes creaba stock fantasma).
+            if ($item->venta_item_id) {
+                $productoOrigen = $item->producto_nombre;
+                app(\App\Services\ModificarPedidoPendienteService::class)
+                    ->cambiarProductoLinea($anticipo, $item, $cantidad, $nuevoProducto, $nuevaUnidad);
+
+                AuditoriaService::log('anticipo_cliente.cambio_producto', $anticipo, [
+                    'item_id'          => $item->id,
+                    'producto_origen'  => $productoOrigen,
+                    'cantidad'         => $cantidad,
+                    'producto_destino' => $nuevoProducto->nombre,
+                    'unidad_destino'   => optional($nuevaUnidad->unidadMedida)->nombre,
+                    'motivo'           => $data['motivo'],
+                    'saldo'            => (float) $anticipo->fresh()->saldo,
+                ], $user);
+
+                return;
+            }
+
+            // Línea legacy sin venta enlazada: comportamiento anterior.
             // Reducir la línea original.
             $item->update([
                 'cantidad'           => max(0, round((float) $item->cantidad - $cantidad, 4)),
