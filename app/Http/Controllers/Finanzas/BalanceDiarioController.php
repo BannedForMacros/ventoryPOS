@@ -1340,6 +1340,10 @@ class BalanceDiarioController extends Controller
 
             // ── Adelanto a proveedor puntual: sus aplicaciones ──────────
             case 'adelanto_proveedor': {
+                if (!$refId) {
+                    return $this->detalleVariacionCategoria($empresaId, $fecha, $categoria);
+                }
+
                 $adelanto = ProveedorAdelanto::deEmpresa($empresaId)
                     ->with(['proveedor:id,razon_social,nombre_comercial', 'aplicaciones.entrada:id,numero_documento', 'aplicaciones.user:id,name', 'user:id,name'])
                     ->findOrFail($refId);
@@ -1420,6 +1424,14 @@ class BalanceDiarioController extends Controller
             case 'deuda':
             case 'personal':
             case 'prestamo_otorgado': {
+                // Fila de VARIACIÓN del día: agrupa TODA la categoría, no es una
+                // deuda puntual (llega sin ref_id). Antes caía en el 404 y, tras
+                // el fix de deudas eliminadas, mostraba un falso "deuda eliminada"
+                // con montos en cero. Ahora muestra qué cambió contra ayer.
+                if (!$refId) {
+                    return $this->detalleVariacionCategoria($empresaId, $fecha, $categoria);
+                }
+
                 $deuda = $refId
                     ? Deuda::deEmpresa($empresaId)
                         ->with(['pagos.metodoPago:id,nombre', 'pagos.cuenta:id,nombre', 'pagos.user:id,name', 'user:id,name'])
@@ -1492,6 +1504,96 @@ class BalanceDiarioController extends Controller
         }
 
         abort(404, 'Esta línea no tiene detalle.');
+    }
+
+    /**
+     * Detalle de la fila de VARIACIÓN de una categoría (no de una línea suelta).
+     *
+     * Las tarjetas de "variación del día" agrupan toda la categoría y llegan sin
+     * ref_id. Lo útil ahí no es el detalle de un registro, sino QUÉ cambió: se
+     * comparan las líneas de esta fecha contra las del último balance confirmado
+     * anterior, emparejando por ref_id (o por descripción si no tiene).
+     */
+    private function detalleVariacionCategoria(int $empresaId, string $fecha, string $categoria)
+    {
+        $hoy = BalanceDiario::deEmpresa($empresaId)->whereDate('fecha', $fecha)->with('items')->first();
+        $ayer = BalanceDiario::deEmpresa($empresaId)->confirmado()
+            ->where('fecha', '<', $fecha)->orderByDesc('fecha')->with('items')->first();
+
+        $lineasHoy  = $hoy?->items->where('categoria', $categoria)  ?? collect();
+        $lineasAyer = $ayer?->items->where('categoria', $categoria) ?? collect();
+
+        $clave = fn ($i) => $i->ref_id ? 'ref:' . $i->ref_id : 'desc:' . mb_strtolower(trim($i->descripcion));
+
+        $filas = [];
+        foreach ($lineasAyer as $i) {
+            $filas[$clave($i)] = ['descripcion' => $i->descripcion, 'ayer' => (float) $i->monto, 'hoy' => 0.0];
+        }
+        foreach ($lineasHoy as $i) {
+            $k = $clave($i);
+            $filas[$k] ??= ['descripcion' => $i->descripcion, 'ayer' => 0.0, 'hoy' => 0.0];
+            $filas[$k]['descripcion'] = $i->descripcion;
+            $filas[$k]['hoy'] = (float) $i->monto;
+        }
+
+        $esContra  = ($lineasHoy->first()?->seccion ?? $lineasAyer->first()?->seccion) === 'contra';
+        $fechaAyer = $ayer?->fecha->format('d/m/Y');
+        $money     = fn (float $v) => 'S/ ' . number_format($v, 2);
+
+        $filas = collect($filas)->map(fn ($f) => [
+            'descripcion' => $f['descripcion'],
+            'ayerTxt'     => $money($f['ayer']),
+            'hoyTxt'      => $money($f['hoy']),
+            'monto'       => round($f['hoy'] - $f['ayer'], 2),
+            // En "en contra", subir es malo (más deuda); a favor, al revés.
+            'tipo'        => round($f['hoy'] - $f['ayer'], 2) == 0.0 ? null
+                : ((round($f['hoy'] - $f['ayer'], 2) > 0) === $esContra ? 'egreso' : 'ingreso'),
+        ])->values();
+
+        $grupo = fn (string $id, string $titulo, $items) => $items->isEmpty() ? null : [
+            'id'      => $id,
+            'titulo'  => $titulo,
+            'esFecha' => false,
+            'monto'   => round((float) $items->sum('monto'), 2),
+            'tipo'    => 'neutro',
+            'items'   => $items->values(),
+        ];
+
+        $grupos = collect([
+            $grupo('subieron', $esContra ? 'Deudas nuevas o que subieron' : 'Subieron o aparecieron',
+                $filas->filter(fn ($f) => $f['monto'] > 0)->sortByDesc('monto')),
+            $grupo('bajaron', $esContra ? 'Pagadas o que bajaron' : 'Bajaron o desaparecieron',
+                $filas->filter(fn ($f) => $f['monto'] < 0)->sortBy('monto')),
+            $grupo('igual', 'Sin cambios', $filas->filter(fn ($f) => $f['monto'] == 0.0)),
+        ])->filter()->values();
+
+        $totalHoy  = round((float) $lineasHoy->sum('monto'), 2);
+        $totalAyer = round((float) $lineasAyer->sum('monto'), 2);
+        $delta     = round($totalHoy - $totalAyer, 2);
+
+        return response()->json([
+            'tipo'  => 'grupos',
+            'aviso' => [
+                'variant' => 'info',
+                'titulo'  => 'Variación del día — toda la categoría',
+                'texto'   => $ayer
+                    ? "Esta fila no es un registro suelto: agrupa toda la categoría. Abajo está qué cambió respecto al balance del {$fechaAyer}. Para el detalle de un registro puntual, abrilo desde su propia línea del balance."
+                    : 'No hay un balance confirmado anterior con el cual comparar, así que solo se listan las líneas de este día.',
+            ],
+            'cards' => [
+                ['label' => 'Total hoy', 'valor' => $totalHoy],
+                ['label' => $fechaAyer ? "Total al {$fechaAyer}" : 'Total anterior', 'valor' => $totalAyer],
+                ['label' => 'Variación', 'valor' => $delta,
+                 'color' => $delta == 0.0 ? null : (($delta > 0) === $esContra ? 'danger' : 'success')],
+            ],
+            'itemCols' => [
+                ['campo' => 'descripcion', 'label' => 'Concepto'],
+                ['campo' => 'ayerTxt',     'label' => 'Ayer'],
+                ['campo' => 'hoyTxt',      'label' => 'Hoy'],
+            ],
+            'montoLabel' => 'Variación',
+            'grupos'     => $grupos,
+        ]);
     }
 
     /**

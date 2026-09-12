@@ -198,6 +198,11 @@ class BalanceDiarioService
         $ajusteDeudaPost = DB::table('deuda_pagos as dp')
             ->join('deudas as d', 'd.id', '=', 'dp.deuda_id')
             ->where('d.empresa_id', $empresaId)
+            // DeudaPago usa BORRADO LÓGICO y esta consulta es cruda (DB::table),
+            // así que no hereda el scope de Eloquent: sin este filtro, un
+            // movimiento eliminado seguía ajustando el saldo al corte e inflaba
+            // la línea de la deuda en TODOS los balances anteriores a él.
+            ->whereNull('dp.deleted_at')
             ->where('dp.fecha', '>', $fechaCorte)
             ->selectRaw("dp.deuda_id, SUM(CASE WHEN dp.tipo = 'amortizacion' THEN dp.monto ELSE -dp.monto END) as ajuste")
             ->groupBy('dp.deuda_id')
