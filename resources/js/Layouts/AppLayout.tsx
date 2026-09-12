@@ -5,7 +5,10 @@ import { Bell, ChevronDown, ChevronRight, LogOut, Menu, Printer, User, X } from 
 import type { PageProps, ModuloMenu } from '@/types';
 import DynamicIcon from '@/Components/DynamicIcon';
 import { ColorPaletteProvider } from '@/Components/ColorPaletteProvider';
-import ColorPaletteEditor from '@/Components/ColorPaletteEditor';
+// Editor de paleta de colores: oculto por pedido del cliente (era un botón
+// flotante visible en todas las pantallas). Para reactivarlo, descomentar
+// este import y el <ColorPaletteEditor /> del final del layout.
+// import ColorPaletteEditor from '@/Components/ColorPaletteEditor';
 import RouterLoadingOverlay from '@/Components/RouterLoadingOverlay';
 import AgenteConfigModal from '@/Components/AgenteConfigModal';
 
@@ -476,7 +479,7 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
                     </main>
                 </div>
 
-                <ColorPaletteEditor />
+                {/* <ColorPaletteEditor /> — oculto por ahora (ver import comentado arriba) */}
                 <Toaster position="top-right" />
                 <RouterLoadingOverlay />
             </div>

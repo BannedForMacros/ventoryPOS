@@ -1,21 +1,19 @@
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { router } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import {
-    Package, Boxes, Coins, Percent, Star, Layers, Search, X,
-    ChevronDown, ChevronUp, Trophy,
-} from 'lucide-react';
+import { Package, Boxes, Coins, Percent, Star, Layers, Trophy } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
+import Table, { Column } from '@/Components/UI/Table';
 import { DonutChart, BarList } from '@/Components/UI/Charts';
 import {
-    Kpi, ReportCard, FiltrosReporte, FieldSelect, Paginacion, Empty, Th,
-    theadStyle, zebra, fmtS, fmtInt, fmtCant, fieldStyle,
+    Kpi, ReportCard, FiltrosReporte, FieldSelect,
+    fmtS, fmtInt, fmtCant, fieldStyle,
     type Paginado,
 } from '@/Components/Reportes/ReportUI';
 import type { Categoria, Local, PageProps } from '@/types';
 
-interface ProductoRow {
+interface ProductoRow extends Record<string, unknown> {
     producto_id:      number;
     producto_nombre:  string;
     cantidad_total:   number;
@@ -27,6 +25,9 @@ interface ProductoRow {
     categoria_id:     number | null;
     categoria_nombre: string | null;
 }
+
+/** Fila de la tabla: el producto + su puesto y participación ya calculados. */
+interface ProductoFila extends ProductoRow { rank: number; participacion: number; }
 
 interface PorCategoria { categoria: string; total: number; cantidad: number; }
 interface TopProducto  { producto_id: number; producto_nombre: string; total: number; cantidad: number; }
@@ -58,29 +59,59 @@ interface Props extends PageProps {
 export default function ReportesProductos({
     productos, kpis, por_categoria, top_productos, categorias, locales, filters, flash,
 }: Props) {
-    const [abiertos, setAbiertos] = useState<Set<number>>(new Set());
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
 
+    // Al filtrar se vuelve a la página 1 (si no, se queda en una página que ya
+    // no existe) y se conserva el scroll: antes la pantalla saltaba al inicio
+    // y había que bajar de nuevo hasta la tabla.
     function filtrar(patch: Record<string, string | undefined>) {
-        router.get(route('reportes.productos'), { ...filters, ...patch }, { preserveState: true, replace: true });
+        router.get(route('reportes.productos'), { ...filters, ...patch, page: undefined }, {
+            preserveState: true, preserveScroll: true, replace: true,
+        });
     }
-    const limpiar = () => router.get(route('reportes.productos'), {}, { preserveState: true, replace: true });
+    const limpiar = () => router.get(route('reportes.productos'), {}, {
+        preserveState: true, preserveScroll: true, replace: true,
+    });
 
     const tieneFiltros = !!(filters.local_id || filters.categoria_id || filters.buscar || filters.orden);
 
-    function toggle(id: number) {
-        setAbiertos(prev => {
-            const s = new Set(prev);
-            s.has(id) ? s.delete(id) : s.add(id);
-            return s;
-        });
-    }
-
+    // La tabla estándar recibe el paginador del servidor tal cual (navega páginas
+    // reales); solo se le agrega a cada fila su puesto y su participación.
     const rankBase = (productos.from ?? 1) - 1;
+    const filas: ProductoFila[] = productos.data.map((p, i) => ({
+        ...p,
+        rank: rankBase + i + 1,
+        participacion: kpis.monto_total > 0 ? (p.monto_total / kpis.monto_total) * 100 : 0,
+    }));
+
+    const columnas: Column<ProductoFila>[] = [
+        { key: 'rank', label: '#', render: p => <span style={{ color: 'var(--color-text-muted)' }}>{p.rank}</span> },
+        { key: 'producto_nombre', label: 'Producto', render: p => <span className="font-medium">{p.producto_nombre}</span> },
+        { key: 'categoria_nombre', label: 'Categoría', render: p => <span style={{ color: 'var(--color-text-muted)' }}>{p.categoria_nombre ?? 'Sin categoría'}</span> },
+        { key: 'cantidad_total', label: 'Cant.', align: 'right', render: p => fmtCant(p.cantidad_total) },
+        { key: 'ventas_distintas', label: 'N° ventas', align: 'right', render: p => fmtInt(p.ventas_distintas) },
+        { key: 'precio_promedio', label: 'P. promedio', align: 'right', render: p => fmtS(p.precio_promedio) },
+        {
+            key: 'descuento_total', label: 'Descuento', align: 'right',
+            render: p => p.descuento_total > 0
+                ? <span style={{ color: 'var(--color-danger)' }}>-{fmtS(p.descuento_total)}</span>
+                : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
+        },
+        { key: 'monto_total', label: 'Total', align: 'right', render: p => <span className="font-bold" style={{ color: 'var(--color-success)' }}>{fmtS(p.monto_total)}</span> },
+        {
+            key: 'participacion', label: 'Part.', align: 'right',
+            render: p => (
+                <span className="font-bold px-1.5 py-0.5 rounded" style={{
+                    color: 'var(--color-primary)',
+                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
+                }}>{p.participacion.toFixed(1)}%</span>
+            ),
+        },
+    ];
 
     return (
         <AppLayout title="Reporte de productos">
@@ -145,129 +176,40 @@ export default function ReportesProductos({
                 </ReportCard>
             </div>
 
-            {/* Ranking completo */}
+            {/* Ranking completo — tabla estándar: busca al escribir (sin Enter),
+                pagina contra el servidor y despliega el detalle de cada fila. */}
             <ReportCard icon={<Package size={14} />} title="Ranking de productos" badge={fmtInt(productos.total)} sinPadding
                 actions={
-                    <>
-                        <div className="relative">
-                            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
-                            <input type="search" defaultValue={filters.buscar ?? ''} placeholder="Buscar producto…"
-                                onKeyDown={e => { if (e.key === 'Enter') filtrar({ buscar: (e.target as HTMLInputElement).value || undefined }); }}
-                                className="text-xs rounded-lg pl-7 pr-6 py-1.5 border outline-none w-44"
-                                style={fieldStyle} />
-                            {filters.buscar && (
-                                <button onClick={() => filtrar({ buscar: undefined })}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }}>
-                                    <X size={11} />
-                                </button>
-                            )}
-                        </div>
-                        <select value={filters.orden ?? ''} onChange={e => filtrar({ orden: e.target.value || undefined })}
-                            className="text-xs rounded-lg px-2.5 py-1.5 border outline-none"
-                            style={fieldStyle}>
-                            <option value="">Más vendidos (S/)</option>
-                            <option value="cantidad">Más vendidos (und)</option>
-                            <option value="ventas">Más ventas distintas</option>
-                            <option value="precio">Mayor precio prom.</option>
-                            <option value="descuento">Más descontados</option>
-                        </select>
-                    </>
+                    <select value={filters.orden ?? ''} onChange={e => filtrar({ orden: e.target.value || undefined })}
+                        className="text-xs rounded-lg px-2.5 py-1.5 border outline-none"
+                        style={fieldStyle}>
+                        <option value="">Más vendidos (S/)</option>
+                        <option value="cantidad">Más vendidos (und)</option>
+                        <option value="ventas">Más ventas distintas</option>
+                        <option value="precio">Mayor precio prom.</option>
+                        <option value="descuento">Más descontados</option>
+                    </select>
                 }>
-                <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full text-xs">
-                        <thead>
-                            <tr style={theadStyle}>
-                                <Th className="w-8" />
-                                <Th>#</Th><Th>Producto</Th><Th>Categoría</Th>
-                                <Th right>Cant.</Th><Th right>N° ventas</Th><Th right>P. promedio</Th>
-                                <Th right>Descuento</Th><Th right>Total</Th><Th right>Part.</Th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {productos.data.map((p, i) => (
-                                <Fragment key={p.producto_id}>
-                                    <tr onClick={() => toggle(p.producto_id)}
-                                        className="cursor-pointer transition-colors hover:bg-black/[0.03]"
-                                        style={zebra(i)}>
-                                        <td className="pl-3 py-2" style={{ color: 'var(--color-primary)' }}>
-                                            {abiertos.has(p.producto_id) ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                                        </td>
-                                        <td className="px-3 py-2" style={{ color: 'var(--color-text-muted)' }}>{rankBase + i + 1}</td>
-                                        <td className="px-3 py-2 font-medium" style={{ color: 'var(--color-text)' }}>{p.producto_nombre}</td>
-                                        <td className="px-3 py-2" style={{ color: 'var(--color-text-muted)' }}>{p.categoria_nombre ?? 'Sin categoría'}</td>
-                                        <td className="px-3 py-2 text-right" style={{ color: 'var(--color-text)' }}>{fmtCant(p.cantidad_total)}</td>
-                                        <td className="px-3 py-2 text-right" style={{ color: 'var(--color-text)' }}>{fmtInt(p.ventas_distintas)}</td>
-                                        <td className="px-3 py-2 text-right" style={{ color: 'var(--color-text)' }}>{fmtS(p.precio_promedio)}</td>
-                                        <td className="px-3 py-2 text-right" style={{ color: p.descuento_total > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
-                                            {p.descuento_total > 0 ? `-${fmtS(p.descuento_total)}` : '—'}
-                                        </td>
-                                        <td className="px-3 py-2 text-right font-bold" style={{ color: 'var(--color-success)' }}>{fmtS(p.monto_total)}</td>
-                                        <td className="px-3 py-2 text-right">
-                                            <span className="font-bold px-1.5 py-0.5 rounded"
-                                                style={{
-                                                    color: 'var(--color-primary)',
-                                                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
-                                                }}>
-                                                {kpis.monto_total > 0 ? ((p.monto_total / kpis.monto_total) * 100).toFixed(1) : '0.0'}%
-                                            </span>
-                                        </td>
-                                    </tr>
-                                    {abiertos.has(p.producto_id) && (
-                                        <tr>
-                                            <td colSpan={10} className="px-6 py-3"
-                                                style={{
-                                                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 4%, var(--color-surface))',
-                                                    borderTop: '1px dashed var(--color-border)',
-                                                }}>
-                                                <div className="flex flex-wrap gap-x-8 gap-y-2 text-[11px]">
-                                                    <Dato label="Unidades usadas" valor={p.unidades ?? '—'} />
-                                                    <Dato label="Promedio por venta" valor={p.ventas_distintas > 0 ? fmtS(p.monto_total / p.ventas_distintas) : '—'} />
-                                                    <Dato label="Cantidad prom. por venta" valor={p.ventas_distintas > 0 ? fmtCant(p.cantidad_total / p.ventas_distintas) : '—'} />
-                                                    <Dato label="Descuento acumulado" valor={p.descuento_total > 0 ? `-${fmtS(p.descuento_total)}` : 'Sin descuentos'} />
-                                                    <Dato label="Categoría" valor={p.categoria_nombre ?? 'Sin categoría'} />
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )}
-                                </Fragment>
-                            ))}
-                            {productos.data.length === 0 && (
-                                <tr>
-                                    <td colSpan={10} className="text-center py-12" style={{ color: 'var(--color-text-muted)' }}>
-                                        <Package size={36} className="mx-auto mb-2 opacity-20" />
-                                        <p className="text-sm">Sin productos vendidos en el rango</p>
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Cards móvil */}
-                <div className="md:hidden flex flex-col gap-2 p-3">
-                    {productos.data.map((p, i) => (
-                        <div key={p.producto_id} className="rounded-xl p-3"
-                            style={{
-                                backgroundColor: 'color-mix(in srgb, var(--color-bg) 55%, var(--color-surface))',
-                                border: '1px solid var(--color-border)',
-                            }}>
-                            <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-                                        <span style={{ color: 'var(--color-text-muted)' }}>#{rankBase + i + 1}</span> {p.producto_nombre}
-                                    </p>
-                                    <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                        {p.categoria_nombre ?? 'Sin categoría'} · {fmtCant(p.cantidad_total)} und · {fmtInt(p.ventas_distintas)} ventas
-                                    </p>
-                                </div>
-                                <p className="font-bold text-sm" style={{ color: 'var(--color-success)' }}>{fmtS(p.monto_total)}</p>
+                <div className="p-3">
+                    <Table
+                        data={{ ...productos, data: filas }}
+                        columns={columnas}
+                        sortable={false}
+                        searchPlaceholder="Buscar producto…"
+                        emptyMessage="Sin productos vendidos en el rango"
+                        initialSearch={filters.buscar ?? ''}
+                        onServerSearch={t => filtrar({ buscar: t || undefined })}
+                        renderExpandedRow={p => (
+                            <div className="flex flex-wrap gap-x-8 gap-y-2 text-[11px]">
+                                <Dato label="Unidades usadas" valor={p.unidades ?? '—'} />
+                                <Dato label="Promedio por venta" valor={p.ventas_distintas > 0 ? fmtS(p.monto_total / p.ventas_distintas) : '—'} />
+                                <Dato label="Cantidad prom. por venta" valor={p.ventas_distintas > 0 ? fmtCant(p.cantidad_total / p.ventas_distintas) : '—'} />
+                                <Dato label="Descuento acumulado" valor={p.descuento_total > 0 ? `-${fmtS(p.descuento_total)}` : 'Sin descuentos'} />
+                                <Dato label="Categoría" valor={p.categoria_nombre ?? 'Sin categoría'} />
                             </div>
-                        </div>
-                    ))}
-                    {productos.data.length === 0 && <Empty text="Sin productos vendidos en el rango" />}
+                        )}
+                    />
                 </div>
-
-                <Paginacion paginado={productos} ruta="reportes.productos" filters={filters as unknown as Record<string, unknown>} />
             </ReportCard>
         </AppLayout>
     );
