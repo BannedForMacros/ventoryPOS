@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finanzas;
 
 use App\Http\Controllers\Controller;
+use App\Models\Auditoria;
 use App\Models\BalanceCuentaArqueo;
 use App\Models\BalanceDiario;
 use App\Models\BalanceDiarioItem;
@@ -1419,9 +1420,20 @@ class BalanceDiarioController extends Controller
             case 'deuda':
             case 'personal':
             case 'prestamo_otorgado': {
-                $deuda = Deuda::deEmpresa($empresaId)
-                    ->with(['pagos.metodoPago:id,nombre', 'pagos.cuenta:id,nombre', 'pagos.user:id,name', 'user:id,name'])
-                    ->findOrFail($refId);
+                $deuda = $refId
+                    ? Deuda::deEmpresa($empresaId)
+                        ->with(['pagos.metodoPago:id,nombre', 'pagos.cuenta:id,nombre', 'pagos.user:id,name', 'user:id,name'])
+                        ->find($refId)
+                    : null;
+
+                // La deuda ya no existe: se eliminó DESPUÉS de confirmar este
+                // balance, que es un snapshot inmutable y conserva su línea.
+                // Antes esto reventaba con 404 ("esta línea cambió, recargando")
+                // y recargar no arreglaba nada. Ahora se reconstruye el detalle
+                // desde la auditoría de eliminación (snapshot + motivo + quién).
+                if (!$deuda) {
+                    return $this->detalleDeudaEliminada($empresaId, $refId, $fecha, $categoria);
+                }
 
                 $grupos = $deuda->pagos->sortByDesc('fecha')->groupBy(fn ($p) => $p->fecha->format('Y-m-d'))
                     ->map(fn ($rows, $f) => [
@@ -1480,6 +1492,108 @@ class BalanceDiarioController extends Controller
         }
 
         abort(404, 'Esta línea no tiene detalle.');
+    }
+
+    /**
+     * Detalle de una línea de deuda/préstamo cuya deuda YA NO EXISTE.
+     *
+     * Los balances confirmados son snapshots inmutables: si la deuda se elimina
+     * después, la línea queda apuntando a un id muerto. En vez de romper el
+     * modal con un 404, se reconstruye lo que se pueda desde la auditoría de
+     * eliminación (nombre, montos, movimientos, motivo y quién la eliminó).
+     */
+    private function detalleDeudaEliminada(int $empresaId, ?int $refId, string $fecha, string $categoria)
+    {
+        $item = $refId
+            ? BalanceDiarioItem::query()
+                ->join('balances_diarios as b', 'b.id', '=', 'balance_diario_items.balance_diario_id')
+                ->where('b.empresa_id', $empresaId)
+                ->whereDate('b.fecha', $fecha)
+                ->where('balance_diario_items.categoria', $categoria)
+                ->where('balance_diario_items.ref_id', $refId)
+                ->select('balance_diario_items.*')
+                ->first()
+            : null;
+
+        $log = $refId
+            ? Auditoria::deEmpresa($empresaId)
+                ->where('accion', 'deuda.eliminada')
+                ->where('modelo_id', $refId)
+                ->orderByDesc('id')
+                ->first()
+            : null;
+
+        $ctx       = $log?->contexto ?? [];
+        $snap      = $ctx['snapshot'] ?? [];
+        $motivo    = $ctx['motivo'] ?? null;
+        $nombre    = $snap['nombre'] ?? $item?->descripcion ?? 'Deuda eliminada';
+        $original  = (float) ($snap['monto_original'] ?? $item?->monto ?? 0);
+        $saldoFin  = (float) ($snap['saldo'] ?? 0);
+        $porCobrar = ($snap['direccion'] ?? null) === 'por_cobrar' || $categoria === 'prestamo_otorgado';
+
+        $grupos = collect($snap['movimientos'] ?? [])
+            ->groupBy(fn ($m) => substr((string) ($m['fecha'] ?? $fecha), 0, 10))
+            ->map(fn ($rows, $f) => [
+                'id'      => 'mov-' . $f,
+                'titulo'  => $f,
+                'esFecha' => true,
+                'monto'   => round((float) collect($rows)->sum('monto'), 2),
+                'tipo'    => 'neutro',
+                'items'   => collect($rows)->map(fn ($m) => [
+                    'descripcion' => ($m['tipo'] ?? '') === 'amortizacion' ? 'Amortización' : 'Incremento',
+                    'cuenta'      => '—',
+                    'observacion' => 'Reconstruido desde la auditoría',
+                    'monto'       => (float) ($m['monto'] ?? 0),
+                    'tipo'        => ($m['tipo'] ?? '') === 'amortizacion' ? 'ingreso' : 'egreso',
+                    'user'        => $log?->user_name,
+                ])->values(),
+            ])->values();
+
+        // El origen del saldo, igual que en el detalle de una deuda viva.
+        $grupos->push([
+            'id'      => 'registro',
+            'titulo'  => substr((string) ($snap['fecha_inicio'] ?? $fecha), 0, 10),
+            'esFecha' => true,
+            'monto'   => $original,
+            'tipo'    => 'neutro',
+            'items'   => [[
+                'descripcion' => 'Registro de la deuda (saldo inicial)',
+                'cuenta'      => '—',
+                'observacion' => $snap['observacion'] ?? '—',
+                'monto'       => $original,
+                'tipo'        => $porCobrar ? 'ingreso' : 'egreso',
+                'user'        => null,
+            ]],
+        ]);
+
+        $texto = $log
+            ? 'La eliminó ' . $log->user_name . ' el ' . $log->created_at->format('d/m/Y H:i')
+                . ($motivo ? ' — motivo: "' . $motivo . '".' : '.')
+                . ' Este balance se confirmó ANTES de esa eliminación y es la foto de ese día, por eso la línea sigue apareciendo. El detalle de abajo se reconstruyó desde la auditoría.'
+            : 'La deuda ya no existe y no se encontró el registro de auditoría de su eliminación. La línea se conserva porque el balance de este día es un snapshot inmutable.';
+
+        return response()->json([
+            'tipo'  => 'grupos',
+            'aviso' => [
+                'variant' => 'warning',
+                'titulo'  => 'Esta deuda fue eliminada del sistema',
+                'texto'   => $texto,
+            ],
+            'cards' => [
+                ['label' => 'Deuda eliminada', 'valor' => $nombre, 'esTexto' => true],
+                ['label' => 'Monto original', 'valor' => $original],
+                ['label' => 'Monto en este balance', 'valor' => (float) ($item?->monto ?? 0),
+                 'color' => $porCobrar ? 'success' : 'danger'],
+                ['label' => 'Saldo al eliminarla', 'valor' => $saldoFin],
+            ],
+            'itemCols' => [
+                ['campo' => 'descripcion', 'label' => 'Movimiento'],
+                ['campo' => 'cuenta',      'label' => 'Cuenta'],
+                ['campo' => 'observacion', 'label' => 'Observación'],
+            ],
+            'montoLabel' => 'Monto',
+            'grupos'     => $grupos,
+        ]);
     }
 
     /**

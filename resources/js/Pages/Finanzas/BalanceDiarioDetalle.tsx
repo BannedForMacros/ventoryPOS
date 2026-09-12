@@ -173,10 +173,12 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                 + (params.toString() ? `?${params.toString()}` : '');
             const res = await fetch(url, { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
             if (res.status === 404) {
-                // La línea referencia un registro que ya no existe: la página
-                // quedó abierta con un balance viejo (p.ej. tras regenerar datos).
-                toast.error('Esta línea cambió desde que abriste la página. Recargando…');
-                setTimeout(() => router.reload(), 800);
+                // Las deudas/préstamos eliminados YA no caen aquí: el backend
+                // reconstruye su detalle desde la auditoría. Esto queda para las
+                // categorías que simplemente no tienen detalle: se avisa y se
+                // cierra, SIN recargar (recargar no arregla nada en un balance
+                // confirmado, que es un snapshot inmutable del día).
+                toast.error('Esta línea no tiene un detalle que mostrar.');
                 setDetalleDe(null);
                 return;
             }
@@ -1243,6 +1245,13 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                     })}
                                 </div>
                             </div>
+                        )}
+
+                        {/* Aviso del backend (ej. la deuda de esta línea fue eliminada). */}
+                        {detalleData.aviso && (
+                            <Callout variant={detalleData.aviso.variant ?? 'warning'} title={detalleData.aviso.titulo}>
+                                {detalleData.aviso.texto}
+                            </Callout>
                         )}
 
                         <DetalleAgrupado
