@@ -12,6 +12,7 @@ import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
 import Collapse from '@/Components/UI/Collapse';
 import DetalleAgrupado from '@/Components/Finanzas/DetalleAgrupado';
+import CambiosCierreModal from '@/Components/Finanzas/CambiosCierreModal';
 import type { PageProps } from '@/types';
 
 interface Item {
@@ -91,6 +92,8 @@ interface Props extends PageProps {
     alertaStock: { negativos: { nombre: string; cantidad: number }[]; kardex_desalineado: number };
     patrimonioHistorial: { fecha: string; patrimonio: number; utilidad: number | null }[];
     comparativo: { fecha: string; patrimonio: number; ventas: number; costo: number; gastos: number; utilidad: number | null } | null;
+    /** Cuánto cambió el día anterior DESPUÉS de su cierre (separa la variación). */
+    cambiosDiaAnterior?: { fecha: string; diferencia: number; relevante: boolean; verificable: boolean; umbral: number } | null;
 }
 
 const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
@@ -124,7 +127,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
     otro_contra:        'Otro',
 };
 
-export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas, saldosEntidad, variaciones, balanceAnteriorFecha, puedeReabrir, alertaStock, patrimonioHistorial, comparativo }: Props) {
+export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movimientosDia, saldosCuentas, saldosEntidad, variaciones, balanceAnteriorFecha, puedeReabrir, alertaStock, patrimonioHistorial, comparativo, cambiosDiaAnterior }: Props) {
     const { flash } = usePage<Props>().props;
     const editable = balance.estado === 'borrador';
 
@@ -157,6 +160,8 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
         try {
             const params = new URLSearchParams();
             if (item.ref_id) params.set('ref_id', String(item.ref_id));
+            // Fila del panel de variación: auditoría de la línea completa (día anterior → hoy).
+            if (item.ref_tipo === 'variacion') params.set('variacion', '1');
             // Líneas de efectivo/banco son POR ENTIDAD: se manda el nombre de la
             // entidad (descripción) para juntar sus cuentas (BCP Soles + Yape).
             if ((item.categoria === 'efectivo' || item.categoria === 'cuenta_bancaria') && item.ref_tipo === 'entidad') {
@@ -479,6 +484,13 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
     const patAyer = comparativo?.patrimonio ?? (balance.balance_anterior !== null ? Number(balance.balance_anterior) : null);
     const patDelta = patAyer !== null ? patHoy - patAyer : null;
     const patAyerFecha = comparativo?.fecha ?? balanceAnteriorFecha;
+    // Variación separada: lo que realmente pasó hoy vs lo que llegó tarde a días
+    // ya cerrados. Solo si el día comparado es el mismo y supera el umbral.
+    const cambiosCerrados = cambiosDiaAnterior && patDelta !== null
+        && cambiosDiaAnterior.fecha === (patAyerFecha ?? '').slice(0, 10)
+        && Math.abs(cambiosDiaAnterior.diferencia) >= cambiosDiaAnterior.umbral
+        ? cambiosDiaAnterior.diferencia : null;
+    const [cambiosFecha, setCambiosFecha] = useState<string | null>(null);
 
     return (
         <AppLayout title={`Balance ${balance.fecha}`}>
@@ -581,6 +593,35 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                         </div>
                     )}
                 </div>
+                {cambiosCerrados !== null && patDelta !== null && (
+                    <div className="mt-3 rounded-xl px-4 py-3 text-sm space-y-1.5"
+                        style={{ backgroundColor: 'var(--color-surface)', border: '1px dashed var(--color-border)' }}>
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <span style={{ color: 'var(--color-text)' }}>Movimiento real del día</span>
+                            <span className="font-bold tabular-nums" style={{ color: patDelta - cambiosCerrados >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                {patDelta - cambiosCerrados > 0 ? '+' : ''}{money(patDelta - cambiosCerrados)}
+                            </span>
+                        </div>
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <span style={{ color: 'var(--color-text)' }}>
+                                Cambios en días ya cerrados
+                                <button onClick={() => setCambiosFecha(cambiosDiaAnterior!.fecha)}
+                                    className="ml-2 text-xs font-semibold underline" style={{ color: 'var(--color-primary)' }}>
+                                    ver qué cambió
+                                </button>
+                            </span>
+                            <span className="font-bold tabular-nums" style={{ color: cambiosCerrados >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                {cambiosCerrados > 0 ? '+' : ''}{money(cambiosCerrados)}
+                            </span>
+                        </div>
+                        <p className="text-[11px] leading-snug" style={{ color: 'var(--color-text-muted)' }}>
+                            La variación compara con el balance del {new Date(cambiosDiaAnterior!.fecha + 'T00:00:00').toLocaleDateString('es-PE')} tal
+                            como se cerró. Después de ese cierre se registraron o corrigieron datos de ese día o anteriores por
+                            {' '}{money(Math.abs(cambiosCerrados))}: eso no ocurrió hoy.
+                        </p>
+                    </div>
+                )}
+
                 <p className="text-[11px] mt-3" style={{ color: 'var(--color-text-muted)' }}>
                     Esta variación <strong>no es ganancia ni pérdida</strong>: pagar proveedores o comprar mercadería baja el patrimonio sin ser pérdida. La ganancia real del día es la <strong>Utilidad del día</strong>.
                 </p>
@@ -825,7 +866,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             return (
                                 <button
                                     key={`${v.seccion}-${v.categoria}`}
-                                    onClick={() => clickeable && abrirDetalle({ id: 0, seccion: v.seccion, categoria: v.categoria === 'stock' ? 'stock_mov' : v.categoria, descripcion: `${v.label} — variación del día`, ref_tipo: null, ref_id: null, monto: String(v.hoy), es_manual: false, conciliado: false })}
+                                    onClick={() => clickeable && abrirDetalle({ id: 0, seccion: v.seccion, categoria: v.categoria, descripcion: `${v.label} — variación del día`, ref_tipo: 'variacion', ref_id: null, monto: String(v.hoy), es_manual: false, conciliado: false })}
                                     disabled={!clickeable}
                                     className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-black/[0.02] disabled:cursor-default"
                                 >
@@ -1287,6 +1328,9 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                     ]} />
                 </div>
             </Modal>
+
+            {/* "¿Qué cambió después del cierre?" del día anterior (solo lectura). */}
+            <CambiosCierreModal fecha={cambiosFecha} onClose={() => setCambiosFecha(null)} />
         </AppLayout>
     );
 }

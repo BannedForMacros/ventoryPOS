@@ -197,6 +197,17 @@ class BalanceDiarioController extends Controller
             'deuda' => 'Deudas/préstamos', 'personal' => 'Personal',
         ];
 
+        // Cambios en el día anterior DESPUÉS de su cierre: separan la variación que
+        // se ve hoy en "movimiento real del día" + "cambios en días ya cerrados".
+        // Solo lectura; el día anterior no se toca.
+        $cambiosDiaAnterior = null;
+        if ($anterior) {
+            $resumen = app(\App\Services\CambiosCierreService::class)->resumen($anterior);
+            if ($resumen['verificable']) {
+                $cambiosDiaAnterior = $resumen + ['umbral' => \App\Services\CambiosCierreService::UMBRAL];
+            }
+        }
+
         $totHoy  = $balance->items->groupBy('categoria');
         $totAyer = $anterior ? $anterior->items->groupBy('categoria') : collect();
 
@@ -291,6 +302,7 @@ class BalanceDiarioController extends Controller
             'saldosCuentas'  => $saldosCuentas,
             'saldosEntidad'  => $saldosEntidad,
             'variaciones'    => $variaciones,
+            'cambiosDiaAnterior'   => $cambiosDiaAnterior,
             'balanceAnteriorFecha' => $anterior?->fecha?->toDateString(),
             'esAdmin'            => (bool) $user->rol->es_admin,
             'puedeReabrir'       => $esUltimoConfirmado && (bool) $user->rol->es_admin,
@@ -569,6 +581,13 @@ class BalanceDiarioController extends Controller
 
         $empresaId = $user->empresa_id;
         $refId     = $request->integer('ref_id') ?: null;
+
+        // Fila de VARIACIÓN del día (panel "qué subió / qué bajó"): auditoría de la
+        // línea completa entre el día anterior confirmado y esta fecha, entidad por
+        // entidad y con los documentos que la movieron.
+        if ($request->boolean('variacion')) {
+            return $this->detalleVariacion($empresaId, $fecha, $categoria);
+        }
 
         $fmtDia = fn (string $f) => substr($f, 0, 10);
         $nombreCliente = fn ($c) => $c?->razon_social ?? trim(($c?->nombres ?? '') . ' ' . ($c?->apellidos ?? ''));
@@ -1242,8 +1261,13 @@ class BalanceDiarioController extends Controller
             // día (entregas posteriores se devuelven; anticipos posteriores
             // no aparecen).
             case 'anticipo_cliente': {
+                // Misma regla que la línea del balance: los devueltos cuentan hasta
+                // el día de su devolución (evento real), los anulados nunca.
+                $devueltoAntes = app(\App\Services\BalanceDiarioService::class)
+                    ->devueltoHasta($empresaId, 'cliente_anticipo_devolucion', 'anticipo_cliente.devuelto');
+
                 $anticipos = ClienteAnticipo::deEmpresa($empresaId)
-                    ->whereIn('estado', ['activo', 'aplicado'])
+                    ->whereIn('estado', ['activo', 'aplicado', 'devuelto'])
                     ->whereDate('fecha', '<=', $fecha)
                     ->with(['cliente:id,nombres,apellidos,razon_social', 'producto:id,nombre,precio_venta', 'user:id,name',
                             'items', 'venta:id,numero',
@@ -1251,6 +1275,7 @@ class BalanceDiarioController extends Controller
                     ->orderByDesc('fecha')
                     ->limit(500)
                     ->get()
+                    ->reject(fn (ClienteAnticipo $a) => $a->estado === 'devuelto' && $devueltoAntes($a, $fecha))
                     ->map(function (ClienteAnticipo $a) use ($fecha) {
                         // Entregas POSTERIORES al corte → se devuelven al pendiente.
                         $post = $a->aplicaciones->filter(fn ($ap) => $ap->fecha->toDateString() > $fecha);
@@ -1259,9 +1284,13 @@ class BalanceDiarioController extends Controller
 
                         if ($a->items->isNotEmpty()) {
                             $valor = round((float) $a->saldo + (float) $post->sum('monto'), 2);
-                        } elseif ($a->tipo_valorizacion === 'material' && $a->producto && $a->cantidad_pendiente !== null) {
+                        } elseif ($a->tipo_valorizacion === 'material' && $a->producto && $a->cantidad_pendiente !== null
+                            && (float) $a->cantidad > 0) {
+                            // Al precio CONGELADO que pagó el cliente (monto/cantidad), igual
+                            // que la línea del balance. Antes el modal usaba el precio de
+                            // venta de HOY y su total no coincidía con la línea.
                             $cant  = (float) $a->cantidad_pendiente + (float) $post->sum(fn ($ap) => (float) ($ap->cantidad ?? 0));
-                            $valor = round($cant * (float) $a->producto->precio_venta, 2);
+                            $valor = round($cant * ((float) $a->monto / (float) $a->cantidad), 2);
                             $a->setAttribute('cant_corte', $cant);
                         } else {
                             $valor = round((float) $a->saldo + (float) $post->sum('monto'), 2);
@@ -1286,8 +1315,9 @@ class BalanceDiarioController extends Controller
                         return 'Por entregar' . ($a->venta?->numero ? " (Venta {$a->venta->numero})" : '') . ': ' . ($lista ?: '—');
                     }
                     if ($a->tipo_valorizacion === 'material') {
+                        $precioPagado = (float) $a->cantidad > 0 ? (float) $a->monto / (float) $a->cantidad : 0;
                         return "{$a->producto?->nombre} × " . (float) ($a->cant_corte ?? $a->cantidad_pendiente)
-                            . ' a S/' . number_format((float) ($a->producto?->precio_venta ?? 0), 2) . ' del día';
+                            . ' a S/' . number_format($precioPagado, 2) . ' (precio pagado)';
                     }
                     return 'Dinero';
                 };
@@ -1338,7 +1368,7 @@ class BalanceDiarioController extends Controller
             // ── Adelanto a proveedor puntual: sus aplicaciones ──────────
             case 'adelanto_proveedor': {
                 if (!$refId) {
-                    return $this->detalleVariacionCategoria($empresaId, $fecha, $categoria);
+                    return $this->detalleVariacion($empresaId, $fecha, $categoria);
                 }
 
                 $adelanto = ProveedorAdelanto::deEmpresa($empresaId)
@@ -1426,7 +1456,7 @@ class BalanceDiarioController extends Controller
                 // el fix de deudas eliminadas, mostraba un falso "deuda eliminada"
                 // con montos en cero. Ahora muestra qué cambió contra ayer.
                 if (!$refId) {
-                    return $this->detalleVariacionCategoria($empresaId, $fecha, $categoria);
+                    return $this->detalleVariacion($empresaId, $fecha, $categoria);
                 }
 
                 $deuda = $refId
@@ -1504,89 +1534,105 @@ class BalanceDiarioController extends Controller
     }
 
     /**
-     * Detalle de la fila de VARIACIÓN de una categoría (no de una línea suelta).
+     * Auditoría de una línea del balance entre el día anterior CONFIRMADO y esta
+     * fecha: cada entidad (producto, venta, compra, anticipo, cuenta, deuda…) con
+     * su valor en ambos días y los documentos que la movieron. Las filas suman
+     * exactamente la variación real de la línea.
      *
-     * Las tarjetas de "variación del día" agrupan toda la categoría y llegan sin
-     * ref_id. Lo útil ahí no es el detalle de un registro, sino QUÉ cambió: se
-     * comparan las líneas de esta fecha contra las del último balance confirmado
-     * anterior, emparejando por ref_id (o por descripción si no tiene).
+     * Si el día anterior cambió DESPUÉS de su cierre, se informa aparte: es la
+     * diferencia entre lo que muestra la tarjeta (contra lo guardado al cerrar) y
+     * el movimiento real del período.
      */
-    private function detalleVariacionCategoria(int $empresaId, string $fecha, string $categoria)
+    private function detalleVariacion(int $empresaId, string $fecha, string $categoria)
     {
-        $hoy = BalanceDiario::deEmpresa($empresaId)->whereDate('fecha', $fecha)->with('items')->first();
-        $ayer = BalanceDiario::deEmpresa($empresaId)->confirmado()
-            ->where('fecha', '<', $fecha)->orderByDesc('fecha')->with('items')->first();
+        $nombres = [
+            'efectivo' => 'Efectivo', 'cuenta_bancaria' => 'Cuentas bancarias', 'stock' => 'Stock (inventario)',
+            'stock_mov' => 'Stock (inventario)', 'cxc' => 'Deudas por cobrar', 'cxp' => 'Proveedores por pagar',
+            'prestamo_otorgado' => 'Préstamos otorgados', 'adelanto_proveedor' => 'Adelantos a proveedores',
+            'anticipo_cliente' => 'Anticipos de clientes', 'planilla_descuento' => 'Descuentos de planilla',
+            'deuda' => 'Deudas y préstamos', 'personal' => 'Deudas con el personal',
+        ];
+        $categoria = $categoria === 'stock_mov' ? 'stock' : $categoria;
+        $nombre = $nombres[$categoria] ?? $categoria;
 
-        $lineasHoy  = $hoy?->items->where('categoria', $categoria)  ?? collect();
-        $lineasAyer = $ayer?->items->where('categoria', $categoria) ?? collect();
+        $anterior = BalanceDiario::deEmpresa($empresaId)->confirmado()
+            ->where('fecha', '<', $fecha)->orderByDesc('fecha')->first();
 
-        $clave = fn ($i) => $i->ref_id ? 'ref:' . $i->ref_id : 'desc:' . mb_strtolower(trim($i->descripcion));
-
-        $filas = [];
-        foreach ($lineasAyer as $i) {
-            $filas[$clave($i)] = ['descripcion' => $i->descripcion, 'ayer' => (float) $i->monto, 'hoy' => 0.0];
+        if (!$anterior) {
+            return response()->json([
+                'tipo'  => 'grupos',
+                'aviso' => ['variant' => 'info', 'titulo' => "{$nombre}: sin día anterior para comparar",
+                            'texto' => 'Todavía no hay un balance confirmado anterior a esta fecha.'],
+                'cards' => [], 'grupos' => [],
+            ]);
         }
-        foreach ($lineasHoy as $i) {
-            $k = $clave($i);
-            $filas[$k] ??= ['descripcion' => $i->descripcion, 'ayer' => 0.0, 'hoy' => 0.0];
-            $filas[$k]['descripcion'] = $i->descripcion;
-            $filas[$k]['hoy'] = (float) $i->monto;
-        }
 
-        $esContra  = ($lineasHoy->first()?->seccion ?? $lineasAyer->first()?->seccion) === 'contra';
-        $fechaAyer = $ayer?->fecha->format('d/m/Y');
-        $money     = fn (float $v) => 'S/ ' . number_format($v, 2);
+        $desde = $anterior->fecha->toDateString();
+        $r = app(\App\Services\AuditoriaLineaService::class)->comparar($empresaId, $categoria, $desde, $fecha);
 
-        $filas = collect($filas)->map(fn ($f) => [
+        $fmt = fn (string $f) => \Illuminate\Support\Carbon::parse($f)->format('d/m');
+        $money = fn (float $v) => 'S/ ' . number_format($v, 2);
+        // En contra, subir es malo (más deuda); a favor, al revés.
+        $tipo = fn (float $v) => abs($v) < 0.005 ? null : (($v > 0) === $r['en_contra'] ? 'egreso' : 'ingreso');
+
+        $item = fn (array $f) => [
             'descripcion' => $f['descripcion'],
-            'ayerTxt'     => $money($f['ayer']),
-            'hoyTxt'      => $money($f['hoy']),
-            'monto'       => round($f['hoy'] - $f['ayer'], 2),
-            // En "en contra", subir es malo (más deuda); a favor, al revés.
-            'tipo'        => round($f['hoy'] - $f['ayer'], 2) == 0.0 ? null
-                : ((round($f['hoy'] - $f['ayer'], 2) > 0) === $esContra ? 'egreso' : 'ingreso'),
-        ])->values();
+            'sub'         => $f['detalle'],
+            'antesTxt'    => $money($f['antes']),
+            'despuesTxt'  => $money($f['despues']),
+            'monto'       => $f['variacion'],
+            'tipo'        => $tipo($f['variacion']),
+            'historial'   => array_map(fn ($e) => [
+                'fecha'       => \Illuminate\Support\Carbon::parse($e['fecha'])->format('d/m H:i'),
+                'descripcion' => $e['descripcion'],
+                'monto'       => (float) ($e['monto'] ?? 0),
+                'user'        => $e['user'],
+            ], $f['eventos']),
+        ];
 
+        $filas = collect($r['filas']);
         $grupo = fn (string $id, string $titulo, $items) => $items->isEmpty() ? null : [
-            'id'      => $id,
-            'titulo'  => $titulo,
-            'esFecha' => false,
-            'monto'   => round((float) $items->sum('monto'), 2),
-            'tipo'    => 'neutro',
-            'items'   => $items->values(),
+            'id' => $id, 'titulo' => $titulo, 'esFecha' => false, 'tipo' => 'neutro',
+            'monto' => round((float) $items->sum('variacion'), 2),
+            'items' => $items->map($item)->values(),
         ];
 
         $grupos = collect([
-            $grupo('subieron', $esContra ? 'Deudas nuevas o que subieron' : 'Subieron o aparecieron',
-                $filas->filter(fn ($f) => $f['monto'] > 0)->sortByDesc('monto')),
-            $grupo('bajaron', $esContra ? 'Pagadas o que bajaron' : 'Bajaron o desaparecieron',
-                $filas->filter(fn ($f) => $f['monto'] < 0)->sortBy('monto')),
-            $grupo('igual', 'Sin cambios', $filas->filter(fn ($f) => $f['monto'] == 0.0)),
+            $grupo('subieron', $r['en_contra'] ? 'Subieron (más deuda)' : 'Subieron', $filas->filter(fn ($f) => $f['variacion'] >= 0.005)),
+            $grupo('bajaron', $r['en_contra'] ? 'Bajaron (se pagó / entregó)' : 'Bajaron', $filas->filter(fn ($f) => $f['variacion'] <= -0.005)),
+            $grupo('movimientos', 'Con movimientos que se compensaron', $filas->filter(fn ($f) => abs($f['variacion']) < 0.005)),
         ])->filter()->values();
 
-        $totalHoy  = round((float) $lineasHoy->sum('monto'), 2);
-        $totalAyer = round((float) $lineasAyer->sum('monto'), 2);
-        $delta     = round($totalHoy - $totalAyer, 2);
+        // Cambios de esta línea en el día anterior DESPUÉS de su cierre.
+        $verificador = app(\App\Services\BalanceVerificacionService::class);
+        $cambio = null;
+        if ($verificador->verificable($anterior)) {
+            $c = collect($verificador->verificar($anterior)['categorias'])->firstWhere('categoria', $categoria);
+            if ($c && abs($c['diferencia']) >= 1) $cambio = (float) $c['diferencia'];
+        }
+
+        $texto = "Qué cambió en {$nombre} entre el cierre del {$fmt($desde)} y el {$fmt($fecha)}, con los datos de hoy. "
+            . 'Desplegá cada fila para ver los documentos que la movieron, cuándo y quién.';
+        if ($cambio !== null) {
+            $texto .= " Además, el {$fmt($desde)} esta línea cambió " . ($cambio > 0 ? '+' : '−') . $money(abs($cambio))
+                . ' DESPUÉS de su cierre (registros tardíos o correcciones): por eso la tarjeta de variación puede mostrar un número distinto. '
+                . 'El detalle está en "Cambios en días ya cerrados".';
+        }
 
         return response()->json([
             'tipo'  => 'grupos',
-            'aviso' => [
-                'variant' => 'info',
-                'titulo'  => 'Variación del día — toda la categoría',
-                'texto'   => $ayer
-                    ? "Esta fila no es un registro suelto: agrupa toda la categoría. Abajo está qué cambió respecto al balance del {$fechaAyer}. Para el detalle de un registro puntual, abrilo desde su propia línea del balance."
-                    : 'No hay un balance confirmado anterior con el cual comparar, así que solo se listan las líneas de este día.',
-            ],
-            'cards' => [
-                ['label' => 'Total hoy', 'valor' => $totalHoy],
-                ['label' => $fechaAyer ? "Total al {$fechaAyer}" : 'Total anterior', 'valor' => $totalAyer],
-                ['label' => 'Variación', 'valor' => $delta,
-                 'color' => $delta == 0.0 ? null : (($delta > 0) === $esContra ? 'danger' : 'success')],
-            ],
+            'aviso' => ['variant' => $cambio !== null ? 'warning' : 'info', 'titulo' => "{$nombre} — auditoría del período", 'texto' => $texto],
+            'cards' => array_values(array_filter([
+                ['label' => "Al {$fmt($desde)}", 'valor' => $r['total_desde']],
+                ['label' => "Al {$fmt($fecha)}", 'valor' => $r['total_hasta']],
+                ['label' => 'Variación real', 'valor' => $r['variacion'],
+                 'color' => abs($r['variacion']) < 0.005 ? null : (($r['variacion'] > 0) === $r['en_contra'] ? 'danger' : 'success')],
+                $cambio !== null ? ['label' => "Cambió después del cierre del {$fmt($desde)}", 'valor' => $cambio, 'color' => 'warning'] : null,
+            ])),
             'itemCols' => [
                 ['campo' => 'descripcion', 'label' => 'Concepto'],
-                ['campo' => 'ayerTxt',     'label' => 'Ayer'],
-                ['campo' => 'hoyTxt',      'label' => 'Hoy'],
+                ['campo' => 'antesTxt',    'label' => "Al {$fmt($desde)}"],
+                ['campo' => 'despuesTxt',  'label' => "Al {$fmt($fecha)}"],
             ],
             'montoLabel' => 'Variación',
             'grupos'     => $grupos,
@@ -1698,6 +1744,40 @@ class BalanceDiarioController extends Controller
     /**
      * Actualiza una línea manual (monto) o su check de conciliación ("OK").
      */
+    /**
+     * "¿Qué cambió después del cierre?" de un día confirmado: líneas que cambiaron
+     * y los documentos que lo causaron. Solo lectura.
+     */
+    public function cambiosCierre(Request $request, string $fecha)
+    {
+        abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha), 404);
+
+        $balance = BalanceDiario::deEmpresa($request->user()->empresa_id)->where('fecha', $fecha)->firstOrFail();
+        abort_unless($balance->estado === 'confirmado', 404);
+
+        return response()->json(
+            app(\App\Services\CambiosCierreService::class)->analizar($balance)
+            + ['umbral' => \App\Services\CambiosCierreService::UMBRAL]
+        );
+    }
+
+    /**
+     * Diferencia después del cierre de varios balances a la vez (la lista la pide
+     * en segundo plano para no demorar la carga). Solo lectura.
+     */
+    public function verificacionLista(Request $request)
+    {
+        $ids = collect(explode(',', (string) $request->query('ids')))
+            ->map(fn ($i) => (int) $i)->filter()->unique()->take(60);
+
+        $svc = app(\App\Services\CambiosCierreService::class);
+
+        return response()->json(
+            BalanceDiario::deEmpresa($request->user()->empresa_id)->whereIn('id', $ids)->get()
+                ->mapWithKeys(fn (BalanceDiario $b) => [$b->id => $svc->resumen($b)])
+        );
+    }
+
     public function actualizarItem(Request $request, BalanceDiarioItem $item)
     {
         $user    = $request->user();

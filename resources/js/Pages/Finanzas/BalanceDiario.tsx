@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { CalendarDays, ArrowRight, Scale } from 'lucide-react';
+import { CalendarDays, ArrowRight, Scale, AlertTriangle } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
+import CambiosCierreModal from '@/Components/Finanzas/CambiosCierreModal';
 import type { PageProps } from '@/types';
 
 interface Balance extends Record<string, unknown> {
@@ -39,9 +40,28 @@ const signed = (v: unknown) => {
     );
 };
 
+interface Verificacion { fecha: string; diferencia: number; relevante: boolean; verificable: boolean; }
+
 export default function BalanceDiario({ balances, hoy }: Props) {
     const { flash } = usePage<Props>().props;
     const [fecha, setFecha] = useState(hoy);
+    // Días cerrados que cambiaron después del cierre (se piden aparte para no
+    // demorar la carga de la lista).
+    const [verificacion, setVerificacion] = useState<Record<number, Verificacion>>({});
+    const [cambiosFecha, setCambiosFecha] = useState<string | null>(null);
+
+    useEffect(() => {
+        const ids = balances.data.filter(b => b.estado === 'confirmado').map(b => b.id);
+        if (!ids.length) return;
+        let vigente = true;
+        fetch(route('finanzas.balance.verificacion', { ids: ids.join(',') }), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        })
+            .then(r => (r.ok ? r.json() : {}))
+            .then(d => { if (vigente) setVerificacion(d); })
+            .catch(() => {});
+        return () => { vigente = false; };
+    }, [balances.data]);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -51,7 +71,25 @@ export default function BalanceDiario({ balances, hoy }: Props) {
     const columns: Column<Balance>[] = [
         {
             key: 'fecha', label: 'Fecha', sortable: true,
-            render: (b) => <span className="font-medium">{new Date(b.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</span>,
+            render: (b) => {
+                const v = verificacion[b.id];
+                return (
+                    <div>
+                        <span className="font-medium">{new Date(b.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                        {v?.relevante && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setCambiosFecha(b.fecha.slice(0, 10)); }}
+                                className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold"
+                                style={{ color: 'var(--color-warning, #d97706)' }}
+                                title="Se registraron o corrigieron datos de este día después de cerrarlo. El día no se modifica."
+                            >
+                                <AlertTriangle size={11} />
+                                Cambió después del cierre: {v.diferencia > 0 ? '+' : '−'}{money(Math.abs(v.diferencia))}
+                            </button>
+                        )}
+                    </div>
+                );
+            },
         },
         {
             key: 'estado', label: 'Estado',
@@ -116,6 +154,8 @@ export default function BalanceDiario({ balances, hoy }: Props) {
                 searchPlaceholder="Buscar fecha..."
                 emptyMessage="Aún no hay balances. Genera el balance de hoy con el botón de arriba."
             />
+
+            <CambiosCierreModal fecha={cambiosFecha} onClose={() => setCambiosFecha(null)} />
         </AppLayout>
     );
 }

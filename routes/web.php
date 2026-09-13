@@ -530,6 +530,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Balance diario
         Route::middleware('permiso:finanzas.balance,ver')->get('balance', [BalanceDiarioController::class, 'index'])->name('balance.index');
+        Route::middleware('permiso:finanzas.balance,ver')->get('balance/verificacion', [BalanceDiarioController::class, 'verificacionLista'])->name('balance.verificacion');
+        Route::middleware('permiso:finanzas.balance,ver')->get('balance/{fecha}/cambios-cierre', [BalanceDiarioController::class, 'cambiosCierre'])->name('balance.cambios-cierre');
         Route::middleware('permiso:finanzas.balance,ver')->get('balance/{fecha}/detalle/{categoria}', [BalanceDiarioController::class, 'detalleItem'])->name('balance.detalle');
         Route::middleware('permiso:finanzas.balance,ver')->get('balance/{fecha}', [BalanceDiarioController::class, 'show'])->name('balance.show');
         Route::middleware('permiso:finanzas.balance,editar')->put('balance/items/{item}', [BalanceDiarioController::class, 'actualizarItem'])->name('balance.items.update');

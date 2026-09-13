@@ -815,6 +815,8 @@ class DeudaController extends Controller
                 'motivo'   => $data['motivo'],
                 'snapshot' => [
                     'nombre'         => $deuda->nombre,
+                    // La fecha permite saber qué balances cerrados cambian al eliminarla.
+                    'fecha_inicio'   => $deuda->fecha_inicio?->toDateString(),
                     'direccion'      => $deuda->direccion,
                     'tipo'           => $deuda->tipo,
                     'monto_original' => (float) $deuda->monto_original,
