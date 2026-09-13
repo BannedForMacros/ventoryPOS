@@ -262,3 +262,18 @@ it('el autocontrol no deja constancia cuando todo está cuadrado', function () {
     expect(\App\Models\Auditoria::where('empresa_id', $this->env->empresa->id)
         ->where('accion', 'stock.autoreparado')->exists())->toBeFalse();
 });
+
+it('el aviso de Stock informa el costo cuando lo que se corrigió fue el costo', function () {
+    $p = $this->env->crearProducto(['stock_inicial' => 0, 'precio_costo' => 0, 'nombre' => 'Fierro de prueba']);
+    kxEscenarioBase($this->env, $p->id);
+    $this->kardex->reconstruirPar($this->alm, $p->id);
+    // Misma cantidad, costo inflado (como la Arena Amarilla a S/ 105.93).
+    Stock::where('almacen_id', $this->alm)->where('producto_id', $p->id)->update(['costo_promedio' => 105.925]);
+
+    $this->artisan('inventario:autocontrol', ['--empresa' => $this->env->empresa->id])->assertSuccessful();
+
+    $fila = $this->get(route('inventario.stock.index'))->original->getData()['page']['props']['autocorreccion']['productos'][0];
+    expect($fila['cantidad_antes'])->toBe($fila['cantidad_despues']);
+    expect($fila['costo_antes'])->toBe(105.925);
+    expect($fila['costo_despues'])->toBe(8.25);
+});

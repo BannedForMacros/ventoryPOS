@@ -148,13 +148,20 @@ class StockController extends Controller
                 'stock_corregidos'  => (int) ($autocorreccion->contexto['stock_corregidos'] ?? 0),
                 'kardex_corregidos' => (int) ($autocorreccion->contexto['kardex_corregidos'] ?? 0),
                 'sin_respaldo'      => (int) ($autocorreccion->contexto['sin_respaldo'] ?? 0),
+                // Primero los de mayor impacto en el valor del inventario.
                 'productos'         => collect($autocorreccion->contexto['detalle'] ?? [])
                     ->reject(fn ($d) => $d['solo_kardex'] ?? false)
+                    ->sortByDesc(fn ($d) => abs(
+                        (float) ($d['cantidad_despues'] ?? 0) * (float) ($d['costo_despues'] ?? 0)
+                        - (float) ($d['cantidad_antes'] ?? 0) * (float) ($d['costo_antes'] ?? 0)
+                    ))
                     ->take(8)
                     ->map(fn ($d) => [
                         'producto'         => $d['producto'] ?? ('#' . ($d['producto_id'] ?? '')),
                         'cantidad_antes'   => (float) ($d['cantidad_antes'] ?? 0),
                         'cantidad_despues' => (float) ($d['cantidad_despues'] ?? 0),
+                        'costo_antes'      => (float) ($d['costo_antes'] ?? 0),
+                        'costo_despues'    => (float) ($d['costo_despues'] ?? 0),
                         'sin_respaldo'     => (bool) ($d['sin_respaldo'] ?? false),
                     ])->values(),
             ] : null,

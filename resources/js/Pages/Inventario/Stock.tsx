@@ -73,11 +73,37 @@ interface Props extends PageProps {
         stock_corregidos: number;
         kardex_corregidos: number;
         sin_respaldo: number;
-        productos: { producto: string; cantidad_antes: number; cantidad_despues: number; sin_respaldo: boolean }[];
+        productos: {
+            producto: string;
+            cantidad_antes: number;
+            cantidad_despues: number;
+            costo_antes: number;
+            costo_despues: number;
+            sin_respaldo: boolean;
+        }[];
     } | null;
 }
 
 const money = (v: number) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+
+const num = (v: number, max = 4) =>
+    Number(v ?? 0).toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: max });
+
+/**
+ * Qué cambió en un producto corregido por el autocontrol. Solo se nombra lo que
+ * de verdad cambió: si la cantidad es la misma, decir "720 → 720 und" no
+ * informa nada — lo que se corrigió fue el costo.
+ */
+function describirCorreccion(p: { cantidad_antes: number; cantidad_despues: number; costo_antes: number; costo_despues: number }): string {
+    const partes: string[] = [];
+    if (Math.abs(p.cantidad_antes - p.cantidad_despues) > 0.00005) {
+        partes.push(`stock ${num(p.cantidad_antes)} → ${num(p.cantidad_despues)} und`);
+    }
+    if (Math.abs(p.costo_antes - p.costo_despues) > 0.00005) {
+        partes.push(`costo S/ ${num(p.costo_antes)} → S/ ${num(p.costo_despues)}`);
+    }
+    return partes.length ? ` — ${partes.join(' · ')}` : '';
+}
 
 const ORDENES: Record<string, string> = {
     'nombre:asc':   'Nombre (A-Z)',
@@ -294,7 +320,7 @@ export default function Stock({
                     variant={autocorreccion.sin_respaldo > 0 ? 'warning' : 'info'}
                     className="mb-4"
                     title={autocorreccion.stock_corregidos > 0
-                        ? `El sistema corrigió automáticamente el stock de ${autocorreccion.stock_corregidos} producto(s)`
+                        ? `El sistema corrigió automáticamente ${autocorreccion.stock_corregidos} producto(s)`
                         : `El sistema reordenó automáticamente el historial de ${autocorreccion.kardex_corregidos} producto(s)`}
                 >
                     <p>
@@ -307,11 +333,16 @@ export default function Stock({
                                 <li key={i} className="tabular-nums">
                                     <span className="font-medium">{p.producto}</span>
                                     {p.sin_respaldo
-                                        ? ` — ${p.cantidad_antes} und sin ningún documento que las respalde (no se tocaron: revisar)`
-                                        : ` — ${p.cantidad_antes} → ${p.cantidad_despues} und`}
+                                        ? ` — ${num(p.cantidad_antes)} und sin ningún documento que las respalde (no se tocaron: revisar)`
+                                        : describirCorreccion(p)}
                                 </li>
                             ))}
                         </ul>
+                    )}
+                    {autocorreccion.stock_corregidos + autocorreccion.sin_respaldo > autocorreccion.productos.length && (
+                        <p className="mt-1 opacity-80">
+                            … y {autocorreccion.stock_corregidos + autocorreccion.sin_respaldo - autocorreccion.productos.length} más (detalle en Auditoría).
+                        </p>
                     )}
                 </Callout>
             )}
