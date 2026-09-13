@@ -553,13 +553,10 @@ class BalanceDiarioController extends Controller
         abort_unless(preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha), 404);
         abort_unless((bool) $user->rol->es_admin, 403);
 
-        \Illuminate\Support\Facades\Artisan::call('kardex:reconstruir', [
-            '--empresa' => $user->empresa_id,
-            '--silent'  => true,
-        ]);
-        \Illuminate\Support\Facades\Artisan::call('stock:recalcular', [
-            '--empresa' => $user->empresa_id,
-        ]);
+        // Motor único (stock + kardex del mismo cálculo); solo escribe lo que difiere.
+        $almacenIds = DB::table('almacenes')->where('empresa_id', $user->empresa_id)
+            ->pluck('id')->map(fn ($id) => (int) $id)->all();
+        app(\App\Services\KardexService::class)->reconstruirAlmacenes($almacenIds);
 
         return redirect()->route('finanzas.balance.show', ['fecha' => $fecha])
             ->with('success', 'Kardex y stock reconstruidos. El inventario del balance quedó al día.');

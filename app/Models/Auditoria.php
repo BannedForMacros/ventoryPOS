@@ -55,6 +55,7 @@ class Auditoria extends Model
             'turno.cerrado'           => 'Turno cerrado',
             'turno.reabierto'         => 'Turno reabierto',
             'stock.recalculado'       => 'Stock recalculado',
+            'stock.autoreparado'      => 'Stock corregido automáticamente',
             'permisos.modificados'    => 'Permisos modificados',
             'usuario.creado'          => 'Usuario creado',
             'usuario.actualizado'     => 'Usuario actualizado',

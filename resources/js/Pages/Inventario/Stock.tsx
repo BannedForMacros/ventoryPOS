@@ -14,6 +14,7 @@ import Input from '@/Components/UI/Input';
 import Modal from '@/Components/UI/Modal';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
+import Callout from '@/Components/UI/Callout';
 import { hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 
@@ -67,6 +68,13 @@ interface Props extends PageProps {
     stocksNegativosCount: number;
     stocksNegativos: StockNegativo[];
     puede?: { ajustar: boolean };
+    autocorreccion?: {
+        fecha: string;
+        stock_corregidos: number;
+        kardex_corregidos: number;
+        sin_respaldo: number;
+        productos: { producto: string; cantidad_antes: number; cantidad_despues: number; sin_respaldo: boolean }[];
+    } | null;
 }
 
 const money = (v: number) => `S/ ${Number(v ?? 0).toFixed(2)}`;
@@ -81,7 +89,7 @@ const ORDENES: Record<string, string> = {
 
 export default function Stock({
     stocks, almacenes, categorias, kpis, umbralBajo,
-    mostrarSelector, filters, stocksNegativosCount, stocksNegativos, puede,
+    mostrarSelector, filters, stocksNegativosCount, stocksNegativos, puede, autocorreccion,
 }: Props) {
     const { flash } = usePage<Props>().props;
     const [busqueda, setBusqueda] = useState(filters.busqueda ?? '');
@@ -279,6 +287,34 @@ export default function Stock({
                     </Button>
                 }
             />
+
+            {/* Corrección automática del inventario (autocontrol nocturno). */}
+            {autocorreccion && (
+                <Callout
+                    variant={autocorreccion.sin_respaldo > 0 ? 'warning' : 'info'}
+                    className="mb-4"
+                    title={autocorreccion.stock_corregidos > 0
+                        ? `El sistema corrigió automáticamente el stock de ${autocorreccion.stock_corregidos} producto(s)`
+                        : `El sistema reordenó automáticamente el historial de ${autocorreccion.kardex_corregidos} producto(s)`}
+                >
+                    <p>
+                        Revisión del {new Date(autocorreccion.fecha).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' })}:
+                        {' '}el inventario se rearmó desde las compras, ventas, entregas y ajustes registrados. No hace falta apretar "Recalcular".
+                    </p>
+                    {autocorreccion.productos.length > 0 && (
+                        <ul className="mt-1.5 space-y-0.5">
+                            {autocorreccion.productos.map((p, i) => (
+                                <li key={i} className="tabular-nums">
+                                    <span className="font-medium">{p.producto}</span>
+                                    {p.sin_respaldo
+                                        ? ` — ${p.cantidad_antes} und sin ningún documento que las respalde (no se tocaron: revisar)`
+                                        : ` — ${p.cantidad_antes} → ${p.cantidad_despues} und`}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </Callout>
+            )}
 
             {/* ── KPIs (clickables para filtrar por estado) ────────────── */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">

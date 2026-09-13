@@ -1218,15 +1218,14 @@ class EntradaController extends Controller
 
     /**
      * Reconstruye stock y kardex de los productos indicados en un almacén, desde
-     * los documentos canónicos. Deja el CPP correcto y el kardex sin filas de
-     * reverso/edición residuales — el mismo motor que "Recalcular", por producto.
+     * los documentos canónicos, con el motor único (una sola pasada deja los dos
+     * libros iguales: CPP correcto y kardex sin filas de reverso/edición).
      */
     private function reconstruirStockYKardex(\App\Models\Almacen $almacen, \Illuminate\Support\Collection $productoIds): void
     {
-        $kardex = app(\App\Console\Commands\ReconstruirKardex::class);
+        $kardex = app(\App\Services\KardexService::class);
         foreach ($productoIds->unique() as $pid) {
-            Stock::reconstruir($almacen->id, (int) $pid);
-            $kardex->reconstruirPar($almacen, (int) $pid);
+            $kardex->reconstruirPar($almacen->id, (int) $pid);
         }
     }
 }

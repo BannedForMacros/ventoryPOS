@@ -116,6 +116,14 @@ class StockController extends Controller
             ])
             ->values();
 
+        // Última corrección automática del inventario (autocontrol nocturno), para
+        // que se vea qué arregló el sistema sin que nadie apretara "Recalcular".
+        $autocorreccion = \App\Models\Auditoria::deEmpresa($empresaId)
+            ->where('accion', 'stock.autoreparado')
+            ->where('created_at', '>=', now()->subDays(3))
+            ->orderByDesc('created_at')
+            ->first(['created_at', 'contexto']);
+
         return Inertia::render('Inventario/Stock', [
             'stocks'               => $stocks,
             'almacenes'            => $almacenes,
@@ -135,6 +143,21 @@ class StockController extends Controller
             'stocksNegativos'      => $stocksNegativos,
             // Habilita el botón "Ajustar" por fila (permiso inventario.ajustes → editar).
             'puede'                => ['ajustar' => $user->tienePermiso('inventario.ajustes', 'editar')],
+            'autocorreccion'       => $autocorreccion ? [
+                'fecha'             => $autocorreccion->created_at->toIso8601String(),
+                'stock_corregidos'  => (int) ($autocorreccion->contexto['stock_corregidos'] ?? 0),
+                'kardex_corregidos' => (int) ($autocorreccion->contexto['kardex_corregidos'] ?? 0),
+                'sin_respaldo'      => (int) ($autocorreccion->contexto['sin_respaldo'] ?? 0),
+                'productos'         => collect($autocorreccion->contexto['detalle'] ?? [])
+                    ->reject(fn ($d) => $d['solo_kardex'] ?? false)
+                    ->take(8)
+                    ->map(fn ($d) => [
+                        'producto'         => $d['producto'] ?? ('#' . ($d['producto_id'] ?? '')),
+                        'cantidad_antes'   => (float) ($d['cantidad_antes'] ?? 0),
+                        'cantidad_despues' => (float) ($d['cantidad_despues'] ?? 0),
+                        'sin_respaldo'     => (bool) ($d['sin_respaldo'] ?? false),
+                    ])->values(),
+            ] : null,
         ]);
     }
 
@@ -215,48 +238,30 @@ class StockController extends Controller
     {
         $almacenIds = $this->scope->almacenIdsVisibles($request->user());
 
-        $stats = DB::transaction(function () use ($almacenIds) {
-            $pares = Stock::combinacionesConMovimientos($almacenIds);
+        // Motor único: stock y kardex salen del mismo cálculo y solo se escribe lo
+        // que difiere. Ya no hay que resetear a 0 ni correr dos motores seguidos.
+        $res = app(\App\Services\KardexService::class)->reconstruirAlmacenes($almacenIds);
 
-            // Snapshot de cantidades antes del reseteo para auditoria
-            $stockPrevio = Stock::whereIn('almacen_id', $almacenIds)
-                ->selectRaw('SUM(cantidad) as total_unidades, SUM(cantidad * costo_promedio) as valor')
-                ->first();
-
-            // Para no dejar registros con cantidad inflada de un escenario previo,
-            // reseteamos solo los almacenes visibles a 0 y luego reconstruimos los pares.
-            Stock::whereIn('almacen_id', $almacenIds)
-                ->update(['cantidad' => 0, 'costo_promedio' => 0]);
-
-            foreach ($pares as $p) {
-                Stock::reconstruir($p['almacen_id'], $p['producto_id']);
-            }
-
-            $stockPosterior = Stock::whereIn('almacen_id', $almacenIds)
-                ->selectRaw('SUM(cantidad) as total_unidades, SUM(cantidad * costo_promedio) as valor')
-                ->first();
-
-            return [
-                'almacenes_afectados' => count($almacenIds),
-                'combinaciones'       => $pares->count(),
-                'unidades_antes'      => (float) ($stockPrevio?->total_unidades ?? 0),
-                'unidades_despues'    => (float) ($stockPosterior?->total_unidades ?? 0),
-                'valor_antes'         => round((float) ($stockPrevio?->valor ?? 0), 2),
-                'valor_despues'       => round((float) ($stockPosterior?->valor ?? 0), 2),
-            ];
-        });
-
-        // Regenerar también el KARDEX desde los documentos finales: el ledger en
-        // vivo acumula ruido operativo (entrada_reverso / entrada_edicion de cada
-        // edición); reconstruirlo lo deja limpio, cronológico y cuadrado con el
-        // stock recién recalculado (apertura del corte + movimientos posteriores).
-        \Illuminate\Support\Facades\Artisan::call('kardex:reconstruir', [
-            '--empresa' => $request->user()->empresa_id,
+        \App\Services\AuditoriaService::log('stock.recalculado', null, [
+            'almacenes_afectados' => count($almacenIds),
+            'combinaciones'       => $res['pares'],
+            'kardex_corregidos'   => $res['kardex_corregidos'],
+            'stock_corregidos'    => $res['stock_corregidos'],
+            'sin_respaldo'        => $res['sin_respaldo'],
+            'unidades_antes'      => $res['unidades_antes'],
+            'unidades_despues'    => $res['unidades_despues'],
+            'valor_antes'         => $res['valor_antes'],
+            'valor_despues'       => $res['valor_despues'],
         ]);
 
-        \App\Services\AuditoriaService::log('stock.recalculado', null, $stats);
+        $mensaje = ($res['kardex_corregidos'] + $res['stock_corregidos']) === 0
+            ? 'Stock y kardex revisados: ya estaban cuadrados con los documentos, no hubo nada que corregir.'
+            : "Stock y kardex rearmados desde los documentos: {$res['stock_corregidos']} producto(s) corregido(s) en stock y {$res['kardex_corregidos']} en kardex.";
 
-        return redirect()->back()->with('success',
-            'Stock y kardex reconstruidos: inventario inicial + entradas, salidas, transferencias, ventas, entregas de pendientes, devoluciones y cierres confirmados.');
+        if ($res['sin_respaldo'] > 0) {
+            $mensaje .= " {$res['sin_respaldo']} producto(s) tienen stock sin ningún documento que lo respalde: no se tocaron, conviene revisarlos.";
+        }
+
+        return redirect()->back()->with('success', $mensaje);
     }
 }

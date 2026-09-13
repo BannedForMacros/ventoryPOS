@@ -68,4 +68,30 @@ class AuditoriaService
             return null;
         }
     }
+
+    /**
+     * Registra una acción hecha por el SISTEMA (tareas programadas, colas), sin
+     * usuario en sesión. log() la descartaría por no tener usuario; aquí queda
+     * con user_name 'Sistema' para que se vea en la auditoría de la empresa.
+     */
+    public static function logSistema(int $empresaId, string $accion, array $contexto = [], ?Model $modelo = null): ?Auditoria
+    {
+        try {
+            return Auditoria::create([
+                'empresa_id'  => $empresaId,
+                'user_id'     => null,
+                'user_name'   => 'Sistema',
+                'accion'      => $accion,
+                'modelo_tipo' => $modelo ? get_class($modelo) : null,
+                'modelo_id'   => $modelo?->getKey(),
+                'contexto'    => empty($contexto) ? null : $contexto,
+                'ip'          => null,
+                'user_agent'  => null,
+                'created_at'  => now(),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('AuditoriaService::logSistema fallo', ['accion' => $accion, 'error' => $e->getMessage()]);
+            return null;
+        }
+    }
 }

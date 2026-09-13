@@ -6,14 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Ledger / kardex de inventario. UNA fila por cada movimiento de stock del
- * sistema (entrada, salida, venta, devolución, transferencia, cierre, ajuste).
+ * Kardex de inventario. UNA fila por cada movimiento de stock del sistema
+ * (entrada, salida, venta, entrega, devolución, transferencia, cierre, ajuste).
  *
- * Es una tabla de SOLO LECTURA para la app: se escribe exclusivamente desde
- * Stock::ajustar() (post-commit, sin bloquear el flujo) y desde el comando
- * `kardex:reconstruir`. Nadie la consulta para calcular stock/costos reales;
- * el stock canónico sigue viviendo en la tabla `stock`. Este ledger existe
- * solo para trazabilidad y para el Reporte de Kardex.
+ * Es la fuente de verdad del inventario: la tabla `stock` es su última fila.
+ * Se escribe solo desde Stock::ajustar() (en la misma transacción del
+ * movimiento) y desde el motor único KardexService, que lo rearma desde los
+ * documentos cuando un movimiento rompe el orden cronológico.
  */
 class MovimientoInventario extends Model
 {

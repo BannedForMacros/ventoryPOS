@@ -67,3 +67,17 @@ Schedule::call(function () {
         ]);
     }
 })->hourly()->name('comprobantes:reencolar-consultas')->withoutOverlapping();
+
+/**
+ * Autocontrol nocturno del inventario.
+ *
+ * POR QUÉ EXISTE: cada producto se rearma solo en la cola cuando un movimiento
+ * rompe el orden (compra cargada tarde, edición, anulación). Si el worker estuvo
+ * caído o algo se escapó, esta pasada compara todos los productos contra sus
+ * documentos y corrige los que difieran, dejando constancia en auditoría. Es lo
+ * que reemplaza apretar "Recalcular" a mano. Solo escribe lo que difiere.
+ */
+Schedule::command('inventario:autocontrol')
+    ->dailyAt('02:00')
+    ->withoutOverlapping(120)
+    ->runInBackground();

@@ -28,6 +28,10 @@
              para hacer rollback automático y no persistir cambios. -->
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
+        <!-- TestEnv crea stock inicial sin documento que lo respalde; la
+             autocorrección del kardex lo rearmaría desde documentos y rompería
+             esos escenarios. Los tests del motor la encienden explícitamente. -->
+        <env name="INVENTARIO_AUTOCORRECCION" value="false"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

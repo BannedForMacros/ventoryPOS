@@ -147,12 +147,13 @@ class AjusteInventarioController extends Controller
         return back()->with('success', "Ajuste {$ajuste->numero} anulado: stock revertido.");
     }
 
-    /** Reconstruye el kardex de un (almacén, producto) — deja la cadena cronológica. */
+    /**
+     * Rearma kardex Y stock de un (almacén, producto) con el motor único — deja
+     * la cadena cronológica. Antes solo rearmaba el kardex y la tabla stock
+     * quedaba con su valor anterior.
+     */
     private function reconstruirKardexProducto(int $almacenId, int $productoId): void
     {
-        $almacen = Almacen::find($almacenId);
-        if ($almacen) {
-            app(\App\Console\Commands\ReconstruirKardex::class)->reconstruirPar($almacen, $productoId);
-        }
+        app(\App\Services\KardexService::class)->reconstruirPar($almacenId, $productoId);
     }
 }

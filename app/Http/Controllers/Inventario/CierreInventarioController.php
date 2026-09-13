@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Inventario;
 
-use App\Console\Commands\ReconstruirKardex;
 use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\CierreInventario;
@@ -428,13 +427,12 @@ class CierreInventarioController extends Controller
         });
     }
 
-    /** Reconstruye stock y kardex de cada producto (motor de "Recalcular", por par). */
+    /** Reconstruye stock y kardex de cada producto con el motor único (una pasada, los dos libros). */
     private function reconstruirProductos(Almacen $almacen, Collection $productoIds): void
     {
-        $kardex = app(ReconstruirKardex::class);
+        $kardex = app(\App\Services\KardexService::class);
         foreach ($productoIds->unique() as $pid) {
-            Stock::reconstruir($almacen->id, (int) $pid);
-            $kardex->reconstruirPar($almacen, (int) $pid);
+            $kardex->reconstruirPar($almacen->id, (int) $pid);
         }
     }
 }

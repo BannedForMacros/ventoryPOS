@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use App\Exceptions\InsufficientStockException;
+use App\Services\KardexService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -93,7 +95,7 @@ class Stock extends Model
             );
         }
 
-        $stock = DB::transaction(function () use ($almacenId, $productoId, $cantidadBase, $costoNuevo, $permitirNegativo) {
+        return DB::transaction(function () use ($almacenId, $productoId, $cantidadBase, $costoNuevo, $permitirNegativo, $contexto) {
             // 1) Asegurar que la fila exista. Idempotente y atomico gracias al
             //    UNIQUE (almacen_id, producto_id). Si dos transacciones la crean
             //    simultaneamente, una gana y la otra recibe DO NOTHING (sin error).
@@ -124,11 +126,19 @@ class Stock extends Model
                 // entran al COSTO VIGENTE y NO diluyen el promedio.
                 // Así el costo unitario es consistente y auditable, y coincide
                 // con Stock::reconstruir() y con `kardex:reconstruir`.
+                //
+                // Un saldo previo NEGATIVO no participa del promedio: no es inventario
+                // real, es mercadería vendida antes de registrar la compra. Sin este
+                // resguardo, vender 2,290 y luego comprar 2,291 dividía el total de la
+                // compra entre 1 unidad (el ladrillo a S/ 2,268 del 10/09). Es la misma
+                // fórmula que KardexService::reproducir.
                 if ($costoNuevo > 0) {
                     $costoActual = (float) $stock->costo_promedio;
+                    $base        = max($cantidadActual, 0.0);
+                    $divisor     = $base + $cantidadBase;
                     $stock->costo_promedio = round(
-                        $nuevaCantidad > 0
-                            ? (($cantidadActual * $costoActual) + ($cantidadBase * $costoNuevo)) / $nuevaCantidad
+                        $divisor > 0
+                            ? (($base * $costoActual) + ($cantidadBase * $costoNuevo)) / $divisor
                             : 0,
                         4
                     );
@@ -156,21 +166,18 @@ class Stock extends Model
 
             $stock->save();
 
+            // El kardex se registra en la MISMA transacción: stock y kardex se
+            // guardan juntos o no se guarda ninguno.
+            self::trazarEnKardex($stock, $almacenId, $productoId, $cantidadBase, $costoNuevo, $contexto);
+
             return $stock;
         });
-
-        // Traza el movimiento en el kardex. Se hace DESPUÉS del commit y a
-        // prueba de fallos: si algo fallara al registrar el kardex, el
-        // movimiento de stock YA está guardado y NO se revierte. El kardex
-        // siempre puede regenerarse con `php artisan kardex:reconstruir`.
-        self::trazarEnKardex($stock, $almacenId, $productoId, $cantidadBase, $costoNuevo, $contexto);
-
-        return $stock;
     }
 
     /**
-     * Registra una fila en el ledger de kardex (movimientos_inventario).
-     * Post-commit y no bloqueante: jamás rompe la venta/entrada/etc.
+     * Registra una fila en el kardex (movimientos_inventario) dentro de la
+     * transacción del movimiento, y agenda la reconstrucción del producto cuando
+     * la fila deja la cadena de saldos desordenada.
      */
     private static array $empresaAlmacenCache = [];
 
@@ -213,271 +220,67 @@ class Stock extends Model
             'user_id'          => $ctx['user_id'] ?? optional(auth()->user())->id,
         ];
 
-        DB::afterCommit(function () use ($fila) {
-            try {
+        $kardex = app(KardexService::class);
+
+        // El insert va en su propio savepoint: si el kardex fallara, la venta o
+        // compra NO se cae — se revierte solo el savepoint y se agenda la
+        // reconstrucción del producto, que lo deja al día desde los documentos.
+        // Antes el error se tragaba en un log y el kardex quedaba desfasado hasta
+        // que alguien apretaba "Recalcular".
+        try {
+            $fueraDeOrden = DB::transaction(function () use ($fila, $almacenId, $productoId) {
+                $ultimaFecha = DB::table('movimientos_inventario')
+                    ->where('almacen_id', $almacenId)
+                    ->where('producto_id', $productoId)
+                    ->max('fecha');
+
                 MovimientoInventario::create($fila);
-            } catch (\Throwable $e) {
-                Log::error('No se pudo registrar el movimiento en el kardex.', [
-                    'error'       => $e->getMessage(),
-                    'almacen_id'  => $fila['almacen_id'],
-                    'producto_id' => $fila['producto_id'],
-                    'tipo'        => $fila['tipo'],
-                ]);
-            }
-        });
+
+                return $ultimaFecha !== null
+                    && Carbon::parse($fila['fecha'])->lt(Carbon::parse($ultimaFecha));
+            });
+        } catch (\Throwable $e) {
+            Log::error('No se pudo registrar el movimiento en el kardex; se reconstruirá el producto.', [
+                'error'       => $e->getMessage(),
+                'almacen_id'  => $fila['almacen_id'],
+                'producto_id' => $fila['producto_id'],
+                'tipo'        => $fila['tipo'],
+            ]);
+            $kardex->programarReconstruccion($almacenId, $productoId, 'kardex_no_registrado');
+
+            return;
+        }
+
+        // Una fila con fecha anterior a la última del producto (compra cargada tarde,
+        // documento retrofechado) o una que corrige historia (reverso, edición,
+        // anulación) desordena los saldos: se rearma el producto en segundo plano.
+        if ($fueraDeOrden || in_array($fila['tipo'], KardexService::TIPOS_CORRECCION, true)) {
+            $kardex->programarReconstruccion($almacenId, $productoId, $fueraDeOrden ? 'fuera_de_orden' : $fila['tipo']);
+        }
     }
 
     /**
-     * Reconstruye el stock (cantidad + costo promedio) de UN par (almacén, producto)
-     * sumando todos los movimientos confirmados del sistema. Pensado para el botón
-     * "Recalcular stock" del panel admin: corrige discrepancias sin perder información.
+     * Reconstruye el stock y el kardex de UN par (almacén, producto) desde sus
+     * documentos. Delega en el MOTOR ÚNICO (KardexService): la tabla stock queda
+     * igual a la última fila del kardex, con la misma fórmula de costo que usa
+     * Stock::ajustar en vivo.
      *
-     * Fuentes de movimientos consideradas:
-     *   (+) Entradas en estado 'confirmado'.
-     *   (-) Salidas en estado 'confirmado'.
-     *   (-) Transferencias salientes (origen) en estado 'enviada' o 'recibida'.
-     *   (+) Transferencias entrantes (destino) en estado 'recibida' (toma cantidad_base_recibida).
-     *   (-) Ventas en estado 'completada' del local cuyo almacén tipo='local' coincide.
-     *   (+) Devoluciones en estado 'completada' con restock=true sobre ese mismo almacén.
-     *   (+/-) Cierres de inventario confirmados: aplica la diferencia (declarado - sistema).
+     * Antes este método tenía su propio cálculo, distinto del kardex: promediaba
+     * las compras sin descontar las ventas y no restaba las entregas de pedidos
+     * cuya venta no tenía ítems. Cada "Recalcular" dejaba así un costo en la tabla
+     * stock y otro en el kardex para el mismo producto.
      *
-     * El costo promedio se reconstruye a partir de las entradas confirmadas en orden
-     * cronológico (las salidas/ventas no afectan el CPP, ya está bien).
+     * Las cantidades negativas se conservan: un saldo negativo es una
+     * inconsistencia real que el admin debe ver (scopeNegativo), no se trunca.
      */
     public static function reconstruir(int $almacenId, int $productoId): self
     {
-        $stock = self::firstOrCreate(
+        app(KardexService::class)->reconstruirPar($almacenId, $productoId);
+
+        return self::firstOrCreate(
             ['almacen_id' => $almacenId, 'producto_id' => $productoId],
             ['cantidad' => 0, 'costo_promedio' => 0]
         );
-
-        // Inventario inicial (apertura): si existe, la reconstrucción ARRANCA de
-        // ese saldo/costo y solo suma los movimientos POSTERIORES a la fecha de
-        // corte. Sin apertura, arranca en 0 y cuenta TODO (comportamiento previo).
-        $apertura = \DB::table('stock_iniciales')
-            ->where('almacen_id', $almacenId)
-            ->where('producto_id', $productoId)
-            ->first();
-        $corte = $apertura ? substr((string) $apertura->fecha, 0, 10) . ' 23:59:59' : null;
-        // Aplica el filtro "solo movimientos posteriores al corte" a una consulta.
-        $post = fn ($q, string $col) => $corte ? $q->where($col, '>', $corte) : $q;
-
-        // ── Cantidad: arranca del inicial y suma/resta las fuentes ──────────
-        $cantidad = $apertura ? (float) $apertura->cantidad : 0.0;
-
-        // Entradas confirmadas (+)
-        $cantidad += (float) $post(\DB::table('entradas_detalle as ed')
-            ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
-            ->where('e.almacen_id', $almacenId)
-            ->where('e.estado', 'confirmado')
-            ->where('ed.producto_id', $productoId), 'e.fecha')
-            ->sum('ed.cantidad_base');
-
-        // Salidas confirmadas (-)
-        $cantidad -= (float) $post(\DB::table('salidas_detalle as sd')
-            ->join('salidas as s', 's.id', '=', 'sd.salida_id')
-            ->where('s.almacen_id', $almacenId)
-            ->where('s.estado', 'confirmado')
-            ->where('sd.producto_id', $productoId), 's.fecha')
-            ->sum('sd.cantidad_base');
-
-        // Ajustes de inventario confirmados (+/-): ingreso suma, salida resta.
-        // Sin costo: no recalculan CPP (entran/salen al costo vigente), por eso
-        // NO aparecen en el bloque de $ingresos más abajo. Respetan el corte de
-        // apertura vía $post(): un ajuste con fecha <= corte ya vive en el inicial.
-        $cantidad += (float) $post(\DB::table('ajustes_inventario as ai')
-            ->where('ai.almacen_id', $almacenId)
-            ->where('ai.estado', 'confirmado')
-            ->where('ai.tipo', 'ingreso')
-            ->where('ai.producto_id', $productoId), 'ai.fecha')
-            ->sum('ai.cantidad_base');
-
-        $cantidad -= (float) $post(\DB::table('ajustes_inventario as ai')
-            ->where('ai.almacen_id', $almacenId)
-            ->where('ai.estado', 'confirmado')
-            ->where('ai.tipo', 'salida')
-            ->where('ai.producto_id', $productoId), 'ai.fecha')
-            ->sum('ai.cantidad_base');
-
-        // Transferencias salientes (-): cuando ya se envió, el stock origen bajó
-        $cantidad -= (float) $post(\DB::table('transferencias_detalle as td')
-            ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
-            ->where('t.almacen_origen_id', $almacenId)
-            ->whereIn('t.estado', ['enviada', 'recibida'])
-            ->where('td.producto_id', $productoId), 't.fecha_envio')
-            ->sum('td.cantidad_base_enviada');
-
-        // Transferencias entrantes (+): solo cuando ya fue recibida
-        $cantidad += (float) $post(\DB::table('transferencias_detalle as td')
-            ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
-            ->where('t.almacen_destino_id', $almacenId)
-            ->where('t.estado', 'recibida')
-            ->where('td.producto_id', $productoId), 't.fecha_recepcion')
-            ->sum('td.cantidad_base_recibida');
-
-        // Las VENTAS (y sus pendientes/entregas de anticipo) solo descuentan si el
-        // producto descuenta stock al vender — misma regla que el POS en vivo
-        // (deboDescontarStock): un SERVICIO (flete, carguío...) o un producto con
-        // controla_stock=false jamás salió del inventario al venderse; restarlo
-        // aquí fabricaría negativos fantasma en cada recálculo.
-        $productoModel  = Producto::find($productoId);
-        $localModel     = ($localId = \DB::table('almacenes')->where('id', $almacenId)->value('local_id'))
-            ? Local::find($localId) : null;
-        $ventaDescuenta = $productoModel === null
-            || app(\App\Services\ConfiguracionOperacionService::class)->deboDescontarStock($productoModel, $localModel);
-
-        if ($ventaDescuenta) {
-
-        // Ventas completadas (-): se descuentan del almacén tipo='local' del local de la venta
-        $cantidad -= (float) $post(\DB::table('venta_items as vi')
-            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
-            ->join('almacenes as a', function ($j) {
-                $j->on('a.local_id', '=', 'v.local_id')
-                  ->on('a.empresa_id', '=', 'v.empresa_id')
-                  ->where('a.tipo', '=', 'local')
-                  ->where('a.activo', '=', true);
-            })
-            ->where('a.id', $almacenId)
-            ->where('v.estado', 'completada')
-            ->where('vi.producto_id', $productoId), 'v.fecha_venta')
-            ->sum('vi.cantidad_base');
-
-        // ── Pendientes por entregar (anticipos del POS) ─────────────────────
-        // Una venta "pendiente por entregar" resta COMPLETA en venta_items, pero
-        // físicamente esa mercadería NO salió al vender: sale recién al registrar
-        // cada ENTREGA. Dos correcciones simétricas:
-        //
-        // (a) Devolver lo AÚN NO entregado de las ventas contadas arriba: el
-        //     pendiente actual sigue en el almacén. (Antes el recálculo lo daba
-        //     por salido → stock reconstruido menor al físico.)
-        $cantidad += (float) $post(\DB::table('cliente_anticipo_items as ci')
-            ->join('cliente_anticipos as an', 'an.id', '=', 'ci.cliente_anticipo_id')
-            ->join('ventas as v', 'v.id', '=', 'an.venta_id')
-            ->join('almacenes as a', function ($j) {
-                $j->on('a.local_id', '=', 'v.local_id')
-                  ->on('a.empresa_id', '=', 'v.empresa_id')
-                  ->where('a.tipo', '=', 'local')
-                  ->where('a.activo', '=', true);
-            })
-            ->where('a.id', $almacenId)
-            ->where('v.estado', 'completada')
-            // Un anticipo ANULADO (venta editada/anulada) deja sus items con
-            // cantidad_pendiente intacta: si se sumaran, revivirían como stock
-            // fantasma en cada recálculo. Solo cuentan los anticipos vigentes.
-            ->where('an.estado', '<>', 'anulado')
-            ->where('ci.producto_id', $productoId), 'v.fecha_venta')
-            ->selectRaw('COALESCE(SUM(ci.cantidad_pendiente * ci.factor_conversion), 0) as t')
-            ->value('t');
-
-        // (b) Restar las ENTREGAS posteriores al corte cuya venta quedó ABSORBIDA
-        //     por la apertura (venta ≤ corte no se resta arriba, pero su entrega
-        //     posterior sí sacó mercadería del conteo — bug Mochica: 100
-        //     entregados el 16 reaparecían en cada recálculo). Sin apertura no
-        //     aplica: la venta ya restó todo y (a) devolvió el pendiente actual.
-        if ($corte) {
-            $cantidad -= (float) \DB::table('cliente_anticipo_aplicacion_items as cai')
-                ->join('cliente_anticipo_aplicaciones as ca', 'ca.id', '=', 'cai.cliente_anticipo_aplicacion_id')
-                ->join('cliente_anticipo_items as ci', 'ci.id', '=', 'cai.cliente_anticipo_item_id')
-                ->join('cliente_anticipos as an', 'an.id', '=', 'ca.cliente_anticipo_id')
-                ->join('ventas as v', 'v.id', '=', 'an.venta_id')
-                ->join('almacenes as a', function ($j) {
-                    $j->on('a.local_id', '=', 'v.local_id')
-                      ->on('a.empresa_id', '=', 'v.empresa_id')
-                      ->where('a.tipo', '=', 'local')
-                      ->where('a.activo', '=', true);
-                })
-                ->where('a.id', $almacenId)
-                ->where('ci.producto_id', $productoId)
-                ->where('an.estado', '<>', 'anulado')
-                ->where('ca.fecha', '>', $corte)
-                ->where('v.fecha_venta', '<=', $corte)
-                ->selectRaw('COALESCE(SUM(cai.cantidad * ci.factor_conversion), 0) as t')
-                ->value('t');
-        }
-
-        } // fin if ($ventaDescuenta): ventas + pendientes + entregas de anticipo
-
-        // Devoluciones completadas con restock=true (+) en almacén tipo='local' del local
-        $cantidad += (float) $post(\DB::table('devoluciones_detalle as dd')
-            ->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
-            ->join('almacenes as a', function ($j) {
-                $j->on('a.local_id', '=', 'd.local_id')
-                  ->on('a.empresa_id', '=', 'd.empresa_id')
-                  ->where('a.tipo', '=', 'local')
-                  ->where('a.activo', '=', true);
-            })
-            ->where('a.id', $almacenId)
-            ->where('d.estado', 'completada')
-            ->where('dd.restock', true)
-            ->where('dd.producto_id', $productoId), 'd.fecha')
-            ->sum('dd.cantidad_base');
-
-        // Cierres de inventario confirmados (+/-): aplican la diferencia declarada
-        $cantidad += (float) $post(\DB::table('cierres_inventario_items as ci')
-            ->join('cierres_inventario as c', 'c.id', '=', 'ci.cierre_id')
-            ->where('c.almacen_id', $almacenId)
-            ->where('c.estado', 'confirmado')
-            ->where('ci.producto_id', $productoId), 'c.fecha')
-            ->sum('ci.diferencia');
-
-        // ── Costo promedio CANÓNICO ─────────────────────────────────────────
-        // Se reconstruye desde los INGRESOS CON COSTO REAL en orden cronológico:
-        //   (semilla) inventario inicial      → costo = stock_iniciales.costo
-        //   (+) entradas confirmadas          → costo = precio_costo
-        //   (+) recepciones de transferencia  → costo = costo_unitario
-        // Las salidas, ventas, devoluciones y cierres NO alteran el CPP (mismo
-        // criterio que Stock::ajustar() y `kardex:reconstruir`).
-        $ingresos = collect();
-
-        foreach ($post(\DB::table('entradas_detalle as ed')
-            ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
-            ->where('e.almacen_id', $almacenId)
-            ->where('e.estado', 'confirmado')
-            ->where('ed.producto_id', $productoId), 'e.fecha')
-            ->get(['ed.cantidad_base', 'ed.precio_costo', 'e.fecha', 'e.id']) as $r) {
-            $ingresos->push([
-                'orden'    => (string) $r->fecha . '|' . str_pad((string) $r->id, 12, '0', STR_PAD_LEFT),
-                'cantidad' => (float) $r->cantidad_base,
-                'costo'    => (float) $r->precio_costo,
-            ]);
-        }
-
-        foreach ($post(\DB::table('transferencias_detalle as td')
-            ->join('transferencias as t', 't.id', '=', 'td.transferencia_id')
-            ->where('t.almacen_destino_id', $almacenId)
-            ->where('t.estado', 'recibida')
-            ->where('td.producto_id', $productoId), 't.fecha_recepcion')
-            ->get(['td.cantidad_base_recibida', 'td.costo_unitario', 't.fecha_recepcion', 't.id']) as $r) {
-            $ingresos->push([
-                'orden'    => (string) $r->fecha_recepcion . '|' . str_pad((string) $r->id, 12, '0', STR_PAD_LEFT),
-                'cantidad' => (float) $r->cantidad_base_recibida,
-                'costo'    => (float) $r->costo_unitario,
-            ]);
-        }
-
-        // Semilla del CPP: el inventario inicial es el primer "ingreso con costo".
-        $cantCpp = $apertura ? (float) $apertura->cantidad : 0.0;
-        $costo   = $apertura ? (float) $apertura->costo : 0.0;
-        foreach ($ingresos->sortBy('orden')->values() as $ing) {
-            // Ingreso sin costo propio: no altera el promedio (entra al costo vigente).
-            if ($ing['costo'] <= 0) { $cantCpp += $ing['cantidad']; continue; }
-            $nuevaCantidad = $cantCpp + $ing['cantidad'];
-            $costo = $nuevaCantidad > 0
-                ? (($cantCpp * $costo) + ($ing['cantidad'] * $ing['costo'])) / $nuevaCantidad
-                : 0;
-            $cantCpp = $nuevaCantidad;
-        }
-
-        // Permitimos cantidades negativas: si los movimientos confirmados arrojan
-        // saldo negativo significa que hubo una merma/error real que el admin
-        // debe atender (caso típico: venta en local con stock que nunca recibió
-        // transferencia). Truncar a 0 ocultaba la inconsistencia. El frontend
-        // pinta los negativos en rojo y la lista los expone via scopeNegativo().
-        $stock->cantidad       = round($cantidad, 4);
-        $stock->costo_promedio = round($costo, 4);
-        $stock->save();
-
-        return $stock;
     }
 
     /**
