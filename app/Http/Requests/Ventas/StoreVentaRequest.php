@@ -70,6 +70,9 @@ class StoreVentaRequest extends FormRequest
             'cotizacion_id'          => ['nullable', 'integer', Rule::exists('cotizaciones', 'id')->where('empresa_id', $empresaId)],
             // Anticipo de cliente (efectivo) con el que se pagará parte o todo de la venta.
             'anticipo_id'            => ['nullable', 'integer', Rule::exists('cliente_anticipos', 'id')->where('empresa_id', $empresaId)],
+            // Varios anticipos a la vez: se consumen del más antiguo al más nuevo.
+            'anticipo_ids'           => ['nullable', 'array'],
+            'anticipo_ids.*'         => ['integer', 'distinct', Rule::exists('cliente_anticipos', 'id')->where('empresa_id', $empresaId)],
             'descuento_concepto_id'  => [
                 'nullable', 'integer',
                 Rule::exists('descuento_conceptos', 'id')
@@ -597,15 +600,23 @@ class StoreVentaRequest extends FormRequest
         }
     }
 
+    /** Anticipos pedidos para pagar la venta (anticipo_ids + el anticipo_id de clientes viejos). */
+    private function idsAnticipo(): array
+    {
+        return collect((array) $this->input('anticipo_ids', []))
+            ->push($this->input('anticipo_id'))
+            ->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+    }
+
     /**
-     * Valida el anticipo de efectivo indicado para pagar la venta.
-     * Debe ser activo, tipo 'monto', pertenecer al cliente seleccionado y
-     * pertenecer a la empresa. No se permite combinar con venta a crédito.
+     * Valida los anticipos de efectivo indicados para pagar la venta.
+     * Cada uno debe ser activo, tipo 'monto', del cliente seleccionado y de la
+     * empresa, con saldo disponible.
      */
     private function validarAnticipo($validator, int $empresaId): void
     {
-        $anticipoId = $this->input('anticipo_id');
-        if (!$anticipoId) return;
+        $ids = $this->idsAnticipo();
+        if (!$ids) return;
 
         $clienteId = $this->input('cliente_id');
         if (!$clienteId) {
@@ -613,40 +624,38 @@ class StoreVentaRequest extends FormRequest
             return;
         }
 
-        $anticipo = \App\Models\ClienteAnticipo::where('id', $anticipoId)
+        $anticipos = \App\Models\ClienteAnticipo::whereIn('id', $ids)
             ->where('empresa_id', $empresaId)
             ->where('cliente_id', $clienteId)
             ->where('tipo_valorizacion', 'monto')
             ->where('estado', 'activo')
-            ->first();
+            ->get(['id', 'saldo']);
 
-        if (!$anticipo) {
-            $validator->errors()->add('anticipo_id', 'El anticipo no existe, no pertenece al cliente o no está activo.');
+        if ($anticipos->count() !== count($ids)) {
+            $validator->errors()->add('anticipo_id', 'Alguno de los anticipos no existe, no pertenece al cliente o ya no está activo.');
             return;
         }
 
-        if ((float) $anticipo->saldo <= 0.009) {
-            $validator->errors()->add('anticipo_id', 'El anticipo seleccionado no tiene saldo disponible.');
+        if ($sinSaldo = $anticipos->first(fn ($a) => (float) $a->saldo <= 0.009)) {
+            $validator->errors()->add('anticipo_id', "El anticipo #{$sinSaldo->id} no tiene saldo disponible.");
         }
     }
 
     /**
-     * Monto usable del anticipo para esta venta (mínimo entre saldo y total).
-     * Devuelve 0 si no hay anticipo o no es válido.
+     * Monto usable de los anticipos para esta venta (mínimo entre la suma de
+     * saldos y el total). Devuelve 0 si no hay anticipos válidos.
      */
     private function montoAnticipoUsable(float $total): float
     {
-        $anticipoId = $this->input('anticipo_id');
-        if (!$anticipoId) return 0.0;
+        $ids = $this->idsAnticipo();
+        if (!$ids) return 0.0;
 
-        $anticipo = \App\Models\ClienteAnticipo::where('id', $anticipoId)
+        $saldo = (float) \App\Models\ClienteAnticipo::whereIn('id', $ids)
             ->where('tipo_valorizacion', 'monto')
             ->where('estado', 'activo')
-            ->first();
+            ->sum('saldo');
 
-        if (!$anticipo) return 0.0;
-
-        return min((float) $anticipo->saldo, $total);
+        return min($saldo, $total);
     }
 
     /**

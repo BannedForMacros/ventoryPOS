@@ -486,16 +486,44 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const [tooltipProd, setTooltipProd] = useState<{ producto: Producto; top: number; bottom: number; left: number } | null>(null);
     // Anticipos de efectivo del cliente seleccionado.
     const [anticiposCliente, setAnticiposCliente] = useState<{ id: number; fecha: string; monto: number; saldo: number; observacion: string | null }[]>([]);
-    const [anticipoSeleccionado, setAnticipoSeleccionado] = useState<number | null>(null);
+    // Anticipos elegidos para pagar la venta. 'auto' recalcula solo el mínimo
+    // necesario (del más antiguo al más nuevo) cada vez que cambia el total;
+    // marcar/desmarcar a mano pasa a 'manual' y respeta lo elegido.
+    const [modoAnticipo, setModoAnticipo] = useState<'off' | 'auto' | 'manual'>('off');
+    const [anticiposManual, setAnticiposManual] = useState<number[]>([]);
     const [cargandoAnticipos, setCargandoAnticipos] = useState(false);
 
     // Totales de la venta (disponibles temprano para efectos y validaciones).
     const { subtotal, igv, total, baseGravada, baseExonerada } = calcularTotales(carrito, descuentoTotal, tasaIgv);
 
-    // Anticipo de efectivo aplicado a la venta (si el usuario lo activó).
-    const anticipoActivo = anticiposCliente.find(a => a.id === anticipoSeleccionado);
-    const saldoAnticipo = anticipoActivo ? anticipoActivo.saldo : 0;
-    const montoAnticipoUsado = Math.min(total, saldoAnticipo);
+    // Anticipos aplicados a la venta. Se consumen del más antiguo al más nuevo
+    // (la lista ya viene así del backend, igual que los aplica VentaService):
+    // los primeros se agotan y el último afectado conserva su sobrante.
+    const anticiposIds: number[] = modoAnticipo === 'off' ? []
+        : modoAnticipo === 'manual' ? anticiposManual
+        : (() => {
+            const ids: number[] = [];
+            let falta = total;
+            for (const a of anticiposCliente) {
+                if (falta <= 0.009 && ids.length) break;
+                ids.push(a.id);
+                falta = Math.round((falta - a.saldo) * 100) / 100;
+            }
+            return ids;
+        })();
+    const repartoAnticipos = (() => {
+        const r: Record<number, number> = {};
+        let falta = total;
+        for (const a of anticiposCliente) {
+            if (!anticiposIds.includes(a.id)) continue;
+            const usa = Math.max(0, Math.min(a.saldo, Math.round(falta * 100) / 100));
+            r[a.id] = usa;
+            falta -= usa;
+        }
+        return r;
+    })();
+    const anticipoSeleccionado: number | null = anticiposIds[0] ?? null;
+    const montoAnticipoUsado = Math.round(Object.values(repartoAnticipos).reduce((s, v) => s + v, 0) * 100) / 100;
     const totalPagadoConAnticipo = (pagos.reduce((s, p) => s + p.monto, 0)) + montoAnticipoUsado;
 
     // Refresco del catálogo (solo la lista de productos) sin perder el carrito.
@@ -665,7 +693,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         if (!id || esGeneral) {
             setHistorialCliente({});
             setAnticiposCliente([]);
-            setAnticipoSeleccionado(null);
+            setModoAnticipo('off');
+            setAnticiposManual([]);
             return;
         }
         let vivo = true;
@@ -678,7 +707,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             .then(r => {
                 if (!vivo) return;
                 setAnticiposCliente(r.data.anticipos);
-                if (r.data.anticipos.length === 0) setAnticipoSeleccionado(null);
+                // Otro cliente: lo elegido del anterior no aplica.
+                setModoAnticipo('off');
+                setAnticiposManual([]);
             })
             .catch(() => { if (vivo) setAnticiposCliente([]); })
             .finally(() => { if (vivo) setCargandoAnticipos(false); });
@@ -1115,8 +1146,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             // Si vino de una cotización, el backend la marca 'convertida' y
             // le guarda el venta_id.
             cotizacion_id:         cotizacionPrellenada?.id ?? null,
-            // Anticipo de efectivo del cliente con el que se pagará la venta.
-            anticipo_id:           anticipoSeleccionado,
+            // Anticipos de efectivo del cliente con los que se pagará la venta
+            // (el backend los consume del más antiguo al más nuevo).
+            anticipo_ids:          anticiposIds.filter(id => (repartoAnticipos[id] ?? 0) > 0.009),
             items: carrito.map(i => ({
                 producto_id:           i.producto_id,
                 producto_unidad_id:    i.producto_unidad_id,
@@ -1499,69 +1531,86 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 </div>
             </div>
 
-            {/* ── Anticipo de efectivo del cliente ─────────────────────────
-                Si el cliente tiene anticipos de efectivo activos, ofrece usar
-                uno para descontar de la venta. El anticipo actúa como pago sin
-                generar movimiento de caja (el dinero ya entró al registrarlo). */}
-            {!!cliente && anticiposCliente.length > 0 && (
+            {/* ── Anticipos de efectivo del cliente ────────────────────────
+                Se pueden usar VARIOS: se consumen del más antiguo al más nuevo y
+                el último afectado conserva su sobrante. Actúan como pago sin
+                mover caja (el dinero ya entró al registrar cada anticipo). */}
+            {!!cliente && anticiposCliente.length > 0 && (() => {
+                const activo = anticiposIds.length > 0;
+                const saldoTotal = anticiposCliente.reduce((s, a) => s + a.saldo, 0);
+                const falta = Math.max(0, Math.round((total - montoAnticipoUsado) * 100) / 100);
+                const alternar = (id: number) => {
+                    const base = anticiposIds;
+                    const sig = base.includes(id) ? base.filter(x => x !== id) : [...base, id];
+                    setAnticiposManual(sig);
+                    setModoAnticipo(sig.length ? 'manual' : 'off');
+                };
+                return (
                 <div
-                    className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 text-sm border-b flex-shrink-0"
+                    className="px-3 sm:px-4 py-2 text-sm border-b flex-shrink-0"
                     style={{
-                        backgroundColor: anticipoSeleccionado
+                        backgroundColor: activo
                             ? 'color-mix(in srgb, var(--color-success) 12%, var(--color-bg))'
                             : 'color-mix(in srgb, var(--color-warning) 12%, var(--color-bg))',
-                        borderColor: anticipoSeleccionado ? 'var(--color-success)' : 'var(--color-warning)',
+                        borderColor: activo ? 'var(--color-success)' : 'var(--color-warning)',
                         color: 'var(--color-text)',
                     }}
                 >
-                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                        <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
-                            style={{ backgroundColor: anticipoSeleccionado ? 'var(--color-success)' : 'var(--color-warning)', color: '#fff' }}>
-                            {anticipoSeleccionado ? 'Anticipo activo' : 'Anticipo disponible'}
-                        </span>
-                        <span className="truncate">
-                            {anticipoSeleccionado
-                                ? `Se descontará S/ ${montoAnticipoUsado.toFixed(2)} de los anticipos del cliente.`
-                                : `Este cliente tiene S/ ${anticiposCliente.reduce((s, a) => s + a.saldo, 0).toFixed(2)} en anticipos de efectivo.`}
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                        {anticiposCliente.length > 1 && (
-                            <select
-                                value={anticipoSeleccionado ?? ''}
-                                onChange={e => setAnticipoSeleccionado(e.target.value ? Number(e.target.value) : null)}
-                                disabled={cargandoAnticipos}
-                                className="text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2"
-                                style={{
-                                    borderColor: 'var(--color-border)',
-                                    backgroundColor: 'var(--color-bg)',
-                                    color: 'var(--color-text)',
-                                }}
-                            >
-                                <option value="">— Elegir anticipo —</option>
-                                {anticiposCliente.map(a => (
-                                    <option key={a.id} value={a.id}>
-                                        S/ {a.saldo.toFixed(2)} {a.observacion ? `(${a.observacion})` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        )}
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                                style={{ backgroundColor: activo ? 'var(--color-success)' : 'var(--color-warning)', color: '#fff' }}>
+                                {activo ? (anticiposIds.length > 1 ? `${anticiposIds.length} anticipos` : 'Anticipo activo') : 'Anticipo disponible'}
+                            </span>
+                            <span className="truncate">
+                                {activo
+                                    ? `Se descontará S/ ${montoAnticipoUsado.toFixed(2)}${falta > 0.009 ? ` · falta S/ ${falta.toFixed(2)} por pagar` : ''}.`
+                                    : `Este cliente tiene S/ ${saldoTotal.toFixed(2)} en ${anticiposCliente.length > 1 ? `${anticiposCliente.length} anticipos` : 'un anticipo'} de efectivo.`}
+                            </span>
+                        </div>
                         <button
-                            onClick={() => setAnticipoSeleccionado(anticipoSeleccionado ? null : anticiposCliente[0]?.id ?? null)}
+                            onClick={() => { setAnticiposManual([]); setModoAnticipo(activo ? 'off' : 'auto'); }}
                             disabled={cargandoAnticipos}
-                            className="text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors hover:opacity-90"
+                            className="text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors hover:opacity-90 flex-shrink-0"
                             style={{
-                                backgroundColor: anticipoSeleccionado
+                                backgroundColor: activo
                                     ? 'color-mix(in srgb, var(--color-danger) 12%, transparent)'
                                     : 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
-                                color: anticipoSeleccionado ? 'var(--color-danger)' : 'var(--color-primary)',
+                                color: activo ? 'var(--color-danger)' : 'var(--color-primary)',
                             }}
                         >
-                            {anticipoSeleccionado ? 'No usar' : 'Usar anticipo'}
+                            {activo ? 'No usar' : (anticiposCliente.length > 1 ? 'Usar anticipos' : 'Usar anticipo')}
                         </button>
                     </div>
+
+                    {activo && anticiposCliente.length > 1 && (
+                        <div className="mt-2 flex flex-col gap-1">
+                            {anticiposCliente.map(a => {
+                                const marcado = anticiposIds.includes(a.id);
+                                const usa = repartoAnticipos[a.id] ?? 0;
+                                const queda = Math.round((a.saldo - usa) * 100) / 100;
+                                return (
+                                    <label key={a.id} className="flex items-center gap-2 text-xs cursor-pointer rounded px-1.5 py-1"
+                                        style={{ backgroundColor: marcado ? 'color-mix(in srgb, var(--color-success) 8%, transparent)' : 'transparent' }}>
+                                        <input type="checkbox" checked={marcado} onChange={() => alternar(a.id)} disabled={cargandoAnticipos} />
+                                        <span className="tabular-nums" style={{ color: 'var(--color-text-muted)' }}>{a.fecha}</span>
+                                        <span className="truncate min-w-0 flex-1">
+                                            #{a.id}{a.observacion ? ` · ${a.observacion}` : ''} — saldo S/ {a.saldo.toFixed(2)}
+                                        </span>
+                                        <span className="tabular-nums font-semibold flex-shrink-0">
+                                            {!marcado ? ''
+                                                : usa <= 0.009 ? <span style={{ color: 'var(--color-text-muted)' }}>no se necesita</span>
+                                                : queda > 0.009 ? `usa S/ ${usa.toFixed(2)} · queda S/ ${queda.toFixed(2)}`
+                                                : `usa S/ ${usa.toFixed(2)} · se agota`}
+                                        </span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
-            )}
+                );
+            })()}
 
             {/* ── V10 · Aviso de comprobante electrónico ─────────────────
                 Franja permanente mientras el comprobante NO sea "ticket": qué

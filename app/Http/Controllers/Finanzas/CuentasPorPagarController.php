@@ -225,7 +225,7 @@ class CuentasPorPagarController extends Controller
         $data = $request->validate([
             'monto'                 => ['required', 'numeric', 'min:0.01', "max:{$saldo}"],
             'fecha'                 => ['required', 'date'],
-            'metodo_pago_id'        => ['required_without:proveedor_adelanto_id', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'metodo_pago_id'        => ['required_without:proveedor_adelanto_id', 'nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'             => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'proveedor_adelanto_id' => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
             'referencia'            => ['nullable', 'string', 'max:200'],

@@ -233,3 +233,70 @@ it('restaura el saldo del anticipo al anular una venta pagada con anticipo', fun
     expect($anticipo->estado)->toBe('activo');
     expect(\App\Models\ClienteAnticipoAplicacion::where('venta_id', $venta->id)->count())->toBe(0);
 });
+
+it('paga una venta con varios anticipos: agota los antiguos y el último conserva el sobrante', function () {
+    $producto = $this->env->crearProducto(['precio_venta' => 50, 'stock_inicial' => 50]);
+    $cliente = \App\Models\Cliente::create([
+        'empresa_id' => $this->env->empresa->id, 'tipo_documento' => 'DNI', 'numero_documento' => '12345679',
+        'nombres' => 'Ana', 'apellidos' => 'Ruiz', 'activo' => true,
+    ]);
+    $nuevo = fn (float $monto, string $fecha) => \App\Models\ClienteAnticipo::create([
+        'empresa_id' => $this->env->empresa->id, 'cliente_id' => $cliente->id, 'user_id' => $this->env->admin->id,
+        'fecha' => $fecha, 'monto' => $monto, 'saldo' => $monto, 'tipo_valorizacion' => 'monto', 'estado' => 'activo',
+    ]);
+    // Se mandan desordenados a propósito: el orden lo pone la fecha.
+    $reciente = $nuevo(100, now()->toDateString());
+    $antiguo  = $nuevo(30, now()->subDays(5)->toDateString());
+    $medio    = $nuevo(40, now()->subDays(2)->toDateString());
+
+    $venta = $this->service->crear([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $cliente->id,
+        'anticipo_ids'     => [$reciente->id, $medio->id, $antiguo->id],
+        'items' => [[
+            'producto_id' => $producto->id, 'producto_unidad_id' => $producto->unidadBase->id,
+            'cantidad' => 1, 'precio_unitario' => 50,
+        ]],
+        'pagos' => [],
+    ], $this->env->admin, $this->turno);
+
+    expect((float) $venta->monto_pagado)->toBe(50.0);
+    expect([(float) $antiguo->fresh()->saldo, $antiguo->fresh()->estado])->toBe([0.0, 'aplicado']);
+    expect([(float) $medio->fresh()->saldo, $medio->fresh()->estado])->toBe([20.0, 'activo']);
+    // No hacía falta: queda intacto y sin aplicación.
+    expect((float) $reciente->fresh()->saldo)->toBe(100.0);
+    expect(\App\Models\ClienteAnticipoAplicacion::where('venta_id', $venta->id)->orderBy('cliente_anticipo_id')->pluck('monto', 'cliente_anticipo_id')->map(fn ($m) => (float) $m)->all())
+        ->toBe([$antiguo->id => 30.0, $medio->id => 20.0]);
+
+    // Anular devuelve el saldo a cada uno.
+    $this->service->anular($venta, $this->env->admin);
+    expect([(float) $antiguo->fresh()->saldo, $antiguo->fresh()->estado])->toBe([30.0, 'activo']);
+    expect((float) $medio->fresh()->saldo)->toBe(40.0);
+});
+
+it('la venta HTTP acepta varios anticipos que juntos cubren el total sin otro pago', function () {
+    $producto = $this->env->crearProducto(['precio_venta' => 50, 'stock_inicial' => 50]);
+    $cliente = \App\Models\Cliente::create([
+        'empresa_id' => $this->env->empresa->id, 'tipo_documento' => 'DNI', 'numero_documento' => '12345670',
+        'nombres' => 'Luis', 'apellidos' => 'Soto', 'activo' => true,
+    ]);
+    $ids = collect([20, 35])->map(fn ($m) => \App\Models\ClienteAnticipo::create([
+        'empresa_id' => $this->env->empresa->id, 'cliente_id' => $cliente->id, 'user_id' => $this->env->admin->id,
+        'fecha' => now()->toDateString(), 'monto' => $m, 'saldo' => $m, 'tipo_valorizacion' => 'monto', 'estado' => 'activo',
+    ])->id)->all();
+
+    $this->post(route('ventas.store'), [
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $cliente->id,
+        'anticipo_ids'     => $ids,
+        'idempotency_key'  => 'multi-anticipo-' . uniqid(),
+        'items' => [[
+            'producto_id' => $producto->id, 'producto_unidad_id' => $producto->unidadBase->id,
+            'cantidad' => 1, 'precio_unitario' => 50,
+        ]],
+        'pagos' => [],
+    ])->assertSessionHasNoErrors();
+
+    expect(\App\Models\ClienteAnticipo::whereIn('id', $ids)->orderBy('id')->pluck('saldo')->map(fn ($s) => (float) $s)->all())
+        ->toBe([0.0, 5.0]);
+});

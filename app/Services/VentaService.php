@@ -369,10 +369,10 @@ class VentaService
         // El dinero ya entró a caja cuando se creó el anticipo; aquí solo se
         // descuenta el saldo y se vincula la aplicación a esta venta. No se
         // registra ingreso de tesorería nuevo.
-        $montoAnticipo = 0.0;
-        if (!empty($data['anticipo_id'])) {
-            $montoAnticipo = $this->aplicarAnticipoAVenta($venta, $data['anticipo_id'], $user);
-        }
+        $idsAnticipo = collect((array) ($data['anticipo_ids'] ?? []))
+            ->push($data['anticipo_id'] ?? null)
+            ->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+        $montoAnticipo = $idsAnticipo ? $this->aplicarAnticiposAVenta($venta, $idsAnticipo, $user) : 0.0;
 
         $montoPagadoReal = round($totalPagado - $vueltoGlobal + $abonosPrevios + $montoAnticipo, 2);
         $venta->update([
@@ -420,56 +420,69 @@ class VentaService
     }
 
     /**
-     * Aplica un anticipo de efectivo (tipo 'monto') a la venta: crea la aplicación,
-     * descuenta el saldo del anticipo y devuelve el monto efectivamente usado.
-     * No genera movimiento de tesorería porque el dinero ya entró al crear el anticipo.
+     * Aplica uno o varios anticipos de efectivo (tipo 'monto') a la venta.
+     * Se consumen del más antiguo al más nuevo hasta cubrir el total: los
+     * primeros se agotan y el último afectado conserva su sobrante (sigue
+     * activo). Los que no hacen falta no se tocan. Devuelve el monto usado.
+     * No genera movimiento de tesorería: el dinero ya entró con cada anticipo.
      */
-    private function aplicarAnticipoAVenta(Venta $venta, int $anticipoId, User $user): float
+    private function aplicarAnticiposAVenta(Venta $venta, array $anticipoIds, User $user): float
     {
-        $anticipo = ClienteAnticipo::where('id', $anticipoId)
+        $anticipos = ClienteAnticipo::whereIn('id', $anticipoIds)
             ->where('empresa_id', $venta->empresa_id)
             ->where('cliente_id', $venta->cliente_id)
             ->where('tipo_valorizacion', 'monto')
             ->where('estado', 'activo')
+            ->orderBy('fecha')->orderBy('id')
             ->lockForUpdate()
-            ->first();
+            ->get();
 
-        if (!$anticipo) {
-            abort(422, 'El anticipo no está disponible para este cliente.');
+        if ($anticipos->count() !== count($anticipoIds)) {
+            abort(422, 'Alguno de los anticipos no está disponible para este cliente.');
         }
 
-        $saldo = (float) $anticipo->saldo;
-        if ($saldo <= 0.009) {
-            abort(422, 'El anticipo seleccionado no tiene saldo disponible.');
+        $falta = round((float) $venta->total, 2);
+        $usado = 0.0;
+        $fecha = $venta->fecha_venta?->toDateString() ?? now()->toDateString();
+
+        foreach ($anticipos as $anticipo) {
+            if ($falta <= 0.009) break;
+
+            $saldo = (float) $anticipo->saldo;
+            if ($saldo <= 0.009) {
+                abort(422, "El anticipo #{$anticipo->id} no tiene saldo disponible.");
+            }
+
+            $montoUsado = round(min($saldo, $falta), 2);
+
+            $anticipo->aplicaciones()->create([
+                'empresa_id'  => $venta->empresa_id,
+                'numero'      => ClienteAnticipoAplicacion::generarNumero($venta->empresa_id),
+                'venta_id'    => $venta->id,
+                'user_id'     => $user->id,
+                'fecha'       => $fecha,
+                'monto'       => $montoUsado,
+                'observacion' => "Aplicado a venta {$venta->numero}",
+            ]);
+
+            $nuevoSaldo = round($saldo - $montoUsado, 2);
+            $anticipo->update([
+                'saldo'  => max(0, $nuevoSaldo),
+                'estado' => $nuevoSaldo <= 0.01 ? 'aplicado' : 'activo',
+            ]);
+
+            \App\Services\AuditoriaService::log('anticipo_cliente.aplicado', $anticipo, [
+                'venta_id' => $venta->id,
+                'monto'    => $montoUsado,
+                'saldo'    => (float) $anticipo->saldo,
+                'origen'   => 'pos_pago_venta',
+            ], $user);
+
+            $falta = round($falta - $montoUsado, 2);
+            $usado = round($usado + $montoUsado, 2);
         }
 
-        $total = round((float) $venta->total, 2);
-        $montoUsado = min($saldo, $total);
-
-        $anticipo->aplicaciones()->create([
-            'empresa_id'  => $venta->empresa_id,
-            'numero'      => ClienteAnticipoAplicacion::generarNumero($venta->empresa_id),
-            'venta_id'    => $venta->id,
-            'user_id'     => $user->id,
-            'fecha'       => $venta->fecha_venta?->toDateString() ?? now()->toDateString(),
-            'monto'       => $montoUsado,
-            'observacion' => "Aplicado a venta {$venta->numero}",
-        ]);
-
-        $nuevoSaldo = round($saldo - $montoUsado, 2);
-        $anticipo->update([
-            'saldo'  => max(0, $nuevoSaldo),
-            'estado' => $nuevoSaldo <= 0.01 ? 'aplicado' : 'activo',
-        ]);
-
-        \App\Services\AuditoriaService::log('anticipo_cliente.aplicado', $anticipo, [
-            'venta_id'    => $venta->id,
-            'monto'       => $montoUsado,
-            'saldo'       => (float) $anticipo->saldo,
-            'origen'      => 'pos_pago_venta',
-        ], $user);
-
-        return $montoUsado;
+        return $usado;
     }
 
     /**

@@ -86,3 +86,32 @@ it('anular un pago revierte tesorería y devuelve el saldo a la compra', functio
     expect(EntradaPago::find($pago->id))->toBeNull();
     expect(CuentaMovimiento::where('ref_tipo', 'entrada_pago')->where('ref_id', $pago->id)->exists())->toBeFalse();
 });
+
+it('abonar consumiendo un adelanto acepta metodo_pago_id nulo (lo manda así el front)', function () {
+    $prov = \App\Models\Proveedor::create([
+        'empresa_id' => $this->env->empresa->id, 'razon_social' => 'Proveedor Adelanto',
+        'tipo_documento' => 'RUC', 'numero_documento' => '20999888777', 'activo' => true,
+    ]);
+    $this->entrada->update(['proveedor_id' => $prov->id]);
+    $adelanto = \App\Models\ProveedorAdelanto::create([
+        'empresa_id' => $this->env->empresa->id, 'proveedor_id' => $prov->id, 'user_id' => $this->env->admin->id,
+        'fecha' => now()->toDateString(), 'monto' => 60, 'saldo' => 60, 'estado' => 'activo',
+    ]);
+
+    $this->post(route('finanzas.cxp.abonar', $this->entrada), [
+        'monto'                 => 60,
+        'fecha'                 => now()->toDateString(),
+        'metodo_pago_id'        => null,
+        'cuenta_id'             => null,
+        'proveedor_adelanto_id' => $adelanto->id,
+    ])->assertSessionHasNoErrors();
+
+    expect((float) $this->entrada->fresh()->monto_pagado)->toBe(60.0);
+    expect((float) $adelanto->fresh()->saldo)->toBe(0.0);
+});
+
+it('abonar sin adelanto sigue exigiendo método de pago', function () {
+    $this->post(route('finanzas.cxp.abonar', $this->entrada), [
+        'monto' => 10, 'fecha' => now()->toDateString(), 'metodo_pago_id' => null,
+    ])->assertSessionHasErrors(['metodo_pago_id']);
+});
