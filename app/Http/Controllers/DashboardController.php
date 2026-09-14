@@ -159,8 +159,7 @@ class DashboardController extends Controller
             ->sum('total');
 
         // ── Utilidad del mes (costo congelado por ítem, criterio del reporte) ──
-        $costoSql = "COALESCE(NULLIF(venta_items.costo_unitario_base, 0), NULLIF(productos.precio_costo, 0),
-            (SELECT s.costo_promedio FROM stock s WHERE s.producto_id = productos.id AND s.costo_promedio > 0 ORDER BY s.id LIMIT 1), 0)";
+        $costoSql = \App\Services\CostoVentaService::sql('venta_items', 'productos', 'ventas');
         $cogsMes = (float) VentaItem::join('ventas', 'ventas.id', '=', 'venta_items.venta_id')
             ->join('productos', 'productos.id', '=', 'venta_items.producto_id')
             ->where('ventas.empresa_id', $empresaId)

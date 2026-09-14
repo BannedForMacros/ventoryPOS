@@ -28,8 +28,11 @@ class ReporteUtilidadController extends Controller
     public function __construct(private LocalScopeService $scope) {}
 
     /** Costo por unidad base: snapshot congelado → precio_costo → costo_promedio. */
-    private const COSTO_SQL = "COALESCE(NULLIF(vi.costo_unitario_base, 0), NULLIF(p.precio_costo, 0),
-        (SELECT s.costo_promedio FROM stock s WHERE s.producto_id = p.id AND s.costo_promedio > 0 ORDER BY s.id LIMIT 1), 0)";
+    /** Costo por unidad base de cada línea: regla única (CostoVentaService::sql). */
+    private static function costoSql(): string
+    {
+        return \App\Services\CostoVentaService::sql('vi', 'p');
+    }
 
     public function index(Request $request)
     {
@@ -56,7 +59,7 @@ class ReporteUtilidadController extends Controller
         // ── KPIs globales ────────────────────────────────────────────────
         $ventasTotal = (float) (clone $ventasBase)->sum('total');
         $cogsTotal   = (float) (clone $itemsBase)
-            ->selectRaw('COALESCE(SUM(vi.cantidad_base * ' . self::COSTO_SQL . '), 0) as c')
+            ->selectRaw('COALESCE(SUM(vi.cantidad_base * ' . self::costoSql() . '), 0) as c')
             ->value('c');
 
         $gastosTotal = (float) Gasto::deEmpresa($user->empresa_id)
@@ -90,7 +93,7 @@ class ReporteUtilidadController extends Controller
             ->groupBy('dia')->pluck('total', 'dia');
 
         $cogsDia = (clone $itemsBase)
-            ->selectRaw('DATE(v.fecha_venta) as dia, SUM(vi.cantidad_base * ' . self::COSTO_SQL . ') as costo')
+            ->selectRaw('DATE(v.fecha_venta) as dia, SUM(vi.cantidad_base * ' . self::costoSql() . ') as costo')
             ->groupBy('dia')->pluck('costo', 'dia');
 
         $gastosDia = Gasto::deEmpresa($user->empresa_id)
@@ -131,7 +134,7 @@ class ReporteUtilidadController extends Controller
                          MIN(c.nombre) as categoria,
                          SUM(vi.cantidad) as cantidad,
                          SUM(vi.subtotal) as ventas,
-                         SUM(vi.cantidad_base * ' . self::COSTO_SQL . ') as costo')
+                         SUM(vi.cantidad_base * ' . self::costoSql() . ') as costo')
             ->leftJoin('categorias as c', 'c.id', '=', 'p.categoria_id')
             ->when($request->buscar, fn ($q, $v) => $q->where('vi.producto_nombre', 'ilike', "%{$v}%"))
             ->groupBy('vi.producto_id')

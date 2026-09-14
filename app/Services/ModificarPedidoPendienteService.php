@@ -389,7 +389,10 @@ class ModificarPedidoPendienteService
         $almacen  = $this->scope->almacenVentasDeLocal($venta->empresa_id, $venta->local_id);
         if ($anticipo && $producto && $unidad) {
             $anticipo->unsetRelation('items');
-            $this->agregarLinea($venta, $anticipo, $producto, $unidad, $pendiente, $precio, $almacen?->id);
+            // La parte pendiente es la MISMA mercadería ya vendida, solo repreciada:
+            // hereda el costo congelado original de la línea.
+            $costoOriginal = $vi->costo_unitario_base !== null ? (float) $vi->costo_unitario_base : null;
+            $this->agregarLinea($venta, $anticipo, $producto, $unidad, $pendiente, $precio, $almacen?->id, $costoOriginal);
         }
     }
 
@@ -398,8 +401,14 @@ class ModificarPedidoPendienteService
      * producto/presentación AL MISMO PRECIO y sin descuento, se suma ahí; si el
      * precio difiere (lo nuevo va al precio de hoy), se crea una línea aparte.
      */
-    private function agregarLinea(Venta $venta, ClienteAnticipo $destino, Producto $producto, ProductoUnidad $unidad, float $cantidad, float $precio, ?int $almacenId): void
+    private function agregarLinea(Venta $venta, ClienteAnticipo $destino, Producto $producto, ProductoUnidad $unidad, float $cantidad, float $precio, ?int $almacenId, ?float $costoHeredado = null): void
     {
+        // Costo de lo que se agrega: el heredado (reprecio) o el de HOY con la regla
+        // única, porque la modificación se liquida hoy.
+        $costoAgregado = $costoHeredado !== null && $costoHeredado > 0
+            ? $costoHeredado
+            : app(CostoVentaService::class)->paraVender($producto, $almacenId, now());
+
         $destino->loadMissing('items');
         foreach ($destino->items as $it) {
             // Una línea recién vaciada y eliminada en este mismo pedido no se reutiliza.
@@ -409,8 +418,15 @@ class ModificarPedidoPendienteService
             $vi = VentaItem::where('id', $it->venta_item_id)->where('venta_id', $venta->id)->lockForUpdate()->first();
             if (!$vi || (float) $vi->descuento_item > 0.005 || abs((float) $vi->precio_unitario - $precio) > 0.005) continue;
 
+            // Al sumar a la línea, su costo pasa a ser el PONDERADO: antes se
+            // quedaba con el costo de la cantidad original para todo.
+            $baseAgregada = $cantidad * (float) $vi->factor_conversion;
+            $vi->costo_unitario_base = CostoVentaService::ponderado(
+                $vi->costo_unitario_base !== null ? (float) $vi->costo_unitario_base : null, (float) $vi->cantidad_base,
+                $costoAgregado, $baseAgregada,
+            );
             $vi->cantidad      = round((float) $vi->cantidad + $cantidad, 4);
-            $vi->cantidad_base = round((float) $vi->cantidad_base + $cantidad * (float) $vi->factor_conversion, 4);
+            $vi->cantidad_base = round((float) $vi->cantidad_base + $baseAgregada, 4);
             $vi->subtotal      = round($precio * (float) $vi->cantidad, 2);
             $vi->save();
 
@@ -422,11 +438,6 @@ class ModificarPedidoPendienteService
             return;
         }
 
-        // Costo CONGELADO de hoy (mismo criterio que el POS) para la utilidad.
-        $costoBase = (float) ($producto->precio_costo ?? 0);
-        if ($costoBase <= 0 && $almacenId) {
-            $costoBase = (float) (Stock::where('almacen_id', $almacenId)->where('producto_id', $producto->id)->value('costo_promedio') ?? 0);
-        }
         $unidadNombre = $unidad->unidadMedida->nombre ?? '';
 
         $vi = VentaItem::create([
@@ -443,7 +454,7 @@ class ModificarPedidoPendienteService
             'descuento_item'      => 0,
             'subtotal'            => round($precio * $cantidad, 2),
             'incluye_igv'         => $producto->incluye_igv,
-            'costo_unitario_base' => round($costoBase, 4),
+            'costo_unitario_base' => $costoAgregado !== null ? round($costoAgregado, 4) : null,
         ]);
 
         $destino->items()->create([

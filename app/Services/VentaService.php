@@ -26,6 +26,7 @@ class VentaService
         private ConfiguracionOperacionService $config,
         private TesoreriaService $tesoreria,
         private TipoCambioService $tipoCambio,
+        private CostoVentaService $costos,
     ) {}
 
     /**
@@ -187,6 +188,7 @@ class VentaService
         bool $esCredito,
         ?int $clienteId,
         bool $permitirStockNegativo,
+        array $costosPrevios = [],
     ): void {
         // Pendiente por entregar: el cliente paga todo pero se lleva solo parte.
         // Lo pendiente NO descuenta stock aquí (sale recién al entregarse) y se
@@ -212,15 +214,13 @@ class VentaService
                 ? ($esDespachoAlmacen ? $cantidad : min(max(0, (float) ($itemData['cantidad_pendiente'] ?? 0)), $cantidad))
                 : 0.0;
 
-            // Costo CONGELADO por unidad base (criterio canónico del balance:
-            // precio_costo del producto, o costo_promedio real si está en 0).
-            // Fija el margen del Reporte de Utilidad al día de la venta.
-            $costoBase = (float) ($producto->precio_costo ?? 0);
-            if ($costoBase <= 0) {
-                $costoBase = (float) (Stock::where('almacen_id', $almacen->id)
-                    ->where('producto_id', $producto->id)
-                    ->value('costo_promedio') ?? 0);
-            }
+            // Costo CONGELADO por unidad base con la regla única (CostoVentaService):
+            // costo promedio del kardex al momento de la venta; null = desconocido.
+            // En una EDICIÓN se conserva el costo original: editar no puede cambiar
+            // la utilidad de un día ya vivido.
+            $costoBase = array_key_exists($producto->id, $costosPrevios)
+                ? $costosPrevios[$producto->id]
+                : $this->costos->paraVender($producto, $almacen->id, $venta->fecha_venta);
 
             $item = VentaItem::create([
                 'venta_id'             => $venta->id,
@@ -237,7 +237,7 @@ class VentaService
                 'descuento_concepto_id'=> $itemData['descuento_concepto_id'] ?? null,
                 'subtotal'             => $subtotal,
                 'incluye_igv'          => $producto->incluye_igv,
-                'costo_unitario_base'  => round($costoBase, 4),
+                'costo_unitario_base'  => $costoBase !== null ? round($costoBase, 4) : null,
             ]);
 
             if ($this->config->deboDescontarStock($producto, $turno->local)) {
@@ -582,6 +582,16 @@ class VentaService
                 ], $user);
             }
 
+            // Costos congelados ORIGINALES por producto (ponderados si había varias
+            // líneas): se reutilizan al recrear los ítems.
+            $costosPrevios = $venta->items()->get(['producto_id', 'cantidad_base', 'costo_unitario_base'])
+                ->filter(fn ($i) => $i->costo_unitario_base !== null && (float) $i->costo_unitario_base > 0)
+                ->groupBy('producto_id')
+                ->map(fn ($g) => round(
+                    $g->sum(fn ($i) => (float) $i->cantidad_base * (float) $i->costo_unitario_base)
+                    / max((float) $g->sum(fn ($i) => (float) $i->cantidad_base), 0.0001), 4))
+                ->all();
+
             $this->tesoreria->revertir('venta', $venta->id);
             $venta->items()->delete();
             $venta->pagos()->delete();
@@ -620,7 +630,7 @@ class VentaService
             ]);
 
             // 3) Re-aplicar detalle nuevo
-            $this->aplicarItemsPagos($venta, $data, $user, $turno, $almacen, $moneda, $tipoCambio, $factor, $esCreditoNuevo, (int) $clienteId, $permitirStockNegativo);
+            $this->aplicarItemsPagos($venta, $data, $user, $turno, $almacen, $moneda, $tipoCambio, $factor, $esCreditoNuevo, (int) $clienteId, $permitirStockNegativo, $costosPrevios);
 
             \App\Services\AuditoriaService::log('venta.editada', $venta, [
                 'numero' => $venta->numero,

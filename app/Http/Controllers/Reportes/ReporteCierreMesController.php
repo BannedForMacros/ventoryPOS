@@ -34,8 +34,11 @@ class ReporteCierreMesController extends Controller
     public function __construct(private LocalScopeService $scope) {}
 
     /** Costo por unidad base: snapshot congelado → precio_costo → costo_promedio. */
-    private const COSTO_SQL = "COALESCE(NULLIF(vi.costo_unitario_base, 0), NULLIF(p.precio_costo, 0),
-        (SELECT s.costo_promedio FROM stock s WHERE s.producto_id = p.id AND s.costo_promedio > 0 ORDER BY s.id LIMIT 1), 0)";
+    /** Costo por unidad base de cada línea: regla única (CostoVentaService::sql). */
+    private static function costoSql(): string
+    {
+        return \App\Services\CostoVentaService::sql('vi', 'p');
+    }
 
     public function index(Request $request)
     {
@@ -116,7 +119,7 @@ class ReporteCierreMesController extends Controller
         $descuentosTotal   = (float) (clone $completadas)->sum('descuento_total');
         $igvTotal          = (float) (clone $completadas)->sum('igv');
         $cogsTotal         = (float) (clone $itemsBase($desde, $hasta))
-            ->selectRaw('COALESCE(SUM(vi.cantidad_base * ' . self::COSTO_SQL . '), 0) as c')
+            ->selectRaw('COALESCE(SUM(vi.cantidad_base * ' . self::costoSql() . '), 0) as c')
             ->value('c');
         $gastosTotal       = (float) $gastosBase($desde, $hasta)->sum('monto');
         $devolucionesTotal = (float) $devolucionesBase($desde, $hasta)->sum('monto_devolucion');
@@ -185,7 +188,7 @@ class ReporteCierreMesController extends Controller
             ->selectRaw('DATE(fecha_venta) as dia, SUM(total) as total')
             ->groupBy('dia')->pluck('total', 'dia');
         $cogsDia = (clone $itemsBase($desde, $hasta))
-            ->selectRaw('DATE(v.fecha_venta) as dia, SUM(vi.cantidad_base * ' . self::COSTO_SQL . ') as costo')
+            ->selectRaw('DATE(v.fecha_venta) as dia, SUM(vi.cantidad_base * ' . self::costoSql() . ') as costo')
             ->groupBy('dia')->pluck('costo', 'dia');
         $gastosDia = $gastosBase($desde, $hasta)
             ->selectRaw('fecha as dia, SUM(monto) as total')

@@ -96,8 +96,8 @@ class BalanceDiarioService
             ->whereBetween('fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
             ->sum('total');
 
-        $costoSql = "COALESCE(NULLIF(vi.costo_unitario_base, 0), NULLIF(p.precio_costo, 0),
-            (SELECT s.costo_promedio FROM stock s WHERE s.producto_id = p.id AND s.costo_promedio > 0 ORDER BY s.id LIMIT 1), 0)";
+        // Regla única del costo de lo vendido: nunca el costo vivo de hoy.
+        $costoSql = CostoVentaService::sql('vi', 'p');
         $costoDia = (float) DB::table('venta_items as vi')
             ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
             ->join('productos as p', 'p.id', '=', 'vi.producto_id')
