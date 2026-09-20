@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { router, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { PackageCheck, Search } from 'lucide-react';
+import { PackageCheck, Search, Truck } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -182,13 +182,28 @@ export default function Despachos({ pendientes, buscar = '' }: Props) {
             label: 'Acciones',
             sortable: false,
             render: (p) => (
-                <Button
-                    size="sm"
-                    onClick={() => abrirDespacho(p)}
-                    startContent={<PackageCheck size={14} />}
-                >
-                    Despachar
-                </Button>
+                <div className="flex justify-end gap-1">
+                    <Button
+                        size="sm"
+                        onClick={() => abrirDespacho(p)}
+                        startContent={<PackageCheck size={14} />}
+                    >
+                        Despachar
+                    </Button>
+                    {/* La guía va APARTE del despacho, no dentro. Son dos cosas
+                        distintas: despachar saca la mercadería del almacén, la guía
+                        es el documento que ampara su viaje. Se puede despachar sin
+                        guía —el cliente se la lleva— y se puede necesitar guía de
+                        algo que no salió de aquí. Juntarlas en un botón obligaría a
+                        emitir siempre, o a no emitir nunca. */}
+                    {p.venta?.id && (
+                        <Link href={route('guias.create', { venta: p.venta.id })} title="Emitir guía de remisión">
+                            <Button size="sm" variant="secondary" startContent={<Truck size={14} />}>
+                                Guía
+                            </Button>
+                        </Link>
+                    )}
+                </div>
             ),
         },
     ], []);
