@@ -56,7 +56,15 @@ it('compensar dos deudas opuestas reduce ambos saldos', function () {
     expect($porCobrar->estado)->toBe('pagada');
     expect($porPagar->estado)->toBe('activa');
 
-    expect(DeudaPago::where('tipo', 'compensacion')->count())->toBe(2);
+    // Acotado a LAS DOS DEUDAS DE ESTA PRUEBA. Contar toda la tabla daba por
+    // supuesto que la base estaba vacía, y eso dejó de ser cierto en cuanto hubo
+    // datos reales: la compensación crea un apunte en cada lado, y esos dos son los
+    // que importan aquí, no los que hubiera de antes.
+    expect(
+        DeudaPago::where('tipo', 'compensacion')
+            ->whereIn('deuda_id', [$porPagar->id, $porCobrar->id])
+            ->count()
+    )->toBe(2);
     expect(Auditoria::where('accion', 'deuda.compensacion_creada')->exists())->toBeTrue();
 });
 
@@ -137,7 +145,13 @@ it('eliminar un movimiento de compensación restaura ambos saldos', function () 
 
     expect((float) $porPagar->saldo)->toBe(1000.0);
     expect((float) $porCobrar->saldo)->toBe(800.0);
-    expect(DeudaPago::where('tipo', 'compensacion')->count())->toBe(0);
+    // Igual que arriba: lo que se comprueba es que no queda NINGUNO de esta
+    // compensación, no que la tabla entera esté vacía.
+    expect(
+        DeudaPago::where('tipo', 'compensacion')
+            ->whereIn('deuda_id', [$porPagar->id, $porCobrar->id])
+            ->count()
+    )->toBe(0);
     expect(Auditoria::where('accion', 'deuda.compensacion_eliminada')->exists())->toBeTrue();
 });
 
