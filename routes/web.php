@@ -50,6 +50,7 @@ use App\Http\Controllers\Finanzas\PlanillaDescuentoController;
 use App\Http\Controllers\Finanzas\TesoreriaController;
 use App\Http\Controllers\Inventario\AjusteInventarioController;
 use App\Http\Controllers\Inventario\CierreInventarioController;
+use App\Http\Controllers\GuiaRemisionController;
 use App\Http\Controllers\Inventario\DespachoController;
 use App\Http\Controllers\Inventario\EntradaController;
 use App\Http\Controllers\Inventario\SalidaController;
@@ -230,6 +231,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     // ── DESPACHOS EN ALMACEN (bandeja del almacenero) ────────────────────
+    /*
+    |---------------------------------------------------------------------------
+    | Guías de remisión
+    |---------------------------------------------------------------------------
+    |
+    | El documento que ampara un traslado de mercadería. Lo emite FacturaMac; aquí
+    | se registra, se lista y se consulta.
+    |
+    | NINGUNA de estas rutas mueve stock. El stock lo mueven la venta, el despacho y
+    | la transferencia, como siempre.
+    |
+    */
+    Route::middleware('permiso:guias,ver')->get('/guias', [GuiaRemisionController::class, 'index'])->name('guias.index');
+    Route::middleware('permiso:guias,crear')->get('/guias/nueva', [GuiaRemisionController::class, 'create'])->name('guias.create');
+    Route::middleware('permiso:guias,crear')->post('/guias', [GuiaRemisionController::class, 'store'])->name('guias.store');
+    Route::middleware('permiso:guias,ver')->get('/guias/{guia}', [GuiaRemisionController::class, 'show'])->name('guias.show');
+    Route::middleware('permiso:guias,crear')->post('/guias/{guia}/reintentar', [GuiaRemisionController::class, 'reintentar'])->name('guias.reintentar');
+
     Route::middleware('permiso:despachos,ver')->get('/despachos', [DespachoController::class, 'index'])->name('despachos.index');
     Route::middleware('permiso:despachos,editar')->post('/despachos/{anticipo}/confirmar', [DespachoController::class, 'confirmar'])->name('despachos.confirmar');
 
