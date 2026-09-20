@@ -271,6 +271,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:devoluciones,editar')->post('/{devolucion}/aprobar', [DevolucionController::class, 'aprobar'])->name('aprobar');
         Route::middleware('permiso:devoluciones,editar')->post('/{devolucion}/rechazar', [DevolucionController::class, 'rechazar'])->name('rechazar');
         Route::middleware('permiso:devoluciones,editar')->post('/{devolucion}/anular', [DevolucionController::class, 'anular'])->name('anular');
+        // Relanza la nota de crédito que quedó a medias. No toca la devolución:
+        // el stock ya volvió y el dinero ya salió; esto solo termina el documento.
+        Route::middleware('permiso:devoluciones,editar')->post('/{devolucion}/nota-credito/reintentar', [DevolucionController::class, 'reintentarNotaCredito'])->name('nota-credito.reintentar');
     });
 
     // ── PROVEEDORES ──────────────────────────────────────────────────────

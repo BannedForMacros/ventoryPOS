@@ -9,6 +9,7 @@ import Select from '@/Components/UI/Select';
 import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
+import Callout from '@/Components/UI/Callout';
 import type { PageProps } from '@/types';
 
 type EstadoDev = 'pendiente' | 'aprobada' | 'rechazada' | 'completada' | 'anulada';
@@ -27,12 +28,17 @@ interface Devolucion extends Record<string, unknown> {
     local?: { nombre: string };
     requiere_aprobacion: boolean;
     fue_aprobada: boolean;
+    nota_credito_estado: EstadoNC | null;
 }
 
 // M19: el backend ahora paginé estos listados; el FE consume {data, links, meta}.
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
+type EstadoNC = 'no_aplica' | 'pendiente' | 'esperando' | 'emitida' | 'fallida';
+
 interface Props extends PageProps {
+    /** Cuántas notas de crédito quedaron sin emitir en toda la empresa. */
+    ncFallidas: number;
     devoluciones: Paginado<Devolucion>;
     filters: Record<string, string>;
     buscar?: string;
@@ -60,9 +66,10 @@ const FORMA_LABEL: Record<string, string> = {
     sin_reembolso:   'Sin reembolso',
 };
 
-export default function DevolucionesIndex({ devoluciones, filters, buscar }: Props) {
+export default function DevolucionesIndex({ devoluciones, filters, buscar, ncFallidas }: Props) {
     const { flash, auth } = usePage<Props>().props;
     const esAdmin = (auth.user as { rol?: { es_admin?: boolean } } | undefined)?.rol?.es_admin ?? false;
+    const viendoNcPendientes = !!filters.nc_pendiente;
 
     const [filtrEstado, setFiltrEstado] = useState(filters.estado ?? '');
 
@@ -107,9 +114,17 @@ export default function DevolucionesIndex({ devoluciones, filters, buscar }: Pro
         {
             key: 'estado', label: 'Estado', sortable: true,
             render: (d) => (
-                <Badge variant={ESTADO_VARIANT[d.estado]}>
-                    {ESTADO_LABEL[d.estado]}
-                </Badge>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    <Badge variant={ESTADO_VARIANT[d.estado]}>
+                        {ESTADO_LABEL[d.estado]}
+                    </Badge>
+                    {/* Solo se marca lo que pide atención. Una NC emitida, en
+                        espera o que no hacía falta no ensucia la lista: si todo
+                        se marcara, la marca dejaría de significar algo. */}
+                    {d.nota_credito_estado === 'fallida' && (
+                        <Badge variant="danger">SIN N. CRÉDITO</Badge>
+                    )}
+                </div>
             ),
         },
         {
@@ -162,6 +177,26 @@ export default function DevolucionesIndex({ devoluciones, filters, buscar }: Pro
                     </Link>
                 }
             />
+
+            {/* Una nota de crédito que no salió deja la declaración descuadrada:
+                la devolución está hecha y SUNAT sigue viendo el importe original.
+                Antes solo constaba en el log, así que nadie se enteraba. */}
+            {ncFallidas > 0 && !viendoNcPendientes && (
+                <Callout
+                    variant="danger"
+                    title={ncFallidas === 1
+                        ? 'Hay 1 devolución sin su nota de crédito'
+                        : `Hay ${ncFallidas} devoluciones sin su nota de crédito`}
+                    className="mb-4"
+                >
+                    SUNAT sigue viendo declarado el importe original de esas ventas.
+                    <span className="block mt-2">
+                        <Button variant="danger" onClick={() => router.get(route('devoluciones.index'), { nc_pendiente: 1 })}>
+                            Ver cuáles son
+                        </Button>
+                    </span>
+                </Callout>
+            )}
 
             <FiltrosCard
                 cols={3}

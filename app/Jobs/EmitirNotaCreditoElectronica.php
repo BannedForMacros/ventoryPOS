@@ -71,6 +71,11 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
     public function handle(FacturacionEmpresa $facturacion): void
     {
         if (! $facturacion->activa($this->empresaId)) {
+            // La empresa no emite: no hay nada que acreditar ante SUNAT y eso no
+            // es un fallo. Se deja dicho para que la devolución no quede con un
+            // "pendiente" que nunca se va a mover.
+            $this->anotar(Devolucion::NC_NO_APLICA);
+
             return;
         }
 
@@ -93,6 +98,8 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
 
         // Una devolución rechazada/anulada no genera NC.
         if (!in_array($devolucion->estado, ['pendiente', 'aprobada', 'completada'], true)) {
+            $devolucion->anotarNotaCredito(Devolucion::NC_NO_APLICA);
+
             return;
         }
 
@@ -109,6 +116,13 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
                 'empresa_real'  => $venta->empresa_id,
             ]);
 
+            // No es "no aplica": es un desajuste que hay que mirar, y la
+            // devolución se queda sin su nota de crédito.
+            $devolucion->anotarNotaCredito(
+                Devolucion::NC_FALLIDA,
+                'La empresa emisora no coincide con la de la venta. Avisa a soporte.',
+            );
+
             return;
         }
 
@@ -118,6 +132,8 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         // era un `ticket` (nota interna) o su emisión falló. En ambos casos la
         // devolución se queda como está, que es exactamente lo correcto.
         if (!$ce || !$ce->esEmitido() || !$ce->facturamac_id) {
+            $devolucion->anotarNotaCredito(Devolucion::NC_NO_APLICA);
+
             return;
         }
 
@@ -218,6 +234,11 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             return;
         }
 
+        $devolucion->anotarNotaCredito(Devolucion::NC_EMITIDA, null, [
+            'nota_credito_numero'        => $respuesta['numero'] ?? null,
+            'nota_credito_facturamac_id' => $respuesta['id'] ?? null,
+        ]);
+
         Log::info('Nota de crédito electrónica emitida', [
             'devolucion_id'  => $devolucion->id,
             'venta_id'       => $venta->id,
@@ -265,6 +286,11 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
 
             return;
         }
+
+        // Esperar NO es fallar: queda como `esperando` para que se distinga de una
+        // nota que murió. La bandeja de pendientes muestra las dos, pero solo la
+        // fallida pide que alguien haga algo.
+        $devolucion->anotarNotaCredito(Devolucion::NC_ESPERANDO);
 
         // Una boleta no se mueve hasta el resumen de las 23:55; consultar antes solo
         // gasta cola. Lo demás se resuelve en minutos.
@@ -495,6 +521,11 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
 
     private function avisarFallo(Devolucion $devolucion, string $mensaje): void
     {
+        // Lo primero, antes de cualquier log: es lo que hace que esto se pueda
+        // ver en pantalla y reintentar. La auditoría sola ya demostró que no
+        // basta —hay que ir a buscarla sabiendo qué buscar—.
+        $devolucion->anotarNotaCredito(Devolucion::NC_FALLIDA, $mensaje);
+
         Log::error('No se pudo emitir la nota de crédito de una devolución', [
             'devolucion_id' => $devolucion->id,
             'venta_id'      => $devolucion->venta_id,
@@ -506,8 +537,18 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
         AuditoriaService::log('venta_comprobante.nota_credito_fallida', $devolucion, [
             'venta_id' => $devolucion->venta_id,
             'error'    => mb_substr($mensaje, 0, 500),
-            'aviso'    => 'La devolución NO se revirtió. Emitir la nota de crédito manualmente en FacturaMac.',
+            'aviso'    => 'La devolución NO se revirtió. Reintenta la nota de crédito desde la devolución.',
         ], $this->usuario());
+    }
+
+    /**
+     * Anota el estado cuando la devolución todavía no está cargada (los cortes
+     * que ocurren antes de buscarla). Una consulta de más en un camino que corre
+     * una vez por devolución, a cambio de no dejarla en un "pendiente" eterno.
+     */
+    private function anotar(string $estado, ?string $error = null): void
+    {
+        Devolucion::find($this->devolucionId)?->anotarNotaCredito($estado, $error);
     }
 
     public function failed(Throwable $e): void

@@ -33,7 +33,33 @@ class Devolucion extends Model
         'observacion',
         'fecha_aprobacion',
         'observacion_aprobacion',
+        'nota_credito_estado',
+        'nota_credito_numero',
+        'nota_credito_facturamac_id',
+        'nota_credito_error',
+        'nota_credito_at',
     ];
+
+    /**
+     * ─── Estado de la nota de crédito de esta devolución ─────────────────────
+     *
+     * La NC se emite en segundo plano y puede tardar (una boleta espera al
+     * Resumen Diario de las 23:55) o fallar del todo. Antes eso vivía solo en el
+     * log: la devolución quedaba hecha, SUNAT seguía viendo el importe original
+     * y nadie se enteraba. Aquí queda el rastro para poder listarlo, avisarlo y
+     * reintentarlo.
+     *
+     * NULL es un estado legítimo: devoluciones anteriores a este cambio, sobre
+     * las que no se comprobó nada. No se rellenan hacia atrás.
+     */
+    public const NC_NO_APLICA = 'no_aplica';
+    public const NC_PENDIENTE = 'pendiente';
+    public const NC_ESPERANDO = 'esperando';
+    public const NC_EMITIDA   = 'emitida';
+    public const NC_FALLIDA   = 'fallida';
+
+    /** Los que dejan trabajo sin terminar: son los que se listan y se avisan. */
+    public const NC_SIN_CERRAR = [self::NC_PENDIENTE, self::NC_ESPERANDO, self::NC_FALLIDA];
 
     protected function casts(): array
     {
@@ -44,7 +70,35 @@ class Devolucion extends Model
             'monto_reembolso'    => 'decimal:2',
             'requiere_aprobacion' => 'boolean',
             'fue_aprobada'        => 'boolean',
+            'nota_credito_at'     => 'datetime',
         ];
+    }
+
+    /**
+     * Anota en qué quedó la nota de crédito. ÚNICO sitio que escribe estas
+     * columnas: el job tiene siete desenlaces distintos y repartir el `update()`
+     * por todos ellos es cómo se acaba con un estado que no corresponde.
+     *
+     * Escribe con `updateQuietly` y sin tocar el resto del modelo: esto corre
+     * desde la cola, mucho después de que la devolución se cerrara, y no tiene
+     * por qué mover su `updated_at` ni disparar observadores de la devolución.
+     *
+     * El error se limpia SIEMPRE que el desenlace no es un fallo: si un reintento
+     * sale bien, dejar el mensaje viejo haría creer que sigue rota.
+     */
+    public function anotarNotaCredito(string $estado, ?string $error = null, array $datos = []): void
+    {
+        $this->forceFill([
+            'nota_credito_estado' => $estado,
+            'nota_credito_error'  => $estado === self::NC_FALLIDA ? $error : null,
+            'nota_credito_at'     => now(),
+        ] + $datos)->updateQuietly();
+    }
+
+    /** ¿Quedó trabajo sin terminar con SUNAT por esta devolución? */
+    public function notaCreditoSinCerrar(): bool
+    {
+        return in_array($this->nota_credito_estado, self::NC_SIN_CERRAR, true);
     }
 
     public function empresa(): BelongsTo        { return $this->belongsTo(Empresa::class); }

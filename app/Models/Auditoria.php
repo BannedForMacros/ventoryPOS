@@ -52,6 +52,11 @@ class Auditoria extends Model
             'devolucion.aprobada'     => 'Devolución aprobada',
             'devolucion.rechazada'    => 'Devolución rechazada',
             'devolucion.anulada'      => 'Devolución anulada',
+            // Sin etiqueta salían en crudo, justo las tres que hay que mirar
+            // cuando una devolución queda sin acreditar ante SUNAT.
+            'venta_comprobante.nota_credito_emitida'     => 'Nota de crédito emitida',
+            'venta_comprobante.nota_credito_fallida'     => 'Nota de crédito FALLIDA',
+            'venta_comprobante.nota_credito_reintentada' => 'Nota de crédito reintentada',
             'turno.cerrado'           => 'Turno cerrado',
             'turno.reabierto'         => 'Turno reabierto',
             'stock.recalculado'       => 'Stock recalculado',

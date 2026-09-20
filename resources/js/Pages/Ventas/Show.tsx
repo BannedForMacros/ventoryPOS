@@ -5,13 +5,14 @@ import toast from 'react-hot-toast';
 import {
     ArrowLeft, XCircle, Receipt, User, ShoppingBag,
     CreditCard, Percent, Calendar, Store, UserCheck, Printer,
-    FileCheck2, Download, RefreshCw, KeyRound, AlertTriangle, FileText, PackageOpen, History,
+    FileCheck2, Download, RefreshCw, KeyRound, AlertTriangle, FileText, PackageOpen, History, Undo2,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
+import Callout from '@/Components/UI/Callout';
 import ModalModificarPedido from '@/Components/Ventas/ModalModificarPedido';
 import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import {
@@ -39,6 +40,15 @@ interface Props extends PageProps {
     ticketImpresion?: TicketPayload | null;
     puedeModificarPedido?: boolean;
     modificacionesPedido?: ModificacionPedido[];
+    /**
+     * Por qué esta venta ya no se puede anular ni editar; null si sí se puede.
+     * Lo decide el servidor (VentaService::motivoBloqueoFiscal): la pantalla NO
+     * tiene su propia lista de estados, porque dos listas separadas es como
+     * nacieron los bugs fiscales de este módulo.
+     */
+    bloqueoFiscal?: string | null;
+    /** Factura/boleta emitida fuera del sistema: se avisa, no se bloquea. */
+    avisoExterno?: string | null;
 }
 
 function SectionCard({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
@@ -71,7 +81,7 @@ function InfoRow({ label, value, muted }: { label: string; value: React.ReactNod
     );
 }
 
-export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [] }: Props) {
+export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, avisoExterno = null }: Props) {
     const [modalPedido, setModalPedido] = useState(false);
     const { auth } = usePage<Props>().props;
     const esAdmin  = auth.user.rol?.es_admin ?? false;
@@ -99,7 +109,14 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
         return Date.now() - new Date(venta.created_at).getTime() < editWindowMs;
     }
 
+    /**
+     * Con la venta ya informada a SUNAT no se ofrece anular: el camino correcto
+     * es una devolución total, que es la que emite la nota de crédito. Antes el
+     * botón se ofrecía igual y el servidor lo rechazaba DESPUÉS de escribir el
+     * motivo y de pedirle el código a un administrador.
+     */
     function puedeAnular(): boolean {
+        if (bloqueoFiscal) return false;
         if (venta.estado !== 'completada') return false;
         if (esAdmin) return true;
         return cajeraPuedeAnular;
@@ -253,9 +270,40 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                                 <span className="hidden sm:inline">Anular</span>
                             </Button>
                         )}
+                        {/* La salida, en el mismo sitio donde antes estaba Anular:
+                            quien viene a corregir la venta encuentra qué hacer, en
+                            vez de un botón que le va a decir que no. */}
+                        {!!bloqueoFiscal && venta.estado !== 'anulada' && (
+                            <Link href={route('devoluciones.create', { venta_id: venta.id })}>
+                                <Button variant="primary" size="sm" startContent={<Undo2 size={15} />}
+                                    title="La corrección de una venta ya declarada se hace con una nota de crédito, y esa nace de una devolución">
+                                    <span className="hidden sm:inline">Devolver / Nota de crédito</span>
+                                </Button>
+                            </Link>
+                        )}
                     </div>
                 }
             />
+
+            {/* Por qué esta venta ya no se toca, dicho ANTES de intentarlo. El
+                texto viene del servidor: es el mismo que cortaría la operación. */}
+            {!!bloqueoFiscal && venta.estado !== 'anulada' && (
+                <Callout variant="warning" title="Esta venta ya no se puede anular ni editar" className="mb-4">
+                    {bloqueoFiscal}
+                    <span className="block mt-1">
+                        Para corregirla registra una <strong>devolución</strong>: si devuelves todo,
+                        la nota de crédito anula el comprobante completo.
+                    </span>
+                </Callout>
+            )}
+
+            {/* Comprobante de fuera: no bloquea nada, pero conviene saberlo antes
+                de anular, no después de que el cliente ya tenga el papel. */}
+            {!!avisoExterno && venta.estado !== 'anulada' && (
+                <Callout variant="info" title="Ojo: el comprobante de esta venta se emitió fuera del sistema" className="mb-4">
+                    {avisoExterno}
+                </Callout>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* ── Columna principal ──────────────────────────────── */}

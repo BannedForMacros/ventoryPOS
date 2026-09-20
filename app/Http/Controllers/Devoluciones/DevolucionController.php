@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Devoluciones;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Devoluciones\StoreDevolucionRequest;
+use App\Jobs\EmitirNotaCreditoElectronica;
 use App\Models\Devolucion;
 use App\Models\DevolucionMotivo;
 use App\Models\MetodoPago;
 use App\Models\Turno;
 use App\Models\Venta;
+use App\Services\AuditoriaService;
 use App\Services\ConfiguracionOperacionService;
 use App\Services\DevolucionService;
 use Illuminate\Http\Request;
@@ -32,6 +34,11 @@ class DevolucionController extends Controller
         $devoluciones = Devolucion::deEmpresa($user->empresa_id)
             ->with(['venta:id,numero,fecha_venta,total', 'motivo', 'user', 'local'])
             ->when($request->estado, fn ($q, $e) => $q->where('estado', $e))
+            // Bandeja de lo que quedó sin acreditar ante SUNAT. Es el filtro que
+            // un admin mira de corrido, en lugar de abrir devolución por
+            // devolución para descubrir cuál se quedó a medias.
+            ->when($request->boolean('nc_pendiente'),
+                fn ($q) => $q->whereIn('nota_credito_estado', Devolucion::NC_SIN_CERRAR))
             ->when($request->fecha_desde, fn ($q, $f) => $q->whereDate('fecha', '>=', $f))
             ->when($request->fecha_hasta, fn ($q, $f) => $q->whereDate('fecha', '<=', $f))
             // Búsqueda server-side sobre TODA la base (no solo la página visible).
@@ -50,8 +57,13 @@ class DevolucionController extends Controller
 
         return Inertia::render('Devoluciones/Index', [
             'devoluciones' => $devoluciones,
-            'filters'      => $request->only(['estado', 'fecha_desde', 'fecha_hasta']),
+            'filters'      => $request->only(['estado', 'fecha_desde', 'fecha_hasta', 'nc_pendiente']),
             'buscar'       => $request->input('buscar', ''),
+            // Cuántas notas de crédito quedaron sin emitir, en TODA la empresa y no
+            // solo en la página visible: es un aviso, y un aviso que depende de en
+            // qué página estés no avisa de nada.
+            'ncFallidas'   => Devolucion::deEmpresa($user->empresa_id)
+                ->where('nota_credito_estado', Devolucion::NC_FALLIDA)->count(),
         ]);
     }
 
@@ -85,6 +97,15 @@ class DevolucionController extends Controller
                 ->orderByDesc('fecha_apertura')->limit(40)
                 ->get(['id', 'user_id', 'caja_id', 'fecha_apertura', 'estado']),
             'esAdmin'     => (bool) $user->rol->es_admin,
+            // Llega desde "Devolver / Nota de crédito" en una venta ya declarada.
+            // Se manda el NÚMERO, que es lo que busca el formulario, y solo si la
+            // venta es de esta empresa: el id viaja por la URL y cualquiera podría
+            // cambiarlo.
+            'ventaPrellenada' => $request->filled('venta_id')
+                ? Venta::where('id', $request->integer('venta_id'))
+                    ->where('empresa_id', $user->empresa_id)
+                    ->value('numero')
+                : null,
         ]);
     }
 
@@ -290,5 +311,56 @@ class DevolucionController extends Controller
         }
 
         return redirect()->back()->with('success', 'Devolución anulada.');
+    }
+
+    /**
+     * Vuelve a intentar la nota de crédito de una devolución que quedó a medias.
+     *
+     * POR QUÉ EXISTE: la NC se emite en segundo plano y puede agotar sus
+     * reintentos (SUNAT caída, el comprobante que nunca llegó a estar acreditable).
+     * Hasta ahora eso terminaba en un mensaje que mandaba a emitirla a mano en
+     * FacturaMac: el sistema sabía que algo quedó sin terminar y no ofrecía cómo
+     * terminarlo, y en ventoryPOS no quedaba rastro de que se hubiera resuelto.
+     *
+     * Reintentar es SEGURO por diseño: el job manda `idempotency_key` =
+     * "devolucion-{id}", así que por más veces que se pulse, una devolución tiene
+     * como mucho una nota de crédito.
+     *
+     * NO revierte ni toca la devolución: el stock ya volvió y el dinero ya salió.
+     * Lo único que hace es volver a intentar el documento.
+     */
+    public function reintentarNotaCredito(Request $request, Devolucion $devolucion)
+    {
+        $user = $request->user();
+        abort_if($devolucion->empresa_id !== $user->empresa_id, 403);
+        abort_unless($user->rol?->es_admin, 403, 'Solo administradores pueden reintentar la nota de crédito.');
+
+        // `emitida` y `no_aplica` no se reintentan: en la primera ya existe el
+        // documento y en la segunda no hay nada que acreditar. Dejar pulsar aquí
+        // solo serviría para encolar trabajo que el job va a descartar.
+        if (!$devolucion->notaCreditoSinCerrar()) {
+            return redirect()->back()->with('error',
+                $devolucion->nota_credito_estado === Devolucion::NC_EMITIDA
+                    ? 'Esta devolución ya tiene su nota de crédito emitida.'
+                    : 'Esta devolución no necesita nota de crédito.');
+        }
+
+        // Arranca de cero la cuenta de esperas: si la anterior murió de viejo
+        // esperando el Resumen Diario, este intento merece su propio plazo.
+        $devolucion->anotarNotaCredito(Devolucion::NC_PENDIENTE);
+
+        EmitirNotaCreditoElectronica::dispatch(
+            $devolucion->id,
+            (int) $devolucion->empresa_id,
+            $user->id,
+        )->afterCommit();
+
+        AuditoriaService::log('venta_comprobante.nota_credito_reintentada', $devolucion, [
+            'venta_id'      => $devolucion->venta_id,
+            'estado_previo' => $devolucion->getOriginal('nota_credito_estado'),
+        ], $user);
+
+        return redirect()->back()->with('success',
+            'Nota de crédito encolada de nuevo. En unos minutos verás aquí en qué quedó.');
     }
 }

@@ -183,8 +183,18 @@ class DevolucionService
 
             $ce = $venta->comprobanteElectronico()->first();
             if (!$ce || !$ce->esEmitido()) {
-                return; // ticket o comprobante nunca emitido: nada que acreditar
+                // Ticket o comprobante nunca emitido: nada que acreditar. Se deja
+                // dicho, porque "sin nota de crédito porque no hacía falta" y "sin
+                // nota de crédito porque se perdió" se ven igual si no se anota.
+                $devolucion->anotarNotaCredito(Devolucion::NC_NO_APLICA);
+
+                return;
             }
+
+            // Queda encolada ANTES de despachar: si el proceso se cae entre una
+            // cosa y la otra, la devolución aparece como pendiente —que es la
+            // verdad— en vez de como si nunca hubiera hecho falta una NC.
+            $devolucion->anotarNotaCredito(Devolucion::NC_PENDIENTE);
 
             // La empresa que emite es la de LA VENTA, no la del usuario que
             // registra la devolución: un admin de una empresa puede tramitar la

@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\Venta;
 use App\Models\VentaItem;
 use App\Models\VentaPago;
+use App\Services\Facturacion\FacturacionEmpresa;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -831,6 +832,25 @@ class VentaService
      */
     private function bloquearSiTieneComprobanteEmitido(Venta $venta): void
     {
+        if ($motivo = $this->motivoBloqueoFiscal($venta)) {
+            abort(422, $motivo);
+        }
+    }
+
+    /**
+     * Por qué esta venta NO se puede anular ni editar, o null si sí se puede.
+     *
+     * ES LA MISMA RESPUESTA QUE USA LA PANTALLA. La alternativa —que el front
+     * lleve su propia lista de estados— es exactamente el patrón que ya costó
+     * tres bugs fiscales: dos listas que empiezan iguales y dejan de coincidir
+     * sin que nadie se entere. Aquí se pregunta y se pinta lo que conteste.
+     *
+     * Devuelve el texto ya redactado para la persona, no un código: quien lee
+     * esto en el mostrador necesita saber qué hacer a continuación, y ese texto
+     * tiene que ser el mismo en la pantalla y en el error del servidor.
+     */
+    public function motivoBloqueoFiscal(Venta $venta): ?string
+    {
         // La integración es opcional y se despliega por partes. La comprobación
         // anterior (`method_exists`) era código muerto: el método SIEMPRE existe
         // porque está definido en el modelo. Con la tabla sin crear —código
@@ -850,13 +870,82 @@ class VentaService
         $tablaDisponible ??= Schema::hasTable('venta_comprobantes');
 
         if (! $tablaDisponible) {
-            return;
+            return null;
         }
 
         $ce = $venta->comprobanteElectronico()->first();
         if ($ce && $ce->esEmitido()) {
-            abort(422, "La venta tiene el comprobante {$ce->numero} informado a SUNAT. "
-                . 'Para revertirla emite una Nota de Crédito.');
+            return "La venta tiene el comprobante {$ce->numero} informado a SUNAT. "
+                . 'Para revertirla emite una Nota de Crédito.';
         }
+
+        // ── La carrera de `pendiente` ────────────────────────────────────────
+        //
+        // `pendiente` significa "creado en el emisor, todavía sin salir hacia
+        // SUNAT", y por eso el contrato lo deja fuera de los que bloquean. Pero
+        // entre que la venta se registra y el job la envía hay un hueco de
+        // segundos: anular ahí deja que el envío salga igual y quede declarado
+        // ante SUNAT algo que aquí ya no existe. Justo lo que la guarda quiere
+        // impedir, colándose por la puerta del tiempo.
+        //
+        // La regla del propio enum es "ante la duda, bloquea": bloquear de más
+        // solo obliga a emitir una nota de crédito; dejar pasar descuadra la
+        // declaración. Se comprueba SOLO con la emisión encendida, porque con
+        // ella apagada ese comprobante no va a salir nunca hacia SUNAT.
+        if ($ce && $ce->estado === 'pendiente' && app(FacturacionEmpresa::class)->activa((int) $venta->empresa_id)) {
+            return 'El comprobante de esta venta se está enviando a SUNAT en este momento. '
+                . 'Espera a que termine (menos de un minuto) y vuelve a intentarlo: si sale aceptado, '
+                . 'la corrección será por Nota de Crédito.';
+        }
+
+        // ── Guías de remisión ────────────────────────────────────────────────
+        //
+        // Una guía que ya ampara el traslado es un documento ante SUNAT igual
+        // que la factura. Anular la venta dejaría una guía amparando el viaje de
+        // mercadería de una operación que la empresa dice que no existió.
+        //
+        // Se mira `puede_trasladar`, NO el estado: es el campo que el emisor
+        // manda ya resuelto, y deducirlo aquí con una lista propia es el fallo
+        // que costó dos bugs fiscales con los comprobantes.
+        if (Schema::hasTable('guias')) {
+            $guia = DB::table('guias')
+                ->where('venta_id', $venta->id)
+                ->where('puede_trasladar', true)
+                ->first(['numero']);
+
+            if ($guia) {
+                return 'Esta venta tiene la guía de remisión ' . ($guia->numero ?: 'emitida')
+                    . ' autorizada por SUNAT. Anula primero la guía; mientras esté vigente ampara '
+                    . 'el traslado de una mercadería que esta venta dice haber entregado.';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * ¿La venta lleva una factura o boleta cargada A MANO (emitida fuera de
+     * ventoryPOS)? Entonces existe un documento físico en poder del cliente que
+     * el sistema no puede tocar.
+     *
+     * NO BLOQUEA —decisión del negocio—: quien anula aquí sabe lo que tiene
+     * delante, y bloquear obligaría a pedir soporte para cada corrección. Pero
+     * sí se devuelve el aviso para que la pantalla lo diga antes, no después:
+     * la nota de crédito de ese documento hay que emitirla por fuera.
+     *
+     * @return string|null El aviso, o null si no hay nada que advertir.
+     */
+    public static function avisoComprobanteExterno(Venta $venta): ?string
+    {
+        if (!in_array($venta->tipo_comprobante, ['boleta_externa', 'factura_externa'], true)) {
+            return null;
+        }
+
+        $tipo   = $venta->tipo_comprobante === 'factura_externa' ? 'factura' : 'boleta';
+        $numero = $venta->numero_comprobante ? " {$venta->numero_comprobante}" : '';
+
+        return "Esta venta tiene una {$tipo}{$numero} emitida fuera del sistema. "
+            . 'Anularla aquí NO anula ese documento: para que cuadre con SUNAT tendrás que '
+            . "emitir la nota de crédito de esa {$tipo} por donde la emitiste.";
     }
 }

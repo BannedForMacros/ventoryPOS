@@ -1,14 +1,16 @@
 import { router, usePage } from '@inertiajs/react';
 import { useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { CheckCircle, XCircle, Ban } from 'lucide-react';
+import { CheckCircle, XCircle, Ban, RefreshCw } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
+import Callout from '@/Components/UI/Callout';
 import type { PageProps } from '@/types';
 
 type EstadoDev = 'pendiente' | 'aprobada' | 'rechazada' | 'completada' | 'anulada';
+type EstadoNC = 'no_aplica' | 'pendiente' | 'esperando' | 'emitida' | 'fallida';
 
 interface Detalle {
     id: number;
@@ -44,6 +46,13 @@ interface Devolucion {
     fecha_aprobacion: string | null;
     observacion_aprobacion: string | null;
     venta: { id: number; numero: string; total: string; fecha_venta: string };
+    /**
+     * En qué quedó la nota de crédito ante SUNAT. `null` = devolución anterior a
+     * que esto se registrara: no se sabe, y decir "no aplica" sería inventarlo.
+     */
+    nota_credito_estado: EstadoNC | null;
+    nota_credito_numero: string | null;
+    nota_credito_error: string | null;
     motivo: { nombre: string };
     user: { name: string };
     user_aprobacion: { name: string } | null;
@@ -64,6 +73,22 @@ const FORMA_LABEL: Record<string, string> = {
     cambio_producto: 'Cambio de producto', sin_reembolso: 'Sin reembolso',
 };
 
+/**
+ * Cómo se cuenta cada estado de la nota de crédito.
+ *
+ * `esperando` NO es un problema y se dice así: una boleta no llega a SUNAT hasta
+ * el Resumen Diario de las 23:55, de modo que casi toda devolución del día pasa
+ * por ahí. Pintarla de rojo enseñaría a ignorar el rojo, que es justo lo que no
+ * puede pasar con `fallida` —ahí sí hay un importe declarado de más—.
+ */
+const NC_INFO: Record<EstadoNC, { variant: 'info' | 'success' | 'warning' | 'danger'; titulo: string; texto: string }> = {
+    no_aplica: { variant: 'info', titulo: 'Sin nota de crédito', texto: 'Esta venta no tenía comprobante enviado a SUNAT, así que no hay nada que acreditar.' },
+    pendiente: { variant: 'info', titulo: 'Nota de crédito en camino', texto: 'Se está emitiendo. En unos minutos aparecerá aquí el resultado.' },
+    esperando: { variant: 'info', titulo: 'Nota de crédito en espera', texto: 'El comprobante todavía no llegó a SUNAT. Las boletas viajan en el Resumen Diario de las 23:55; se reintenta solo.' },
+    emitida:   { variant: 'success', titulo: 'Nota de crédito emitida', texto: 'SUNAT ya tiene la nota de crédito de esta devolución.' },
+    fallida:   { variant: 'danger', titulo: 'La nota de crédito NO se emitió', texto: 'La devolución está hecha y es correcta, pero SUNAT sigue viendo declarado el importe original de la venta. Hay que emitirla para que la declaración cuadre.' },
+};
+
 export default function DevolucionShow({ devolucion: d }: Props) {
     const { flash, auth } = usePage<Props>().props;
     const esAdmin = (auth.user as { rol?: { es_admin?: boolean } } | undefined)?.rol?.es_admin ?? false;
@@ -72,6 +97,16 @@ export default function DevolucionShow({ devolucion: d }: Props) {
         if (flash?.success) toast.success(flash.success as string);
         if (flash?.error)   toast.error(flash.error as string);
     }, [flash]);
+
+    const nc = d.nota_credito_estado ? NC_INFO[d.nota_credito_estado] : null;
+    // Solo lo que quedó a medias se puede reintentar: una emitida ya existe y
+    // una que no aplica no tiene nada que emitir.
+    const puedeReintentarNC = esAdmin
+        && ['pendiente', 'esperando', 'fallida'].includes(d.nota_credito_estado ?? '');
+
+    function reintentarNC() {
+        router.post(route('devoluciones.nota-credito.reintentar', d.id), {}, { preserveScroll: true });
+    }
 
     return (
         <AppLayout title={`Devolución #${d.id}`}>
@@ -101,6 +136,31 @@ export default function DevolucionShow({ devolucion: d }: Props) {
             />
 
             <div className="space-y-6 max-w-6xl">
+                {/* El estado ante SUNAT va ARRIBA del todo y solo cuando hay algo
+                    que contar: una nota fallida deja la declaración descuadrada y
+                    antes solo se veía en el log, donde nadie la iba a buscar. */}
+                {nc && (
+                    <Callout
+                        variant={nc.variant}
+                        title={nc.titulo}
+                        aside={d.nota_credito_numero ?? undefined}
+                    >
+                        {nc.texto}
+                        {d.nota_credito_estado === 'fallida' && d.nota_credito_error && (
+                            <span className="block mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                Motivo: {d.nota_credito_error}
+                            </span>
+                        )}
+                        {puedeReintentarNC && (
+                            <span className="block mt-3">
+                                <Button variant="primary" onClick={reintentarNC}>
+                                    <RefreshCw size={14} className="mr-1" />Reintentar nota de crédito
+                                </Button>
+                            </span>
+                        )}
+                    </Callout>
+                )}
+
                 <section className="rounded-2xl border p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm"
                     style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
                     <div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { router } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -58,6 +58,13 @@ interface Props extends PageProps {
     turnoActivo: { id: number; caja_id: number; caja: { nombre: string } } | null;
     turnos: TurnoLite[];
     esAdmin: boolean;
+    /**
+     * Venta con la que llegar el formulario ya cargado. Viene de "Devolver /
+     * Nota de crédito" en una venta que ya no se puede anular: obligar a
+     * teclear otra vez el número que acabas de mirar es la clase de paso que
+     * hace que la gente busque el atajo equivocado.
+     */
+    ventaPrellenada?: string | null;
 }
 
 interface ItemSeleccionado {
@@ -76,7 +83,7 @@ interface PagoRow {
     referencia: string;
 }
 
-export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, turnos }: Props) {
+export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, turnos, ventaPrellenada = null }: Props) {
     const [turnoAfecta, setTurnoAfecta] = useState<number | ''>(turnoActivo?.id ?? (turnos.length === 1 ? turnos[0].id : ''));
     const [busqueda, setBusqueda] = useState('');
     const [buscando, setBuscando] = useState(false);
@@ -91,12 +98,22 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [processing, setProcessing] = useState(false);
 
-    async function buscar() {
-        if (!busqueda.trim()) return;
+    // Llegando desde una venta bloqueada, se busca sola: el usuario ya dijo cuál
+    // era al pulsar el botón. Solo al montar; después manda lo que él teclee.
+    useEffect(() => {
+        if (!ventaPrellenada) return;
+        setBusqueda(ventaPrellenada);
+        void buscar(ventaPrellenada);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    async function buscar(termino?: string) {
+        const q = (termino ?? busqueda).trim();
+        if (!q) return;
         setBuscando(true);
         setVenta(null); setConfig(null); setItems({});
         try {
-            const { data } = await axios.get(route('devoluciones.buscar-venta'), { params: { q: busqueda.trim() } });
+            const { data } = await axios.get(route('devoluciones.buscar-venta'), { params: { q } });
             setVenta(data.venta);
             setConfig(data.configuracion);
             if (!data.configuracion.permite_devoluciones) {
@@ -241,7 +258,7 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
                                 onKeyDown={e => { if (e.key === 'Enter') buscar(); }}
                             />
                         </div>
-                        <Button onClick={buscar} disabled={buscando}>
+                        <Button onClick={() => buscar()} disabled={buscando}>
                             <Search size={14} className="mr-1" />{buscando ? 'Buscando...' : 'Buscar'}
                         </Button>
                     </div>

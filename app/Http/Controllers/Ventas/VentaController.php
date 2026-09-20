@@ -1297,6 +1297,14 @@ class VentaController extends Controller
                 ->where('accion', 'venta.pedido_modificado')
                 ->orderByDesc('created_at')
                 ->get(['id', 'user_name', 'created_at', 'contexto']),
+            // Por qué esta venta ya no se puede anular ni editar (o null si sí).
+            // Lo contesta el MISMO método que corta en el servidor: si la pantalla
+            // llevara su propia lista de estados, las dos acabarían discrepando —
+            // que es como nacieron tres bugs fiscales en este módulo.
+            'bloqueoFiscal' => app(VentaService::class)->motivoBloqueoFiscal($venta),
+            // Factura/boleta cargada a mano: NO bloquea, pero hay que avisar de que
+            // su nota de crédito se emite por fuera.
+            'avisoExterno'  => VentaService::avisoComprobanteExterno($venta),
             // Payload listo para el agente local de impresión (VentoryPrint.exe).
             'ticketImpresion' => app(TicketPrintService::class)->payloadDeVenta($venta),
         ]);
