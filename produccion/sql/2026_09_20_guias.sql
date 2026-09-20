@@ -109,3 +109,33 @@ WHERE NOT EXISTS (
 );
 
 COMMIT;
+
+-- ============================================================================
+--  El módulo en el menú y su permiso para los roles administradores.
+--
+--  Va suelto y no dentro de Inventario a propósito: una guía no es un movimiento
+--  de stock, es el documento que ampara uno. Colgarlo de Inventario invitaría a
+--  pensar que despachar y emitir la guía son la misma acción, y no lo son.
+--
+--  Idempotente: si ya existe, no se duplica ni se pisa.
+-- ============================================================================
+
+BEGIN;
+
+INSERT INTO public.modulos (padre_id, nombre, slug, icono, ruta, orden, activo, created_at, updated_at)
+SELECT NULL, 'Guías de remisión', 'guias', 'Truck', '/guias', 35, true, now(), now()
+WHERE NOT EXISTS (SELECT 1 FROM public.modulos WHERE slug = 'guias');
+
+-- Solo a los roles administradores. Emitir un documento ante SUNAT no es lo mismo
+-- que sacar mercadería del almacén: quien despacha lo tendrá cuando se le conceda.
+INSERT INTO public.permisos (rol_id, modulo_id, ver, crear, editar, eliminar, created_at, updated_at)
+SELECT r.id, m.id, true, true, true, false, now(), now()
+FROM public.roles r
+CROSS JOIN public.modulos m
+WHERE m.slug = 'guias'
+  AND r.es_admin = true
+  AND NOT EXISTS (
+      SELECT 1 FROM public.permisos p WHERE p.rol_id = r.id AND p.modulo_id = m.id
+  );
+
+COMMIT;
