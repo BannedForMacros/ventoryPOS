@@ -119,13 +119,36 @@ it('rechaza cuando la cuenta_metodo_pago_id no pertenece al método enviado', fu
     $resp->assertSessionHasErrors('cuenta_metodo_pago_id');
 });
 
-it('sigue funcionando sin método (compat): cae a efectivo', function () {
-    $resp = postGasto(); // sin metodo_pago_id ni cuenta
-    $resp->assertSessionHasNoErrors();
+/**
+ * OJO — ESTA PRUEBA CAMBIÓ DE SENTIDO, Y A PROPÓSITO.
+ *
+ * Antes comprobaba que un gasto sin método de pago «caía a efectivo». Esa
+ * compatibilidad se retiró el 28 de agosto, con las mejoras del selector de cuentas:
+ * ahora hay que decir explícitamente por dónde sale el dinero. La prueba se quedó
+ * afirmando lo contrario y llevaba fallando desde entonces.
+ *
+ * Se reescribe para documentar lo que el sistema hace HOY. Es lo correcto: adivinar
+ * la cuenta de un egreso es justo el tipo de suposición que descuadra una caja sin
+ * que nadie se entere.
+ *
+ * Si alguna vez se quisiera recuperar el respaldo a efectivo, el sitio de arreglarlo
+ * sería el controlador, no esta prueba.
+ */
+it('exige decir por dónde sale el dinero: sin método de pago no se registra', function () {
+    postGasto() // sin metodo_pago_id ni cuenta
+        ->assertSessionHasErrors(['metodo_pago_id']);
+
+    expect(Gasto::where('empresa_id', $this->env->empresa->id)->count())->toBe(0);
+});
+
+it('con método efectivo asienta el egreso en la cuenta de efectivo', function () {
+    postGasto(['metodo_pago_id' => $this->env->metodo('efectivo')->id])
+        ->assertSessionHasNoErrors();
 
     $gasto = Gasto::where('empresa_id', $this->env->empresa->id)->latest('id')->first();
-    // cuenta_id null → registrar asienta en efectivo
-    $mov = CuentaMovimiento::where('ref_tipo', 'gasto')->where('ref_id', $gasto->id)->first();
-    $cuentaEfectivo = Cuenta::where('empresa_id', $this->env->empresa->id)->where('es_efectivo', true)->first();
-    expect($mov->cuenta_id)->toBe($cuentaEfectivo->id);
+    $mov   = CuentaMovimiento::where('ref_tipo', 'gasto')->where('ref_id', $gasto->id)->first();
+
+    $efectivo = Cuenta::where('empresa_id', $this->env->empresa->id)->where('es_efectivo', true)->first();
+
+    expect($mov->cuenta_id)->toBe($efectivo->id);
 });

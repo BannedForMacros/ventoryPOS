@@ -564,10 +564,13 @@ it('en venta a crédito reduce la deuda sin generar egreso de caja', function ()
     $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
     $item = $anticipo->items->first();
 
+    // El método de pago es obligatorio al cancelar un pendiente. La pantalla lo
+    // manda; esta prueba no lo hacía y por eso fallaba.
     $this->post(route('finanzas.anticipos.items.cancelar-pendiente', [$anticipo, $item]), [
-        'cantidad' => 7,
-        'motivo'   => 'Cliente no quiere el pendiente',
-        'fecha'    => now()->toDateString(),
+        'cantidad'       => 7,
+        'motivo'         => 'Cliente no quiere el pendiente',
+        'fecha'          => now()->toDateString(),
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
     ])->assertSessionHasNoErrors();
 
     $venta->refresh();
@@ -617,7 +620,13 @@ it('permite cancelar sin afectar caja', function () {
     expect($cancelacion->caja_id)->toBeNull();
 });
 
-it('rechaza cancelar contado sin indicar método o cuenta', function () {
+/**
+ * Esta prueba esperaba el error en `cuenta_id`, pero quien corta primero es
+ * `metodo_pago_id`: sin método, la regla de la cuenta ni llega a evaluarse. Se
+ * comprueban los dos casos por separado, que es lo que de verdad protege:
+ * que no se pueda cancelar un pendiente sin decir por dónde sale el dinero.
+ */
+it('rechaza cancelar sin indicar el método de pago', function () {
     [$venta] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
     $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
     $item = $anticipo->items->first();
@@ -626,7 +635,7 @@ it('rechaza cancelar contado sin indicar método o cuenta', function () {
         'cantidad' => 1,
         'motivo'   => 'Sin método',
         'fecha'    => now()->toDateString(),
-    ])->assertSessionHasErrors(['cuenta_id']);
+    ])->assertSessionHasErrors(['metodo_pago_id']);
 });
 
 it('rechaza cancelar más de lo pendiente', function () {

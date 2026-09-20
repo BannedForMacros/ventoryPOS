@@ -194,8 +194,13 @@ function crearAdelanto($test, float $monto = 500): ProveedorAdelanto
 it('editar un adelanto sin consumos rehace el egreso en tesorería', function () {
     $adelanto = crearAdelanto($this, 500);
 
+    // El método de pago pasó a ser obligatorio al editar el 28 de agosto, con las
+    // mejoras del selector de cuentas. La pantalla sí lo manda; esta prueba se quedó
+    // sin actualizar y llevaba fallando desde entonces.
     $this->put(route('finanzas.adelantos.update', $adelanto), [
-        'monto' => 800, 'fecha' => now()->subDay()->toDateString(),
+        'monto'          => 800,
+        'fecha'          => now()->subDay()->toDateString(),
+        'metodo_pago_id' => $this->env->metodo('efectivo')->id,
     ])->assertSessionHasNoErrors();
 
     $adelanto->refresh();
