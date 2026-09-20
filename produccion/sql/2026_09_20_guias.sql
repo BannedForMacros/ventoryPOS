@@ -122,8 +122,15 @@ COMMIT;
 
 BEGIN;
 
+-- LLEGA APAGADO (activo = false), igual que el módulo en FacturaMac. Nadie lo ve
+-- en el menú hasta que se encienda a mano, y encenderlo antes de que la empresa
+-- tenga sus credenciales de la API de guías solo serviría para que alguien entre,
+-- lo intente y se encuentre con un aviso.
+--
+-- Para encenderlo, cuando toque:
+--     UPDATE public.modulos SET activo = true WHERE slug = 'guias';
 INSERT INTO public.modulos (padre_id, nombre, slug, icono, ruta, orden, activo, created_at, updated_at)
-SELECT NULL, 'Guías de remisión', 'guias', 'Truck', '/guias', 35, true, now(), now()
+SELECT NULL, 'Guías de remisión', 'guias', 'Truck', '/guias', 35, false, now(), now()
 WHERE NOT EXISTS (SELECT 1 FROM public.modulos WHERE slug = 'guias');
 
 -- Solo a los roles administradores. Emitir un documento ante SUNAT no es lo mismo
