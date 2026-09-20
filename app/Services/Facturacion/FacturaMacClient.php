@@ -8,6 +8,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use MacSoft\Facturacion\Contrato\Dto\ErrorRespuesta;
 use MacSoft\Facturacion\Contrato\Dto\Respuesta;
+use MacSoft\Facturacion\Contrato\Dto\RespuestaGuia;
 use MacSoft\Facturacion\Contrato\Enum\CodigoError;
 use Throwable;
 
@@ -105,6 +106,89 @@ class FacturaMacClient
         $this->verificar($response, 'emitir la venta');
 
         return Respuesta::desdeArray($this->json($response));
+    }
+
+    /*
+    |---------------------------------------------------------------------------
+    | Guías de remisión
+    |---------------------------------------------------------------------------
+    |
+    | OJO A LA DIFERENCIA CON UNA VENTA: una guía se ENTREGA a SUNAT y su respuesta
+    | llega después, no en esta llamada. Lo que vuelve es una guía que TODAVÍA NO
+    | AUTORIZA NINGÚN TRASLADO, y hay que volver a preguntar por ella.
+    |
+    | Por eso `RespuestaGuia::puedeTrasladar` viaja resuelto desde el emisor: este
+    | lado NO debe deducirlo de una lista de estados propia. Es exactamente el fallo
+    | que costó dos bugs fiscales con los comprobantes.
+    |
+    */
+
+    /**
+     * Emite una guía. `POST /api/v1/guias`.
+     *
+     * @param  array<string, mixed> $payload
+     *
+     * @throws FacturaMacException
+     */
+    public function emitirGuia(array $payload): RespuestaGuia
+    {
+        $clave = (string) ($payload['idempotency_key'] ?? '');
+
+        $response = $this->enviar(
+            fn (PendingRequest $req) => $req
+                ->withHeaders(['Idempotency-Key' => $clave])
+                ->post("{$this->baseUrl}/api/v1/guias", $payload),
+            'emitir la guía',
+        );
+
+        $this->verificar($response, 'emitir la guía');
+
+        return RespuestaGuia::desdeArray($this->json($response));
+    }
+
+    /**
+     * En qué quedó una guía. `GET /api/v1/guias/{id}`.
+     *
+     * @throws FacturaMacException
+     */
+    public function consultarGuia(int $id): RespuestaGuia
+    {
+        $response = $this->enviar(
+            fn (PendingRequest $req) => $req->get("{$this->baseUrl}/api/v1/guias/{$id}"),
+            'consultar la guía',
+        );
+
+        $this->verificar($response, 'consultar la guía');
+
+        return RespuestaGuia::desdeArray($this->json($response));
+    }
+
+    /**
+     * Los motivos con sus reglas, las modalidades y las series.
+     * `GET /api/v1/guias/catalogos`.
+     *
+     * Se llama antes de pintar el formulario. Los motivos vienen CON SUS REGLAS
+     * —si piden destinatario, en qué extremo cabe el código de local— para que esta
+     * pantalla enseñe lo mismo que el portal de FacturaMac sin que nadie las
+     * coordine, y el día que SUNAT cambie una regla se toque un solo sitio.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws FacturaMacException
+     */
+    public function catalogosGuias(): array
+    {
+        $response = $this->enviar(
+            // Timeout recortado por lo mismo que la configuración: esto se lee al
+            // pintar una pantalla, y ahí una espera larga es peor que un fallo claro.
+            fn (PendingRequest $req) => $req->timeout(min($this->timeout, 8))
+                ->get("{$this->baseUrl}/api/v1/guias/catalogos"),
+            'leer los catálogos de guías',
+        );
+
+        $this->verificar($response, 'leer los catálogos de guías');
+
+        return $this->json($response);
     }
 
     /**
