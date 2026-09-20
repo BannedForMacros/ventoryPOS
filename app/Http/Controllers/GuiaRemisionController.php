@@ -81,6 +81,17 @@ class GuiaRemisionController extends Controller
             'catalogos' => $this->catalogos($empresaId),
             'emision'   => $this->estadoDeLaEmision($empresaId),
             'venta'     => $request->filled('venta') ? $this->ventaParaGuia($request, $empresaId) : null,
+            'clientes'  => \App\Models\Cliente::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                // El «cliente general» de mostrador no vale como destinatario: SUNAT
+                // exige a alguien identificado en una guía.
+                ->where('es_cliente_general', false)
+                ->orderBy('razon_social')
+                ->get(['id', 'razon_social', 'nombres', 'apellidos', 'numero_documento'])
+                ->map(fn ($c) => [
+                    'id'    => $c->id,
+                    'label' => trim(($c->razon_social ?: $c->nombre_completo) . ' · ' . $c->numero_documento),
+                ]),
         ]);
     }
 
