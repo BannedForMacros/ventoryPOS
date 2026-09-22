@@ -40,7 +40,7 @@ export default function Input({ label, error, hint, required, className = '', on
                 <input
                     id={inputId}
                     className={`
-                        w-full rounded-xl border-2 px-4 py-2.5 text-sm outline-none
+                        w-full rounded-xl border px-3 py-2 text-sm outline-none
                         transition-all duration-200 ease-in-out
                         disabled:cursor-not-allowed disabled:opacity-50
                         hover:opacity-90 hover:border-[var(--color-primary)]

@@ -277,7 +277,14 @@ export default function SearchableSelect({
                                 onChange={e => setQuery(e.target.value)}
                                 onKeyDown={handleInputKeyDown}
                                 placeholder={searchPlaceholder}
-                                className="flex-1 bg-transparent text-sm outline-none"
+                                /* `border-0 focus:ring-0` NO es decorativo: el plugin
+                                   @tailwindcss/forms pinta TODO input enfocado con
+                                   borde azul #2563eb y un anillo del mismo color. Aquí
+                                   eso dibujaba un rectángulo azul dentro del desplegable
+                                   —un recuadro sobre otro— que no lo pedía nadie. Esta
+                                   fila es un buscador embebido, no un campo suelto: la
+                                   separa la línea de abajo del contenedor. */
+                                className="flex-1 bg-transparent text-sm outline-none border-0 p-0 focus:ring-0 focus:border-0"
                                 style={{ color: 'var(--color-text)' }}
                                 aria-autocomplete="list"
                                 aria-controls="searchable-select-list"
