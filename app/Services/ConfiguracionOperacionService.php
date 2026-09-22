@@ -75,6 +75,41 @@ class ConfiguracionOperacionService
     }
 
     /**
+     * ¿Esta empresa trabaja SIN caja?
+     *
+     * Una peluquería, una veterinaria o un taller pequeño abren la puerta y
+     * trabajan: nadie cuadra un cajón. Pero una venta no puede existir sin
+     * turno —`ventas.turno_id` es obligatorio y el correlativo cuelga de él—,
+     * así que el turno sigue existiendo y lo abre el sistema con la primera
+     * venta del día, uno POR PERSONA.
+     */
+    public function turnoAutomatico(int $empresaId): bool
+    {
+        return Empresa::whereKey($empresaId)->value('modo_turno') === 'automatico';
+    }
+
+    /**
+     * ¿Se cierran solos los turnos que quedaron abiertos de días anteriores?
+     *
+     * Va aparte del modo a propósito: una empresa que abre turnos a mano
+     * también puede querer que no se le queden abiertos de un día para otro.
+     */
+    public function cierreTurnoAutomatico(int $empresaId): bool
+    {
+        return (bool) Empresa::whereKey($empresaId)->value('turno_cierre_automatico');
+    }
+
+    /**
+     * Hasta dónde llega la numeración de ventas antes de reiniciar:
+     * 'turno' (como siempre) | 'dia' (corrida en el local, reinicia cada día)
+     * | 'continuo' (nunca reinicia).
+     */
+    public function alcanceCorrelativoVenta(int $empresaId): string
+    {
+        return Empresa::whereKey($empresaId)->value('venta_correlativo_alcance') ?: 'turno';
+    }
+
+    /**
      * Resuelve el modo de cierre de caja efectivo para un local.
      * Retorna 'rapido' | 'con_declaraciones'.
      */

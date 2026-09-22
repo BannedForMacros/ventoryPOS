@@ -128,7 +128,13 @@ interface TurnoBackdate {
 }
 
 interface Props extends PageProps {
-    turno:              Turno;
+    /**
+     * Puede venir NULO: en los negocios sin caja (modo_turno = automatico) el
+     * turno del día se abre en la PRIMERA VENTA, no al entrar al POS. Crearlo
+     * solo por visitar la pantalla dejaría turnos vacíos cada vez que alguien
+     * echa un ojo al catálogo.
+     */
+    turno:              Turno | null;
     productos:          Producto[];
     productosHasMore: boolean;
     productosCursor:    string | null;
@@ -1437,11 +1443,13 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                     <div className="min-w-0">
                         <p className="font-bold text-sm leading-tight truncate">
                             <span className="sm:hidden">POS</span>
-                            <span className="hidden sm:inline">POS · {turno.caja?.nombre ?? 'Caja'}</span>
+                            <span className="hidden sm:inline">POS{turno?.caja?.nombre ? ` · ${turno.caja.nombre}` : ''}</span>
                         </p>
-                        <p className="hidden sm:block text-[10px] opacity-70 leading-tight">
-                            Turno #{turno.id}
-                        </p>
+                        {turno && (
+                            <p className="hidden sm:block text-[10px] opacity-70 leading-tight">
+                                Turno #{turno.id}
+                            </p>
+                        )}
                     </div>
                 </div>
 

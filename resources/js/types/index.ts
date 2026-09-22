@@ -46,6 +46,10 @@ export interface Empresa extends Record<string, unknown> {
     retiro_requiere_aprobacion: boolean;
     cierre_pregunta_destino: boolean;
     usa_caja_grande: boolean;
+    /** Negocios sin caja: el turno del día lo abre y cierra el sistema. */
+    modo_turno?: 'manual' | 'automatico';
+    turno_cierre_automatico?: boolean;
+    venta_correlativo_alcance?: 'turno' | 'dia' | 'continuo';
     /* ── Manejo de ventas (configurable por empresa) ── */
     venta_edicion_minutos: number;
     venta_edicion_con_contador: boolean;

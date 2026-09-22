@@ -29,6 +29,11 @@ class Empresa extends Model
         'permite_stock_negativo',
         'permite_duplicar_items_venta',
         'modo_cierre_caja',
+        // Negocios sin caja (peluquería, veterinaria, taller): el turno existe
+        // igual, pero lo abre y lo cierra el sistema. Ver ConfiguracionOperacionService.
+        'modo_turno',
+        'turno_cierre_automatico',
+        'venta_correlativo_alcance',
         'modo_cierre_inventario',
         'cierre_precarga_stock',
         'usa_fondos_iniciales',
@@ -80,6 +85,7 @@ class Empresa extends Model
             'requiere_aprobacion_devolucion'  => 'boolean',
             'restock_default'                 => 'boolean',
             'usa_agenda'                      => 'boolean',
+            'turno_cierre_automatico'         => 'boolean',
             'agenda_sujeto_requerido'         => 'boolean',
             'venta_edicion_minutos'           => 'integer',
             'venta_edicion_con_contador'      => 'boolean',

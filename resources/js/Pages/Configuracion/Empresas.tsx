@@ -19,6 +19,9 @@ interface Props extends PageProps {
 type ModoCierre = 'rapido' | 'con_declaraciones';
 type ModoInventario = 'por_venta' | 'declarado';
 type ModoApertura = 'libre' | 'arrastre' | 'fondo_fijo';
+/** Negocios que no cuadran caja: el turno lo maneja el sistema. */
+type ModoTurno = 'manual' | 'automatico';
+type AlcanceCorrelativo = 'turno' | 'dia' | 'continuo';
 
 type FormData = {
     razon_social: string;
@@ -33,6 +36,9 @@ type FormData = {
     permite_duplicar_items_venta: boolean;
     tasa_igv: number | '';
     modo_cierre_caja: ModoCierre;
+    modo_turno: ModoTurno;
+    turno_cierre_automatico: boolean;
+    venta_correlativo_alcance: AlcanceCorrelativo;
     modo_cierre_inventario: ModoInventario;
     cierre_precarga_stock: boolean;
     usa_fondos_iniciales: boolean;
@@ -86,6 +92,9 @@ const emptyForm: FormData = {
     permite_duplicar_items_venta: false,
     tasa_igv: 18,
     modo_cierre_caja: 'con_declaraciones',
+    modo_turno: 'manual',
+    turno_cierre_automatico: false,
+    venta_correlativo_alcance: 'turno',
     modo_cierre_inventario: 'por_venta',
     cierre_precarga_stock: false,
     usa_fondos_iniciales: true,
@@ -150,6 +159,9 @@ export default function Empresas({ empresas }: Props) {
             permite_duplicar_items_venta: emp.permite_duplicar_items_venta ?? false,
             tasa_igv: emp.tasa_igv != null ? Number(emp.tasa_igv) : 18,
             modo_cierre_caja: (emp.modo_cierre_caja as ModoCierre) ?? 'con_declaraciones',
+            modo_turno: (emp.modo_turno as ModoTurno) ?? 'manual',
+            turno_cierre_automatico: emp.turno_cierre_automatico ?? false,
+            venta_correlativo_alcance: (emp.venta_correlativo_alcance as AlcanceCorrelativo) ?? 'turno',
             modo_cierre_inventario: (emp.modo_cierre_inventario as ModoInventario) ?? 'por_venta',
             cierre_precarga_stock: emp.cierre_precarga_stock ?? false,
             usa_fondos_iniciales: emp.usa_fondos_iniciales ?? true,
@@ -455,6 +467,89 @@ export default function Empresas({ empresas }: Props) {
                         {errors.tasa_igv && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.tasa_igv}</p>
                         )}
+                    </div>
+
+                    {/* ── Sección: Turnos y caja (opt-in) ──
+                        Va ANTES del cierre de caja a propósito: si el negocio no
+                        usa caja, todo lo de abajo deja de importarle. */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Turnos</p>
+                        <p className="text-xs -mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                            Los negocios que no manejan caja —peluquerías, veterinarias, talleres— abren la
+                            puerta y trabajan. El turno sigue existiendo porque cada venta necesita uno, pero
+                            lo abre y lo cierra el sistema: nadie tiene que acordarse.
+                        </p>
+
+                        <div className="flex flex-col gap-2">
+                            {([
+                                { value: 'manual' as const,     label: 'Manual',     hint: 'Alguien abre y cierra el turno. Es lo habitual en tiendas con caja.' },
+                                { value: 'automatico' as const, label: 'Automático', hint: 'El turno del día se abre solo con la primera venta, uno por persona. Sin fondo inicial ni arqueo.' },
+                            ]).map(opt => (
+                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="modo_turno"
+                                        checked={data.modo_turno === opt.value}
+                                        onChange={() => setData('modo_turno', opt.value)}
+                                        className="mt-0.5 accent-[var(--color-primary)]"
+                                    />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+
+                        {/* Va aparte del modo: una tienda que abre turnos a mano
+                            también puede querer que no se le queden abiertos. */}
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.turno_cierre_automatico}
+                                onChange={e => setData('turno_cierre_automatico', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cerrar los turnos al terminar el día</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    De madrugada se cierran los turnos que quedaron abiertos de días anteriores.
+                                    No se declara ni se cuenta nada: solo se cierran para que el día siguiente empiece limpio.
+                                </span>
+                            </span>
+                        </label>
+
+                        <div className="pt-1">
+                            <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>Numeración de las ventas</p>
+                            <div className="flex flex-col gap-2">
+                                {([
+                                    { value: 'turno' as const,    label: 'Por turno',  hint: 'Cada turno empieza en V-0001. Es como funciona hoy.' },
+                                    { value: 'dia' as const,      label: 'Por día',    hint: 'Numeración corrida entre todas las personas del local; reinicia cada mañana.' },
+                                    { value: 'continuo' as const, label: 'Continua',   hint: 'Nunca reinicia: sigue creciendo indefinidamente.' },
+                                ]).map(opt => (
+                                    <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="venta_correlativo_alcance"
+                                            checked={data.venta_correlativo_alcance === opt.value}
+                                            onChange={() => setData('venta_correlativo_alcance', opt.value)}
+                                            className="mt-0.5 accent-[var(--color-primary)]"
+                                        />
+                                        <span>
+                                            <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                            <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                            {/* Aviso, no bloqueo: con turnos por persona, numerar por
+                                turno hace que dos personas emitan su V-0001 el mismo día. */}
+                            {data.modo_turno === 'automatico' && data.venta_correlativo_alcance === 'turno' && (
+                                <p className="mt-2 text-xs" style={{ color: 'var(--color-warning)' }}>
+                                    Con turnos automáticos el turno es de cada persona, así que dos personas
+                                    emitirán su propio V-0001 el mismo día. Si quieres una numeración corrida
+                                    para todo el local, elige «Por día».
+                                </p>
+                            )}
+                        </div>
                     </div>
 
                     {/* ── Sección: Cierre de caja ── */}

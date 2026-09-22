@@ -12,13 +12,13 @@ beforeEach(function () {
 });
 
 it('genera V-0001 cuando no hay ventas previas en el turno', function () {
-    expect(Venta::generarNumero($this->turno->id))->toBe('V-0001');
+    expect(Venta::generarNumero($this->turno->fresh()))->toBe('V-0001');
 });
 
 it('respeta el correlativo inicial configurado al abrir el turno (1001 → V-1001)', function () {
     $this->turno->update(['correlativo_inicial' => 1001]);
 
-    expect(Venta::generarNumero($this->turno->id))->toBe('V-1001');
+    expect(Venta::generarNumero($this->turno->fresh()))->toBe('V-1001');
 });
 
 it('con correlativo inicial y ventas previas, sigue desde la última (V-1001 → V-1002)', function () {
@@ -37,7 +37,7 @@ it('con correlativo inicial y ventas previas, sigue desde la última (V-1001 →
         'estado' => 'completada', 'fecha_venta' => now(),
     ]);
 
-    expect(Venta::generarNumero($this->turno->id))->toBe('V-1002');
+    expect(Venta::generarNumero($this->turno->fresh()))->toBe('V-1002');
 });
 
 it('si ya existe V-0001 en el turno, generarNumero devuelve V-0002', function () {
@@ -58,7 +58,7 @@ it('si ya existe V-0001 en el turno, generarNumero devuelve V-0002', function ()
         'fecha_venta'      => now(),
     ]);
 
-    expect(Venta::generarNumero($this->turno->id))->toBe('V-0002');
+    expect(Venta::generarNumero($this->turno->fresh()))->toBe('V-0002');
 });
 
 it('UNIQUE(turno_id, numero): insertar dos ventas con el mismo número falla a nivel BD', function () {

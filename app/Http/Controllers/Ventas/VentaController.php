@@ -1376,6 +1376,17 @@ class VentaController extends Controller
             $turno = Turno::turnoActivoDelUsuario($user->id);
         }
 
+        // Negocios SIN CAJA (peluquería, veterinaria, taller): el turno del día
+        // se abre solo, uno por persona. La venta lo necesita igual —turno_id es
+        // obligatorio y el correlativo cuelga de él—, pero nadie tiene que
+        // acordarse de abrirlo antes de cobrar.
+        if (!$turno && app(\App\Services\ConfiguracionOperacionService::class)->turnoAutomatico($user->empresa_id)) {
+            $localId = $user->local_id
+                ?? $this->scope->localesVisibles($user)->first()?->id
+                ?? abort(422, 'Tu usuario no tiene un local asignado.');
+            $turno = Turno::delDia($user, (int) $localId);
+        }
+
         if (!$turno) {
             return back()->withErrors(['turno' => 'No tienes un turno activo.']);
         }

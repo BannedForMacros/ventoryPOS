@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\DB;
 
 class Venta extends Model
 {
+    /** Clave del advisory lock que serializa la numeración. Solo la usa generarNumero(). */
+    private const LOCK_CORRELATIVO = 774_201;
+
     protected $fillable = [
         'empresa_id', 'local_id', 'turno_id', 'caja_id', 'user_id', 'cliente_id',
         'numero', 'idempotency_key', 'tipo_comprobante', 'numero_comprobante',
@@ -156,16 +159,45 @@ class Venta extends Model
      * (patrón optimistic-insert + retry). La query MAX es solo el cálculo
      * inicial — la BD es la fuente final de la verdad.
      */
-    public static function generarNumero(int $turnoId): string
+    public static function generarNumero(Turno $turno, string $alcance = 'turno', ?string $fecha = null): string
     {
-        $max = (int) DB::table('ventas')
-            ->where('turno_id', $turnoId)
-            ->selectRaw('COALESCE(MAX(CAST(SUBSTRING(numero FROM 3) AS INTEGER)), 0) as n')
-            ->value('n');
+        // ── Fuera del alcance 'turno', el UNIQUE ya no protege ───────────────
+        //
+        // `ventas_turno_id_numero_unique` solo impide repetir un número DENTRO
+        // del mismo turno. Cuando la numeración la comparten varias personas
+        // —que es justo el caso de un salón con tres sillas y turnos
+        // automáticos por persona—, dos turnos distintos pueden calcular el
+        // mismo V-0007 y la base no dirá nada: el reintento optimista no se
+        // entera porque nunca hay violación.
+        //
+        // Un lock de transacción por local serializa SOLO este cálculo (se
+        // libera al cerrar la transacción, no hay nada que soltar a mano). Es
+        // barato y quita la carrera de raíz; en el alcance 'turno' ni se pide,
+        // porque ahí el UNIQUE sí hace su trabajo.
+        if ($alcance !== 'turno') {
+            DB::select('SELECT pg_advisory_xact_lock(?, ?)', [self::LOCK_CORRELATIVO, (int) $turno->local_id]);
+        }
+
+        $q = DB::table('ventas')
+            ->selectRaw('COALESCE(MAX(CAST(SUBSTRING(numero FROM 3) AS INTEGER)), 0) as n');
+
+        if ($alcance === 'dia') {
+            // Corrida entre todas las personas del local, reinicia cada día.
+            // La fecha es la de LA VENTA, no la de hoy: una venta retrofechada
+            // debe numerarse con las de su día, no con las de esta mañana.
+            $q->where('local_id', $turno->local_id)
+              ->whereDate('fecha_venta', $fecha ?: now()->toDateString());
+        } elseif ($alcance === 'continuo') {
+            $q->where('local_id', $turno->local_id);
+        } else {
+            $q->where('turno_id', $turno->id);
+        }
+
+        $max = (int) $q->value('n');
 
         // La cajera puede fijar el inicio de numeración al abrir el turno
         // (ej. 1001 → V-1001, V-1002, ...); sin configurar arranca en V-0001.
-        $inicial = (int) (DB::table('turnos')->where('id', $turnoId)->value('correlativo_inicial') ?? 0);
+        $inicial   = (int) ($turno->correlativo_inicial ?? 0);
         $siguiente = max($max, $inicial - 1) + 1;
 
         return 'V-' . str_pad((string) $siguiente, 4, '0', STR_PAD_LEFT);

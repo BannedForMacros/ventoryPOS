@@ -69,6 +69,12 @@ class EmpresaRequest extends FormRequest
             'retiro_requiere_aprobacion'      => 'boolean',
             'cierre_pregunta_destino'         => 'boolean',
             'usa_caja_grande'                 => 'boolean',
+            // Negocios que NO cuadran caja (peluquería, veterinaria, taller): el
+            // turno del día se abre solo en la primera venta, uno por persona, y
+            // se cierra solo al terminar el día. Ver ConfiguracionOperacionService.
+            'modo_turno'                      => 'sometimes|in:manual,automatico',
+            'turno_cierre_automatico'         => 'boolean',
+            'venta_correlativo_alcance'       => 'sometimes|in:turno,dia,continuo',
             // Ventas: comportamiento de edición/anulación por cajeras.
             'venta_edicion_minutos'           => 'required|integer|min:0|max:120',
             'venta_edicion_con_contador'      => 'boolean',

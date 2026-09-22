@@ -68,6 +68,12 @@ class VentaService
                 $fechaVenta = $f->isToday() ? now() : $f->setTimeFromTimeString(now()->format('H:i:s'));
             }
 
+            // Hasta dónde llega la numeración antes de reiniciar: por turno
+            // (siempre), por día del local, o continua. Lo elige cada empresa
+            // porque con turnos automáticos POR PERSONA, numerar por turno haría
+            // que dos personas emitieran las dos su V-0001 el mismo día.
+            $alcanceCorrelativo = $this->config->alcanceCorrelativoVenta($user->empresa_id);
+
             // Config de empresa: permitir que la venta deje stock negativo.
             // Si esta apagado, Stock::ajustar lanza InsufficientStockException
             // y toda la venta se revierte (comportamiento historico).
@@ -122,7 +128,7 @@ class VentaService
                         'caja_id'               => $turno->caja_id,
                         'user_id'               => $user->id,
                         'cliente_id'            => $clienteId,
-                        'numero'                => Venta::generarNumero($turno->id),
+                        'numero'                => Venta::generarNumero($turno, $alcanceCorrelativo, $fechaVenta->toDateString()),
                         'idempotency_key'       => $idempotencyKey,
                         'tipo_comprobante'      => $data['tipo_comprobante'],
                         'numero_comprobante'    => $data['numero_comprobante'] ?? null,

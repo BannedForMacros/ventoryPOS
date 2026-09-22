@@ -419,4 +419,50 @@ class Turno extends Model
     {
         return static::where('user_id', $userId)->where('estado', 'abierto')->first();
     }
+
+    /**
+     * El turno de HOY de esta persona, abriéndolo si hace falta.
+     *
+     * Solo para las empresas en `modo_turno = automatico`: negocios que no
+     * cuadran caja y donde pedir "abre tu turno" antes de cobrar un corte de
+     * cabello es fricción pura. El turno sigue existiendo porque la venta lo
+     * exige (`ventas.turno_id` es obligatorio y el correlativo cuelga de él),
+     * pero nadie tiene que verlo.
+     *
+     * UNO POR PERSONA, también cuando el negocio tiene un solo local: así cada
+     * quien responde por lo suyo y el reporte por profesional sigue teniendo
+     * sentido. Es lo que se pidió expresamente.
+     *
+     * Si la persona dejó ayer un turno abierto, ese NO se reutiliza: sus ventas
+     * quedarían con fecha de ayer en los reportes de caja. Se cierra —si la
+     * empresa lo eligió, lo hará el comando de madrugada— y se abre el de hoy.
+     */
+    public static function delDia(User $user, int $localId): self
+    {
+        $abierto = static::where('user_id', $user->id)
+            ->where('estado', 'abierto')
+            ->whereDate('fecha_apertura', now()->toDateString())
+            ->first();
+
+        if ($abierto) {
+            return $abierto;
+        }
+
+        // La caja del local. Da igual cuál mientras sea suya: aquí nadie la
+        // cuadra, solo hace falta para satisfacer la relación.
+        $caja = Caja::where('local_id', $localId)->orderBy('id')->first()
+            ?? abort(422, 'El local no tiene ninguna caja configurada.');
+
+        return static::create([
+            'empresa_id'     => $user->empresa_id,
+            'local_id'       => $localId,
+            'caja_id'        => $caja->id,
+            'user_id'        => $user->id,
+            // Sin fondo: no hay cajón que cuadrar.
+            'monto_apertura' => 0,
+            'estado'         => 'abierto',
+            'fecha_apertura' => now(),
+            'observacion_apertura' => 'Turno del día abierto automáticamente.',
+        ]);
+    }
 }

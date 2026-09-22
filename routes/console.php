@@ -81,3 +81,18 @@ Schedule::command('inventario:autocontrol')
     ->dailyAt('02:00')
     ->withoutOverlapping(120)
     ->runInBackground();
+
+/**
+ * Cierra sin declaración los turnos que quedaron abiertos de días anteriores,
+ * en las empresas que eligieron el cierre automático (peluquerías, veterinarias,
+ * talleres: negocios que no cuadran caja).
+ *
+ * A las 00:20 y no a medianoche en punto: si alguien está cobrando el último
+ * cliente a las 23:58, su turno es todavía el de "ayer" y cerrarlo en ese
+ * instante le dejaría la venta sin turno abierto. Veinte minutos de aire bastan
+ * y el turno del día siguiente nace limpio igual.
+ */
+Schedule::command('turnos:cerrar-dia')
+    ->dailyAt('00:20')
+    ->withoutOverlapping(30)
+    ->runInBackground();
