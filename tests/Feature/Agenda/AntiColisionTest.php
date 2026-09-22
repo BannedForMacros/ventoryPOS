@@ -112,3 +112,29 @@ it('cuando NO se asigna profesional, valida solape contra el local', function ()
     $this->post(route('agenda.store'), $payload2)
         ->assertSessionHasErrors('fecha_hora');
 });
+
+it('los mensajes de la cita están escritos para el cliente final, sin jerga de validación', function () {
+    // "El campo fecha hora debe ser una fecha posterior o igual a now" es lo que
+    // veía quien agenda: el `now` del código, tal cual, en la pantalla. Este test
+    // existe para que no vuelva.
+    $producto = $this->env->crearProducto(['precio_venta' => 20]);
+
+    $this->post(route('agenda.store'), [
+        'local_id'   => $this->env->local->id,
+        'cliente_id' => $this->env->clienteGeneral->id,
+        'fecha_hora' => now()->subDay()->toDateTimeString(),   // en el pasado
+        'items' => [[
+            'producto_id'        => $producto->id,
+            'producto_unidad_id' => $producto->unidadBase->id,
+            'cantidad'           => 1,
+        ]],
+    ])->assertSessionHasErrors('fecha_hora');
+
+    $mensaje = session('errors')->first('fecha_hora');
+
+    expect($mensaje)->toBe('La cita no puede quedar en el pasado. Elige una fecha y hora de ahora en adelante.')
+        // Ni el token de la regla ni el nombre de la columna pueden asomar.
+        ->and($mensaje)->not->toContain('now')
+        ->and($mensaje)->not->toContain('fecha_hora')
+        ->and($mensaje)->not->toContain('El campo');
+});

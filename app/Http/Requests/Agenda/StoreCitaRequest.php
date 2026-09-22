@@ -5,6 +5,7 @@ namespace App\Http\Requests\Agenda;
 use App\Models\Cita;
 use App\Models\Empresa;
 use App\Models\ProductoUnidad;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -117,12 +118,19 @@ class StoreCitaRequest extends FormRequest
             ->activas()
             ->when($citaIdActual, fn ($q) => $q->where('id', '!=', $citaIdActual));
 
+        // Dos citas a la misma hora son NORMALES mientras las atiendan personas
+        // distintas: es lo que hace un salón con tres sillas. Por eso el choque
+        // se busca SOLO dentro de la agenda de esa persona. Sin profesional
+        // asignado, la cita es del local y compite con las demás del local.
         if ($profesionalId) {
             $query->where('profesional_id', $profesionalId);
-            $contexto = 'el profesional';
+            $quien = User::whereKey($profesionalId)->value('name');
+            $contexto = $quien ? "la agenda de {$quien}" : 'la agenda de esa persona';
+            $salida   = ' Si la atiende otra persona, asígnala y no hay choque.';
         } else {
             $query->where('local_id', $localId)->whereNull('profesional_id');
             $contexto = 'el local';
+            $salida   = ' Si la atiende alguien en concreto, asígnale un profesional y no hay choque.';
         }
 
         // Postgres: solape <=> existing.inicio < nueva.fin
@@ -134,20 +142,78 @@ class StoreCitaRequest extends FormRequest
             ->first();
 
         if ($colision) {
+            $finColision = $colision->fecha_hora->copy()->addMinutes((int) $colision->duracion_min);
+
             $validator->errors()->add(
                 'fecha_hora',
-                "Existe una cita {$colision->numero} de {$contexto} que se solapa con este horario "
-                ."(empieza a las {$colision->fecha_hora->format('H:i')}, duración {$colision->duracion_min} min)."
+                "Ese horario ya está ocupado en {$contexto}: la cita {$colision->numero} va de "
+                . $colision->fecha_hora->format('H:i') . ' a ' . $finColision->format('H:i') . '.'
+                . $salida
             );
         }
     }
 
+    /**
+     * Mensajes EN CASTELLANO DE PERSONA, no de programador.
+     *
+     * Los de Laravel por defecto filtran la regla tal cual: "debe ser una fecha
+     * posterior o igual a now" es literalmente lo que veía el cliente final, con
+     * el `now` del código incluido. Quien está agendando una cita no tiene por
+     * qué descifrar eso.
+     *
+     * Regla al escribir uno nuevo: decir qué pasó y qué hacer, sin nombrar
+     * columnas ni reglas de validación.
+     */
     public function messages(): array
     {
         return [
+            'cliente_id.required'     => 'Elige a qué cliente pertenece la cita.',
+            'cliente_id.exists'       => 'Ese cliente ya no existe. Elige otro o créalo con el botón «Nuevo».',
+            'local_id.required'       => 'Elige el local donde se atenderá.',
+            'profesional_id.exists'   => 'Esa persona ya no está disponible. Elige otra o deja la cita sin asignar.',
+
+            'fecha_hora.required'       => 'Indica el día y la hora de la cita.',
+            'fecha_hora.date'           => 'El día y la hora no se entienden. Revísalos.',
+            'fecha_hora.after_or_equal' => 'La cita no puede quedar en el pasado. Elige una fecha y hora de ahora en adelante.',
+
+            'observaciones.max'      => 'Las observaciones son muy largas (máximo 500 caracteres).',
             'sujeto_nombre.required' => 'El nombre de ' . strtolower($this->sujetoLabel() ?: 'sujeto') . ' es obligatorio.',
-            'items.required'         => 'Debes agregar al menos un servicio o producto a la cita.',
-            'items.min'              => 'Debes agregar al menos un servicio o producto a la cita.',
+            'sujeto_nombre.max'      => 'Ese nombre es muy largo (máximo 150 caracteres).',
+            'sujeto_descripcion.max' => 'La descripción es muy larga (máximo 1000 caracteres).',
+
+            'items.required' => 'Debes agregar al menos un servicio o producto a la cita.',
+            'items.min'      => 'Debes agregar al menos un servicio o producto a la cita.',
+
+            'items.*.producto_id.required'        => 'Falta elegir el servicio.',
+            'items.*.producto_id.exists'          => 'Ese servicio ya no está disponible.',
+            'items.*.producto_unidad_id.required' => 'Falta elegir la presentación del servicio.',
+            'items.*.cantidad.numeric'            => 'La cantidad debe ser un número.',
+            'items.*.cantidad.min'                => 'La cantidad tiene que ser mayor que cero.',
+            'items.*.duracion_min.integer'        => 'La duración debe ser un número de minutos.',
+            'items.*.duracion_min.min'            => 'La duración tiene que ser de al menos 1 minuto.',
+            'items.*.duracion_min.max'            => 'La duración no puede pasar de 24 horas (1440 minutos).',
+            'items.*.observaciones.max'           => 'Esa nota es muy larga (máximo 300 caracteres).',
+        ];
+    }
+
+    /**
+     * Cómo se nombran los campos si algún mensaje se escapa al de por defecto.
+     * Sin esto sale "El campo fecha hora", que es el nombre de la columna.
+     */
+    public function attributes(): array
+    {
+        return [
+            'cliente_id'         => 'cliente',
+            'local_id'           => 'local',
+            'profesional_id'     => 'profesional',
+            'fecha_hora'         => 'día y hora',
+            'observaciones'      => 'observaciones',
+            'sujeto_nombre'      => strtolower($this->sujetoLabel() ?: 'sujeto'),
+            'items'              => 'servicios',
+            'items.*.producto_id'        => 'servicio',
+            'items.*.producto_unidad_id' => 'presentación',
+            'items.*.cantidad'           => 'cantidad',
+            'items.*.duracion_min'       => 'duración',
         ];
     }
 

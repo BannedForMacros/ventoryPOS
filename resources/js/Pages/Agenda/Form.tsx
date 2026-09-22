@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { router, useForm } from '@inertiajs/react';
-import { Plus, Trash2, Calendar, User as UserIcon, Briefcase, FileText, Clock } from 'lucide-react';
+import { Plus, Trash2, Calendar, User as UserIcon, Briefcase, FileText, Clock, UserPlus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
-import type { PageProps } from '@/types';
+import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
+import toast from 'react-hot-toast';
+import type { Cliente, PageProps } from '@/types';
 import { ahoraLocalInput } from '@/lib/fechas';
 
 interface ClienteOpt { id: number; nombres: string | null; apellidos: string | null; razon_social: string | null; tipo_documento: string | null; numero_documento: string | null; }
@@ -75,7 +77,7 @@ export default function AgendaForm({
 }: Props) {
     const editando = !!cita;
 
-    const { data, setData, processing, errors } = useForm<{
+    const { data, setData, processing, errors, post, put, transform } = useForm<{
         local_id: number | '';
         cliente_id: number | '';
         profesional_id: number | '';
@@ -105,6 +107,14 @@ export default function AgendaForm({
     });
 
     const [busquedaCliente, setBusquedaCliente] = useState('');
+    const [modalCrearCliente, setModalCrearCliente] = useState(false);
+    /**
+     * La lista llega del servidor al cargar la página. Un cliente creado desde el
+     * modal todavía no está en ella, así que se añade aquí para poder dejarlo
+     * seleccionado sin recargar y perder lo que ya se escribió de la cita.
+     */
+    const [clientesNuevos, setClientesNuevos] = useState<ClienteOpt[]>([]);
+    const clientesLista = useMemo(() => [...clientesNuevos, ...clientes], [clientesNuevos, clientes]);
 
     function setItem(i: number, field: keyof ItemRow, value: string | number) {
         const next = data.items.map((it, idx) => idx !== i ? it : { ...it, [field]: value });
@@ -139,12 +149,37 @@ export default function AgendaForm({
 
     function submit(e: React.FormEvent) {
         e.preventDefault();
-        // Convertir fecha local a ISO con :00 segundos
-        const payload = { ...data, fecha_hora: data.fecha_hora.replace('T', ' ') + ':00' };
+
+        /**
+         * Se envía con los helpers de `useForm` (post/put), NO con `router`.
+         *
+         * ESTO ERA UN FALLO SILENCIOSO: el formulario leía `errors` de useForm
+         * pero enviaba con `router.post`, y Inertia deja los errores de esa vía
+         * en las props de la página, no en la instancia del formulario. El
+         * choque de horarios llegaba del servidor, se veía en la respuesta de
+         * red… y en pantalla no pasaba nada: la persona pulsaba "Crear cita" y
+         * el formulario se quedaba mudo. Por lo mismo `processing` nunca se
+         * activaba y el botón no mostraba que estaba guardando.
+         *
+         * `transform` ajusta la fecha al formato que espera el backend sin
+         * ensuciar el estado del formulario.
+         */
+        transform((d: any) => ({ ...d, fecha_hora: String(d.fecha_hora).replace('T', ' ') + ':00' }));
+
+        const opciones = {
+            preserveScroll: true,
+            // El choque de horarios se explica arriba, junto a la fecha; si la
+            // persona está mirando los servicios ni se entera de que falló.
+            onError: (errs: Record<string, string>) => {
+                const primero = errs.fecha_hora ?? Object.values(errs)[0];
+                if (primero) toast.error(primero);
+            },
+        };
+
         if (editando && cita) {
-            router.put(route('agenda.update', cita.id), payload as any);
+            put(route('agenda.update', cita.id), opciones);
         } else {
-            router.post(route('agenda.store'), payload as any);
+            post(route('agenda.store'), opciones);
         }
     }
 
@@ -166,21 +201,40 @@ export default function AgendaForm({
                         Datos generales
                     </h2>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <SearchableSelect
-                            label="Cliente"
-                            required
-                            value={data.cliente_id}
-                            onChange={v => setData('cliente_id', Number(v))}
-                            options={clientes.map(c => ({
-                                value: c.id,
-                                label: `${nombreCliente(c)}${c.numero_documento ? ` — ${c.tipo_documento} ${c.numero_documento}` : ''}`
-                            }))}
-                            searchPlaceholder="Buscar por nombre o documento..."
-                            error={errors.cliente_id}
-                        />
+                    {/* Doce columnas, no dos mitades: el cliente llega con nombre
+                        completo y documento —lo más largo del formulario— y se
+                        cortaba, mientras la fecha, que siempre ocupa lo mismo,
+                        sobraba de ancho. Cada campo recibe lo que su contenido
+                        pide, y las filas siguen cerrando exactas. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                        {/* Alta de cliente sin salir de la cita: quien agenda por
+                            teléfono casi siempre está hablando con alguien que aún
+                            no está registrado, y mandarlo a otro módulo a crearlo
+                            le hace perder la cita a medio escribir. Mismo modal del
+                            POS y de cotizaciones, no una copia. */}
+                        <div className="flex items-end gap-2 sm:col-span-8">
+                            <div className="flex-1 min-w-0">
+                                <SearchableSelect
+                                    label="Cliente"
+                                    required
+                                    value={data.cliente_id}
+                                    onChange={v => setData('cliente_id', Number(v))}
+                                    options={clientesLista.map(c => ({
+                                        value: c.id,
+                                        label: `${nombreCliente(c)}${c.numero_documento ? ` — ${c.tipo_documento} ${c.numero_documento}` : ''}`
+                                    }))}
+                                    searchPlaceholder="Buscar por nombre o documento..."
+                                    error={errors.cliente_id}
+                                />
+                            </div>
+                            <Button type="button" variant="secondary" startContent={<UserPlus size={15} />}
+                                onClick={() => setModalCrearCliente(true)}
+                                title="Crear un cliente nuevo">
+                                Nuevo
+                            </Button>
+                        </div>
 
-                        <div>
+                        <div className="sm:col-span-4">
                             <label className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
                                 Fecha y hora <span style={{ color: 'var(--color-danger)' }}>*</span>
                             </label>
@@ -192,9 +246,10 @@ export default function AgendaForm({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                         {locales.length > 1 && (
                             <SearchableSelect
+                                className="sm:col-span-4"
                                 label="Local"
                                 required
                                 value={data.local_id}
@@ -204,6 +259,7 @@ export default function AgendaForm({
                             />
                         )}
                         <SearchableSelect
+                            className="sm:col-span-4"
                             label="Profesional asignado"
                             value={data.profesional_id}
                             onChange={v => setData('profesional_id', v === '' ? '' : Number(v))}
@@ -212,13 +268,24 @@ export default function AgendaForm({
                             searchPlaceholder="Buscar..."
                             error={errors.profesional_id}
                         />
+                        {/* Dentro de la rejilla, no debajo: con un solo local
+                            quedaban tres campos en dos columnas y la fila de
+                            "Profesional" se quedaba con media fila vacía. Aquí
+                            cierra el bloque sin hueco. Es una nota corta, no
+                            necesita el ancho entero. */}
+                        {/* Va envuelto porque el `className` de Input aterriza en el
+                            campo, no en la celda de la rejilla. Y el ancho se ajusta
+                            para que la fila cierre exacta en los dos casos: con
+                            varios locales son tres campos en tercios; con uno solo,
+                            la nota se queda con lo que deja el profesional. */}
+                        <div className={locales.length > 1 ? 'sm:col-span-4' : 'sm:col-span-8'}>
+                            <Input label="Observaciones generales"
+                                value={data.observaciones}
+                                onChange={e => setData('observaciones', e.target.value)}
+                                placeholder="Notas internas de la cita..."
+                                error={errors.observaciones} />
+                        </div>
                     </div>
-
-                    <Input label="Observaciones generales"
-                        value={data.observaciones}
-                        onChange={e => setData('observaciones', e.target.value)}
-                        placeholder="Notas internas de la cita..."
-                        error={errors.observaciones} />
                 </section>
 
                 {/* ── Sección 2: Sujeto multidisciplina (solo si la empresa lo configura) ── */}
@@ -365,6 +432,27 @@ export default function AgendaForm({
                     </Button>
                 </div>
             </form>
+
+            {/* El mismo modal del POS y de cotizaciones. Al crear, el cliente queda
+                elegido en la cita en curso: nadie tiene que volver a buscarlo. */}
+            <ModalCrearCliente
+                isOpen={modalCrearCliente}
+                onClose={() => setModalCrearCliente(false)}
+                onCreated={(c: Cliente) => {
+                    const opt: ClienteOpt = {
+                        id: c.id,
+                        nombres: c.nombres ?? null,
+                        apellidos: c.apellidos ?? null,
+                        razon_social: c.razon_social ?? null,
+                        tipo_documento: c.tipo_documento ?? null,
+                        numero_documento: c.numero_documento ?? null,
+                    };
+                    setClientesNuevos(prev => [opt, ...prev]);
+                    setData('cliente_id', c.id);
+                    setModalCrearCliente(false);
+                    toast.success(`Cliente «${nombreCliente(opt)}» creado y seleccionado.`);
+                }}
+            />
         </AppLayout>
     );
 }

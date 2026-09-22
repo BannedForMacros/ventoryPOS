@@ -126,6 +126,21 @@ class StoreVentaRequest extends FormRequest
         ];
     }
 
+    /**
+     * Los dos mensajes de fecha, en castellano de persona.
+     *
+     * El de Laravel filtra la regla tal cual —"posterior o igual a today"— y el
+     * `today` del código acaba en la pantalla de quien está cobrando. Mismo caso
+     * que el de las citas.
+     */
+    public function messages(): array
+    {
+        return [
+            'fecha_vencimiento.after_or_equal' => 'La fecha de vencimiento del crédito no puede ser anterior a hoy.',
+            'fecha_venta.before_or_equal'      => 'La venta no puede registrarse con fecha futura.',
+        ];
+    }
+
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
