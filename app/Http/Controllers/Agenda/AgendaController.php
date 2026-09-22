@@ -26,13 +26,28 @@ class AgendaController extends Controller
         $user = $request->user();
         abort_unless($user->empresa->usa_agenda, 403, 'Esta empresa no tiene el módulo Agenda habilitado.');
 
-        // Filtros
-        $fechaDesde = $request->fecha_desde
-            ? Carbon::parse($request->fecha_desde)->startOfDay()
-            : Carbon::today()->startOfDay();
-        $fechaHasta = $request->fecha_hasta
-            ? Carbon::parse($request->fecha_hasta)->endOfDay()
-            : Carbon::today()->endOfDay();
+        // ── Vista: semana (calendario) o lista ──────────────────────────────
+        //
+        // La semana manda por defecto porque es como se lee una agenda: de un
+        // vistazo se ve dónde hay hueco y dónde se amontona el trabajo. La lista
+        // sigue estando para quien quiera el detalle de un día, y el usuario que
+        // elige una la conserva al navegar (viaja en la URL).
+        $vista = in_array($request->vista, ['semana', 'lista'], true) ? $request->vista : 'semana';
+
+        if ($vista === 'semana') {
+            // El ancla es la fecha pedida (o hoy) y se abre a su semana completa.
+            // Lunes a domingo: es la semana laboral de aquí, no la de EE. UU.
+            $ancla      = $request->fecha_desde ? Carbon::parse($request->fecha_desde) : Carbon::today();
+            $fechaDesde = $ancla->copy()->startOfWeek(Carbon::MONDAY)->startOfDay();
+            $fechaHasta = $ancla->copy()->endOfWeek(Carbon::SUNDAY)->endOfDay();
+        } else {
+            $fechaDesde = $request->fecha_desde
+                ? Carbon::parse($request->fecha_desde)->startOfDay()
+                : Carbon::today()->startOfDay();
+            $fechaHasta = $request->fecha_hasta
+                ? Carbon::parse($request->fecha_hasta)->endOfDay()
+                : Carbon::today()->endOfDay();
+        }
 
         $query = Cita::deEmpresa($user->empresa_id)
             ->with(['cliente:id,nombres,apellidos,razon_social,numero_documento',
@@ -90,6 +105,7 @@ class AgendaController extends Controller
                 'sujeto_label'     => $user->empresa->agenda_sujeto_label,
                 'sujeto_requerido' => (bool) $user->empresa->agenda_sujeto_requerido,
             ],
+            'vista'         => $vista,
             'filters'       => [
                 'fecha_desde'    => $fechaDesde->toDateString(),
                 'fecha_hasta'    => $fechaHasta->toDateString(),

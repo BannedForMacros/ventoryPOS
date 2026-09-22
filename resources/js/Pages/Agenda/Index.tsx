@@ -3,13 +3,14 @@ import { Link, router, usePage } from '@inertiajs/react';
 import {
     Plus, Calendar, Clock, User as UserIcon, Briefcase, Filter,
     CheckCircle2, PlayCircle, XCircle, AlertCircle, ShoppingCart,
-    ChevronLeft, ChevronRight,
+    ChevronLeft, ChevronRight, CalendarDays, List as ListIcon,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Badge from '@/Components/UI/Badge';
+import CalendarioSemana from '@/Components/Agenda/CalendarioSemana';
 import type { PageProps } from '@/types';
 import { hoyLocal, fechaLocal } from '@/lib/fechas';
 
@@ -44,6 +45,8 @@ interface Filters {
 
 interface Props extends PageProps {
     citas: Cita[];
+    /** 'semana' = calendario; 'lista' = el detalle de un día. */
+    vista: 'semana' | 'lista';
     resumen: Resumen;
     profesionales: { id: number; name: string }[];
     locales: { id: number; nombre: string }[];
@@ -95,7 +98,7 @@ function ChipResumen({ label, count, active, onClick, color }: {
 }
 
 export default function AgendaIndex({
-    citas, resumen, profesionales, locales, agendaConfig, filters, estadosLabels,
+    citas, vista, resumen, profesionales, locales, agendaConfig, filters, estadosLabels,
 }: Props) {
     const { flash } = usePage<Props>().props;
     const [localFilters, setLocalFilters] = useState<Filters>(filters);
@@ -106,23 +109,32 @@ export default function AgendaIndex({
     if (flash?.error)   { toast.error(flash.error);     flash.error = null as any; }
 
     function aplicarFiltros() {
-        router.get(route('agenda.index'), localFilters as any, { preserveState: true, preserveScroll: true });
+        router.get(route('agenda.index'), { ...localFilters, vista } as any, { preserveState: true, preserveScroll: true });
     }
 
+    /** En calendario se avanza de semana en semana; en lista, de día en día. */
     function cambiarDia(delta: number) {
+        const salto = vista === 'semana' ? 7 * delta : delta;
         const d = new Date(localFilters.fecha_desde + 'T00:00:00');
-        d.setDate(d.getDate() + delta);
-        const iso = fechaLocal(d);
-        const nf = { ...localFilters, fecha_desde: iso, fecha_hasta: iso };
-        setLocalFilters(nf);
-        router.get(route('agenda.index'), nf as any, { preserveState: true, preserveScroll: true });
+        d.setDate(d.getDate() + salto);
+        irA(fechaLocal(d));
     }
 
-    function irAHoy() {
-        const iso = hoyLocal();
+    function irAHoy() { irA(hoyLocal()); }
+
+    function irA(iso: string) {
+        // Viaja solo el ancla. En semana, el backend la abre a su lunes-domingo:
+        // calcular aquí también los extremos sería tener la misma regla en dos
+        // sitios, y esas dos copias acaban discrepando.
         const nf = { ...localFilters, fecha_desde: iso, fecha_hasta: iso };
         setLocalFilters(nf);
-        router.get(route('agenda.index'), nf as any, { preserveState: true, preserveScroll: true });
+        router.get(route('agenda.index'), { ...nf, vista } as any, { preserveState: true, preserveScroll: true });
+    }
+
+    function cambiarVista(v: 'semana' | 'lista') {
+        router.get(route('agenda.index'),
+            { ...localFilters, fecha_desde: localFilters.fecha_desde, vista: v } as any,
+            { preserveState: true, preserveScroll: true });
     }
 
     function ejecutarAccion(cita: Cita, accion: string, payload: Record<string, string> = {}) {
@@ -136,10 +148,20 @@ export default function AgendaIndex({
         router.post(routes[accion], payload, { preserveScroll: true });
     }
 
+    // En semana el título es el RANGO que devolvió el backend (filters), no lo
+    // que el usuario tecleó: es la única fuente que sabe dónde cae el lunes.
     const titulo = useMemo(() => {
-        if (localFilters.fecha_desde === localFilters.fecha_hasta) return fechaTitulo(localFilters.fecha_desde);
-        return `${fechaTitulo(localFilters.fecha_desde)} → ${fechaTitulo(localFilters.fecha_hasta)}`;
-    }, [localFilters.fecha_desde, localFilters.fecha_hasta]);
+        if (vista === 'semana') {
+            const ini = new Date(filters.fecha_desde + 'T00:00:00');
+            const fin = new Date(filters.fecha_hasta + 'T00:00:00');
+            const mismoMes = ini.getMonth() === fin.getMonth();
+            const f = (d: Date, conMes: boolean) => d.toLocaleDateString('es-PE',
+                conMes ? { day: '2-digit', month: 'long' } : { day: '2-digit' });
+            return `${f(ini, !mismoMes)} – ${f(fin, true)} de ${fin.getFullYear()}`;
+        }
+        if (filters.fecha_desde === filters.fecha_hasta) return fechaTitulo(filters.fecha_desde);
+        return `${fechaTitulo(filters.fecha_desde)} → ${fechaTitulo(filters.fecha_hasta)}`;
+    }, [vista, filters.fecha_desde, filters.fecha_hasta]);
 
     return (
         <AppLayout title="Agenda">
@@ -167,6 +189,22 @@ export default function AgendaIndex({
                 <h2 className="text-lg font-semibold ml-2 capitalize" style={{ color: 'var(--color-text)' }}>
                     {titulo}
                 </h2>
+
+                {/* Semana o lista. Van juntos y sin desplegar: es un cambio que se
+                    hace muchas veces al día, y esconderlo en un menú lo encarece. */}
+                <div className="ml-auto inline-flex rounded-lg border overflow-hidden"
+                    style={{ borderColor: 'var(--color-border)' }}>
+                    {([['semana', 'Semana', CalendarDays], ['lista', 'Lista', ListIcon]] as const).map(([v, label, Icono]) => (
+                        <button key={v} onClick={() => cambiarVista(v)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors"
+                            style={{
+                                backgroundColor: vista === v ? 'var(--color-primary)' : 'var(--color-surface)',
+                                color: vista === v ? '#fff' : 'var(--color-text-muted)',
+                            }}>
+                            <Icono size={13} />{label}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Resumen por estado (chips clickeables) */}
@@ -237,8 +275,16 @@ export default function AgendaIndex({
                 <Button size="sm" onClick={aplicarFiltros}>Aplicar</Button>
             </div>
 
-            {/* Lista de citas */}
-            {citas.length === 0 ? (
+            {/* Calendario semanal: la vista por defecto. La lista sigue debajo,
+                para quien quiera el detalle y las acciones de cada cita. */}
+            {vista === 'semana' ? (
+                <CalendarioSemana
+                    citas={citas}
+                    inicioSemana={filters.fecha_desde}
+                    colores={ESTADO_COLORES}
+                    onAbrir={id => router.visit(route('agenda.show', id))}
+                />
+            ) : citas.length === 0 ? (
                 <div className="rounded-lg border p-12 text-center"
                     style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
                     <Calendar size={40} className="mx-auto opacity-30 mb-3" style={{ color: 'var(--color-text-muted)' }} />

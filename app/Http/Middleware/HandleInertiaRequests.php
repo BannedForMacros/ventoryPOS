@@ -95,9 +95,28 @@ class HandleInertiaRequests extends Middleware
         return $modulos->map(fn ($mod) => $this->formatModulo($mod, $user))->filter()->values()->toArray();
     }
 
+    /**
+     * Módulos que dependen de una función OPT-IN de la empresa.
+     *
+     * `modulos.activo` es global —vale para todas las empresas a la vez—, así
+     * que sin esto una ferretería ve "Agenda" en su menú, entra, y se come un
+     * 403: el controlador sí comprueba `usa_agenda`, pero el menú no. Ofrecer
+     * una puerta que no abre es peor que no ofrecerla.
+     *
+     * @var array<string, string> slug del módulo => columna de `empresas`
+     */
+    private const MODULOS_POR_FUNCION = [
+        'agenda'          => 'usa_agenda',
+        'reportes.agenda' => 'usa_agenda',
+    ];
+
     private function formatModulo($modulo, $user): ?array
     {
         $rol = $user->rol;
+
+        if ($flag = self::MODULOS_POR_FUNCION[$modulo->slug] ?? null) {
+            if (! $user->empresa?->{$flag}) return null;
+        }
 
         if ($modulo->hijos->isNotEmpty()) {
             $hijos = $modulo->hijos
