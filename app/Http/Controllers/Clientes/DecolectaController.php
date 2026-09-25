@@ -73,7 +73,10 @@ class DecolectaController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $puede = $user->tienePermiso('clientes', 'crear')
+        // El superadmin no tiene rol de empresa, pero da de alta empresas
+        // desde /admin y necesita el lookup del RUC.
+        $puede = $user->es_superadmin
+              || $user->tienePermiso('clientes', 'crear')
               || $user->tienePermiso('proveedores', 'crear');
 
         if (!$puede) {
