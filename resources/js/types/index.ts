@@ -50,6 +50,9 @@ export interface Empresa extends Record<string, unknown> {
     modo_turno?: 'manual' | 'automatico';
     turno_cierre_automatico?: boolean;
     venta_correlativo_alcance?: 'turno' | 'dia' | 'continuo';
+    /** Módulo de citas (opt-in por empresa). */
+    usa_agenda?: boolean;
+    agenda_recordatorio_plantilla?: string | null;
     /* ── Manejo de ventas (configurable por empresa) ── */
     venta_edicion_minutos: number;
     venta_edicion_con_contador: boolean;

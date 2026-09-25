@@ -447,6 +447,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // ── AGENDA / CITAS ───────────────────────────────────────────────────
     Route::prefix('agenda')->name('agenda.')->group(function () {
         Route::middleware('permiso:agenda,ver')->get('/',                              [AgendaController::class, 'index'])->name('index');
+        // Va ANTES de /{cita}: si no, "recordatorios" se toma por el id de una cita.
+        Route::middleware('permiso:agenda,ver')->get('/recordatorios',                 [AgendaController::class, 'recordatorios'])->name('recordatorios');
         Route::middleware('permiso:agenda,crear')->get('/crear',                       [AgendaController::class, 'create'])->name('create');
         Route::middleware('permiso:agenda,crear')->post('/',                           [AgendaController::class, 'store'])->name('store');
         Route::middleware('permiso:agenda,ver')->get('/{cita}',                        [AgendaController::class, 'show'])->name('show');
@@ -454,6 +456,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:agenda,editar')->put('/{cita}',                     [AgendaController::class, 'update'])->name('update');
         Route::middleware('permiso:agenda,eliminar')->delete('/{cita}',                [AgendaController::class, 'destroy'])->name('destroy');
         // Transiciones de estado
+        // Deja constancia de que se le recordó la cita al cliente. El mensaje lo
+        // manda la persona desde su WhatsApp; esto solo marca el rastro.
+        Route::middleware('permiso:agenda,editar')->post('/{cita}/recordatorio',        [AgendaController::class, 'recordatorio'])->name('recordatorio');
         Route::middleware('permiso:agenda,editar')->post('/{cita}/confirmar',          [AgendaController::class, 'confirmar'])->name('confirmar');
         Route::middleware('permiso:agenda,editar')->post('/{cita}/iniciar',            [AgendaController::class, 'iniciar'])->name('iniciar');
         Route::middleware('permiso:agenda,editar')->post('/{cita}/cancelar',           [AgendaController::class, 'cancelar'])->name('cancelar');

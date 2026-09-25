@@ -47,6 +47,7 @@ class Empresa extends Model
         'usa_agenda',
         'agenda_sujeto_label',
         'agenda_sujeto_requerido',
+        'agenda_recordatorio_plantilla',
         // Manejo de ventas (configurable por empresa)
         'venta_edicion_minutos',
         'venta_edicion_con_contador',

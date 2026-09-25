@@ -3,7 +3,7 @@ import { Link, router, usePage } from '@inertiajs/react';
 import {
     Plus, Calendar, Clock, User as UserIcon, Briefcase, Filter,
     CheckCircle2, PlayCircle, XCircle, AlertCircle, ShoppingCart,
-    ChevronLeft, ChevronRight, CalendarDays, List as ListIcon,
+    ChevronLeft, ChevronRight, CalendarDays, List as ListIcon, BellRing,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppLayout from '@/Layouts/AppLayout';
@@ -169,9 +169,18 @@ export default function AgendaIndex({
                 title="Agenda"
                 subtitle={`${resumen.total} cita${resumen.total !== 1 ? 's' : ''} en el rango seleccionado`}
                 actions={
-                    <Link href={route('agenda.create')}>
-                        <Button startContent={<Plus size={14} />}>Nueva cita</Button>
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        {/* El ritual de fin de jornada vive a un clic de la agenda:
+                            si hay que buscarlo en un menú, no se hace. */}
+                        <Link href={route('agenda.recordatorios')}>
+                            <Button variant="secondary" startContent={<BellRing size={14} />}>
+                                <span className="hidden sm:inline">Recordatorios</span>
+                            </Button>
+                        </Link>
+                        <Link href={route('agenda.create')}>
+                            <Button startContent={<Plus size={14} />}>Nueva cita</Button>
+                        </Link>
+                    </div>
                 }
             />
 

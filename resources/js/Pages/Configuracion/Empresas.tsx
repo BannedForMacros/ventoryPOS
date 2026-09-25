@@ -39,6 +39,7 @@ type FormData = {
     modo_turno: ModoTurno;
     turno_cierre_automatico: boolean;
     venta_correlativo_alcance: AlcanceCorrelativo;
+    agenda_recordatorio_plantilla: string;
     modo_cierre_inventario: ModoInventario;
     cierre_precarga_stock: boolean;
     usa_fondos_iniciales: boolean;
@@ -95,6 +96,7 @@ const emptyForm: FormData = {
     modo_turno: 'manual',
     turno_cierre_automatico: false,
     venta_correlativo_alcance: 'turno',
+    agenda_recordatorio_plantilla: '',
     modo_cierre_inventario: 'por_venta',
     cierre_precarga_stock: false,
     usa_fondos_iniciales: true,
@@ -162,6 +164,7 @@ export default function Empresas({ empresas }: Props) {
             modo_turno: (emp.modo_turno as ModoTurno) ?? 'manual',
             turno_cierre_automatico: emp.turno_cierre_automatico ?? false,
             venta_correlativo_alcance: (emp.venta_correlativo_alcance as AlcanceCorrelativo) ?? 'turno',
+            agenda_recordatorio_plantilla: emp.agenda_recordatorio_plantilla ?? '',
             modo_cierre_inventario: (emp.modo_cierre_inventario as ModoInventario) ?? 'por_venta',
             cierre_precarga_stock: emp.cierre_precarga_stock ?? false,
             usa_fondos_iniciales: emp.usa_fondos_iniciales ?? true,
@@ -468,6 +471,33 @@ export default function Empresas({ empresas }: Props) {
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.tasa_igv}</p>
                         )}
                     </div>
+
+                    {/* ── Sección: Recordatorio de citas ── */}
+                    {editing?.usa_agenda && (
+                        <div className="border-t pt-4 space-y-2" style={{ borderColor: 'var(--color-border)' }}>
+                            <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Recordatorio de citas</p>
+                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                El mensaje que se abre en WhatsApp al recordarle la cita a un cliente.
+                                Déjalo vacío para usar el texto por defecto.
+                            </p>
+                            <textarea
+                                rows={5}
+                                value={data.agenda_recordatorio_plantilla}
+                                onChange={e => setData('agenda_recordatorio_plantilla', e.target.value)}
+                                placeholder={'Hola {cliente} 👋\n\nTe recordamos tu cita en *{negocio}*:\n📅 {fecha}\n🕐 {hora}\n💇 {servicios}\n\nSi no puedes venir, avísanos para reprogramarla. ¡Te esperamos!'}
+                                className="w-full rounded-xl border px-3 py-2 text-sm outline-none"
+                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                            />
+                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                Puedes usar: <code>{'{cliente}'}</code> <code>{'{fecha}'}</code> <code>{'{hora}'}</code>{' '}
+                                <code>{'{servicios}'}</code> <code>{'{profesional}'}</code> <code>{'{negocio}'}</code>.
+                                Lo que no uses simplemente no aparece.
+                            </p>
+                            {errors.agenda_recordatorio_plantilla && (
+                                <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{errors.agenda_recordatorio_plantilla}</p>
+                            )}
+                        </div>
+                    )}
 
                     {/* ── Sección: Turnos y caja (opt-in) ──
                         Va ANTES del cierre de caja a propósito: si el negocio no

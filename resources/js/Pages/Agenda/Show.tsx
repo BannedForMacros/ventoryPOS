@@ -3,7 +3,7 @@ import { Link, router, usePage } from '@inertiajs/react';
 import {
     Calendar, Clock, User as UserIcon, Briefcase, FileText,
     CheckCircle2, PlayCircle, XCircle, AlertCircle, ShoppingCart, Pencil,
-    Receipt,
+    Receipt, MessageCircle, BellRing,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppLayout from '@/Layouts/AppLayout';
@@ -27,6 +27,8 @@ interface CitaDetalle {
     iniciada_at: string | null;
     completada_at: string | null;
     cancelada_at: string | null;
+    /** Cuándo se le recordó al cliente. null = todavía nadie le avisó. */
+    recordatorio_enviado_at: string | null;
     venta_id: number | null;
     cliente: { id: number; nombres: string | null; apellidos: string | null; razon_social: string | null; tipo_documento: string | null; numero_documento: string | null; telefono: string | null; email: string | null; };
     profesional: { id: number; name: string; email: string } | null;
@@ -43,6 +45,13 @@ interface CitaDetalle {
 interface Props extends PageProps {
     cita: CitaDetalle;
     agendaConfig: { sujeto_label: string | null; sujeto_requerido: boolean };
+    /**
+     * Enlace de WhatsApp YA ARMADO por el servidor. Viaja con la página y no se
+     * pide al pulsar: si hubiera que ir al servidor primero, el navegador
+     * bloquearía la ventana por abrirse fuera del clic.
+     * `url` es null cuando el cliente no tiene un teléfono utilizable.
+     */
+    recordatorio: { url: string | null; mensaje: string; telefono: string | null };
 }
 
 const ESTADOS_LABELS: Record<string, string> = {
@@ -66,13 +75,30 @@ const fechaCompleta = (iso: string) =>
 const fechaCorta = (iso: string | null) =>
     iso ? new Date(iso).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 
-export default function AgendaShow({ cita, agendaConfig }: Props) {
+export default function AgendaShow({ cita, agendaConfig, recordatorio }: Props) {
     const { flash } = usePage<Props>().props;
     const [confirmAccion, setConfirmAccion] = useState<{ accion: string; titulo: string; pideMotivo?: boolean } | null>(null);
     const [motivo, setMotivo] = useState('');
 
     if (flash?.success) { toast.success(flash.success); flash.success = null as any; }
     if (flash?.error)   { toast.error(flash.error);     flash.error = null as any; }
+
+    /**
+     * Abre WhatsApp con el mensaje escrito y deja constancia.
+     *
+     * El orden importa: la ventana se abre PRIMERO y de forma síncrona dentro
+     * del clic, porque cualquier navegador bloquea un `window.open` que llegue
+     * después de una respuesta del servidor. La marca se registra detrás.
+     */
+    function recordar() {
+        if (!recordatorio.url) {
+            toast.error('Este cliente no tiene teléfono registrado. Agrégaselo en su ficha para poder avisarle.');
+            return;
+        }
+
+        window.open(recordatorio.url, '_blank', 'noopener');
+        router.post(route('agenda.recordatorio', cita.id), {}, { preserveScroll: true });
+    }
 
     function ejecutarAccion(accion: string, payload: Record<string, string> = {}) {
         const routes: Record<string, string> = {
@@ -99,11 +125,27 @@ export default function AgendaShow({ cita, agendaConfig }: Props) {
                 subtitle={fechaCompleta(cita.fecha_hora)}
                 backHref={route('agenda.index')}
                 actions={
-                    esActiva && (
-                        <Link href={route('agenda.edit', cita.id)}>
-                            <Button variant="ghost" startContent={<Pencil size={14} />}>Editar</Button>
-                        </Link>
-                    )
+                    <div className="flex items-center gap-2">
+                        {/* Solo mientras la cita siga en pie: recordar una
+                            cancelada o ya atendida no tiene sentido. */}
+                        {esActiva && (
+                            <Button
+                                variant={cita.recordatorio_enviado_at ? 'ghost' : 'success'}
+                                startContent={<MessageCircle size={14} />}
+                                onClick={recordar}
+                                title={recordatorio.url
+                                    ? 'Abre WhatsApp con el recordatorio escrito'
+                                    : 'Este cliente no tiene teléfono registrado'}
+                            >
+                                {cita.recordatorio_enviado_at ? 'Recordar otra vez' : 'Recordar por WhatsApp'}
+                            </Button>
+                        )}
+                        {esActiva && (
+                            <Link href={route('agenda.edit', cita.id)}>
+                                <Button variant="ghost" startContent={<Pencil size={14} />}>Editar</Button>
+                            </Link>
+                        )}
+                    </div>
                 }
             />
 

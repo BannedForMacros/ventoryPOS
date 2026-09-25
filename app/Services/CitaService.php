@@ -10,6 +10,7 @@ use App\Models\ProductoUnidad;
 use App\Models\Turno;
 use App\Models\User;
 use App\Models\Venta;
+use App\Services\WhatsappService;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
@@ -117,6 +118,53 @@ class CitaService
     }
 
     // ── TRANSICIONES DE ESTADO ────────────────────────────────────────────
+
+    /**
+     * El recordatorio de una cita: a qué número va y con qué texto.
+     *
+     * ÚNICO sitio que lo arma. Lo consumen el detalle de la cita, la bandeja de
+     * pendientes y el propio endpoint que marca el envío; tener el texto en tres
+     * lugares es cómo se acaba mandando un mensaje distinto según desde dónde se
+     * pulse.
+     *
+     * Devuelve `url` null cuando el cliente no tiene teléfono utilizable: la
+     * pantalla lo dice en vez de abrir un WhatsApp a ninguna parte.
+     *
+     * @return array{url: ?string, mensaje: string, telefono: ?string}
+     */
+    public function recordatorio(Cita $cita): array
+    {
+        $cita->loadMissing(['cliente', 'profesional', 'items.producto', 'empresa']);
+
+        $servicios = $cita->items
+            ->map(fn ($i) => $i->producto?->nombre)
+            ->filter()
+            ->implode(', ');
+
+        $mensaje = WhatsappService::textoRecordatorio([
+            'cliente'     => $this->nombreCliente($cita->cliente),
+            'fecha'       => $cita->fecha_hora?->locale('es')->isoFormat('dddd D [de] MMMM') ?? '',
+            'hora'        => $cita->fecha_hora?->format('H:i') ?? '',
+            'servicios'   => $servicios,
+            'profesional' => $cita->profesional?->name ?? '',
+            'negocio'     => $cita->empresa?->nombre_comercial ?: ($cita->empresa?->razon_social ?? ''),
+        ], $cita->empresa?->agenda_recordatorio_plantilla);
+
+        return [
+            'url'      => WhatsappService::urlRecordatorio($cita->cliente?->telefono, $mensaje),
+            'mensaje'  => $mensaje,
+            'telefono' => $cita->cliente?->telefono,
+        ];
+    }
+
+    private function nombreCliente($cliente): string
+    {
+        if (!$cliente) return 'cliente';
+        if ($cliente->razon_social) return $cliente->razon_social;
+
+        // Solo el nombre de pila: un recordatorio se escribe como se habla.
+        return trim(explode(' ', trim((string) $cliente->nombres))[0] ?: 'cliente');
+    }
 
     public function confirmar(Cita $cita, User $user): void
     {

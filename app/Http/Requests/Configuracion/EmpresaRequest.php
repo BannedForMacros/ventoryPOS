@@ -75,6 +75,8 @@ class EmpresaRequest extends FormRequest
             'modo_turno'                      => 'sometimes|in:manual,automatico',
             'turno_cierre_automatico'         => 'boolean',
             'venta_correlativo_alcance'       => 'sometimes|in:turno,dia,continuo',
+            // Texto del recordatorio de cita. Vacío = plantilla por defecto.
+            'agenda_recordatorio_plantilla'   => 'nullable|string|max:1000',
             // Ventas: comportamiento de edición/anulación por cajeras.
             'venta_edicion_minutos'           => 'required|integer|min:0|max:120',
             'venta_edicion_con_contador'      => 'boolean',

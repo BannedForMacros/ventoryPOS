@@ -9,6 +9,7 @@ use App\Models\Cliente;
 use App\Models\Local;
 use App\Models\Producto;
 use App\Models\User;
+use App\Services\AuditoriaService;
 use App\Services\CitaService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -124,6 +125,57 @@ class AgendaController extends Controller
         ]);
     }
 
+    /**
+     * Bandeja de recordatorios: a quién falta avisarle.
+     *
+     * Es el ritual de fin de jornada —"mañana vienen estas ocho personas, ¿a
+     * quién no le he avisado?"— y sin esto había que abrir cita por cita para
+     * saberlo. Por defecto MAÑANA, que es cuando el aviso sirve: recordar algo
+     * que empieza en una hora ya no evita el plantón.
+     *
+     * Solo las citas que siguen en pie: recordar una cancelada o ya atendida no
+     * tiene sentido.
+     */
+    public function recordatorios(Request $request)
+    {
+        $user = $request->user();
+        abort_unless($user->empresa->usa_agenda, 403, 'Esta empresa no tiene el módulo Agenda habilitado.');
+
+        $fecha = $request->fecha ? Carbon::parse($request->fecha) : Carbon::tomorrow();
+
+        $citas = Cita::deEmpresa($user->empresa_id)
+            ->with(['cliente', 'profesional:id,name', 'items.producto:id,nombre', 'empresa'])
+            ->whereIn('estado', [Cita::ESTADO_PROGRAMADA, Cita::ESTADO_CONFIRMADA])
+            ->whereBetween('fecha_hora', [$fecha->copy()->startOfDay(), $fecha->copy()->endOfDay()])
+            ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id))
+            ->when(!$user->rol?->es_admin, fn ($q) => $q->where(fn ($s) =>
+                $s->where('profesional_id', $user->id)->orWhere('created_by', $user->id)))
+            ->orderBy('fecha_hora')
+            ->get()
+            ->map(function (Cita $c) {
+                $r = $this->citaService->recordatorio($c);
+
+                return [
+                    'id'          => $c->id,
+                    'numero'      => $c->numero,
+                    'hora'        => $c->fecha_hora?->format('H:i'),
+                    'cliente'     => $c->cliente?->razon_social
+                        ?: trim(($c->cliente?->nombres ?? '') . ' ' . ($c->cliente?->apellidos ?? '')),
+                    'telefono'    => $c->cliente?->telefono,
+                    'profesional' => $c->profesional?->name,
+                    'servicios'   => $c->items->map(fn ($i) => $i->producto?->nombre)->filter()->implode(', '),
+                    'estado'      => $c->estado,
+                    'recordado_at'=> $c->recordatorio_enviado_at?->toDateTimeString(),
+                    'url'         => $r['url'],
+                ];
+            });
+
+        return Inertia::render('Agenda/Recordatorios', [
+            'citas' => $citas,
+            'fecha' => $fecha->toDateString(),
+        ]);
+    }
+
     public function create(Request $request)
     {
         $user = $request->user();
@@ -218,6 +270,10 @@ class AgendaController extends Controller
                 'sujeto_label'     => $user->empresa->agenda_sujeto_label,
                 'sujeto_requerido' => (bool) $user->empresa->agenda_sujeto_requerido,
             ],
+            // El enlace viaja YA ARMADO con la página, no se pide al pulsar: si
+            // hubiera que ir al servidor primero, el navegador bloquearía la
+            // ventana de WhatsApp por abrirse fuera del clic.
+            'recordatorio' => $this->citaService->recordatorio($cita),
         ]);
     }
 
@@ -246,6 +302,31 @@ class AgendaController extends Controller
         } catch (\LogicException $e) {
             return back()->withErrors(['estado' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * Deja constancia de que se le recordó la cita al cliente.
+     *
+     * NO envía nada: el mensaje lo manda la persona desde su propio WhatsApp
+     * (el enlace se abre en el navegador). Enviar de verdad sin intervención
+     * exige la API de WhatsApp Business, que cuesta y hay que homologar.
+     *
+     * Lo que sí hace es dejar el rastro, que es lo que faltaba: sin esta marca,
+     * "ya le avisé" y "se me pasó" se ven exactamente igual en la agenda.
+     */
+    public function recordatorio(Request $request, Cita $cita)
+    {
+        $this->guardEmpresa($request, $cita);
+
+        $cita->forceFill(['recordatorio_enviado_at' => now()])->saveQuietly();
+
+        AuditoriaService::log('cita.recordatorio_enviado', $cita, [
+            'numero'   => $cita->numero,
+            'cliente'  => $cita->cliente?->nombres,
+            'telefono' => $cita->cliente?->telefono,
+        ], $request->user());
+
+        return back()->with('success', 'Recordatorio marcado como enviado.');
     }
 
     public function iniciar(Request $request, Cita $cita)
