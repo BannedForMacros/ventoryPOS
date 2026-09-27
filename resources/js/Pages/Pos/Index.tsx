@@ -9,6 +9,7 @@ import {
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import PosLayout from '@/Layouts/PosLayout';
+import { celebrarVenta } from '@/lib/celebrarVenta';
 import Button from '@/Components/UI/Button';
 import CarritoItem, { LineaCarrito, HistorialPrecioCliente, DescModo, DescTipo } from './Partials/CarritoItem';
 import PanelPago, { LineaPago, faltanCuentas } from './Partials/PanelPago';
@@ -1191,8 +1192,16 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             return;
         }
 
+        // Para la pantalla verde: se toman AHORA, porque al terminar el
+        // carrito ya se habrá limpiado. El vuelto, igual que en el pie del POS.
+        const cobrado = {
+            total,
+            vuelto: pagos.some(p => p.admite_vuelto) ? Math.max(0, totalPagadoConAnticipo - total) : 0,
+        };
+
         router.post(route('ventas.store'), payload as any, {
             onSuccess: () => {
+                celebrarVenta(cobrado);
                 setLoading(false);
                 setModalConfirm(false);
                 limpiarCarrito();
