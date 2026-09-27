@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 
 type Size = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
@@ -23,9 +23,44 @@ const sizeClasses: Record<Size, string> = {
     '5xl': 'max-w-5xl',
 };
 
+// Apilado: todos los modales comparten z-50, así que al abrir uno desde otro
+// (p. ej. "Editar movimiento" desde el listado de Movimientos) ganaba el que
+// estuviera más abajo en el JSX, no el último abierto. Cada modal toma una capa
+// por encima de las ya abiertas. Tope < 1000, que es la capa de los menús
+// desplegables (useAnchoredPosition), para que Select siga saliendo encima.
+const CAPA_BASE = 50;
+const CAPA_TOPE = 999;
+let modalesAbiertos = 0;
+let ultimaCapa = CAPA_BASE;
+
+function tomarCapa(): number {
+    modalesAbiertos++;
+    ultimaCapa = Math.min(ultimaCapa + 1, CAPA_TOPE);
+    return ultimaCapa;
+}
+
+function soltarCapa(): void {
+    modalesAbiertos = Math.max(0, modalesAbiertos - 1);
+    if (modalesAbiertos === 0) ultimaCapa = CAPA_BASE;
+}
+
 export default function Modal({ isOpen, onClose, title, size = 'md', children, footer }: ModalProps) {
     const [visible, setVisible] = useState(false);
     const [rendered, setRendered] = useState(false);
+    const [capa, setCapa] = useState(CAPA_BASE);
+    const tieneCapa = useRef(false);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setCapa(tomarCapa());
+        tieneCapa.current = true;
+        return () => {
+            if (tieneCapa.current) {
+                soltarCapa();
+                tieneCapa.current = false;
+            }
+        };
+    }, [isOpen]);
 
     useEffect(() => {
         let rAF1: number;
@@ -65,7 +100,7 @@ export default function Modal({ isOpen, onClose, title, size = 'md', children, f
     if (!rendered) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: capa }}>
             {/* Overlay (fondo oscuro con blur sutil) */}
             <div
                 className="absolute inset-0 transition-opacity duration-200 ease-out"
