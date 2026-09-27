@@ -62,7 +62,9 @@ class TicketPrintService
             'mostrar_ruc'       => true,
             'mostrar_igv'       => false,
             'mostrar_igv_cierre'=> false,
-            'pie'               => null,
+            'mostrar_cajero'    => true,
+            'mostrar_caja'      => true,
+            'pie'             => null,
             'lineas_extra'      => [],
         ], is_array($cfg) ? $cfg : []);
     }
@@ -168,8 +170,9 @@ class TicketPrintService
                 'serie'    => null,
                 'numero'   => $cpe && $cpe->numero ? (string) $cpe->numero : $venta->numero,
                 'fecha'    => $venta->fecha_venta?->format('d/m/Y h:i A'),
-                'vendedor' => $venta->user?->name,
-                'caja'     => $caja?->nombre,
+                // null = el agente no imprime la línea; la plantilla decide.
+                'vendedor' => ($cfg['mostrar_cajero'] ?? true) ? $venta->user?->name : null,
+                'caja'     => ($cfg['mostrar_caja'] ?? true) ? $caja?->nombre : null,
             ],
 
             'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg),
@@ -264,7 +267,7 @@ class TicketPrintService
                 'serie'    => null,
                 'numero'   => $cot->numero,
                 'fecha'    => $cot->fecha ? Carbon::parse($cot->fecha)->format('d/m/Y') : null,
-                'vendedor' => $cot->user?->name,
+                'vendedor' => ($cfg['mostrar_cajero'] ?? true) ? $cot->user?->name : null,
                 'caja'     => null,
             ],
 
@@ -362,7 +365,7 @@ class TicketPrintService
                 'serie'    => null,
                 'numero'   => $entrega->numero,
                 'fecha'    => $entrega->fecha ? Carbon::parse($entrega->fecha)->format('d/m/Y') : null,
-                'vendedor' => $entrega->user?->name,
+                'vendedor' => ($cfg['mostrar_cajero'] ?? true) ? $entrega->user?->name : null,
                 'caja'     => null,
             ],
 

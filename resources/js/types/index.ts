@@ -8,6 +8,8 @@ export interface TicketConfig {
     mostrar_ruc?: boolean;
     mostrar_igv?: boolean;
     mostrar_igv_cierre?: boolean;
+    mostrar_cajero?: boolean;
+    mostrar_caja?: boolean;
     logo_escala?: number;
     pie?: string | null;
     lineas_extra?: string[];

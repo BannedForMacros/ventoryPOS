@@ -62,7 +62,9 @@ class EmpresaController extends Controller
             'mostrar_ruc'       => (bool) ($datos['ticket_mostrar_ruc'] ?? true),
             'mostrar_igv'       => (bool) ($datos['ticket_mostrar_igv'] ?? false),
             'mostrar_igv_cierre'=> (bool) ($datos['ticket_mostrar_igv_cierre'] ?? false),
-            'logo_escala'       => isset($datos['ticket_logo_escala']) && $datos['ticket_logo_escala'] !== ''
+            'mostrar_cajero'    => (bool) ($datos['ticket_mostrar_cajero'] ?? true),
+            'mostrar_caja'      => (bool) ($datos['ticket_mostrar_caja'] ?? true),
+            'logo_escala'     => isset($datos['ticket_logo_escala']) && $datos['ticket_logo_escala'] !== ''
                 ? (int) $datos['ticket_logo_escala']
                 : 100,
             'pie'               => trim((string) ($datos['ticket_pie'] ?? '')) ?: null,
@@ -70,6 +72,7 @@ class EmpresaController extends Controller
         ];
         unset($datos['ticket_cliente_celular'], $datos['ticket_cliente_direccion'],
               $datos['ticket_mostrar_ruc'], $datos['ticket_mostrar_igv'], $datos['ticket_mostrar_igv_cierre'],
+              $datos['ticket_mostrar_cajero'], $datos['ticket_mostrar_caja'],
               $datos['ticket_logo_escala'],
               $datos['ticket_pie'], $datos['ticket_lineas_extra']);
 

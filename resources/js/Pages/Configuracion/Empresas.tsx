@@ -75,6 +75,8 @@ type FormData = {
     ticket_mostrar_ruc: boolean;
     ticket_mostrar_igv: boolean;
     ticket_mostrar_igv_cierre: boolean;
+    ticket_mostrar_cajero: boolean;
+    ticket_mostrar_caja: boolean;
     ticket_logo_escala: number;
     ticket_pie: string;
     ticket_lineas_extra: string;
@@ -127,6 +129,8 @@ const emptyForm: FormData = {
     ticket_mostrar_ruc: true,
     ticket_mostrar_igv: false,
     ticket_mostrar_igv_cierre: false,
+    ticket_mostrar_cajero: true,
+    ticket_mostrar_caja: true,
     ticket_logo_escala: 100,
     ticket_pie: '',
     ticket_lineas_extra: '',
@@ -198,6 +202,8 @@ export default function Empresas({ empresas }: Props) {
             ticket_mostrar_ruc: emp.ticket_config?.mostrar_ruc ?? true,
             ticket_mostrar_igv: emp.ticket_config?.mostrar_igv ?? false,
             ticket_mostrar_igv_cierre: emp.ticket_config?.mostrar_igv_cierre ?? false,
+            ticket_mostrar_cajero: emp.ticket_config?.mostrar_cajero ?? true,
+            ticket_mostrar_caja: emp.ticket_config?.mostrar_caja ?? true,
             ticket_logo_escala: emp.ticket_config?.logo_escala ?? 100,
             ticket_pie: emp.ticket_config?.pie ?? '',
             ticket_lineas_extra: (emp.ticket_config?.lineas_extra ?? []).join('\n'),
@@ -1023,6 +1029,32 @@ export default function Empresas({ empresas }: Props) {
                                 <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Imprimir dirección del cliente</span>
                                 <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                     Sale como "Direc:" debajo del nombre, solo si el cliente tiene dirección registrada.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.ticket_mostrar_cajero}
+                                onChange={e => setData('ticket_mostrar_cajero', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Imprimir cajero</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Sale como "Cajero:" con el nombre de quien hizo la venta. El cierre de turno lo imprime siempre.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.ticket_mostrar_caja}
+                                onChange={e => setData('ticket_mostrar_caja', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Imprimir caja</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Sale como "Caja:" con el nombre de la caja donde se cobró. El cierre de turno la imprime siempre.
                                 </span>
                             </span>
                         </label>
