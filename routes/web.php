@@ -71,7 +71,7 @@ Route::get('/', function () {
 });
 
 // ── COMPROBANTE ELECTRÓNICO — DESCARGA PÚBLICA (CLIENTE FINAL) ───────────────
-// La ÚNICA ruta de la aplicación fuera de `auth`, y a conciencia: el destinatario
+// Fuera de `auth` a conciencia (junto con agent/version.json, abajo): el destinatario
 // es el cliente que recibe su comprobante por WhatsApp o correo, y ese cliente
 // nunca va a tener usuario en el POS. Mandarle `ventas.comprobante.pdf` solo le
 // enseñaría la pantalla de login.
@@ -88,6 +88,19 @@ Route::get('/', function () {
 Route::middleware(['signed', 'throttle:30,1'])
     ->get('/comprobante/{ventaComprobante}/pdf', [ComprobanteElectronicoController::class, 'pdfPublico'])
     ->name('comprobante.publico.pdf');
+
+// ── AGENTE DE IMPRESIÓN — MANIFIESTO DE ACTUALIZACIÓN ────────────────────────
+// Los VentoryPrint 1.2.0 o anteriores buscan sus actualizaciones en
+// {POS}/agent/version.json. Antes era un archivo estático en public/agent que
+// había que regenerar a mano y quedó congelado en 1.2.0, así que esas cajas
+// nunca se enteraban de las versiones nuevas. Ahora redirige al manifiesto que
+// GitHub Actions publica en cada release; los agentes 1.2.1+ ya leen esa URL
+// directo. Pública porque la consulta el exe de la caja, sin sesión. Solo
+// devuelve una redirección, no expone nada del POS.
+Route::get('/agent/version.json', fn () => redirect(
+    'https://github.com/BannedForMacros/ventory-printer/releases/latest/download/version.json',
+    302,
+))->name('agent.version');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');

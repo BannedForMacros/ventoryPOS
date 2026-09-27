@@ -1,6 +1,10 @@
 # El instalador/exe del agente NO se versiona en git (binario grande, ~60 MB).
 # Se sube al servidor con publish-agent.ps1 (repo ventory-printer).
-# El version.json SÍ se versiona: es el manifiesto que consultan las cajas.
+# version.json tampoco vive aqui: /agent/version.json es una ruta de Laravel
+# (routes/web.php) que redirige al manifiesto de GitHub Releases. Si alguien
+# vuelve a dejar un archivo con ese nombre, el servidor lo serviria antes que la
+# ruta y las cajas viejas se quedarian congeladas en esa version.
 VentoryPrint.exe
 *.exe
 *.zip
+version.json
