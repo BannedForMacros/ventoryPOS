@@ -8,6 +8,7 @@ use App\Models\Cotizacion;
 use App\Models\Empresa;
 use App\Models\Turno;
 use App\Models\Venta;
+use App\Support\NumeroEnLetras;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
@@ -41,10 +42,10 @@ class TicketPrintService
         '03' => 'BOLETA DE VENTA ELECTRÓNICA',
     ];
 
-    /** Leyenda legal obligatoria al pie de la representación impresa. */
-    private const LEYENDA_CPE = [
-        'Representación impresa del comprobante electrónico.',
-        'Consulte en www.sunat.gob.pe',
+    /** Nombre del comprobante para la leyenda del pie ("Representación impresa de la ..."). */
+    private const NOMBRE_CPE = [
+        '01' => 'Factura Electrónica',
+        '03' => 'Boleta de Venta Electrónica',
     ];
 
     /**
@@ -173,6 +174,10 @@ class TicketPrintService
                 // null = el agente no imprime la línea; la plantilla decide.
                 'vendedor' => ($cfg['mostrar_cajero'] ?? true) ? $venta->user?->name : null,
                 'caja'     => ($cfg['mostrar_caja'] ?? true) ? $caja?->nombre : null,
+                // Con CPE el agente (1.2.4+) usa el diseño de comprobante SUNAT:
+                // cantidad x precio en su propia línea, Op. Gravada / IGV / Total
+                // e importe en letras. Los agentes anteriores ignoran la clave.
+                'electronico' => (bool) $cpe,
             ],
 
             'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg),
@@ -186,13 +191,13 @@ class TicketPrintService
                 'unidad'  => $item->unidad_nombre,
             ])->values()->all(),
 
-            'totales' => [
+            'totales' => array_merge([
                 'subtotal'  => (float) $venta->subtotal,
                 'igv'       => (float) $venta->igv,
                 'descuento' => (float) $venta->descuento_total,
                 'total'     => (float) $venta->total,
                 'moneda'    => $venta->moneda ?? 'PEN',
-            ],
+            ], $cpe ? $this->desgloseSunat($venta, $empresa) : []),
 
             'pago' => [
                 'metodo'   => $metodo !== '' ? $metodo : null,
@@ -200,8 +205,8 @@ class TicketPrintService
                 'vuelto'   => $vuelto > 0 ? $vuelto : null,
             ],
 
-            // Con CPE el pie lleva además la leyenda legal, el hash y la
-            // referencia interna. Sin CPE es el pie de siempre, byte a byte.
+            // Con CPE el pie lleva además la leyenda legal y la referencia
+            // interna. Sin CPE es el pie de siempre, byte a byte.
             'pie'        => $cpe
                 ? $this->pieComprobanteElectronico($cpe, $venta, $this->pieVenta($cfg))
                 : $this->pieVenta($cfg),
@@ -427,22 +432,64 @@ class TicketPrintService
     }
 
     /**
-     * Pie de la representación impresa: el pie configurado de siempre + la
-     * leyenda legal SUNAT, el hash del CPE (si ya se conoce) y el número
-     * interno de la venta, que sigue siendo la referencia para devoluciones.
+     * Pie de la representación impresa: leyenda legal SUNAT + número interno de
+     * la venta (referencia para devoluciones) + el pie configurado de siempre.
+     *
+     * El hash (valor resumen) ya NO se imprime: viaja dentro del QR, que es lo
+     * que SUNAT pide en la representación impresa, y en papel solo ensuciaba.
      */
     private function pieComprobanteElectronico(object $cpe, Venta $venta, string $pieBase): string
     {
-        $lineas = self::LEYENDA_CPE;
+        $nombre = self::NOMBRE_CPE[(string) $cpe->tipo] ?? 'comprobante electrónico';
 
-        $hash = trim((string) ($cpe->hash_cpe ?? ''));
-        if ($hash !== '') {
-            $lineas[] = 'Hash: ' . $hash;
-        }
-
-        $lineas[] = 'Ref. interna: ' . $venta->numero;
+        $lineas = [
+            "Representación impresa de la {$nombre}",
+            'Consulte en www.sunat.gob.pe',
+            'Ref. interna: ' . $venta->numero,
+        ];
 
         return trim(implode("\n", $lineas) . ($pieBase !== '' ? "\n" . $pieBase : ''));
+    }
+
+    /**
+     * Desglose SUNAT para la representación impresa: operaciones gravadas y
+     * exoneradas, tasa de IGV e importe en letras.
+     *
+     * Mismo criterio que VentaAComprobante::construirLineas(): un ítem con
+     * `incluye_igv` es GRAVADO (precio con IGV dentro); sin él, EXONERADO. El
+     * descuento global se prorratea por el bruto de cada ítem. La base gravada
+     * se deduce del total para que gravada + exonerada + igv = total exacto,
+     * sin deriva de céntimos.
+     *
+     * @return array<string, mixed>
+     */
+    private function desgloseSunat(Venta $venta, ?Empresa $empresa): array
+    {
+        $total     = (float) $venta->total;
+        $igv       = (float) $venta->igv;
+        $descuento = (float) $venta->descuento_total;
+
+        $brutoTotal     = 0.0;
+        $brutoExonerado = 0.0;
+        foreach ($venta->items as $item) {
+            $bruto = (float) $item->subtotal;
+            $brutoTotal += $bruto;
+            if (!$item->incluye_igv) {
+                $brutoExonerado += $bruto;
+            }
+        }
+
+        $factor    = ($brutoTotal > 0 && $descuento > 0) ? max(0.0, 1 - $descuento / $brutoTotal) : 1.0;
+        $exonerada = round($brutoExonerado * $factor, 2);
+        $gravada   = round($total - $exonerada - $igv, 2);
+
+        return [
+            'gravada'   => max(0.0, $gravada),
+            'exonerada' => $exonerada,
+            'inafecta'  => 0.0,
+            'igvTasa'   => (float) ($empresa?->tasa_igv ?? 18),
+            'enLetras'  => NumeroEnLetras::importe($total, $venta->moneda ?? 'PEN'),
+        ];
     }
 
     /**

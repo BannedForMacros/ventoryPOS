@@ -44,10 +44,15 @@ export interface TicketPayload {
   /** Token de la caja (columna token_impresora) que valida el agente local. */
   token?: string;
   negocio?: { nombre?: string; ruc?: string; direccion?: string; telefono?: string; mostrarRuc?: boolean; mostrarIgv?: boolean; logoEscala?: number };
-  documento?: { tipo?: string; serie?: string; numero?: string; fecha?: string; vendedor?: string; caja?: string };
+  /** `electronico`: comprobante SUNAT; el agente 1.2.4+ usa el diseño de comprobante. */
+  documento?: { tipo?: string; serie?: string; numero?: string; fecha?: string; vendedor?: string; caja?: string; electronico?: boolean };
   cliente?: { nombre?: string; doc?: string; direccion?: string; telefono?: string };
   items: TicketItem[];
-  totales?: { subtotal?: number; igv?: number; descuento?: number; total: number; moneda?: string };
+  /** gravada/exonerada/inafecta/igvTasa/enLetras solo viajan con comprobante electrónico. */
+  totales?: {
+    subtotal?: number; igv?: number; descuento?: number; total: number; moneda?: string;
+    gravada?: number; exonerada?: number; inafecta?: number; igvTasa?: number; enLetras?: string;
+  };
   pago?: { metodo?: string; recibido?: number; vuelto?: number };
   pie?: string;
   qr?: string;
