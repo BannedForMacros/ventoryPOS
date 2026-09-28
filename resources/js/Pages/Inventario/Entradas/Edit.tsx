@@ -11,6 +11,7 @@ import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import Badge from '@/Components/UI/Badge';
 import Callout from '@/Components/UI/Callout';
+import DetalleProductos from './Partials/DetalleProductos';
 import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveedor';
 import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
@@ -664,12 +665,9 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
 
                 <section className="rounded-2xl border p-6 space-y-4"
                     style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>Productos</h2>
-                        <Button type="button" variant="ghost" onClick={addDetalle}>
-                            <Plus size={14} className="mr-1" />Agregar producto
-                        </Button>
-                    </div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                        Productos
+                    </h2>
 
                     {/* Banner de restricciones de stock (solo si la entrada original era confirmada
                         y algunos productos ya tuvieron movimientos posteriores). Educa al usuario
@@ -687,7 +685,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                             <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                                 {permiteStockNegativo
                                     ? 'Estos productos ya tuvieron salidas/ventas después de confirmar esta entrada. Como tu empresa permite stock negativo, puedes reducir por debajo del mínimo: el stock quedará en negativo y el kardex se recalculará al guardar.'
-                                    : 'Estos productos ya tuvieron salidas/ventas después de confirmar esta entrada. Puedes redistribuir entre líneas, pero la suma total por producto debe ser ≥ al mínimo indicado. Si necesitas quitar uno, agrega otra línea del mismo producto con la cantidad restante.'}
+                                    : 'Estos productos ya tuvieron salidas/ventas después de confirmar esta entrada. Puedes cambiar sus cantidades, pero la suma por producto debe ser ≥ al mínimo indicado.'}
                             </p>
                             <ul className="text-xs space-y-1 mt-1">
                                 {[...restriccionesPorProducto.entries()].map(([prodId, r]) => {
@@ -707,134 +705,19 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                         </div>
                     )}
 
-                    <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-semibold uppercase tracking-wide px-1" style={{ color: 'var(--color-text-muted)' }}>
-                        <div className={facturaPorItem ? 'col-span-3' : 'col-span-5'}>Producto</div>
-                        <div className="col-span-2">Unidad</div>
-                        <div className="col-span-2">Cantidad</div>
-                        <div className="col-span-2">Precio</div>
-                        {facturaPorItem && <div className="col-span-2">Factura</div>}
-                        <div className="col-span-1 text-right">Subtotal</div>
-                    </div>
-
-                    {detalles.map((d, i) => {
-                        const unidades = unidadesDeProducto(d.producto_id);
-                        return (
-                            <div key={i} className="rounded-xl p-3 space-y-3 md:space-y-2" style={{ backgroundColor: 'var(--color-bg)' }}>
-                                <div className="flex items-center justify-between md:hidden">
-                                    <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                                        Producto #{i + 1}
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-base font-mono font-semibold" style={{ color: 'var(--color-text)' }}>
-                                            S/ {subtotal(d).toFixed(2)}
-                                        </span>
-                                        {detalles.length > 1 && (
-                                            <button type="button" onClick={() => removeDetalle(i)}
-                                                className="rounded-lg p-1.5" style={{ color: 'var(--color-danger)' }}>
-                                                <Trash2 size={15} />
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col gap-3 md:grid md:grid-cols-12 md:gap-2 md:items-end md:space-y-0">
-                                    <div className={facturaPorItem ? 'md:col-span-3' : 'md:col-span-5'}>
-                                        <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Producto</label>
-                                        <SearchableSelect
-                                            placeholder="Buscar producto..."
-                                            searchPlaceholder="Buscar por nombre o código..."
-                                            emptyMessage="No hay productos que coincidan"
-                                            value={d.producto_id}
-                                            onChange={v => setDetalle(i, 'producto_id', Number(v))}
-                                            options={productos.map(p => ({ value: p.id, label: p.codigo ? `[${p.codigo}] ${p.nombre}` : p.nombre }))}
-                                            error={(errors)[`detalles.${i}.producto_id`]} />
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-2 md:contents">
-                                        <div className="md:col-span-2">
-                                            <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Unidad</label>
-                                            <Select placeholder="Unidad" value={d.unidad_medida_id}
-                                                onChange={v => setDetalle(i, 'unidad_medida_id', Number(v))}
-                                                options={unidades.map(u => ({
-                                                    value: u.unidad_medida_id,
-                                                    label: u.unidad_medida ? `${u.unidad_medida.abreviatura}${u.es_base ? ' (base)' : ''}` : String(u.unidad_medida_id),
-                                                }))} />
-                                        </div>
-                                        <div className="md:col-span-2">
-                                            <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Cantidad</label>
-                                            <Input placeholder="0" type="number" min="0" step="any" inputMode="decimal"
-                                                value={d.cantidad} onChange={e => setDetalle(i, 'cantidad', e.target.value)} />
-                                        </div>
-                                    </div>
-
-                                    <div className={`grid ${facturaPorItem ? 'grid-cols-2' : 'grid-cols-1'} gap-2 md:contents`}>
-                                        <div className="md:col-span-2">
-                                            <div className="flex items-center justify-between md:justify-end gap-2 mb-1">
-                                                <label className="md:hidden text-xs font-medium" style={{ color: 'var(--color-text)' }}>
-                                                    {d.precio_modo === 'total' ? 'Precio total' : 'Precio costo'}
-                                                </label>
-                                                <div className="inline-flex rounded-md border overflow-hidden text-[10px] font-semibold leading-none"
-                                                    style={{ borderColor: 'var(--color-border)' }}>
-                                                    {(['unitario', 'total'] as const).map(m => (
-                                                        <button key={m} type="button" onClick={() => setPrecioModo(i, m)}
-                                                            className="px-1.5 py-1 transition-colors"
-                                                            style={{
-                                                                backgroundColor: d.precio_modo === m ? 'var(--color-primary)' : 'transparent',
-                                                                color: d.precio_modo === m ? '#fff' : 'var(--color-text-muted)',
-                                                            }}>
-                                                            {m === 'unitario' ? 'P.U.' : 'Total'}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            {d.precio_modo === 'total' ? (
-                                                <Input placeholder="0.00" type="number" min="0" step="0.01" inputMode="decimal"
-                                                    value={d.precio_total} onChange={e => setDetalle(i, 'precio_total', e.target.value)} />
-                                            ) : (
-                                                <Input placeholder="0.00" type="number" min="0" step="0.0001" inputMode="decimal"
-                                                    value={d.precio_costo} onChange={e => setDetalle(i, 'precio_costo', e.target.value)} />
-                                            )}
-                                            {d.precio_modo === 'total' && d.precio_costo !== '' && (
-                                                <p className="mt-0.5 text-[11px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
-                                                    = S/ {d.precio_costo} c/u
-                                                </p>
-                                            )}
-                                        </div>
-                                        {facturaPorItem && (
-                                            <div className="md:col-span-2">
-                                                <label className="md:hidden text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Factura</label>
-                                                <Input placeholder="F001-..."
-                                                    value={d.numero_documento}
-                                                    onChange={e => setDetalle(i, 'numero_documento', e.target.value)}
-                                                    error={(errors)[`detalles.${i}.numero_documento`]} />
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="hidden md:flex md:col-span-1 md:text-right md:items-end md:justify-end md:gap-1">
-                                        <p className="text-sm font-mono font-semibold pb-2" style={{ color: 'var(--color-text)' }}>S/ {subtotal(d).toFixed(2)}</p>
-                                        {detalles.length > 1 && (
-                                            <button type="button" onClick={() => removeDetalle(i)} className="mb-2 rounded p-0.5" style={{ color: 'var(--color-danger)' }}>
-                                                <Trash2 size={14} />
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs px-1" style={{ color: 'var(--color-text-muted)' }}>
-                                    <span className="font-mono">×{d.factor_conversion}</span>
-                                    <span className="font-mono">= {cantidadBase(d).toFixed(4)} base</span>
-                                </div>
-                            </div>
-                        );
-                    })}
-
-                    <div className="flex justify-end pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
-                        <div className="text-right">
-                            <p className="text-xs uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>Total</p>
-                            <p className="text-xl font-bold font-mono" style={{ color: 'var(--color-text)' }}>S/ {total.toFixed(2)}</p>
-                        </div>
-                    </div>
+                    <DetalleProductos
+                        productos={productos}
+                        detalles={detalles}
+                        setDetalles={setDetalles}
+                        setDetalle={setDetalle}
+                        setPrecioModo={setPrecioModo}
+                        removeDetalle={removeDetalle}
+                        subtotal={subtotal}
+                        cantidadBase={cantidadBase}
+                        facturaPorItem={facturaPorItem}
+                        errors={errors as Record<string, string>}
+                        total={total}
+                    />
                 </section>
 
                 {/* ── Pago al proveedor: resumen + registrar pagos NUEVOS del saldo ── */}
