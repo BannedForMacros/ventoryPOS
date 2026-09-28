@@ -65,7 +65,7 @@ it('el reporte de utilidad calcula bruta y neta con el costo congelado', functio
     expect((float) $kpis['utilidad_neta'])->toBe(20.0); // sin gastos ni devoluciones
 
     // Y el desglose por producto refleja el mismo margen.
-    $productos = collect($res->viewData('page')['props']['productos']);
+    $productos = collect($res->viewData('page')['props']['productos']['data']);
     expect($productos)->toHaveCount(1);
     expect((float) $productos[0]['utilidad'])->toBe(20.0);
     expect((float) $productos[0]['margen'])->toBe(40.0);

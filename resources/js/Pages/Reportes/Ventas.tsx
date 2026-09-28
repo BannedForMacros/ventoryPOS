@@ -3,14 +3,14 @@ import { router, Link } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
     ShoppingCart, Wallet, Package, UserRound, ChevronDown, Search, X,
-    SlidersHorizontal, AlertTriangle, Clock3, Receipt, FileText, Scale, Users,
+    Clock3, Receipt, FileText, Scale, Users,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { CHART_COLORS } from '@/Components/UI/Charts';
 import {
-    Panel, FieldDate, FieldSelect, Paginacion, Empty, rangosBase,
-    fmtS, fmtInt, fmtCant, fieldStyle,
-    type Paginado,
+    Panel, FieldSelect, Paginacion, Empty, EncabezadoReporte, useRecargaTabla, Banda, AvisoBanda, Filas, Barras, diasDelPeriodo,
+    fmtS, fmtInt, fmtCant, fieldStyle, fechaCorta, frasePeriodo, pct, plural,
+    type Paginado, type Punto,
 } from '@/Components/Reportes/ReportUI';
 import type { Local, MetodoPago, User, Venta, PageProps } from '@/types';
 
@@ -71,37 +71,21 @@ const COMPROBANTES: Record<string, { label: string; plural: string; color: strin
     boleta_externa:  { label: 'Boleta electrónica externa',  plural: 'Boletas externas',  color: '#ec4899', tinta: '#9d174d' },
 };
 
-const TITULO_RANGO: Record<string, string> = {
-    'Hoy': 'Vendiste hoy', '7 días': 'Vendiste en los últimos 7 días',
-    'Este mes': 'Vendiste este mes', '30 días': 'Vendiste en los últimos 30 días',
-};
-
 const nombreCliente = (v: Venta) =>
     (v.cliente as any)?.razon_social
         ?? (v.cliente ? `${(v.cliente as any).nombres} ${(v.cliente as any).apellidos ?? ''}`.trim() : 'Clientes varios');
 
-const aFecha = (d: string) => new Date(d + 'T00:00:00');
-const fechaLarga = (d: string) => aFecha(d).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' });
-const fechaCorta = (d: string) => aFecha(d).toLocaleDateString('es-PE', { day: 'numeric', month: 'short' });
 const soloFecha = (iso: string) => new Date(iso).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
 const soloHora = (iso: string) => new Date(iso).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-const pct = (parte: number, total: number) => (total > 0 ? Math.round((parte / total) * 100) : 0);
-const plural = (n: number, uno: string, varios: string) => `${fmtInt(n)} ${n === 1 ? uno : varios}`;
-const isoDia = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const enVentas = (n: number) => `en ${plural(n, 'venta', 'ventas')}`;
 
-interface Punto { clave: string; eje: string; titulo: string; total: number; ventas: number; }
-
-/** Días del periodo con ventas en 0 incluidos, para que el gráfico no invente tendencias. */
+/** Días del periodo con 0 en los días sin ventas, para que el gráfico no invente tendencias. */
 function puntosPorDia(serie: SerieDia[], desde: string, hasta: string): Punto[] {
     const mapa = new Map(serie.map(s => [s.dia, s]));
-    const out: Punto[] = [];
-    const fin = aFecha(hasta);
-    for (let d = aFecha(desde), n = 0; d <= fin && n < 93; d.setDate(d.getDate() + 1), n++) {
-        const k = isoDia(d);
-        const s = mapa.get(k);
-        out.push({ clave: k, eje: String(d.getDate()), titulo: fechaCorta(k), total: s?.total ?? 0, ventas: s?.ventas ?? 0 });
-    }
-    return out;
+    return diasDelPeriodo(desde, hasta).map(d => {
+        const s = mapa.get(d.clave);
+        return { ...d, valor: s?.total ?? 0, detalle: enVentas(s?.ventas ?? 0) };
+    });
 }
 
 /** Horas con ventas, extendidas al horario comercial típico (8 a 20 h). */
@@ -112,7 +96,7 @@ function puntosPorHora(data: PorHora[]): Punto[] {
     const out: Punto[] = [];
     for (let h = desde; h <= hasta; h++) {
         const d = data.find(x => x.hora === h);
-        out.push({ clave: String(h), eje: String(h), titulo: `${h}:00`, total: d?.total ?? 0, ventas: d?.ventas ?? 0 });
+        out.push({ clave: String(h), eje: String(h), titulo: `${h}:00`, valor: d?.total ?? 0, detalle: enVentas(d?.ventas ?? 0) });
     }
     return out;
 }
@@ -125,7 +109,6 @@ export default function ReportesVentas({
 
     const filtrosAvanzados = [filters.estado, filters.local_id, filters.user_id,
         filters.metodo_pago_id, filters.tipo, filters.comprobante].filter(Boolean).length;
-    const [verFiltros, setVerFiltros] = useState(filtrosAvanzados > 0);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -133,8 +116,11 @@ export default function ReportesVentas({
     }, [flash]);
 
     function filtrar(patch: Record<string, string | undefined>) {
-        router.get(route('reportes.ventas'), { ...filters, ...patch }, { preserveState: true, replace: true });
+        router.get(route('reportes.ventas'), { ...filters, ...patch }, { preserveState: true, preserveScroll: true, replace: true });
     }
+    // Buscar y paginar solo tocan la lista: no se recalcula el resto del reporte.
+    const lista = useRecargaTabla('reportes.ventas', ['ventas', 'filters']);
+    const buscarVentas = (buscar?: string) => lista.recargar({ ...filters, buscar });
     const limpiar = () => router.get(route('reportes.ventas'), {
         fecha_desde: filters.fecha_desde, fecha_hasta: filters.fecha_hasta,
     }, { preserveState: true, replace: true });
@@ -148,13 +134,6 @@ export default function ReportesVentas({
     }
 
     const unDia = filters.fecha_desde === filters.fecha_hasta;
-    const rangoActivo = rangosBase().find(([, calc]) => {
-        const r = calc();
-        return r.fecha_desde === filters.fecha_desde && r.fecha_hasta === filters.fecha_hasta;
-    })?.[0];
-    const periodo = unDia ? fechaLarga(filters.fecha_desde)
-        : `Del ${fechaLarga(filters.fecha_desde)} al ${fechaLarga(filters.fecha_hasta)}`;
-
     // Un solo día: el gráfico principal pasa a mostrar las horas.
     const puntosBanda = useMemo(
         () => (unDia ? puntosPorHora(por_hora) : puntosPorDia(serie_diaria, filters.fecha_desde, filters.fecha_hasta)),
@@ -167,102 +146,45 @@ export default function ReportesVentas({
 
     return (
         <AppLayout title="Reporte de ventas">
-            {/* ── Encabezado + periodo ─────────────────────────────────────── */}
-            <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 mb-4">
-                <div className="min-w-0">
-                    <h1 className="font-display text-[28px] font-extrabold tracking-tight leading-none" style={{ color: 'var(--vp-navy)' }}>
-                        Reporte de ventas
-                    </h1>
-                    <p className="text-[15px] mt-2" style={{ color: 'var(--color-text-muted)' }}>{periodo}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <div className="inline-flex rounded-xl p-1" role="group" aria-label="Periodo rápido"
-                        style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 9%, var(--color-surface))' }}>
-                        {rangosBase().map(([label, calc]) => {
-                            const activo = rangoActivo === label;
-                            return (
-                                <button key={label} onClick={() => filtrar(calc())} aria-pressed={activo}
-                                    className="text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
-                                    style={{
-                                        backgroundColor: activo ? 'var(--vp-navy)' : 'transparent',
-                                        color: activo ? '#fff' : 'var(--vp-navy)',
-                                        outlineColor: 'var(--color-primary)',
-                                    }}>
-                                    {label}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <button onClick={() => setVerFiltros(v => !v)} aria-expanded={verFiltros}
-                        className="inline-flex items-center gap-2 text-sm font-semibold px-3.5 py-2 rounded-xl border transition-colors hover:bg-black/[0.03] focus-visible:outline focus-visible:outline-2"
-                        style={{
-                            borderColor: verFiltros ? 'var(--color-primary)' : 'var(--color-border)',
-                            backgroundColor: 'var(--color-surface)', color: 'var(--color-text)',
-                            outlineColor: 'var(--color-primary)',
-                        }}>
-                        <SlidersHorizontal size={16} style={{ color: 'var(--color-primary)' }} />
-                        Más filtros
-                        {filtrosAvanzados > 0 && (
-                            <span className="min-w-5 h-5 px-1.5 rounded-full text-xs font-bold inline-flex items-center justify-center text-white"
-                                style={{ backgroundColor: 'var(--color-primary)' }}>
-                                {filtrosAvanzados}
-                            </span>
-                        )}
-                    </button>
-                </div>
-            </div>
-
-            {verFiltros && (
-                <div className="rounded-2xl p-4 mb-3 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 items-end"
-                    style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-                    <FieldDate label="Desde" value={filters.fecha_desde} onChange={v => filtrar({ fecha_desde: v })} />
-                    <FieldDate label="Hasta" value={filters.fecha_hasta} onChange={v => filtrar({ fecha_hasta: v })} />
-                    <FieldSelect label="Estado" value={filters.estado ?? ''}
-                        onChange={v => filtrar({ estado: v || undefined })}
-                        options={[
-                            { value: '', label: 'Todas' },
-                            { value: 'completada', label: 'Completadas' },
-                            { value: 'anulada', label: 'Anuladas' },
-                        ]} />
-                    {locales.length > 1 && (
-                        <FieldSelect label="Local" value={filters.local_id ?? ''}
-                            onChange={v => filtrar({ local_id: v || undefined })}
-                            options={[{ value: '', label: 'Todos' }, ...locales.map(l => ({ value: String(l.id), label: l.nombre }))]} />
-                    )}
-                    <FieldSelect label="Vendedor" value={filters.user_id ?? ''}
-                        onChange={v => filtrar({ user_id: v || undefined })}
-                        options={[{ value: '', label: 'Todos' }, ...usuarios.map(u => ({ value: String(u.id), label: u.name }))]} />
-                    <FieldSelect label="Método de pago" value={filters.metodo_pago_id ?? ''}
-                        onChange={v => filtrar({ metodo_pago_id: v || undefined })}
-                        options={[{ value: '', label: 'Todos' }, ...metodos_pago.map(m => ({ value: String(m.id), label: m.nombre as string }))]} />
-                    <FieldSelect label="Contado o crédito" value={filters.tipo ?? ''}
-                        onChange={v => filtrar({ tipo: v || undefined })}
-                        options={[
-                            { value: '', label: 'Ambos' },
-                            { value: 'contado', label: 'Contado' },
-                            { value: 'credito', label: 'Crédito' },
-                        ]} />
-                    <FieldSelect label="Comprobante" value={filters.comprobante ?? ''}
-                        onChange={v => filtrar({ comprobante: v || undefined })}
-                        options={[{ value: '', label: 'Todos' }, ...Object.entries(COMPROBANTES).map(([value, c]) => ({ value, label: c.label }))]} />
-                    {filtrosAvanzados > 0 && (
-                        <button onClick={limpiar}
-                            className="inline-flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
-                            style={{ color: 'var(--vp-coral-ink)', backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, transparent)' }}>
-                            <X size={15} /> Quitar filtros
-                        </button>
-                    )}
-                </div>
-            )}
+            <EncabezadoReporte titulo="Reporte de ventas" fechaDesde={filters.fecha_desde} fechaHasta={filters.fecha_hasta}
+                filtrar={filtrar} avanzados={filtrosAvanzados} onLimpiar={limpiar}>
+                <FieldSelect label="Estado" value={filters.estado ?? ''}
+                    onChange={v => filtrar({ estado: v || undefined })}
+                    options={[
+                        { value: '', label: 'Todas' },
+                        { value: 'completada', label: 'Completadas' },
+                        { value: 'anulada', label: 'Anuladas' },
+                    ]} />
+                {locales.length > 1 && (
+                    <FieldSelect label="Local" value={filters.local_id ?? ''}
+                        onChange={v => filtrar({ local_id: v || undefined })}
+                        options={[{ value: '', label: 'Todos' }, ...locales.map(l => ({ value: String(l.id), label: l.nombre }))]} />
+                )}
+                <FieldSelect label="Vendedor" value={filters.user_id ?? ''}
+                    onChange={v => filtrar({ user_id: v || undefined })}
+                    options={[{ value: '', label: 'Todos' }, ...usuarios.map(u => ({ value: String(u.id), label: u.name }))]} />
+                <FieldSelect label="Método de pago" value={filters.metodo_pago_id ?? ''}
+                    onChange={v => filtrar({ metodo_pago_id: v || undefined })}
+                    options={[{ value: '', label: 'Todos' }, ...metodos_pago.map(m => ({ value: String(m.id), label: m.nombre as string }))]} />
+                <FieldSelect label="Contado o crédito" value={filters.tipo ?? ''}
+                    onChange={v => filtrar({ tipo: v || undefined })}
+                    options={[
+                        { value: '', label: 'Ambos' },
+                        { value: 'contado', label: 'Contado' },
+                        { value: 'credito', label: 'Crédito' },
+                    ]} />
+                <FieldSelect label="Comprobante" value={filters.comprobante ?? ''}
+                    onChange={v => filtrar({ comprobante: v || undefined })}
+                    options={[{ value: '', label: 'Todos' }, ...Object.entries(COMPROBANTES).map(([value, c]) => ({ value, label: c.label }))]} />
+            </EncabezadoReporte>
 
             {/* ── Fila 1: cuánto vendiste + comprobantes ───────────────────── */}
             <div className="grid xl:grid-cols-12 gap-3 mb-3">
-                <section className="xl:col-span-8 rounded-[22px] overflow-hidden text-white flex flex-col"
-                    style={{ backgroundColor: 'var(--vp-navy)', boxShadow: '0 14px 30px -18px rgb(15 76 129 / 0.8)' }}>
+                <Banda className="xl:col-span-8">
                     <div className="flex-1 grid md:grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-8 gap-y-5 p-5 sm:p-6">
                         <div className="min-w-0">
                             <p className="text-[15px] font-medium" style={{ color: 'rgb(255 255 255 / 0.8)' }}>
-                                {rangoActivo ? TITULO_RANGO[rangoActivo] : 'Vendiste en el periodo'}
+                                Vendiste {frasePeriodo(filters.fecha_desde, filters.fecha_hasta)}
                             </p>
                             <p className="font-display text-[36px] sm:text-[46px] font-extrabold tracking-tight leading-[1.05] tabular-nums mt-1 whitespace-nowrap">
                                 {fmtS(kpis.monto_total)}
@@ -271,14 +193,14 @@ export default function ReportesVentas({
                             {(kpis.total_anuladas > 0 || kpis.credito_pendiente > 0) && (
                                 <div className="flex flex-col items-start gap-1.5 mt-4">
                                     {kpis.total_anuladas > 0 && (
-                                        <Aviso color="var(--vp-coral)" onClick={() => filtrar({ estado: 'anulada' })}>
+                                        <AvisoBanda color="var(--vp-coral)" onClick={() => filtrar({ estado: 'anulada' })}>
                                             {plural(kpis.total_anuladas, 'venta anulada', 'ventas anuladas')} por {fmtS(kpis.monto_anuladas)}
-                                        </Aviso>
+                                        </AvisoBanda>
                                     )}
                                     {kpis.credito_pendiente > 0 && (
-                                        <Aviso color="var(--vp-amber)" onClick={() => filtrar({ tipo: 'credito' })}>
+                                        <AvisoBanda color="var(--vp-amber)" onClick={() => filtrar({ tipo: 'credito' })}>
                                             Te deben {fmtS(kpis.credito_pendiente)} en créditos
-                                        </Aviso>
+                                        </AvisoBanda>
                                     )}
                                 </div>
                             )}
@@ -294,7 +216,7 @@ export default function ReportesVentas({
                         <Dato label="Descuentos" valor={fmtS(kpis.monto_descuento)} />
                         <Dato label="IGV incluido" valor={fmtS(kpis.monto_igv)} />
                     </dl>
-                </section>
+                </Banda>
 
                 <Comprobantes data={por_comprobante} className="xl:col-span-4" />
             </div>
@@ -386,11 +308,11 @@ export default function ReportesVentas({
                         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
                         <input type="search" defaultValue={filters.buscar ?? ''} key={filters.buscar ?? ''}
                             placeholder="Buscar por número o cliente" aria-label="Buscar venta"
-                            onKeyDown={e => { if (e.key === 'Enter') filtrar({ buscar: (e.target as HTMLInputElement).value || undefined }); }}
+                            onKeyDown={e => { if (e.key === 'Enter') buscarVentas((e.target as HTMLInputElement).value || undefined); }}
                             className="w-full text-sm rounded-xl pl-9 pr-8 py-2 border outline-none focus:ring-2"
                             style={{ ...fieldStyle, backgroundColor: 'var(--color-surface)', '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 35%, transparent)' } as React.CSSProperties} />
                         {filters.buscar && (
-                            <button onClick={() => filtrar({ buscar: undefined })} aria-label="Quitar búsqueda"
+                            <button onClick={() => buscarVentas(undefined)} aria-label="Quitar búsqueda"
                                 className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded" style={{ color: 'var(--color-text-muted)' }}>
                                 <X size={15} />
                             </button>
@@ -398,6 +320,7 @@ export default function ReportesVentas({
                     </div>
                 </header>
 
+                <div className="transition-opacity duration-150" style={{ opacity: lista.cargando ? 0.5 : 1 }} aria-busy={lista.cargando}>
                 <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-sm table-fixed min-w-[760px]">
                         <colgroup>
@@ -495,8 +418,10 @@ export default function ReportesVentas({
                         );
                     })}
                 </div>
+                </div>
 
-                <Paginacion paginado={ventas} ruta="reportes.ventas" filters={filters as unknown as Record<string, unknown>} />
+                <Paginacion paginado={ventas} ruta="reportes.ventas" filters={filters as unknown as Record<string, unknown>}
+                    onIr={page => lista.recargar({ ...filters, page })} />
             </section>
         </AppLayout>
     );
@@ -531,78 +456,6 @@ function Dato({ label, valor }: { label: string; valor: string }) {
         <div className="px-5 sm:px-6 py-3.5 sm:border-l sm:first:border-l-0" style={{ borderColor: 'rgb(255 255 255 / 0.12)' }}>
             <dt className="text-[13px]" style={{ color: 'rgb(255 255 255 / 0.68)' }}>{label}</dt>
             <dd className="font-display text-lg font-bold tabular-nums leading-tight mt-0.5 truncate">{valor}</dd>
-        </div>
-    );
-}
-
-function Aviso({ color, onClick, children }: { color: string; onClick: () => void; children: React.ReactNode }) {
-    return (
-        <button onClick={onClick}
-            className="inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-semibold transition-colors hover:bg-white/15 focus-visible:outline focus-visible:outline-2"
-            style={{ backgroundColor: 'rgb(255 255 255 / 0.1)', border: `1px solid color-mix(in srgb, ${color} 55%, transparent)`, color: '#fff', outlineColor: color }}>
-            <AlertTriangle size={14} style={{ color }} />
-            {children}
-            <span className="underline underline-offset-2" style={{ color }}>Ver</span>
-        </button>
-    );
-}
-
-/* ── Barras (día a día / hora a hora) con el mejor punto destacado ─────── */
-function Barras({ puntos, titulo, oscuro = false, alto = 'h-36', vacio }: {
-    puntos: Punto[]; titulo?: string; oscuro?: boolean; alto?: string; vacio: string;
-}) {
-    const [hover, setHover] = useState<number | null>(null);
-    const conVentas = puntos.some(p => p.total > 0);
-    const tenue = oscuro ? 'rgb(255 255 255 / 0.65)' : 'var(--color-text-muted)';
-
-    if (!conVentas) {
-        return (
-            <div className={`flex items-center justify-center rounded-xl text-sm ${alto}`}
-                style={{ color: tenue, border: `1px dashed ${oscuro ? 'rgb(255 255 255 / 0.2)' : 'var(--color-border)'}` }}>
-                {vacio}
-            </div>
-        );
-    }
-
-    const max = Math.max(...puntos.map(p => p.total));
-    const mejorIdx = puntos.reduce((m, p, i) => (p.total > puntos[m].total ? i : m), 0);
-    const focoIdx = hover ?? mejorIdx;
-    const foco = puntos[focoIdx];
-    // Con muchas barras solo rotulamos algunas para que el eje respire.
-    const paso = puntos.length > 16 ? Math.ceil(puntos.length / 8) : 1;
-
-    const barra = (i: number, p: Punto) => i === focoIdx
-        ? (oscuro ? 'var(--vp-mint)' : 'var(--vp-navy)')
-        : p.total === 0
-            ? (oscuro ? 'rgb(255 255 255 / 0.1)' : 'color-mix(in srgb, var(--color-border) 70%, transparent)')
-            : (oscuro ? 'rgb(255 255 255 / 0.42)' : 'color-mix(in srgb, var(--vp-sky) 45%, var(--color-surface))');
-
-    return (
-        <div className="min-w-0 flex flex-col h-full">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 mb-3">
-                {titulo && <p className="text-sm font-semibold" style={{ color: oscuro ? '#fff' : 'var(--color-text)' }}>{titulo}</p>}
-                <p className="text-[13px] tabular-nums" style={{ color: tenue }}>
-                    {hover === null ? 'Mejor momento: ' : ''}
-                    <strong className="font-semibold" style={{ color: oscuro ? '#fff' : 'var(--color-text)' }}>{foco.titulo}</strong>
-                    {', '}{fmtS(foco.total)} en {plural(foco.ventas, 'venta', 'ventas')}
-                </p>
-            </div>
-            <div className={`flex items-end gap-[3px] ${alto}`} onMouseLeave={() => setHover(null)}>
-                {puntos.map((p, i) => (
-                    <div key={p.clave} className="flex-1 h-full flex items-end" onMouseEnter={() => setHover(i)}>
-                        <div className="w-full rounded-t-[4px] transition-colors duration-150"
-                            style={{ height: `${p.total > 0 ? Math.max(4, (p.total / max) * 100) : 3}%`, backgroundColor: barra(i, p) }} />
-                    </div>
-                ))}
-            </div>
-            <div className="flex gap-[3px] mt-1.5">
-                {puntos.map((p, i) => (
-                    <span key={p.clave} className="flex-1 text-center text-xs tabular-nums"
-                        style={{ color: i === focoIdx ? (oscuro ? '#fff' : 'var(--vp-navy)') : tenue, fontWeight: i === focoIdx ? 700 : 400 }}>
-                        {i % paso === 0 || i === focoIdx ? p.eje : ''}
-                    </span>
-                ))}
-            </div>
         </div>
     );
 }
@@ -662,47 +515,6 @@ function Comprobantes({ data, className = '' }: { data: PorComprob[]; className?
                 })}
             </div>
         </Panel>
-    );
-}
-
-/* ── Filas con barra de participación (medios, vendedores, clientes) ───── */
-function Filas({ items, avatar = false, vacio }: {
-    items: { clave: string | number; label: string; valor: number; color: string; nota?: string }[];
-    avatar?: boolean; vacio: string;
-}) {
-    const total = items.reduce((s, it) => s + Math.max(0, it.valor), 0);
-    if (items.length === 0 || total <= 0) return <Empty text={vacio} />;
-    return (
-        <ul className="space-y-3">
-            {items.map(it => {
-                const part = pct(it.valor, total);
-                return (
-                    <li key={it.clave} className="flex items-center gap-3">
-                        {avatar ? (
-                            <span className="h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                                style={{ backgroundColor: it.color }}>
-                                {it.label.trim().charAt(0).toUpperCase()}
-                            </span>
-                        ) : (
-                            <span className="h-3 w-3 rounded flex-shrink-0" style={{ backgroundColor: it.color }} />
-                        )}
-                        <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline justify-between gap-3">
-                                <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }} title={it.label}>{it.label}</p>
-                                <p className="text-[15px] font-bold tabular-nums whitespace-nowrap" style={{ color: 'var(--color-text)' }}>{fmtS(it.valor)}</p>
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                                <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ backgroundColor: 'color-mix(in srgb, var(--color-border) 65%, transparent)' }}>
-                                    <div className="h-full rounded-full" style={{ width: `${Math.max(2, part)}%`, backgroundColor: it.color }} />
-                                </div>
-                                <span className="text-xs font-semibold tabular-nums w-9 text-right" style={{ color: 'var(--color-text-muted)' }}>{part}%</span>
-                            </div>
-                            {it.nota && <p className="text-[13px] mt-0.5 truncate" style={{ color: 'var(--color-text-muted)' }}>{it.nota}</p>}
-                        </div>
-                    </li>
-                );
-            })}
-        </ul>
     );
 }
 

@@ -25,7 +25,8 @@ class ReporteVentaController extends Controller
         $desde = $request->fecha_desde ?: now()->startOfMonth()->toDateString();
         $hasta = $request->fecha_hasta ?: now()->toDateString();
 
-        // Query base con TODOS los filtros menos fechas (para reusar en la comparativa)
+        // Query base con TODOS los filtros menos fechas (para reusar en la comparativa).
+        // El buscador NO entra aquí: vive en la lista "Venta por venta" y solo la filtra a ella.
         $filtrada = function (string $d, string $h) use ($request, $user) {
             return Venta::deEmpresa($user->empresa_id)
                 ->whereBetween('fecha_venta', [$d . ' 00:00:00', $h . ' 23:59:59'])
@@ -35,16 +36,6 @@ class ReporteVentaController extends Controller
                 ->when($request->tipo === 'contado', fn ($q) => $q->where('es_credito', false))
                 ->when($request->tipo === 'credito', fn ($q) => $q->where('es_credito', true))
                 ->when($request->comprobante, fn ($q, $v) => $q->where('tipo_comprobante', $v))
-                ->when($request->buscar, function ($q, $v) {
-                    $q->where(function ($qq) use ($v) {
-                        $qq->where('numero', 'ilike', "%{$v}%")
-                           ->orWhereHas('cliente', fn ($c) => $c
-                               ->where('nombres', 'ilike', "%{$v}%")
-                               ->orWhere('apellidos', 'ilike', "%{$v}%")
-                               ->orWhere('razon_social', 'ilike', "%{$v}%")
-                               ->orWhere('numero_documento', 'ilike', "%{$v}%"));
-                    });
-                })
                 ->when($request->metodo_pago_id, fn ($q, $v) => $q->whereHas('pagos', fn ($p) => $p->where('metodo_pago_id', $v)))
                 ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id));
         };
@@ -52,38 +43,47 @@ class ReporteVentaController extends Controller
         $base        = $filtrada($desde, $hasta);
         $completadas = (clone $base)->where('estado', 'completada');
 
-        // ── KPIs ──────────────────────────────────────────────────────────
-        $kpis = [
-            'total_ventas'      => (int)   (clone $completadas)->count(),
-            'total_anuladas'    => (int)   (clone $base)->where('estado', 'anulada')->count(),
-            'monto_anuladas'    => (float) (clone $base)->where('estado', 'anulada')->sum('total'),
-            'monto_total'       => (float) (clone $completadas)->sum('total'),
-            'monto_descuento'   => (float) (clone $completadas)->sum('descuento_total'),
-            'monto_igv'         => (float) (clone $completadas)->sum('igv'),
-            'monto_contado'     => (float) (clone $completadas)->where('es_credito', false)->sum('total'),
-            'monto_credito'     => (float) (clone $completadas)->where('es_credito', true)->sum('total'),
-            'credito_pendiente' => (float) (clone $completadas)->where('es_credito', true)->sum('saldo_pendiente'),
-            'clientes_distintos'=> (int)   (clone $completadas)->whereNotNull('cliente_id')->distinct('cliente_id')->count('cliente_id'),
-            'ticket_promedio'   => 0.0,
-        ];
-        if ($kpis['total_ventas'] > 0) {
-            $kpis['ticket_promedio'] = round($kpis['monto_total'] / $kpis['total_ventas'], 2);
-        }
-
-        // Comparativa vs período anterior de la misma duración
+        // Periodo anterior de la misma duración (para la comparativa).
         $d1 = Carbon::parse($desde); $d2 = Carbon::parse($hasta);
         $dias = $d1->diffInDays($d2) + 1;
         $prevDesde = $d1->copy()->subDays($dias)->toDateString();
         $prevHasta = $d1->copy()->subDay()->toDateString();
-        $prev = $filtrada($prevDesde, $prevHasta)->where('estado', 'completada');
-        $kpis['prev_monto']  = (float) (clone $prev)->sum('total');
-        $kpis['prev_ventas'] = (int)   (clone $prev)->count();
-        $kpis['variacion']   = $kpis['prev_monto'] > 0
-            ? round((($kpis['monto_total'] - $kpis['prev_monto']) / $kpis['prev_monto']) * 100, 1)
-            : null;
+
+        // Props perezosas: buscar o paginar la lista pide solo `ventas` y
+        // `filters` (partial reload) y nada de lo demás se recalcula.
+
+        // ── KPIs ──────────────────────────────────────────────────────────
+        $kpis = function () use ($base, $completadas, $filtrada, $prevDesde, $prevHasta) {
+            $kpis = [
+                'total_ventas'      => (int)   (clone $completadas)->count(),
+                'total_anuladas'    => (int)   (clone $base)->where('estado', 'anulada')->count(),
+                'monto_anuladas'    => (float) (clone $base)->where('estado', 'anulada')->sum('total'),
+                'monto_total'       => (float) (clone $completadas)->sum('total'),
+                // Descuento global de cada venta + el de cada línea (por unidad × cantidad).
+                'monto_descuento'   => (float) (clone $completadas)->sum('descuento_total')
+                    + (float) VentaItem::whereIn('venta_id', (clone $completadas)->select('id'))->sum(DB::raw('descuento_item * cantidad')),
+                'monto_igv'         => (float) (clone $completadas)->sum('igv'),
+                'monto_contado'     => (float) (clone $completadas)->where('es_credito', false)->sum('total'),
+                'monto_credito'     => (float) (clone $completadas)->where('es_credito', true)->sum('total'),
+                'credito_pendiente' => (float) (clone $completadas)->where('es_credito', true)->sum('saldo_pendiente'),
+                'clientes_distintos'=> (int)   (clone $completadas)->whereNotNull('cliente_id')->distinct('cliente_id')->count('cliente_id'),
+                'ticket_promedio'   => 0.0,
+            ];
+            if ($kpis['total_ventas'] > 0) {
+                $kpis['ticket_promedio'] = round($kpis['monto_total'] / $kpis['total_ventas'], 2);
+            }
+
+            $prev = $filtrada($prevDesde, $prevHasta)->where('estado', 'completada');
+            $kpis['prev_monto']  = (float) (clone $prev)->sum('total');
+            $kpis['prev_ventas'] = (int)   (clone $prev)->count();
+            $kpis['variacion']   = $kpis['prev_monto'] > 0
+                ? round((($kpis['monto_total'] - $kpis['prev_monto']) / $kpis['prev_monto']) * 100, 1)
+                : null;
+            return $kpis;
+        };
 
         // ── Serie diaria ──────────────────────────────────────────────────
-        $serieDiaria = (clone $completadas)
+        $serieDiaria = fn () => (clone $completadas)
             ->select(
                 DB::raw('DATE(fecha_venta) as dia'),
                 DB::raw('SUM(total) as total'),
@@ -99,13 +99,13 @@ class ReporteVentaController extends Controller
             ]);
 
         // ── Ventas por hora del día ───────────────────────────────────────
-        $porHora = (clone $completadas)
+        $porHora = fn () => (clone $completadas)
             ->select(DB::raw('EXTRACT(HOUR FROM fecha_venta)::int as hora'), DB::raw('SUM(total) as total'), DB::raw('COUNT(*) as ventas'))
             ->groupBy('hora')->orderBy('hora')->get()
             ->map(fn ($r) => ['hora' => (int) $r->hora, 'total' => (float) $r->total, 'ventas' => (int) $r->ventas]);
 
         // ── Distribución por método de pago (pagos de ventas completadas) ─
-        $porMetodo = VentaPago::query()
+        $porMetodo = fn () => VentaPago::query()
             ->select('metodo_pago_id', DB::raw('SUM(monto - COALESCE(vuelto, 0)) as total'), DB::raw('COUNT(*) as ocurrencias'))
             ->whereIn('venta_id', (clone $completadas)->select('id'))
             ->groupBy('metodo_pago_id')
@@ -119,7 +119,7 @@ class ReporteVentaController extends Controller
             ]);
 
         // ── Por vendedor ──────────────────────────────────────────────────
-        $porVendedor = (clone $completadas)
+        $porVendedor = fn () => (clone $completadas)
             ->select('user_id', DB::raw('SUM(total) as total'), DB::raw('COUNT(*) as ventas'))
             ->groupBy('user_id')
             ->with('user:id,name')
@@ -132,7 +132,7 @@ class ReporteVentaController extends Controller
             ]);
 
         // ── Por tipo de comprobante ───────────────────────────────────────
-        $porComprobante = (clone $completadas)
+        $porComprobante = fn () => (clone $completadas)
             ->select('tipo_comprobante', DB::raw('SUM(total) as total'), DB::raw('COUNT(*) as ventas'))
             ->groupBy('tipo_comprobante')->orderByDesc('total')->get()
             ->map(fn ($r) => [
@@ -142,7 +142,7 @@ class ReporteVentaController extends Controller
             ]);
 
         // ── Top productos ─────────────────────────────────────────────────
-        $topProductos = VentaItem::query()
+        $topProductos = fn () => VentaItem::query()
             ->select(
                 'producto_id',
                 DB::raw('MIN(producto_nombre) as producto_nombre'),
@@ -160,7 +160,7 @@ class ReporteVentaController extends Controller
             ]);
 
         // ── Top clientes ──────────────────────────────────────────────────
-        $topClientes = (clone $completadas)
+        $topClientes = fn () => (clone $completadas)
             ->whereNotNull('cliente_id')
             ->select('cliente_id', DB::raw('SUM(total) as total'), DB::raw('COUNT(*) as ventas'))
             ->groupBy('cliente_id')
@@ -175,7 +175,18 @@ class ReporteVentaController extends Controller
             ]);
 
         // ── Listado con detalle (items + pagos para fila expandible) ──────
-        $ventas = (clone $base)
+        // Única parte que filtra el buscador.
+        $ventas = fn () => (clone $base)
+            ->when($request->buscar, function ($q, $v) {
+                $q->where(function ($qq) use ($v) {
+                    $qq->where('numero', 'ilike', "%{$v}%")
+                       ->orWhereHas('cliente', fn ($c) => $c
+                           ->where('nombres', 'ilike', "%{$v}%")
+                           ->orWhere('apellidos', 'ilike', "%{$v}%")
+                           ->orWhere('razon_social', 'ilike', "%{$v}%")
+                           ->orWhere('numero_documento', 'ilike', "%{$v}%"));
+                });
+            })
             ->with([
                 'user:id,name',
                 'cliente:id,nombres,apellidos,razon_social,numero_documento',
@@ -185,10 +196,6 @@ class ReporteVentaController extends Controller
             ])
             ->orderByDesc('fecha_venta')->orderByDesc('id')
             ->paginate(25)->withQueryString();
-
-        $locales     = $this->scope->localesVisibles($user);
-        $usuarios    = User::where('empresa_id', $user->empresa_id)->orderBy('name')->get(['id', 'name']);
-        $metodosPago = MetodoPago::where('empresa_id', $user->empresa_id)->orderBy('nombre')->get(['id', 'nombre']);
 
         return Inertia::render('Reportes/Ventas', [
             'ventas'          => $ventas,
@@ -200,9 +207,9 @@ class ReporteVentaController extends Controller
             'por_comprobante' => $porComprobante,
             'top_productos'   => $topProductos,
             'top_clientes'    => $topClientes,
-            'locales'         => $locales,
-            'usuarios'        => $usuarios,
-            'metodos_pago'    => $metodosPago,
+            'locales'         => fn () => $this->scope->localesVisibles($user),
+            'usuarios'        => fn () => User::where('empresa_id', $user->empresa_id)->orderBy('name')->get(['id', 'name']),
+            'metodos_pago'    => fn () => MetodoPago::where('empresa_id', $user->empresa_id)->orderBy('nombre')->get(['id', 'nombre']),
             'rango_anterior'  => ['desde' => $prevDesde, 'hasta' => $prevHasta],
             'filters'         => [
                 'fecha_desde'    => $desde,

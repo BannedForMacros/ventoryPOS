@@ -1,5 +1,7 @@
 import { router } from '@inertiajs/react';
-import { Calendar, Filter, X } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, Calendar, Filter, SlidersHorizontal, X } from 'lucide-react';
+import Select from '@/Components/UI/Select';
 
 /**
  * Kit compartido de los reportes: KPIs con fondo tintado (nada de cards
@@ -114,10 +116,10 @@ export const fieldStyle: React.CSSProperties = {
 export function FieldDate({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
     return (
         <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--color-text-muted)' }}>{label}</label>
-            <input type="date" value={value} onChange={e => onChange(e.target.value)}
-                className="w-full text-sm rounded-lg px-2.5 py-1.5 border outline-none focus:ring-2"
-                style={{ ...fieldStyle, '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 35%, transparent)' } as React.CSSProperties} />
+            <label className="block text-[13px] font-medium mb-1" style={{ color: 'var(--color-text-muted)' }}>{label}</label>
+            <input type="date" value={value} onChange={e => onChange(e.target.value)} aria-label={label}
+                className="w-full text-sm rounded-xl px-3 py-2 border outline-none focus:ring-[3px] focus:border-[var(--color-primary)]"
+                style={{ ...fieldStyle, backgroundColor: 'var(--color-surface)', '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 15%, transparent)' } as React.CSSProperties} />
         </div>
     );
 }
@@ -128,12 +130,8 @@ export function FieldSelect({ label, value, onChange, options }: {
 }) {
     return (
         <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--color-text-muted)' }}>{label}</label>
-            <select value={value} onChange={e => onChange(e.target.value)}
-                className="w-full text-sm rounded-lg px-2.5 py-1.5 border outline-none focus:ring-2"
-                style={{ ...fieldStyle, '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 35%, transparent)' } as React.CSSProperties}>
-                {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <label className="block text-[13px] font-medium mb-1" style={{ color: 'var(--color-text-muted)' }}>{label}</label>
+            <Select value={value} onChange={v => onChange(String(v))} options={options} ariaLabel={label} />
         </div>
     );
 }
@@ -208,14 +206,35 @@ const rango = (dias: number) => {
     return { fecha_desde: iso(de), fecha_hasta: iso(h) };
 };
 
+/* ── Recarga parcial de tablas ────────────────────────────────────────── */
+/**
+ * Pide al servidor SOLO las props indicadas (partial reload de Inertia),
+ * sin mover el scroll ni recalcular el resto del reporte. `cargando` sirve
+ * para atenuar la tabla mientras llega la respuesta.
+ */
+export function useRecargaTabla(ruta: string, only: string[]) {
+    const [cargando, setCargando] = useState(false);
+    const recargar = (params: Record<string, unknown>) =>
+        router.get(route(ruta), params as Record<string, string>, {
+            only, preserveState: true, preserveScroll: true, replace: true,
+            onStart: () => setCargando(true),
+            onFinish: () => setCargando(false),
+        });
+    return { cargando, recargar };
+}
+
 /* ── Paginación con elipsis ───────────────────────────────────────────── */
 export interface Paginado<T> {
     data: T[]; total: number; current_page: number; last_page: number;
     from?: number | null; to?: number | null;
 }
 
-export function Paginacion<T>({ paginado, ruta, filters }: {
+export function Paginacion<T>({ paginado, ruta, filters, only, onIr }: {
     paginado: Paginado<T>; ruta: string; filters: Record<string, unknown>;
+    /** Props a recargar al cambiar de página (partial reload). Sin esto recarga todo. */
+    only?: string[];
+    /** Alternativa: la página decide cómo navegar (ej. con useRecargaTabla). */
+    onIr?: (page: number) => void;
 }) {
     const { current_page: cur, last_page: last, total, from, to } = paginado;
     if (last <= 1) return null;
@@ -226,8 +245,9 @@ export function Paginacion<T>({ paginado, ruta, filters }: {
         else if (pages[pages.length - 1] !== '…') pages.push('…');
     }
 
-    const ir = (page: number) =>
-        router.get(route(ruta), { ...filters, page }, { preserveState: true, preserveScroll: true });
+    const ir = (page: number) => onIr
+        ? onIr(page)
+        : router.get(route(ruta), { ...filters, page } as unknown as Record<string, string>, { preserveState: true, preserveScroll: true, ...(only ? { only } : {}) });
 
     return (
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
@@ -283,6 +303,287 @@ export function Panel({ icon, titulo, detalle, color = 'var(--color-primary)', t
                 </div>
             )}
             <div className={`flex-1 flex flex-col ${sinPadding ? '' : 'px-4 pb-4'}`}>{children}</div>
+        </div>
+    );
+}
+
+/* ── Fechas y textos comunes ──────────────────────────────────────────── */
+const aFecha = (d: string) => new Date(d + 'T00:00:00');
+export const fechaLarga = (d: string) => aFecha(d).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' });
+export const fechaCorta = (d: string) => aFecha(d).toLocaleDateString('es-PE', { day: 'numeric', month: 'short' });
+export const pct = (parte: number, total: number) => (total > 0 ? Math.round((parte / total) * 100) : 0);
+export const plural = (n: number, uno: string, varios: string) => `${fmtInt(n)} ${n === 1 ? uno : varios}`;
+
+/** Rango rápido que coincide con las fechas filtradas ('Hoy', 'Este mes', …) o undefined. */
+export function rangoActivo(desde: string, hasta: string): string | undefined {
+    return rangosBase().find(([, calc]) => {
+        const r = calc();
+        return r.fecha_desde === desde && r.fecha_hasta === hasta;
+    })?.[0];
+}
+
+/** "hoy", "este mes", "en los últimos 7 días"… para frases como "Vendiste este mes". */
+export function frasePeriodo(desde: string, hasta: string): string {
+    const r = rangoActivo(desde, hasta);
+    return r === 'Hoy' ? 'hoy'
+        : r === 'Este mes' ? 'este mes'
+        : r ? `en los últimos ${r}`
+        : 'en el periodo';
+}
+
+/* ── Encabezado de reporte: título, periodo, rangos rápidos y filtros ─── */
+/**
+ * Los filtros propios del reporte van como `children` dentro de "Más filtros"
+ * (las fechas ya vienen incluidas). `avanzados` = cuántos de esos filtros
+ * están activos: abre el panel al entrar y muestra el contador.
+ */
+export function EncabezadoReporte({ titulo, fechaDesde, fechaHasta, filtrar, avanzados = 0, onLimpiar, children }: {
+    titulo: string; fechaDesde: string; fechaHasta: string;
+    filtrar: (patch: Record<string, string | undefined>) => void;
+    avanzados?: number; onLimpiar?: () => void;
+    children?: React.ReactNode;
+}) {
+    const [abierto, setAbierto] = useState(avanzados > 0);
+    const activo = rangoActivo(fechaDesde, fechaHasta);
+    const periodo = fechaDesde === fechaHasta ? fechaLarga(fechaDesde)
+        : `Del ${fechaLarga(fechaDesde)} al ${fechaLarga(fechaHasta)}`;
+
+    return (
+        <>
+            <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 mb-4">
+                <div className="min-w-0">
+                    <h1 className="font-display text-[28px] font-extrabold tracking-tight leading-none" style={{ color: 'var(--vp-navy)' }}>
+                        {titulo}
+                    </h1>
+                    <p className="text-[15px] mt-2" style={{ color: 'var(--color-text-muted)' }}>{periodo}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="inline-flex rounded-xl p-1" role="group" aria-label="Periodo rápido"
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 9%, var(--color-surface))' }}>
+                        {rangosBase().map(([label, calc]) => (
+                            <button key={label} onClick={() => filtrar(calc())} aria-pressed={activo === label}
+                                className="text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
+                                style={{
+                                    backgroundColor: activo === label ? 'var(--vp-navy)' : 'transparent',
+                                    color: activo === label ? '#fff' : 'var(--vp-navy)',
+                                    outlineColor: 'var(--color-primary)',
+                                }}>
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    <button onClick={() => setAbierto(v => !v)} aria-expanded={abierto}
+                        className="inline-flex items-center gap-2 text-sm font-semibold px-3.5 py-2 rounded-xl border transition-colors hover:bg-black/[0.03] focus-visible:outline focus-visible:outline-2"
+                        style={{
+                            borderColor: abierto ? 'var(--color-primary)' : 'var(--color-border)',
+                            backgroundColor: 'var(--color-surface)', color: 'var(--color-text)',
+                            outlineColor: 'var(--color-primary)',
+                        }}>
+                        <SlidersHorizontal size={16} style={{ color: 'var(--color-primary)' }} />
+                        Más filtros
+                        {avanzados > 0 && (
+                            <span className="min-w-5 h-5 px-1.5 rounded-full text-xs font-bold inline-flex items-center justify-center text-white"
+                                style={{ backgroundColor: 'var(--color-primary)' }}>
+                                {avanzados}
+                            </span>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {abierto && (
+                <div className="rounded-2xl p-4 mb-3 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 items-end"
+                    style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                    <FieldDate label="Desde" value={fechaDesde} onChange={v => filtrar({ fecha_desde: v })} />
+                    <FieldDate label="Hasta" value={fechaHasta} onChange={v => filtrar({ fecha_hasta: v })} />
+                    {children}
+                    {avanzados > 0 && onLimpiar && (
+                        <button onClick={onLimpiar}
+                            className="inline-flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
+                            style={{ color: 'var(--vp-coral-ink)', backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, transparent)' }}>
+                            <X size={15} /> Quitar filtros
+                        </button>
+                    )}
+                </div>
+            )}
+        </>
+    );
+}
+
+/* ── Banda navy de resumen y sus avisos ───────────────────────────────── */
+export function Banda({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+    return (
+        <section className={`rounded-[22px] overflow-hidden text-white flex flex-col ${className}`}
+            style={{ backgroundColor: 'var(--vp-navy)', boxShadow: '0 14px 30px -18px rgb(15 76 129 / 0.8)' }}>
+            {children}
+        </section>
+    );
+}
+
+export function AvisoBanda({ color, onClick, children }: { color: string; onClick: () => void; children: React.ReactNode }) {
+    return (
+        <button onClick={onClick}
+            className="inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-semibold text-left transition-colors hover:bg-white/15 focus-visible:outline focus-visible:outline-2"
+            style={{ backgroundColor: 'rgb(255 255 255 / 0.1)', border: `1px solid color-mix(in srgb, ${color} 55%, transparent)`, color: '#fff', outlineColor: color }}>
+            <AlertTriangle size={14} className="flex-shrink-0" style={{ color }} />
+            <span>{children}</span>
+            <span className="underline underline-offset-2" style={{ color }}>Ver</span>
+        </button>
+    );
+}
+
+/* ── Filas con barra de participación (medios, vendedores, clientes…) ─── */
+export function Filas({ items, avatar = false, vacio, derecha, enColumnas = false }: {
+    items: { clave: string | number; label: string; valor: number; color: string; nota?: string }[];
+    avatar?: boolean; vacio: string;
+    /** Dos columnas desde md: para paneles a todo el ancho. */
+    enColumnas?: boolean;
+    /** Reemplaza el % junto a la barra (ej. el margen de la categoría). */
+    derecha?: (i: number) => React.ReactNode;
+}) {
+    const total = items.reduce((s, it) => s + Math.max(0, it.valor), 0);
+    if (items.length === 0 || total <= 0) return <Empty text={vacio} />;
+    return (
+        <ul className={enColumnas ? 'grid md:grid-cols-2 gap-x-10 gap-y-3' : 'space-y-3'}>
+            {items.map((it, i) => {
+                const part = pct(Math.max(0, it.valor), total);
+                return (
+                    <li key={it.clave} className="flex items-center gap-3">
+                        {avatar ? (
+                            <span className="h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
+                                style={{ backgroundColor: it.color }}>
+                                {it.label.trim().charAt(0).toUpperCase()}
+                            </span>
+                        ) : (
+                            <span className="h-3 w-3 rounded flex-shrink-0" style={{ backgroundColor: it.color }} />
+                        )}
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-3">
+                                <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }} title={it.label}>{it.label}</p>
+                                <p className="text-[15px] font-bold tabular-nums whitespace-nowrap"
+                                    style={{ color: it.valor < 0 ? 'var(--vp-coral-ink)' : 'var(--color-text)' }}>{fmtS(it.valor)}</p>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                                <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ backgroundColor: 'color-mix(in srgb, var(--color-border) 65%, transparent)' }}>
+                                    <div className="h-full rounded-full" style={{ width: `${Math.max(2, part)}%`, backgroundColor: it.color }} />
+                                </div>
+                                <span className="text-xs font-semibold tabular-nums min-w-9 text-right whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>
+                                    {derecha ? derecha(i) : `${part}%`}
+                                </span>
+                            </div>
+                            {it.nota && <p className="text-[13px] mt-0.5 truncate" style={{ color: 'var(--color-text-muted)' }}>{it.nota}</p>}
+                        </div>
+                    </li>
+                );
+            })}
+        </ul>
+    );
+}
+
+/* ── Barras por periodo (día a día / hora a hora) ─────────────────────── */
+export interface Punto {
+    clave: string;
+    /** Rótulo corto del eje ("5", "14"). */
+    eje: string;
+    /** Rótulo del detalle ("5 set.", "14:00"). */
+    titulo: string;
+    valor: number;
+    /** Complemento del detalle: "en 53 ventas", "sobre S/ 1,200 vendidos". */
+    detalle?: string;
+}
+
+const isoDia = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+/** Todos los días del periodo (hasta 93), para rellenar con 0 los días sin datos. */
+export function diasDelPeriodo(desde: string, hasta: string): { clave: string; eje: string; titulo: string }[] {
+    const out: { clave: string; eje: string; titulo: string }[] = [];
+    const fin = aFecha(hasta);
+    for (let d = aFecha(desde), n = 0; d <= fin && n < 93; d.setDate(d.getDate() + 1), n++) {
+        const k = isoDia(d);
+        out.push({ clave: k, eje: String(d.getDate()), titulo: fechaCorta(k) });
+    }
+    return out;
+}
+
+/**
+ * Barras verticales con el mejor punto destacado y detalle al pasar el mouse.
+ * Soporta negativos (pérdidas): crecen hacia abajo desde la línea de cero, en coral.
+ */
+export function Barras({ puntos, titulo, oscuro = false, alto = 'h-36', vacio, etiquetaMejor = 'Mejor momento' }: {
+    puntos: Punto[]; titulo?: string; oscuro?: boolean; alto?: string; vacio: string; etiquetaMejor?: string;
+}) {
+    const [hover, setHover] = useState<number | null>(null);
+    const tenue = oscuro ? 'rgb(255 255 255 / 0.65)' : 'var(--color-text-muted)';
+    const fuerte = oscuro ? '#fff' : 'var(--color-text)';
+
+    if (!puntos.some(p => p.valor !== 0)) {
+        return (
+            <div className={`flex items-center justify-center rounded-xl text-sm ${alto}`}
+                style={{ color: tenue, border: `1px dashed ${oscuro ? 'rgb(255 255 255 / 0.2)' : 'var(--color-border)'}` }}>
+                {vacio}
+            </div>
+        );
+    }
+
+    const maxPos = Math.max(0, ...puntos.map(p => p.valor));
+    const maxNeg = Math.max(0, ...puntos.map(p => -p.valor));
+    const rango = maxPos + maxNeg;
+    // Fracción del alto que ocupa la parte positiva; la negativa queda debajo del cero.
+    const zonaPos = rango > 0 ? maxPos / rango : 1;
+    const mejorIdx = puntos.reduce((m, p, i) => (p.valor > puntos[m].valor ? i : m), 0);
+    const focoIdx = hover ?? mejorIdx;
+    const foco = puntos[focoIdx];
+    const paso = puntos.length > 16 ? Math.ceil(puntos.length / 8) : 1;
+
+    const color = (i: number, p: Punto) => {
+        if (p.valor < 0) return i === focoIdx ? 'var(--vp-coral)' : 'color-mix(in srgb, var(--vp-coral) 70%, transparent)';
+        if (i === focoIdx) return oscuro ? 'var(--vp-mint)' : 'var(--vp-navy)';
+        if (p.valor === 0) return oscuro ? 'rgb(255 255 255 / 0.1)' : 'color-mix(in srgb, var(--color-border) 70%, transparent)';
+        return oscuro ? 'rgb(255 255 255 / 0.42)' : 'color-mix(in srgb, var(--vp-sky) 45%, var(--color-surface))';
+    };
+
+    return (
+        <div className="min-w-0 flex flex-col h-full">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 mb-3">
+                {titulo && <p className="text-sm font-semibold" style={{ color: fuerte }}>{titulo}</p>}
+                <p className="text-[13px] tabular-nums" style={{ color: tenue }}>
+                    {hover === null ? `${etiquetaMejor}: ` : ''}
+                    <strong className="font-semibold" style={{ color: fuerte }}>{foco.titulo}</strong>
+                    {', '}
+                    <span style={{ color: foco.valor < 0 ? (oscuro ? '#FFB199' : 'var(--vp-coral-ink)') : undefined }}>{fmtS(foco.valor)}</span>
+                    {foco.detalle ? ` ${foco.detalle}` : ''}
+                </p>
+            </div>
+            <div className={`relative flex gap-[3px] ${alto}`} onMouseLeave={() => setHover(null)}>
+                {maxNeg > 0 && (
+                    <div className="absolute inset-x-0 pointer-events-none" aria-hidden
+                        style={{ top: `${zonaPos * 100}%`, borderTop: `1px solid ${oscuro ? 'rgb(255 255 255 / 0.35)' : 'var(--color-border)'}` }} />
+                )}
+                {puntos.map((p, i) => (
+                    <div key={p.clave} className="flex-1 h-full flex flex-col" onMouseEnter={() => setHover(i)}>
+                        <div className="flex items-end" style={{ height: `${zonaPos * 100}%` }}>
+                            {p.valor >= 0 && (
+                                <div className="w-full rounded-t-[4px] transition-colors duration-150"
+                                    style={{ height: `${p.valor > 0 ? Math.max(4, (p.valor / maxPos) * 100) : 3}%`, backgroundColor: color(i, p) }} />
+                            )}
+                        </div>
+                        <div className="flex items-start flex-1">
+                            {p.valor < 0 && (
+                                <div className="w-full rounded-b-[4px] transition-colors duration-150"
+                                    style={{ height: `${Math.max(6, (-p.valor / maxNeg) * 100)}%`, backgroundColor: color(i, p) }} />
+                            )}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <div className="flex gap-[3px] mt-1.5">
+                {puntos.map((p, i) => (
+                    <span key={p.clave} className="flex-1 text-center text-xs tabular-nums"
+                        style={{ color: i === focoIdx ? (oscuro ? '#fff' : 'var(--vp-navy)') : tenue, fontWeight: i === focoIdx ? 700 : 400 }}>
+                        {i % paso === 0 || i === focoIdx ? p.eje : ''}
+                    </span>
+                ))}
+            </div>
         </div>
     );
 }
