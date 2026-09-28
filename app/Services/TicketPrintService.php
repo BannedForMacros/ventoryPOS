@@ -432,11 +432,12 @@ class TicketPrintService
     }
 
     /**
-     * Pie de la representación impresa: leyenda legal SUNAT + número interno de
-     * la venta (referencia para devoluciones) + el pie configurado de siempre.
+     * Pie de la representación impresa: leyenda legal SUNAT + el pie
+     * configurado de siempre.
      *
-     * El hash (valor resumen) ya NO se imprime: viaja dentro del QR, que es lo
-     * que SUNAT pide en la representación impresa, y en papel solo ensuciaba.
+     * Ni el hash ni la "Ref. interna" se imprimen: el hash viaja dentro del QR,
+     * que es lo que SUNAT pide, y el número interno de la venta se busca en el
+     * POS por el número del comprobante. En papel solo ensuciaban.
      */
     private function pieComprobanteElectronico(object $cpe, Venta $venta, string $pieBase): string
     {
@@ -445,7 +446,6 @@ class TicketPrintService
         $lineas = [
             "Representación impresa de la {$nombre}",
             'Consulte en www.sunat.gob.pe',
-            'Ref. interna: ' . $venta->numero,
         ];
 
         return trim(implode("\n", $lineas) . ($pieBase !== '' ? "\n" . $pieBase : ''));
