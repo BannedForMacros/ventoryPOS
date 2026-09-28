@@ -7,6 +7,7 @@ import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Modal from '@/Components/UI/Modal';
 import type { PageProps } from '@/types';
+import Select from '@/Components/UI/Select';
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; }
 
@@ -247,19 +248,15 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
                     </Field>
                     {mostrarSelector && (
                         <Field label="Almacén">
-                            <select value={filters.almacen_id ?? ''} onChange={e => filtrar({ almacen_id: e.target.value || undefined })}
-                                    className="w-full text-sm border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2" style={ringStyle}>
-                                <option value="">Todos</option>
-                                {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                            </select>
+                            <Select ariaLabel="Almacén" value={String(filters.almacen_id ?? '')}
+                                onChange={v => filtrar({ almacen_id: String(v) || undefined })}
+                                options={[{ value: '', label: 'Todos' }, ...almacenes.map(a => ({ value: String(a.id), label: a.nombre }))]} />
                         </Field>
                     )}
                     <Field label="Tipo">
-                        <select value={filters.tipo ?? ''} onChange={e => filtrar({ tipo: e.target.value || undefined })}
-                                className="w-full text-sm border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2" style={ringStyle}>
-                            <option value="">Todos</option>
-                            {tipos.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                        </select>
+                        <Select ariaLabel="Tipo" value={filters.tipo ?? ''}
+                            onChange={v => filtrar({ tipo: String(v) || undefined })}
+                            options={[{ value: '', label: 'Todos' }, ...tipos.map(t => ({ value: String(t.value), label: t.label }))]} />
                     </Field>
                     <Field label="Buscar producto">
                         <div className="relative">

@@ -12,6 +12,7 @@ import {
     type Paginado,
 } from '@/Components/Reportes/ReportUI';
 import type { Categoria, Local, PageProps } from '@/types';
+import Select from '@/Components/UI/Select';
 
 interface ProductoRow extends Record<string, unknown> {
     producto_id:      number;
@@ -180,15 +181,15 @@ export default function ReportesProductos({
                 pagina contra el servidor y despliega el detalle de cada fila. */}
             <ReportCard icon={<Package size={14} />} title="Ranking de productos" badge={fmtInt(productos.total)} sinPadding
                 actions={
-                    <select value={filters.orden ?? ''} onChange={e => filtrar({ orden: e.target.value || undefined })}
-                        className="text-xs rounded-lg px-2.5 py-1.5 border outline-none"
-                        style={fieldStyle}>
-                        <option value="">Más vendidos (S/)</option>
-                        <option value="cantidad">Más vendidos (und)</option>
-                        <option value="ventas">Más ventas distintas</option>
-                        <option value="precio">Mayor precio prom.</option>
-                        <option value="descuento">Más descontados</option>
-                    </select>
+                    <Select size="sm" className="w-48" ariaLabel="Ordenar ranking" value={filters.orden ?? ''}
+                        onChange={v => filtrar({ orden: String(v) || undefined })}
+                        options={[
+                            { value: '', label: 'Más vendidos (S/)' },
+                            { value: 'cantidad', label: 'Más vendidos (und)' },
+                            { value: 'ventas', label: 'Más ventas distintas' },
+                            { value: 'precio', label: 'Mayor precio promedio' },
+                            { value: 'descuento', label: 'Más descontados' },
+                        ]} />
                 }>
                 <div className="p-3">
                     <Table

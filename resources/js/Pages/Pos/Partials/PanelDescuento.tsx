@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Percent, X } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
 import type { DescTipo } from './CarritoItem';
+import Select from '@/Components/UI/Select';
 
 interface Props {
     descuentoTotal:       number;   // descuento aplicado, SIEMPRE en soles
@@ -210,23 +211,11 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
                     )}
                 </div>
 
-                <select
-                    data-descuento-concepto
-                    value={cid ?? ''}
-                    onChange={e => cambiarConcepto(e.target.value ? Number(e.target.value) : null)}
-                    className="flex-1 min-w-0 text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2"
-                    style={{
-                        borderColor: 'var(--color-border)',
-                        backgroundColor: 'var(--color-surface)',
-                        color: 'var(--color-text)',
-                        '--tw-ring-color': 'color-mix(in srgb, var(--color-warning) 40%, transparent)',
-                    } as React.CSSProperties}
-                >
-                    <option value="">Seleccionar concepto</option>
-                    {conceptos.map(c => (
-                        <option key={c.id} value={c.id}>{c.nombre}{c.requiere_aprobacion ? ' (req. aprob.)' : ''}</option>
-                    ))}
-                </select>
+                <Select className="flex-1 min-w-0" ariaLabel="Concepto del descuento" placeholder="Seleccionar concepto"
+                    triggerAttrs={{ 'data-descuento-concepto': '' }}
+                    value={cid != null ? String(cid) : ''}
+                    onChange={v => cambiarConcepto(v ? Number(v) : null)}
+                    options={conceptos.map(c => ({ value: String(c.id), label: `${c.nombre}${c.requiere_aprobacion ? ' (req. aprob.)' : ''}` }))} />
             </div>
 
             {/* Atajos: un toque = ese porcentaje del total. */}

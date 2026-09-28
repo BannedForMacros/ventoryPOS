@@ -19,6 +19,7 @@ import {
     etiquetaTipoSunat, etiquetaComprobante, type EstadoComprobanteResp,
 } from '@/lib/comprobanteElectronico';
 import type { ComprobanteElectronico, Local, PageProps, Venta } from '@/types';
+import Select from '@/Components/UI/Select';
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
@@ -323,11 +324,12 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
 
                 <div>
                     <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Estado</label>
-                    <select value={local.estado ?? ''} onChange={e => set('estado', e.target.value)} className={inputCls} style={inputStyle}>
-                        <option value="">Todos</option>
-                        <option value="completada">Completadas</option>
-                        <option value="anulada">Anuladas</option>
-                    </select>
+                    <Select ariaLabel="Estado" value={local.estado ?? ''} onChange={v => set('estado', String(v))}
+                        options={[
+                            { value: '', label: 'Todos' },
+                            { value: 'completada', label: 'Completadas' },
+                            { value: 'anulada', label: 'Anuladas' },
+                        ]} />
                 </div>
 
                 <div>
@@ -344,20 +346,16 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 {esAdmin && turnos.length > 0 && (
                     <div>
                         <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Turno</label>
-                        <select value={local.turno_id ?? ''} onChange={e => set('turno_id', e.target.value)} className={inputCls} style={inputStyle}>
-                            <option value="">Todos los turnos</option>
-                            {turnos.map(t => <option key={t.id} value={t.id}>{turnoLabel(t)}</option>)}
-                        </select>
+                        <Select ariaLabel="Turno" value={String(local.turno_id ?? '')} onChange={v => set('turno_id', String(v))}
+                            options={[{ value: '', label: 'Todos los turnos' }, ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) }))]} />
                     </div>
                 )}
 
                 {esAdmin && locales.length > 1 && (
                     <div>
                         <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Local</label>
-                        <select value={local.local_id ?? ''} onChange={e => set('local_id', e.target.value)} className={inputCls} style={inputStyle}>
-                            <option value="">Todos los locales</option>
-                            {locales.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                        </select>
+                        <Select ariaLabel="Local" value={String(local.local_id ?? '')} onChange={v => set('local_id', String(v))}
+                            options={[{ value: '', label: 'Todos los locales' }, ...locales.map(l => ({ value: String(l.id), label: l.nombre }))]} />
                     </div>
                 )}
             </FiltrosCard>

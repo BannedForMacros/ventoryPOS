@@ -13,6 +13,7 @@ import Badge from '@/Components/UI/Badge';
 import CalendarioSemana from '@/Components/Agenda/CalendarioSemana';
 import type { PageProps } from '@/types';
 import { hoyLocal, fechaLocal } from '@/lib/fechas';
+import Select from '@/Components/UI/Select';
 
 interface Cita {
     id: number;
@@ -260,25 +261,19 @@ export default function AgendaIndex({
                 {profesionales.length > 1 && (
                     <div>
                         <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Profesional</label>
-                        <select value={localFilters.profesional_id ?? ''}
-                            onChange={e => setLocalFilters(f => ({ ...f, profesional_id: e.target.value || null }))}
-                            className="block mt-0.5 rounded-md border px-2 py-1 text-sm"
-                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}>
-                            <option value="">Todos</option>
-                            {profesionales.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
+                        <Select className="mt-0.5 min-w-40" size="sm" ariaLabel="Profesional"
+                            value={String(localFilters.profesional_id ?? '')}
+                            onChange={v => setLocalFilters(f => ({ ...f, profesional_id: String(v) || null }))}
+                            options={[{ value: '', label: 'Todos' }, ...profesionales.map(p => ({ value: String(p.id), label: p.name }))]} />
                     </div>
                 )}
                 {locales.length > 1 && (
                     <div>
                         <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Local</label>
-                        <select value={localFilters.local_id ?? ''}
-                            onChange={e => setLocalFilters(f => ({ ...f, local_id: e.target.value ? Number(e.target.value) : null }))}
-                            className="block mt-0.5 rounded-md border px-2 py-1 text-sm"
-                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}>
-                            <option value="">Todos</option>
-                            {locales.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                        </select>
+                        <Select className="mt-0.5 min-w-40" size="sm" ariaLabel="Local"
+                            value={String(localFilters.local_id ?? '')}
+                            onChange={v => setLocalFilters(f => ({ ...f, local_id: v ? Number(v) : null }))}
+                            options={[{ value: '', label: 'Todos' }, ...locales.map(l => ({ value: String(l.id), label: l.nombre }))]} />
                     </div>
                 )}
                 <Button size="sm" onClick={aplicarFiltros}>Aplicar</Button>

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Trash2, Minus, Plus, Percent, X, AlertTriangle, Info, History } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
+import Select from '@/Components/UI/Select';
 
 /** Historial de precios de venta de un producto a un cliente concreto. */
 export interface HistorialPrecioCliente {
@@ -736,22 +737,10 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>%</span>
                             )}
                         </div>
-                        <select
-                            value={conceptoId ?? ''}
-                            onChange={e => cambiarConcepto(e.target.value ? Number(e.target.value) : null)}
-                            className="flex-1 min-w-[100px] text-xs border rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-1"
-                            style={{
-                                borderColor: 'var(--color-border)',
-                                backgroundColor: 'var(--color-bg)',
-                                color: 'var(--color-text)',
-                                '--tw-ring-color': 'var(--color-warning)',
-                            } as React.CSSProperties}
-                        >
-                            <option value="">Concepto...</option>
-                            {conceptos.map(c => (
-                                <option key={c.id} value={c.id}>{c.nombre}</option>
-                            ))}
-                        </select>
+                        <Select size="sm" className="flex-1 min-w-[100px]" ariaLabel="Concepto del descuento" placeholder="Concepto..."
+                            value={conceptoId != null ? String(conceptoId) : ''}
+                            onChange={v => cambiarConcepto(v ? Number(v) : null)}
+                            options={conceptos.map(c => ({ value: String(c.id), label: c.nombre }))} />
                     </div>
 
                     <div className="flex items-center gap-1">

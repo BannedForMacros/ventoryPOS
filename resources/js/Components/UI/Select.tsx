@@ -19,6 +19,14 @@ interface SelectProps {
     placeholder?: string;
     disabled?: boolean;
     className?: string;
+    /** 'sm' para controles compactos (carrito, barras de herramientas). */
+    size?: 'sm' | 'md';
+    /** 'oscuro' para usarlo sobre fondos oscuros (cabecera del POS). */
+    variant?: 'default' | 'oscuro';
+    /** Nombre accesible cuando no hay `label` visible. */
+    ariaLabel?: string;
+    /** Atributos extra del botón (ej. data-* que usan los atajos para enfocarlo). */
+    triggerAttrs?: Record<string, string>;
 }
 
 export default function Select({
@@ -32,7 +40,12 @@ export default function Select({
     placeholder = 'Seleccionar...',
     disabled = false,
     className = '',
+    size = 'md',
+    variant = 'default',
+    ariaLabel,
+    triggerAttrs,
 }: SelectProps) {
+    const oscuro = variant === 'oscuro';
     const [open, setOpen] = useState(false);
     const [focused, setFocused] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -111,25 +124,33 @@ export default function Select({
                     role="combobox"
                     aria-expanded={open}
                     aria-haspopup="listbox"
+                    aria-label={ariaLabel}
+                    {...triggerAttrs}
                     disabled={disabled}
                     onFocus={() => setFocused(true)}
                     onBlur={() => { if (!open) setFocused(false); }}
                     onKeyDown={handleKeyDown}
                     onClick={() => { if (!disabled) setOpen(o => !o); }}
-                    className="w-full flex items-center justify-between rounded-xl border px-3 py-2 text-sm outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{
+                    className={`w-full flex items-center justify-between gap-2 border outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
+                        size === 'sm' ? 'rounded-lg px-2 py-1.5 text-xs' : 'rounded-xl px-3 py-2 text-sm'}`}
+                    style={oscuro ? {
+                        borderColor: 'transparent',
+                        backgroundColor: 'rgb(255 255 255 / 0.15)',
+                        color: '#fff',
+                        boxShadow: focused || open ? '0 0 0 2px rgb(255 255 255 / 0.3)' : 'none',
+                    } : {
                         borderColor,
                         backgroundColor: 'var(--color-surface)',
                         color: selected ? 'var(--color-text)' : 'var(--color-text-muted)',
                         boxShadow: focused || open ? `0 0 0 3px ${ringColor}` : 'none',
                     }}
                 >
-                    <span className="truncate">{selected?.label ?? placeholder}</span>
+                    <span className="truncate text-left">{selected?.label ?? placeholder}</span>
                     <ChevronDown
-                        size={15}
+                        size={size === 'sm' ? 13 : 15}
                         className="flex-shrink-0 transition-transform duration-200"
                         style={{
-                            color: 'var(--color-text-muted)',
+                            color: oscuro ? 'rgb(255 255 255 / 0.8)' : 'var(--color-text-muted)',
                             transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
                         }}
                     />
@@ -148,6 +169,10 @@ export default function Select({
                         className="overflow-y-auto rounded-xl border py-1"
                         style={{
                             ...pos.style,
+                            // Nunca más angosto que sus opciones (triggers compactos como la moneda).
+                            minWidth: Math.max(Number(pos.style.width) || 0, 160),
+                            width: 'max-content',
+                            maxWidth: 'min(360px, calc(100vw - 16px))',
                             borderColor: 'var(--color-border)',
                             backgroundColor: 'var(--color-surface)',
                             boxShadow: '0 8px 24px rgb(0 0 0 / 0.10)',
@@ -171,7 +196,7 @@ export default function Select({
                                         role="option"
                                         aria-selected={isSelected}
                                         onClick={() => handleSelect(opt)}
-                                        className="flex items-center justify-between px-3 py-2.5 text-sm cursor-pointer transition-colors duration-100"
+                                        className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm cursor-pointer transition-colors duration-100"
                                         style={{
                                             color: isSelected ? 'var(--color-primary)' : 'var(--color-text)',
                                             backgroundColor: isSelected
@@ -188,7 +213,7 @@ export default function Select({
                                                 e.currentTarget.style.backgroundColor = 'transparent';
                                         }}
                                     >
-                                        <span>{opt.label}</span>
+                                        <span className="truncate" title={opt.label}>{opt.label}</span>
                                         {isSelected && (
                                             <Check size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
                                         )}

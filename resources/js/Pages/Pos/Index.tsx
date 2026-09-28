@@ -20,6 +20,7 @@ import ModalClienteRapido from './Partials/ModalClienteRapido';
 import ModalCrearCliente from './Partials/ModalCrearCliente';
 import ModalConfirmacionVenta from './Partials/ModalConfirmacionVenta';
 import ModalSelectorPresentacion from './Partials/ModalSelectorPresentacion';
+import Select from '@/Components/UI/Select';
 import {
     validarComprobante, etiquetaComprobante, metaEstado, avisoModoEmision,
     UMBRAL_BOLETA_IDENTIFICADA, type BloqueoComprobante, type TipoComprobantePos,
@@ -1573,14 +1574,10 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                     {/* Moneda (multimoneda). USD requiere TC del día disponible. */}
                     {(monedas ?? ['PEN']).includes('USD') && tipoCambioHoy ? (
                         <div className="hidden sm:flex items-center gap-1.5" title={`Tipo de cambio del día: S/ ${Number(tipoCambioHoy).toFixed(3)} por US$ 1`}>
-                            <select
+                            <Select variant="oscuro" size="sm" ariaLabel="Moneda" className="w-32"
                                 value={moneda}
-                                onChange={e => setMoneda(e.target.value as 'PEN' | 'USD')}
-                                className="text-xs bg-white/15 border-0 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-white/30"
-                            >
-                                <option value="PEN" className="text-gray-900">S/ Soles</option>
-                                <option value="USD" className="text-gray-900">US$ Dólares</option>
-                            </select>
+                                onChange={v => setMoneda(v as 'PEN' | 'USD')}
+                                options={[{ value: 'PEN', label: 'S/ Soles' }, { value: 'USD', label: 'US$ Dólares' }]} />
                             {moneda === 'USD' && (
                                 <span className="text-[11px] font-medium text-white/90 whitespace-nowrap">TC {Number(tipoCambioHoy).toFixed(3)}</span>
                             )}
