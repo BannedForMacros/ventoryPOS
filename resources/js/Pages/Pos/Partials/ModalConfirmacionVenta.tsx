@@ -319,6 +319,11 @@ export default function ModalConfirmacionVenta({
                                 <span className="font-bold" style={{ color: 'var(--color-warning)' }}>{money(anticipoMonto)}</span>
                             </div>
                         )}
+                        {pagos.length === 0 && anticipoMonto <= 0.009 && total <= 0.009 && (
+                            <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
+                                Sin cobro: el descuento cubre toda la venta.
+                            </p>
+                        )}
                         {pagos.map(p => {
                             const metodo = metodosPago.find(m => m.id === p.metodo_pago_id);
                             return (

@@ -22,6 +22,22 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
     const [abierto, setAbierto] = useState(descuentoTotal > 0);
     const [focused, setFocused] = useState(false);
 
+    // Tope: el descuento global nunca supera el total de la venta (ni 100 %).
+    const [avisoTope, setAvisoTope] = useState<string | null>(null);
+    const maxDe = (t: DescTipo) => t === 'porcentaje' ? 100 : Math.round(base * 100) / 100;
+    /** Valor tecleado dentro del tope; si se pasó, avisa y devuelve el máximo. */
+    function topar(v: number, t: DescTipo): number {
+        const max = maxDe(t);
+        if (v > max) {
+            setAvisoTope(t === 'porcentaje'
+                ? 'El descuento no puede superar el 100 %.'
+                : `El descuento no puede superar el total de la venta (S/ ${max.toFixed(2)}).`);
+            return max;
+        }
+        setAvisoTope(null);
+        return v;
+    }
+
     // Convierte el valor tecleado (según el tipo) a soles.
     function solesDe(v: number, t: DescTipo): number {
         if (!v || v <= 0) return 0;
@@ -50,6 +66,12 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
                 const soles = solesDe(v, 'porcentaje');
                 if (Math.abs(soles - descuentoTotal) > 0.005) onChange(soles, cid);
             }
+        } else if (prevBase.current !== base && tipo === 'monto' && descuentoTotal > base + 0.005) {
+            // Quitaron productos y el descuento en soles quedó mayor que el total.
+            const max = Math.max(0, Math.round(base * 100) / 100);
+            setVal(max ? String(max) : '');
+            setAvisoTope(`El descuento se ajustó al nuevo total de la venta (S/ ${max.toFixed(2)}).`);
+            onChange(max, max > 0 ? cid : null);
         }
         prevBase.current = base;
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,13 +83,20 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
     }
 
     function onCambioVal(v: string) {
-        setVal(v);
-        emitir(v, tipo, cid);
+        const n = parseFloat(v) || 0;
+        const topado = topar(n, tipo);
+        const texto = topado !== n ? String(topado) : v;
+        setVal(texto);
+        emitir(texto, tipo, cid);
     }
 
     function cambiarTipo(t: DescTipo) {
         setTipo(t);
-        emitir(val, t, cid);
+        const n = parseFloat(val) || 0;
+        const topado = topar(n, t);
+        const texto = topado !== n ? String(topado) : val;
+        if (texto !== val) setVal(texto);
+        emitir(texto, t, cid);
     }
 
     function cambiarConcepto(conceptoId: number | null) {
@@ -79,6 +108,7 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
         setVal('');
         setCid(null);
         setTipo('monto');
+        setAvisoTope(null);
         onChange(0, null);
         setAbierto(false);
     }
@@ -86,23 +116,20 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
     if (!abierto && descuentoTotal === 0) {
         return (
             <button
+                type="button"
                 onClick={() => setAbierto(true)}
-                className="flex items-center gap-1.5 text-xs font-medium py-2 px-3 rounded-lg transition-colors hover:opacity-80 w-full justify-center"
-                style={{
-                    backgroundColor: 'color-mix(in srgb, var(--color-warning) 10%, transparent)',
-                    color: 'var(--color-warning)',
-                    border: '1px dashed color-mix(in srgb, var(--color-warning) 40%, transparent)',
-                }}
+                className="self-start flex items-center gap-1.5 h-7 px-1 text-xs font-semibold rounded-md transition-opacity hover:opacity-75"
+                style={{ color: 'var(--color-warning)' }}
             >
                 <Percent size={13} />
-                Agregar descuento global
+                Aplicar descuento a toda la venta
             </button>
         );
     }
 
     return (
         <div
-            className="rounded-lg p-3 space-y-2"
+            className="w-full rounded-lg p-3 space-y-2"
             style={{
                 backgroundColor: 'color-mix(in srgb, var(--color-warning) 5%, var(--color-surface))',
                 border: '1px solid color-mix(in srgb, var(--color-warning) 25%, transparent)',
@@ -150,7 +177,7 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
                         type="number"
                         min="0"
                         step={tipo === 'porcentaje' ? '0.1' : '0.01'}
-                        max={tipo === 'porcentaje' ? '100' : undefined}
+                        max={maxDe(tipo)}
                         value={val}
                         onChange={e => onCambioVal(e.target.value)}
                         onFocus={e => { setFocused(true); e.target.select(); }}
@@ -186,6 +213,12 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
                     ))}
                 </select>
             </div>
+
+            {avisoTope && (
+                <p className="text-[11px] font-semibold" style={{ color: 'var(--color-danger)' }} role="alert">
+                    {avisoTope}
+                </p>
+            )}
 
             {descuentoTotal > 0 && (
                 <div className="flex items-center gap-1.5 text-xs flex-wrap" style={{ color: 'var(--color-text-muted)' }}>

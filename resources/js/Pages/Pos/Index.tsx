@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench,
+    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
@@ -13,6 +13,8 @@ import { celebrarVenta } from '@/lib/celebrarVenta';
 import Button from '@/Components/UI/Button';
 import CarritoItem, { LineaCarrito, HistorialPrecioCliente, DescModo, DescTipo } from './Partials/CarritoItem';
 import PanelPago, { LineaPago, faltanCuentas } from './Partials/PanelPago';
+import SelectorComprobante from './Partials/SelectorComprobante';
+import type { LucideIcon } from 'lucide-react';
 import PanelDescuento from './Partials/PanelDescuento';
 import ModalClienteRapido from './Partials/ModalClienteRapido';
 import ModalCrearCliente from './Partials/ModalCrearCliente';
@@ -148,6 +150,9 @@ interface Props extends PageProps {
     cotizacionPrellenada?: CotizacionPrellenada | null;
     ventaEnEdicion?:    VentaEnEdicion | null;
     turnoBackdate?:     TurnoBackdate | null;
+    // Casillas que la empresa puede apagar en Configuración → Empresa.
+    permiteCredito?:           boolean;
+    permitePendienteEntrega?:  boolean;
     // A14: el backend valida que el usuario pueda operar el POS al CARGAR la
     // pantalla (admin sin local_id en modo central_y_local, almacén
     // desactivado, etc.). Si puedeVender=false bloqueamos el botón cobrar
@@ -325,7 +330,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito }: Props) {
+export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true }: Props) {
     // Configuración de la empresa (configurable por tenant).
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
@@ -726,8 +731,12 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // Buscamos el método con tipo.slug === 'efectivo' como conveniencia inicial.
     // El flag `admite_vuelto` se lee del método (BD).
     const efectivo = metodosPago.find(m => m.tipo?.slug === 'efectivo');
+    // Venta sin cobro: el descuento dejó el total en 0. No se registra ningún
+    // pago (el servidor exige S/ 0.01 mínimo por pago, y no hubo dinero).
+    const sinCobro = carrito.length > 0 && total <= 0.009;
     useEffect(() => {
         if (esCredito) return; // en crédito el pago inicial es opcional y manual
+        if (sinCobro) return;
         // Si el anticipo cubre el total, no agregar efectivo automático.
         if (anticipoSeleccionado && montoAnticipoUsado >= total - 0.009) return;
         if (carrito.length > 0 && pagos.length === 0 && efectivo) {
@@ -741,14 +750,22 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 es_efectivo:           true,
             }]);
         }
-    }, [carrito.length]);
+        // `sinCobro`: al quitar un descuento del 100 % vuelve el efectivo automático.
+        // `esCredito`: al volver de crédito a contado, también.
+    }, [carrito.length, sinCobro, esCredito]);
 
-    // Auto-actualizar monto del pago si es el único y admite vuelto (efectivo
-    // por defecto). Si no admite vuelto el monto debe ser exacto, lo dejamos.
+    // Pago único: su monto sigue al total cuando cambia el carrito. Vale para
+    // efectivo y también para Yape/tarjeta (antes solo efectivo, y con Yape
+    // agregar un producto dejaba "Falta S/ …" hasta corregirlo a mano).
     // Si hay anticipo seleccionado, ajustar al resto por pagar (no al total).
     useEffect(() => {
         if (esCredito) return; // no forzar el monto al total: puede ser pago parcial
-        if (pagos.length === 1 && pagos[0].admite_vuelto && total > 0) {
+        // Descuento del 100 %: no hay nada que cobrar → sin métodos de pago.
+        if (sinCobro) {
+            if (pagos.length > 0) setPagos([]);
+            return;
+        }
+        if (pagos.length === 1 && carrito.length > 0) {
             const resto = Math.max(0, total - montoAnticipoUsado);
             setPagos(prev => [{ ...prev[0], monto: parseFloat(resto.toFixed(2)) }]);
         }
@@ -1055,62 +1072,67 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // Badge del comprobante recién emitido (lo trae el flash de la venta anterior).
     const comprobanteFlash = flash?.comprobante ?? null;
 
-    function confirmarVenta() {
-        // V10 — avisar ANTES de cobrar, no después de emitir mal.
+    /**
+     * Qué impide cobrar AHORA, en palabras de la cajera, y cómo llevarla a
+     * resolverlo. Lo usa el botón "Cobrar" (que muestra el texto en vez de
+     * dejar pulsar y recién ahí soltar un error) y la propia confirmación.
+     * Devuelve null si todo está listo.
+     */
+    function problemaCobro(): { texto: string; resolver?: () => void } | null {
+        const enfocar = (selector: string) => () => {
+            const el = document.querySelector<HTMLElement>(selector);
+            el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            el?.focus();
+        };
+        const irACliente = () => setModalCliente(true);
+
+        if (carrito.length === 0) return { texto: 'Agrega productos' };
         if (bloqueoComprobante) {
-            toast.error(bloqueoComprobante.motivo);
-            if (bloqueoComprobante.requiereCliente) setModalCliente(true);
-            return;
+            return {
+                texto: bloqueoComprobante.requiereCliente ? 'Elige el cliente del comprobante' : bloqueoComprobante.motivo,
+                resolver: bloqueoComprobante.requiereCliente ? irACliente : undefined,
+            };
         }
-        if (carrito.length === 0) { toast.error('El carrito está vacío.'); return; }
-        if (hayInactivos) {
-            toast.error(`Hay ${itemsInactivos.length} ítem(s) inactivo(s). Elimínalos del carrito antes de cobrar.`);
-            return;
-        }
-        // Defensa adicional al piso de costo (el input ya lo valida al editar,
-        // y el backend lo vuelve a validar al registrar la venta).
-        const bajoCosto = carrito.filter(i => (i.costo_minimo ?? 0) > 0 && i.precio_unitario < i.costo_minimo - 0.009);
-        if (bajoCosto.length > 0) {
-            toast.error(`Hay precios por debajo del costo: ${bajoCosto.map(i => i.producto_nombre).join(', ')}. Corrígelos antes de cobrar.`);
-            return;
-        }
-        const totalPagado = totalPagadoConAnticipo;
+        if (hayInactivos) return { texto: `Quita ${itemsInactivos.length} ítem(s) inactivo(s)` };
+        const bajoCosto = carrito.find(i => (i.costo_minimo ?? 0) > 0 && i.precio_unitario < i.costo_minimo - 0.009);
+        if (bajoCosto) return { texto: `Precio bajo el costo: ${bajoCosto.producto_nombre}` };
 
         if (entregaPendiente) {
-            if (esCredito && !creditoYaPagado) {
-                const msg = (ventaEnEdicion?.es_credito && (ventaEnEdicion?.saldo_pendiente ?? 0) > 0.0001)
-                    ? 'No puedes marcar pendiente por entregar: la venta a crédito aún tiene saldo pendiente. Salda el crédito primero.'
-                    : 'No puedes combinar "Pendiente por entregar" con venta a crédito: el pendiente exige que la venta esté pagada.';
-                toast.error(msg);
-                return;
-            }
-            if (esClienteGeneralSel) {
-                toast.error('Marcar mercadería pendiente por entregar requiere un cliente identificado.');
-                return;
-            }
-            if (totalPendientes <= 0.00009) {
-                toast.error('Indica cuánto queda pendiente por entregar en al menos un producto (o desmarca la opción).');
-                return;
+            if (esClienteGeneralSel) return { texto: 'Elige el cliente que recogerá lo pendiente', resolver: irACliente };
+            if (totalPendientes <= 0.00009) return { texto: 'Indica cuánto se lleva ahora', resolver: enfocar('[data-pendiente-input]') };
+        }
+        if (despachoAlmacen && esClienteGeneralSel) return { texto: 'Elige el cliente del despacho', resolver: irACliente };
+
+        const totalPagado = totalPagadoConAnticipo;
+        if (esCredito) {
+            if (esClienteGeneralSel) return { texto: 'Elige el cliente del crédito', resolver: irACliente };
+            if (totalPagado > total + 0.009) return { texto: 'El pago inicial supera el total', resolver: enfocar('[data-pago-monto]') };
+        } else if (!sinCobro) {
+            if (pagos.length === 0 && !anticipoSeleccionado) return { texto: 'Elige cómo paga', resolver: enfocar('[data-metodo-pago]') };
+            if (totalPagado < total - 0.009) {
+                return { texto: `Falta cubrir S/ ${(total - totalPagado).toFixed(2)}`, resolver: enfocar('[data-pago-monto]') };
             }
         }
 
-        if (esCredito) {
-            if (esClienteGeneralSel) {
-                toast.error('Una venta a crédito requiere seleccionar un cliente identificado.');
-                return;
-            }
-            if (totalPagado > total + 0.009) {
-                toast.error('En una venta a crédito el pago inicial no puede exceder el total.');
-                return;
-            }
-        } else {
-            if (pagos.length === 0 && !anticipoSeleccionado) { toast.error('Agrega al menos un método de pago o selecciona un anticipo.'); return; }
-            if (totalPagado < total - 0.009) { toast.error(`Faltan S/ ${(total - totalPagado).toFixed(2)} por cubrir.`); return; }
+        const enCero = pagos.find(p => p.monto <= 0.009);
+        if (enCero && pagos.length > 1) {
+            const m = metodosPago.find(x => x.id === enCero.metodo_pago_id);
+            return { texto: `Escribe el monto de ${m?.nombre ?? 'un pago'} o quítalo`, resolver: enfocar(`[data-pago-monto="${enCero.key}"]`) };
         }
-        // Cuenta obligatoria: si un método tiene 2+ cuentas hay que elegir cuál
-        // (con 1 se autoselecciona). Aplica también al pago inicial de crédito.
-        if (faltanCuentas(pagos, metodosPago)) {
-            toast.error('Selecciona la cuenta de cada pago (obligatorio cuando el método tiene más de una cuenta).');
+        const sinCuenta = pagos.find(p => faltanCuentas([p], metodosPago));
+        if (sinCuenta) {
+            const m = metodosPago.find(x => x.id === sinCuenta.metodo_pago_id);
+            return { texto: `Elige la cuenta de ${m?.nombre ?? 'este pago'}`, resolver: enfocar(`[data-pago-cuenta="${sinCuenta.key}"]`) };
+        }
+        return null;
+    }
+
+    function confirmarVenta() {
+        const problema = problemaCobro();
+        if (problema) {
+            // El botón ya mostraba qué falta: pulsarlo lleva a resolverlo.
+            if (problema.resolver) problema.resolver();
+            else toast.error(problema.texto);
             return;
         }
         setModalConfirm(true);
@@ -1235,36 +1257,28 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             return;
         }
         setEsCredito(v);
-        if (v) setEntregaPendiente(false);
+        // Crédito: el pago inicial es opcional → empieza vacío (antes quedaba el
+        // efectivo por el total y la "venta a crédito" en realidad era contado).
+        if (v) setPagos([]);
     }
+    // Entrega: "se lleva todo", "por entregar" o "despacho" (excluyentes entre
+    // sí, pero SÍ combinables con crédito: la mercadería pendiente de una venta
+    // a crédito se controla igual y solo lo pagado cuenta como saldo a favor).
     function activarPendiente(v: boolean) {
-        if (v && esCredito && !creditoYaPagado) {
-            const msg = saldoPendienteEdicion > 0
-                ? 'No puedes marcar pendiente por entregar: la venta a crédito aún tiene saldo pendiente. Salda el crédito primero.'
-                : 'No puedes combinar "Pendiente por entregar" con venta a crédito.';
-            toast.error(msg);
-            return;
-        }
         setEntregaPendiente(v);
         if (v) setDespachoAlmacen(false);
-        // Solo desmarcamos crédito si la venta NO estaba a crédito originalmente.
-        // Una venta a crédito ya pagada puede mantener el flag por trazabilidad.
-        if (v && !creditoBloqueadoEnEdicion) setEsCredito(false);
     }
     function activarDespachoAlmacen(v: boolean) {
-        if (v && esCredito && !creditoYaPagado) {
-            const msg = saldoPendienteEdicion > 0
-                ? 'No puedes marcar despacho en almacén: la venta a crédito aún tiene saldo pendiente. Salda el crédito primero.'
-                : 'No puedes combinar "Despacho en almacén" con venta a crédito.';
-            toast.error(msg);
-            return;
-        }
         setDespachoAlmacen(v);
-        if (v) {
-            setEntregaPendiente(false);
-            if (!creditoBloqueadoEnEdicion) setEsCredito(false);
-        }
+        if (v) setEntregaPendiente(false);
     }
+    type Entrega = 'completa' | 'pendiente' | 'despacho';
+    const entrega: Entrega = despachoAlmacen ? 'despacho' : entregaPendiente ? 'pendiente' : 'completa';
+    function elegirEntrega(e: Entrega) {
+        activarPendiente(e === 'pendiente');
+        activarDespachoAlmacen(e === 'despacho');
+    }
+
     function setPendienteLinea(key: string, valor: number) {
         setPendientes(prev => ({ ...prev, [key]: valor }));
     }
@@ -1272,7 +1286,11 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const propsPendiente = {
         // Editable también en edición de venta, SALVO que ya haya entregas
         // registradas del pendiente (el backend bloquea toda la edición ahí).
-        permitirPendiente:     !ventaEnEdicion?.pendiente_bloqueado,
+        // Oculto si la empresa lo apagó, salvo al editar una venta que ya lo usa.
+        permitirPendiente:     (permitePendienteEntrega || !!ventaEnEdicion?.entrega_pendiente)
+                               && !ventaEnEdicion?.pendiente_bloqueado,
+        // Idem crédito: una venta que nació al crédito sigue mostrando la casilla.
+        permitirCredito:       permiteCredito || !!ventaEnEdicion?.es_credito,
         entregaPendiente,
         despachoAlmacen,
         fechaEntrega,
@@ -1282,6 +1300,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         onSetDespachoAlmacen:  activarDespachoAlmacen,
         onSetFechaEntrega:     setFechaEntrega,
         onSetPendiente:        setPendienteLinea,
+        entrega,
+        onElegirEntrega:       elegirEntrega,
         // Bandeja de despacho en almacén (solo si la empresa lo activó).
         usaDespachoAlmacen:    empresaAuth?.usa_despacho_almacen ?? false,
         // Autofoco del precio en líneas recién agregadas con precio base 0.
@@ -1465,25 +1485,12 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 <div className="flex items-center gap-2 flex-shrink-0">
                     {/* Comprobante (solo desktop/tablet) */}
                     <div className="hidden sm:flex items-center gap-1.5">
-                        <Receipt size={14} className="opacity-70" />
-                        <select
-                            value={tipoComprobante}
-                            onChange={e => setTipoComprobante(e.target.value as TipoComprobante)}
-                            className="text-xs bg-white/15 border-0 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-white/30"
-                        >
-                            <option value="ticket" className="text-gray-900">Sin comprobante</option>
-                            {feActiva ? (
-                                <>
-                                    <option value="boleta" className="text-gray-900">Boleta</option>
-                                    <option value="factura" className="text-gray-900">Factura</option>
-                                </>
-                            ) : (
-                                <>
-                                    <option value="boleta_externa" className="text-gray-900">Boleta electrónica externa</option>
-                                    <option value="factura_externa" className="text-gray-900">Factura electrónica externa</option>
-                                </>
-                            )}
-                        </select>
+                        <SelectorComprobante
+                            variante="primario"
+                            valor={tipoComprobante}
+                            feActiva={feActiva}
+                            onChange={v => setTipoComprobante(v as TipoComprobante)}
+                        />
                         {esComprobanteExterno && (
                             <input
                                 type="text"
@@ -1949,26 +1956,11 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                     {/* Comprobante en móvil (debajo de productos) */}
                     <div className="sm:hidden px-3 py-2 flex-shrink-0" style={{ borderTop: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
                         <div className="flex items-center gap-2">
-                            <Receipt size={14} style={{ color: 'var(--color-text-muted)' }} />
-                            <select
-                                value={tipoComprobante}
-                                onChange={e => setTipoComprobante(e.target.value as TipoComprobante)}
-                                className="flex-1 text-xs border rounded-lg px-2 py-1.5"
-                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
-                            >
-                                <option value="ticket">Sin comprobante</option>
-                                {feActiva ? (
-                                    <>
-                                        <option value="boleta">Boleta</option>
-                                        <option value="factura">Factura</option>
-                                    </>
-                                ) : (
-                                    <>
-                                        <option value="boleta_externa">Boleta electrónica externa</option>
-                                        <option value="factura_externa">Factura electrónica externa</option>
-                                    </>
-                                )}
-                            </select>
+                            <SelectorComprobante
+                                valor={tipoComprobante}
+                                feActiva={feActiva}
+                                onChange={v => setTipoComprobante(v as TipoComprobante)}
+                            />
                             {/* Misma pista que en la barra superior (misma lógica, sin duplicar). */}
                             <PistaComprobante
                                 visible={emiteCPE}
@@ -2033,6 +2025,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                         onSetDescuento={(d, cid) => { setDescuentoTotal(d); setDescuentoConceptoId(cid); }}
                         onSetPagos={setPagos}
                         onConfirmar={confirmarVenta}
+                        problemaCobro={carrito.length > 0 ? problemaCobro()?.texto ?? null : null}
                         puedeVender={puedeVender}
                         razonNoVender={razonNoVender}
                         bloqueoComprobante={bloqueoComprobante}
@@ -2109,6 +2102,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                                 onSetDescuento={(d, cid) => { setDescuentoTotal(d); setDescuentoConceptoId(cid); }}
                                 onSetPagos={setPagos}
                                 onConfirmar={confirmarVenta}
+                                problemaCobro={carrito.length > 0 ? problemaCobro()?.texto ?? null : null}
                                 puedeVender={puedeVender}
                                 razonNoVender={razonNoVender}
                                 bloqueoComprobante={bloqueoComprobante}
@@ -2322,6 +2316,8 @@ interface CarritoPanelProps {
     onSetDescuento: (d: number, cid: number | null) => void;
     onSetPagos: (pagos: LineaPago[]) => void;
     onConfirmar: () => void;
+    // Qué falta para poder cobrar (null = listo). Se muestra EN el botón.
+    problemaCobro: string | null;
     // A14: bandera de bloqueo del POS (admin sin local, almacén desactivado, etc.)
     puedeVender: boolean;
     razonNoVender: string | null;
@@ -2334,6 +2330,7 @@ interface CarritoPanelProps {
     onSetEsCredito: (v: boolean) => void;
     onSetFechaVencimiento: (v: string) => void;
     // Pendiente por entregar (pagado pero se lleva solo parte)
+    permitirCredito: boolean;
     permitirPendiente: boolean;
     entregaPendiente: boolean;
     despachoAlmacen: boolean;
@@ -2344,6 +2341,8 @@ interface CarritoPanelProps {
     onSetDespachoAlmacen: (v: boolean) => void;
     onSetFechaEntrega: (v: string) => void;
     onSetPendiente: (key: string, v: number) => void;
+    entrega: 'completa' | 'pendiente' | 'despacho';
+    onElegirEntrega: (e: 'completa' | 'pendiente' | 'despacho') => void;
     usaDespachoAlmacen: boolean;
     // Autofoco del precio en líneas recién agregadas con precio base 0.
     nuevaLineaPrecioKey: string | null;
@@ -2359,11 +2358,12 @@ function CarritoPanel({
     descuentoTotal, descuentoConceptoId,
     subtotal, igv, total, baseGravada, baseExonerada, tasaIgv, inactivosCount,
     onCambiarCantidad, onEstablecerCantidad, onCambiarPrecio, onAplicarDescuentoItem, onEliminarItem,
-    onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar,
+    onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar, problemaCobro,
     puedeVender, razonNoVender, bloqueoComprobante,
     esCredito, fechaVencimiento, onSetEsCredito, onSetFechaVencimiento,
-    permitirPendiente, entregaPendiente, despachoAlmacen, fechaEntrega, pendienteDe, totalPendientes,
+    permitirCredito, permitirPendiente, entregaPendiente, despachoAlmacen, fechaEntrega, pendienteDe, totalPendientes,
     onSetEntregaPendiente, onSetDespachoAlmacen, onSetFechaEntrega, onSetPendiente,
+    entrega, onElegirEntrega,
     usaDespachoAlmacen,
     nuevaLineaPrecioKey, onAutoFocusPrecio,
     anticipoSeleccionado, montoAnticipoUsado,
@@ -2511,7 +2511,8 @@ function CarritoPanel({
 
                 {carrito.length > 0 && (
                     <>
-                        {/* Descuento global */}
+                        {/* Descuento a toda la venta: acción propia y discreta; al
+                            abrirla muestra su panel completo. */}
                         <PanelDescuento
                             descuentoTotal={descuentoTotal}
                             descuentoConceptoId={descuentoConceptoId}
@@ -2520,35 +2521,32 @@ function CarritoPanel({
                             onChange={onSetDescuento}
                         />
 
-                        {/* F1 — Venta a crédito */}
-                        <div
+                        {/* Modalidad: por defecto contado. Crédito / Por entregar /
+                            Despacho son botones que se RELLENAN de su color al activarse
+                            (son excluyentes: activar uno apaga el otro; tocar el activo
+                            vuelve a contado). Solo si la empresa usa alguna. */}
+                        {(permitirCredito || permitirPendiente || usaDespachoAlmacen) && (
+                            <ModalidadVenta
+                                esCredito={esCredito}
+                                onCredito={onSetEsCredito}
+                                entrega={entrega}
+                                onEntrega={onElegirEntrega}
+                                credito={permitirCredito}
+                                pendiente={permitirPendiente}
+                                despacho={usaDespachoAlmacen}
+                            />
+                        )}
+
+                        {/* F1 — Venta a crédito: detalle, solo si está marcada */}
+                        {permitirCredito && esCredito && (<div
                             className="rounded-xl px-3 py-2.5"
                             style={{
-                                border: `1px solid ${esCredito ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                backgroundColor: esCredito
-                                    ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))'
-                                    : 'var(--color-surface)',
+                                border: `1px solid ${MODALIDADES.credito.borde}`,
+                                backgroundColor: MODALIDADES.credito.tinte,
                             }}
                         >
-                            <label className="flex items-center justify-between gap-2 cursor-pointer select-none">
-                                <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                                    <CreditCard size={15} style={{ color: esCredito ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
-                                    Venta a crédito
-                                </span>
-                                <input
-                                    type="checkbox"
-                                    checked={esCredito}
-                                    onChange={e => onSetEsCredito(e.target.checked)}
-                                    className="h-4 w-4 accent-[var(--color-primary)]"
-                                />
-                            </label>
                             {esCredito && (
-                                <div className="mt-2 space-y-1.5">
-                                    {esClienteGeneral && (
-                                        <p className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
-                                            Selecciona un cliente identificado para vender a crédito.
-                                        </p>
-                                    )}
+                                <div className="space-y-1.5">
                                     <div className="flex items-center gap-2">
                                         <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
                                             Vence (opcional)
@@ -2570,40 +2568,21 @@ function CarritoPanel({
                                     </p>
                                 </div>
                             )}
-                        </div>
+                        </div>)}
 
                         {/* Pendiente por entregar: pagó todo, se lleva solo parte.
                             El POS crea el anticipo material en Finanzas solo;
                             el stock pendiente sale recién al entregarse. */}
-                        {permitirPendiente && (
+                        {permitirPendiente && entregaPendiente && (
                             <div
                                 className="rounded-xl px-3 py-2.5"
                                 style={{
-                                    border: `1px solid ${entregaPendiente ? 'var(--color-warning)' : 'var(--color-border)'}`,
-                                    backgroundColor: entregaPendiente
-                                        ? 'color-mix(in srgb, var(--color-warning) 8%, var(--color-bg))'
-                                        : 'var(--color-surface)',
+                                    border: `1px solid ${MODALIDADES.pendiente.borde}`,
+                                    backgroundColor: MODALIDADES.pendiente.tinte,
                                 }}
                             >
-                                <label className="flex items-center justify-between gap-2 cursor-pointer select-none">
-                                    <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                                        <Truck size={15} style={{ color: entregaPendiente ? 'var(--color-warning)' : 'var(--color-text-muted)' }} />
-                                        Pendiente por entregar
-                                    </span>
-                                    <input
-                                        type="checkbox"
-                                        checked={entregaPendiente}
-                                        onChange={e => onSetEntregaPendiente(e.target.checked)}
-                                        className="h-4 w-4 accent-[var(--color-warning)]"
-                                    />
-                                </label>
                                 {entregaPendiente && (
-                                    <div className="mt-2 space-y-2">
-                                        {esClienteGeneral && (
-                                            <p className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
-                                                Selecciona un cliente identificado para dejar mercadería pendiente.
-                                            </p>
-                                        )}
+                                    <div className="space-y-2">
                                         <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                             Indica cuánto <strong>se lleva ahora</strong> de cada producto; el resto queda pendiente y se registra solo en Finanzas → Anticipos.
                                         </p>
@@ -2621,6 +2600,7 @@ function CarritoPanel({
                                                             type="number"
                                                             min={0}
                                                             max={item.cantidad}
+                                                            data-pendiente-input
                                                             step="any"
                                                             value={llevado}
                                                             onChange={e => {
@@ -2676,35 +2656,16 @@ function CarritoPanel({
                         {/* Despacho en almacén: toda la venta queda pendiente de
                             entrega. El almacenero la confirma luego y recién ahí
                             descuenta el stock. */}
-                        {usaDespachoAlmacen && (
+                        {usaDespachoAlmacen && despachoAlmacen && (
                             <div
                                 className="rounded-xl px-3 py-2.5"
                                 style={{
-                                    border: `1px solid ${despachoAlmacen ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                    backgroundColor: despachoAlmacen
-                                        ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))'
-                                        : 'var(--color-surface)',
+                                    border: `1px solid ${MODALIDADES.despacho.borde}`,
+                                    backgroundColor: MODALIDADES.despacho.tinte,
                                 }}
                             >
-                                <label className="flex items-center justify-between gap-2 cursor-pointer select-none">
-                                    <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                                        <Package size={15} style={{ color: despachoAlmacen ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
-                                        Despacho en almacén
-                                    </span>
-                                    <input
-                                        type="checkbox"
-                                        checked={despachoAlmacen}
-                                        onChange={e => onSetDespachoAlmacen(e.target.checked)}
-                                        className="h-4 w-4 accent-[var(--color-primary)]"
-                                    />
-                                </label>
                                 {despachoAlmacen && (
-                                    <div className="mt-2 space-y-2">
-                                        {esClienteGeneral && (
-                                            <p className="text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
-                                                Selecciona un cliente identificado para dejar mercadería en almacén.
-                                            </p>
-                                        )}
+                                    <div className="space-y-2">
                                         <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                             Toda la mercadería quedará pendiente de despacho. El almacenero la verá en su bandeja y confirmará la entrega; el stock saldrá del almacén en ese momento.
                                         </p>
@@ -2731,14 +2692,13 @@ function CarritoPanel({
 
                         {/* Pagos */}
                         <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 px-1" style={{ color: 'var(--color-text-muted)' }}>
-                                {esCredito ? 'Pago inicial (opcional)' : 'Métodos de pago'}
-                            </p>
+                            {/* El título "¿Cómo paga?" y el botón Dividir viven dentro del panel. */}
                             <PanelPago
                                 pagos={pagos}
                                 metodosPago={metodosPago}
                                 total={total}
                                 anticipoMonto={montoAnticipoUsado}
+                                esCredito={esCredito}
                                 onChange={onSetPagos}
                             />
                         </div>
@@ -2838,7 +2798,15 @@ function CarritoPanel({
                         boxShadow: '0 4px 15px rgba(26,115,200,0.25)',
                     }}
                 >
-                    <span>TOTAL</span>
+                    <span className="flex items-center gap-2">
+                        TOTAL
+                        {(esCredito || entrega !== 'completa') && (
+                            <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-white/20">
+                                {[esCredito && MODALIDADES.credito.enTotal, entrega !== 'completa' && MODALIDADES[entrega].enTotal]
+                                    .filter(Boolean).join(' · ')}
+                            </span>
+                        )}
+                    </span>
                     <span>S/ {total.toFixed(2)}</span>
                 </div>
 
@@ -2883,26 +2851,39 @@ function CarritoPanel({
                     </div>
                 )}
 
-                {/* Botón cobrar */}
-                <Button
-                    variant="success"
-                    size="lg"
-                    radius="lg"
-                    className="w-full !py-3 !text-base !font-bold"
-                    onClick={onConfirmar}
-                    disabled={carrito.length === 0 || hayInactivos || !puedeVender || !!bloqueoComprobante}
-                    title={
-                        !puedeVender ? (razonNoVender ?? 'No puedes registrar ventas en este momento.')
-                        : hayInactivos ? 'Hay ítems inactivos en el carrito. Elimínalos para cobrar.'
-                        : bloqueoComprobante ? bloqueoComprobante.motivo
-                        : undefined
-                    }
-                >
-                    {!puedeVender ? 'POS bloqueado'
-                     : hayInactivos ? 'Resuelve ítems inactivos'
-                     : bloqueoComprobante ? 'Corrige el comprobante'
-                     : 'Cobrar venta'}
-                </Button>
+                {/* Botón cobrar. Si falta algo, el botón LO DICE (en ámbar) y al
+                    pulsarlo lleva al campo que falta; nada de dejar pulsar y
+                    recién ahí soltar un error. Listo → verde con el monto. */}
+                {problemaCobro && puedeVender ? (
+                    <button
+                        type="button"
+                        onClick={onConfirmar}
+                        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-colors"
+                        style={{
+                            backgroundColor: 'color-mix(in srgb, var(--color-warning) 14%, var(--color-surface))',
+                            border: '1.5px solid var(--color-warning)',
+                            color: 'color-mix(in srgb, var(--color-warning) 70%, #000)',
+                        }}
+                    >
+                        <AlertTriangle size={16} className="flex-shrink-0" />
+                        <span className="truncate">{problemaCobro}</span>
+                    </button>
+                ) : (
+                    <Button
+                        variant="success"
+                        size="lg"
+                        radius="lg"
+                        className="w-full !py-3 !text-base !font-bold"
+                        onClick={onConfirmar}
+                        disabled={carrito.length === 0 || !puedeVender}
+                        title={!puedeVender ? (razonNoVender ?? 'No puedes registrar ventas en este momento.') : undefined}
+                    >
+                        {!puedeVender ? 'POS bloqueado'
+                         : carrito.length === 0 ? 'Cobrar venta'
+                         : total > 0 ? `Cobrar S/ ${total.toFixed(2)}`
+                         : 'Registrar venta sin cobro'}
+                    </Button>
+                )}
             </div>
         </>
     );
@@ -2949,5 +2930,110 @@ function PistaComprobante({ visible, serie, bloqueo, sobrePrimario = false }: {
         >
             {serie}
         </span>
+    );
+}
+
+/** Colores de cada modalidad, tomados de la paleta de la marca (variables.css). */
+const MODALIDADES = {
+    credito:   { label: 'Crédito',      enTotal: 'A crédito',    Icono: CreditCard, fondo: 'var(--vp-sky)',   texto: '#fff',    tinte: 'var(--vp-sky-light)', borde: 'color-mix(in srgb, var(--vp-sky) 40%, transparent)',   ayuda: 'El cliente paga después: el saldo queda en Cuentas por cobrar.' },
+    pendiente: { label: 'Por entregar', enTotal: 'Por entregar', Icono: Truck,      fondo: 'var(--vp-amber)', texto: '#3b2a00', tinte: 'color-mix(in srgb, var(--vp-amber) 12%, #fff)', borde: 'color-mix(in srgb, var(--vp-amber) 55%, transparent)', ayuda: 'Paga todo, pero se lleva solo una parte ahora.' },
+    despacho:  { label: 'Despacho',     enTotal: 'Despacho',     Icono: Package,    fondo: 'var(--vp-navy)',  texto: '#fff',    tinte: 'color-mix(in srgb, var(--vp-navy) 7%, #fff)', borde: 'color-mix(in srgb, var(--vp-navy) 35%, transparent)', ayuda: 'Paga ahora; el almacén entrega la mercadería después.' },
+} as const;
+
+/** Título de sección con la barra de acento de la marca (la misma de los modales). */
+function TituloSeccion({ children, extra }: { children: React.ReactNode; extra?: React.ReactNode }) {
+    return (
+        <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-[13px] font-bold" style={{ color: 'var(--vp-navy)' }}>
+                <span className="h-3.5 w-1 rounded-full flex-shrink-0" style={{ background: 'linear-gradient(180deg, var(--vp-sky), var(--vp-mint))' }} />
+                {children}
+            </h3>
+            {extra}
+        </div>
+    );
+}
+
+/**
+ * Modalidad de la venta en DOS preguntas independientes:
+ *   Pago:    Contado | Crédito
+ *   Entrega: Se lleva todo | Por entregar | Despacho
+ * Se pueden combinar (p. ej. Crédito + Despacho). Lo normal se marca en
+ * tono tranquilo (borde + ✓); lo excepcional se RELLENA de su color para
+ * que la cajera vea de un vistazo que es una venta especial.
+ */
+function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pendiente, despacho }: {
+    esCredito: boolean;
+    onCredito: (v: boolean) => void;
+    entrega:   'completa' | 'pendiente' | 'despacho';
+    onEntrega: (e: 'completa' | 'pendiente' | 'despacho') => void;
+    credito:   boolean;
+    pendiente: boolean;
+    despacho:  boolean;
+}) {
+    const hayEntrega = pendiente || despacho;
+
+    return (
+        <div className="space-y-1.5">
+            <TituloSeccion>Modalidad</TituloSeccion>
+            <div className="rounded-xl p-2.5 space-y-2.5" style={{ backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 3px rgba(15,23,42,0.08)' }}>
+                {credito && (
+                    <FilaModalidad etiqueta="Pago">
+                        <OpcionModalidad normal activo={!esCredito} onClick={() => onCredito(false)} Icono={Banknote} label="Contado" />
+                        <OpcionModalidad activo={esCredito} onClick={() => onCredito(true)} Icono={MODALIDADES.credito.Icono} label={MODALIDADES.credito.label} m={MODALIDADES.credito} />
+                    </FilaModalidad>
+                )}
+                {hayEntrega && (
+                    <FilaModalidad etiqueta="Entrega">
+                        <OpcionModalidad normal activo={entrega === 'completa'} onClick={() => onEntrega('completa')} Icono={ShoppingBag} label="Se lleva todo" />
+                        {pendiente && (
+                            <OpcionModalidad activo={entrega === 'pendiente'} onClick={() => onEntrega('pendiente')} Icono={MODALIDADES.pendiente.Icono} label={MODALIDADES.pendiente.label} m={MODALIDADES.pendiente} />
+                        )}
+                        {despacho && (
+                            <OpcionModalidad activo={entrega === 'despacho'} onClick={() => onEntrega('despacho')} Icono={MODALIDADES.despacho.Icono} label={MODALIDADES.despacho.label} m={MODALIDADES.despacho} />
+                        )}
+                    </FilaModalidad>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function FilaModalidad({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
+    return (
+        <div className="flex items-center gap-3">
+            <span className="w-14 flex-shrink-0 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                {etiqueta}
+            </span>
+            <div className="flex-1 grid grid-flow-col auto-cols-fr gap-2">{children}</div>
+        </div>
+    );
+}
+
+function OpcionModalidad({ activo, onClick, Icono, label, normal = false, m }: {
+    activo:  boolean;
+    onClick: () => void;
+    Icono:   LucideIcon;
+    label:   string;
+    normal?: boolean;
+    m?:      { fondo: string; texto: string };
+}) {
+    // Normal activo: borde verde + ✓ (tranquilo). Excepcional activo: relleno.
+    const estilo: React.CSSProperties = !activo
+        ? { backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)', border: '1px solid transparent' }
+        : normal
+            ? { backgroundColor: 'color-mix(in srgb, var(--color-success) 10%, #fff)', color: '#047857', border: '1.5px solid color-mix(in srgb, var(--color-success) 60%, transparent)' }
+            : { backgroundColor: m!.fondo, color: m!.texto, border: '1.5px solid transparent', boxShadow: `0 3px 10px -4px ${m!.fondo}` };
+
+    return (
+        <button
+            type="button"
+            aria-pressed={activo}
+            onClick={onClick}
+            className="flex items-center justify-center gap-1.5 h-9 px-1.5 rounded-lg text-[12px] font-bold transition-all active:scale-[0.97] min-w-0"
+            style={estilo}
+        >
+            {activo ? <CheckCircle2 size={14} className="flex-shrink-0" /> : <Icono size={14} className="flex-shrink-0" />}
+            <span className="truncate">{label}</span>
+        </button>
     );
 }

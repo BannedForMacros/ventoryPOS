@@ -114,17 +114,46 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
     function emitir(valor: number, modo: DescModo, tipo: DescTipo, cid: number | null) {
         onDescuento(item.key, valor, modo, tipo, valor > 0 ? cid : null);
     }
+
+    // Tope del descuento: nunca más que lo que vale la línea. Antes se podía
+    // teclear S/ 50 en un producto de S/ 20: el cálculo lo recortaba en
+    // silencio pero la casilla seguía diciendo 50 y confundía.
+    const [avisoTope, setAvisoTope] = useState<string | null>(null);
+    function maxDescuento(modo: DescModo, tipo: DescTipo): number {
+        if (tipo === 'porcentaje') return 100;
+        const base = modo === 'total' ? item.precio_unitario * item.cantidad : item.precio_unitario;
+        return Math.round(base * 100) / 100;
+    }
+    /** Devuelve el valor dentro del tope y muestra/limpia el aviso. */
+    function topar(valor: number, modo: DescModo, tipo: DescTipo): number {
+        const max = maxDescuento(modo, tipo);
+        if (valor > max) {
+            setAvisoTope(tipo === 'porcentaje'
+                ? 'El descuento no puede superar el 100 %.'
+                : `El descuento no puede superar S/ ${max.toFixed(2)}${modo === 'total' ? ' (total de la línea)' : ' (precio unitario)'}.`);
+            return max;
+        }
+        setAvisoTope(null);
+        return valor;
+    }
+
     function onCambioDescuento(valor: string) {
-        setDescuentoVal(valor);
-        emitir(parseFloat(valor) || 0, descModo, descTipo, conceptoId);
+        const n = parseFloat(valor) || 0;
+        const topado = topar(n, descModo, descTipo);
+        setDescuentoVal(topado !== n ? String(topado) : valor);
+        emitir(topado, descModo, descTipo, conceptoId);
     }
     function cambiarModo(modo: DescModo) {
         setDescModo(modo);
-        emitir(parseFloat(descuentoVal) || 0, modo, descTipo, conceptoId);
+        const v = topar(parseFloat(descuentoVal) || 0, modo, descTipo);
+        if (v !== (parseFloat(descuentoVal) || 0)) setDescuentoVal(String(v));
+        emitir(v, modo, descTipo, conceptoId);
     }
     function cambiarTipo(tipo: DescTipo) {
         setDescTipo(tipo);
-        emitir(parseFloat(descuentoVal) || 0, descModo, tipo, conceptoId);
+        const v = topar(parseFloat(descuentoVal) || 0, descModo, tipo);
+        if (v !== (parseFloat(descuentoVal) || 0)) setDescuentoVal(String(v));
+        emitir(v, descModo, tipo, conceptoId);
     }
     function cambiarConcepto(cid: number | null) {
         setConceptoId(cid);
@@ -143,6 +172,7 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
         setConceptoId(null);
         setDescModo('pu');
         setDescTipo('monto');
+        setAvisoTope(null);
         onDescuento(item.key, 0, 'pu', 'monto', null);
         setShowDescuento(false);
     }
@@ -679,7 +709,7 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                                 inputMode="decimal"
                                 min="0"
                                 step={descTipo === 'porcentaje' ? '0.1' : '0.01'}
-                                max={descTipo === 'porcentaje' ? '100' : undefined}
+                                max={maxDescuento(descModo, descTipo)}
                                 value={descuentoVal}
                                 onChange={e => onCambioDescuento(e.target.value)}
                                 onFocus={e => { setDescFocus(true); e.target.select(); }}
@@ -715,6 +745,12 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                             ))}
                         </select>
                     </div>
+
+                    {avisoTope && (
+                        <p className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--color-danger)' }} role="alert">
+                            {avisoTope}
+                        </p>
+                    )}
 
                     {/* Resultado en vivo del descuento aplicado */}
                     {hayDescuento && (

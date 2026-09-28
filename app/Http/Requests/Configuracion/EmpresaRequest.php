@@ -49,6 +49,8 @@ class EmpresaRequest extends FormRequest
             // Si esta activo, el POS permite vender aunque no alcance el stock:
             // el saldo queda negativo y se avisa al cerrar la caja.
             'permite_stock_negativo'          => 'boolean',
+            'pos_permite_credito'             => 'boolean',
+            'pos_permite_pendiente_entrega'   => 'boolean',
             // Si esta activo, el POS permite agregar el mismo producto/presentación
             // varias veces en una misma venta. Útil para precios variables.
             'permite_duplicar_items_venta'    => 'boolean',

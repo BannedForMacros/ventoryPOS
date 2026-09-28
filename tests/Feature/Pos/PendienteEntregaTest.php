@@ -202,7 +202,7 @@ it('editar la venta puede QUITAR el pendiente por completo (todo entregado) devo
     expect(ClienteAnticipo::where('venta_id', $venta->id)->where('estado', 'activo')->exists())->toBeFalse();
 });
 
-it('una venta a crédito SIN saldar no puede marcarse como pendiente por entregar', function () {
+it('una venta a crédito SIN saldar sí puede quedar pendiente por entregar', function () {
     $fierro = $this->env->crearProducto(['precio_venta' => 20, 'stock_inicial' => 50]);
 
     // Venta a crédito: total 200, pago inicial 50 → saldo 150.
@@ -221,7 +221,8 @@ it('una venta a crédito SIN saldar no puede marcarse como pendiente por entrega
 
     expect((float) $venta->saldo_pendiente)->toBe(150.0);
 
-    // Intentar editar y marcar pendiente por entregar → debe fallar.
+    // Editar y marcar pendiente por entregar: ahora SÍ se permite (27/09/2026,
+    // pedido del negocio: vender al crédito y entregar después).
     $response = $this->from(route('pos.index', ['venta_id' => $venta->id]))
         ->put(route('ventas.update', $venta->id), [
             'tipo_comprobante'       => 'ticket',
@@ -239,7 +240,14 @@ it('una venta a crédito SIN saldar no puede marcarse como pendiente por entrega
             'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 50]],
         ]);
 
-    $response->assertSessionHasErrors('entrega_pendiente');
+    $response->assertSessionHasNoErrors();
+
+    // El pedido registra el valor COMPLETO de lo que falta entregar (7 × 20),
+    // igual que al contado: es la obligación de entregar, cuadra el balance
+    // (la mercadería sigue en stock y su valor está en Cuentas por cobrar).
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->where('estado', 'activo')->with('items')->firstOrFail();
+    expect((float) $anticipo->items->sum('cantidad_pendiente'))->toBe(7.0)
+        ->and((float) $anticipo->saldo)->toBe(140.0);
 });
 
 it('una venta a crédito SALDADA sí puede marcarse como pendiente por entregar', function () {

@@ -223,9 +223,19 @@ class VentaController extends Controller
 
         $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
             ->activo()
-            ->with(['cuentas' => fn($q) => $q->where('activo', true)])
+            // `tipo` es imprescindible: sin él el POS no encuentra el efectivo
+            // (no lo pre-carga), no muestra el icono de cada método ni pide el
+            // N° de operación en Yape/transferencia.
+            ->with([
+                'tipo:id,slug,nombre,icono,requiere_referencia,orden',
+                'cuentas' => fn($q) => $q->where('activo', true),
+            ])
             ->orderBy('nombre')
-            ->get();
+            ->get()
+            // Orden del catálogo de tipos (efectivo, tarjetas, transferencia,
+            // Yape, Plin…): así los botones del POS salen siempre en el mismo orden.
+            ->sortBy(fn ($m) => [$m->tipo?->orden ?? 999, $m->nombre])
+            ->values();
 
         $conceptosDescuento = DescuentoConcepto::deEmpresa($user->empresa_id)
             ->activo()
@@ -482,6 +492,9 @@ class VentaController extends Controller
             // esa cantidad (alternativa fina a abrir stock negativo para todo).
             'usaTransito'        => $usaTransito,
             'vendeTransito'      => $transitoSvc->permiteVender($user->empresa),
+            // Casillas del POS que se ocultan a los negocios que no las usan.
+            'permiteCredito'           => (bool) ($user->empresa->pos_permite_credito ?? true),
+            'permitePendienteEntrega'  => (bool) ($user->empresa->pos_permite_pendiente_entrega ?? true),
             // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
             'monedas'            => ['PEN', 'USD'],
             'tipoCambioHoy'      => $this->tipoCambioHoy(),

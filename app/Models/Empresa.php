@@ -67,6 +67,9 @@ class Empresa extends Model
         'vende_mercaderia_transito',
         // "Afecta caja" configurable por módulo (JSON). Ver App\Support\AfectaCaja.
         'afecta_caja_config',
+        // POS: opciones que se ocultan a los negocios que no las usan.
+        'pos_permite_credito',
+        'pos_permite_pendiente_entrega',
     ];
 
     protected function casts(): array
@@ -101,6 +104,8 @@ class Empresa extends Model
             'usa_mercaderia_transito'         => 'boolean',
             'vende_mercaderia_transito'       => 'boolean',
             'afecta_caja_config'              => 'array',
+            'pos_permite_credito'             => 'boolean',
+            'pos_permite_pendiente_entrega'   => 'boolean',
         ];
     }
 

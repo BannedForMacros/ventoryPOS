@@ -148,7 +148,9 @@ class StoreVentaRequest extends FormRequest
 
             $this->validarItems($validator, $empresaId);
             $this->validarPagosPertenencia($validator, $empresaId);
+            $this->validarDescuentosNoExcedenPrecio($validator);
             $this->validarDescuentoYTope($validator); // M20
+            $this->validarOpcionesHabilitadas($validator);
             $this->validarAnticipo($validator, $empresaId);
 
             // Despacho en almacén: fuerza entrega_pendiente completa. Reutiliza
@@ -289,19 +291,11 @@ class StoreVentaRequest extends FormRequest
         $esEntregaPendiente = $this->boolean('entrega_pendiente') || $this->boolean('despacho_almacen');
         if (!$esEntregaPendiente) return;
 
-        if ($this->boolean('es_credito')) {
-            $venta = $this->route('venta');
-            $estaSaldada = $venta instanceof \App\Models\Venta
-                && (float) $venta->total > 0
-                && (float) $venta->saldo_pendiente <= 0.0001;
-
-            if (!$estaSaldada) {
-                $validator->errors()->add(
-                    'entrega_pendiente',
-                    'No se puede combinar "Pendiente por entregar" con venta a crédito salvo que el crédito ya esté totalmente pagado.',
-                );
-            }
-        }
+        // Crédito + pendiente/despacho SÍ se permite (pedido del negocio: vender
+        // al crédito y entregar después). El pedido registra el valor completo
+        // de lo que falta entregar, igual que al contado: esa obligación es la
+        // que cuadra el balance mientras la mercadería sigue en el almacén y su
+        // valor ya está en Cuentas por cobrar.
 
         $clienteId = $this->input('cliente_id');
         $esGeneral = !$clienteId || \App\Models\Cliente::where('id', $clienteId)
@@ -366,6 +360,66 @@ class StoreVentaRequest extends FormRequest
         // En despacho de almacén toda la venta queda pendiente, por eso
         // reutilizamos las reglas ya probadas de entrega_pendiente.
         $this->validarEntregaPendiente($validator, $empresaId);
+    }
+
+    /**
+     * Un descuento nunca puede dejar la línea ni la venta por debajo de 0.
+     * El POS ya topa la casilla, pero sin esta regla un request armado a mano
+     * (o un front desactualizado) guardaría una venta con total negativo.
+     */
+    private function validarDescuentosNoExcedenPrecio($validator): void
+    {
+        $subtotal = 0.0;
+        foreach ($this->input('items', []) as $index => $item) {
+            $precio   = (float) ($item['precio_unitario'] ?? 0);
+            $descItem = (float) ($item['descuento_item']  ?? 0);
+            $cantidad = (float) ($item['cantidad']        ?? 0);
+
+            if ($descItem > $precio + 0.005) {
+                $validator->errors()->add(
+                    "items.{$index}.descuento_item",
+                    'El descuento de un producto no puede superar su precio (S/ '
+                    . number_format($precio, 2) . ').',
+                );
+            }
+            $subtotal += max(0, $precio - $descItem) * $cantidad;
+        }
+
+        $descuentoTotal = (float) ($this->input('descuento_total') ?? 0);
+        if ($descuentoTotal > round($subtotal, 2) + 0.005) {
+            $validator->errors()->add(
+                'descuento_total',
+                'El descuento no puede superar el total de la venta (S/ ' . number_format($subtotal, 2) . ').',
+            );
+        }
+    }
+
+    /**
+     * Crédito y "Pendiente por entregar" se pueden apagar por empresa
+     * (Configuración → Empresa). El POS ya oculta las casillas; aquí se cierra
+     * la puerta del lado del servidor. Al EDITAR una venta no se aplica: una
+     * venta que ya nació al crédito o con pendiente debe poder corregirse
+     * aunque la empresa haya apagado la opción después.
+     */
+    private function validarOpcionesHabilitadas($validator): void
+    {
+        if ($this->route('venta') instanceof \App\Models\Venta) return;
+
+        $empresa = $this->user()->empresa;
+
+        if ($this->boolean('es_credito') && !($empresa->pos_permite_credito ?? true)) {
+            $validator->errors()->add(
+                'es_credito',
+                'La venta al crédito está desactivada para esta empresa (Configuración → Empresa).',
+            );
+        }
+
+        if ($this->boolean('entrega_pendiente') && !($empresa->pos_permite_pendiente_entrega ?? true)) {
+            $validator->errors()->add(
+                'entrega_pendiente',
+                '"Pendiente por entregar" está desactivado para esta empresa (Configuración → Empresa).',
+            );
+        }
     }
 
     /**

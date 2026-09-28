@@ -33,6 +33,8 @@ type FormData = {
     modo_almacen: 'simple' | 'central_y_local';
     descuenta_stock_en_venta: boolean;
     permite_stock_negativo: boolean;
+    pos_permite_credito: boolean;
+    pos_permite_pendiente_entrega: boolean;
     permite_duplicar_items_venta: boolean;
     tasa_igv: number | '';
     modo_cierre_caja: ModoCierre;
@@ -92,6 +94,8 @@ const emptyForm: FormData = {
     modo_almacen: 'simple',
     descuenta_stock_en_venta: true,
     permite_stock_negativo: false,
+    pos_permite_credito: true,
+    pos_permite_pendiente_entrega: true,
     permite_duplicar_items_venta: false,
     tasa_igv: 18,
     modo_cierre_caja: 'con_declaraciones',
@@ -162,6 +166,8 @@ export default function Empresas({ empresas }: Props) {
             modo_almacen: emp.modo_almacen,
             descuenta_stock_en_venta: emp.descuenta_stock_en_venta ?? true,
             permite_stock_negativo: emp.permite_stock_negativo ?? false,
+            pos_permite_credito: emp.pos_permite_credito ?? true,
+            pos_permite_pendiente_entrega: emp.pos_permite_pendiente_entrega ?? true,
             permite_duplicar_items_venta: emp.permite_duplicar_items_venta ?? false,
             tasa_igv: emp.tasa_igv != null ? Number(emp.tasa_igv) : 18,
             modo_cierre_caja: (emp.modo_cierre_caja as ModoCierre) ?? 'con_declaraciones',
@@ -451,6 +457,30 @@ export default function Empresas({ empresas }: Props) {
                         {errors.usa_despacho_almacen && (
                             <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.usa_despacho_almacen}</p>
                         )}
+                        <label className="flex items-start gap-2 cursor-pointer mt-3">
+                            <Checkbox
+                                checked={data.pos_permite_credito}
+                                onChange={e => setData('pos_permite_credito', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Mostrar "Venta a crédito"</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, el POS permite vender al crédito: el cliente paga después y el saldo queda en Cuentas por cobrar. Apágalo si tu negocio siempre cobra al momento, para que la opción no aparezca y no confunda.
+                                </span>
+                            </span>
+                        </label>
+                        <label className="flex items-start gap-2 cursor-pointer mt-3">
+                            <Checkbox
+                                checked={data.pos_permite_pendiente_entrega}
+                                onChange={e => setData('pos_permite_pendiente_entrega', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Mostrar "Pendiente por entregar"</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, el POS permite que el cliente pague todo y se lleve solo una parte: lo demás queda pendiente y sale del stock recién al entregarse. Apágalo si siempre entregas todo en el momento.
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     {/* ── Sección: Impuestos (IGV) ── */}
