@@ -14,6 +14,8 @@ export default {
         extend: {
             fontFamily: {
                 sans: ['Figtree', ...defaultTheme.fontFamily.sans],
+                // Cifras y títulos de sección en reportes: numerales anchos y legibles.
+                display: ['Sora', 'Figtree', ...defaultTheme.fontFamily.sans],
             },
         },
     },

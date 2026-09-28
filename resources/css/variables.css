@@ -11,6 +11,11 @@
   --vp-surface:     #172130;
   --vp-cloud:       #F4F6FA;
 
+  /* Tintas legibles sobre blanco para textos en mint/amber/coral */
+  --vp-mint-ink:    #00795A;
+  --vp-amber-ink:   #8A5A00;
+  --vp-coral-ink:   #C2410C;
+
   /* ── Sidebar ── */
   --sidebar-bg:          var(--vp-navy);
   --sidebar-text:        rgba(255,255,255,0.75);

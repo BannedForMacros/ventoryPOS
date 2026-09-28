@@ -147,13 +147,7 @@ export function FiltrosReporte({ fechaDesde, fechaHasta, onChange, onClear, tien
     /** Selects adicionales (FieldSelect / inputs propios del reporte). */
     children?: React.ReactNode;
 }) {
-    const rangos: Array<[string, () => { fecha_desde: string; fecha_hasta: string }]> = [
-        ['Hoy', () => { const h = hoyISO(); return { fecha_desde: h, fecha_hasta: h }; }],
-        ['7 días', () => rango(6)],
-        ['Este mes', () => { const h = new Date(); return { fecha_desde: iso(new Date(h.getFullYear(), h.getMonth(), 1)), fecha_hasta: hoyISO() }; }],
-        ['30 días', () => rango(29)],
-        ...rangosExtra,
-    ];
+    const rangos = [...rangosBase(), ...rangosExtra];
 
     return (
         <div className="rounded-2xl px-4 py-3 mb-4"
@@ -192,6 +186,16 @@ export function FiltrosReporte({ fechaDesde, fechaHasta, onChange, onClear, tien
             </div>
         </div>
     );
+}
+
+/** Rangos rápidos por defecto de todos los reportes. */
+export function rangosBase(): Array<[string, () => { fecha_desde: string; fecha_hasta: string }]> {
+    return [
+        ['Hoy', () => { const h = hoyISO(); return { fecha_desde: h, fecha_hasta: h }; }],
+        ['7 días', () => rango(6)],
+        ['Este mes', () => { const h = new Date(); return { fecha_desde: iso(new Date(h.getFullYear(), h.getMonth(), 1)), fecha_hasta: hoyISO() }; }],
+        ['30 días', () => rango(29)],
+    ];
 }
 
 const iso = (d: Date) => {
@@ -245,6 +249,40 @@ export function Paginacion<T>({ paginado, ruta, filters }: {
                     </button>
                 ))}
             </div>
+        </div>
+    );
+}
+
+/* ── Panel blanco del reporte con ícono de color ──────────────────────── */
+/**
+ * `color` identifica el tema del panel (pagos = mint, personas = sky, …);
+ * `tinta` es su versión oscura para íconos claros que no se leen en blanco.
+ */
+export function Panel({ icon, titulo, detalle, color = 'var(--color-primary)', tinta, children, className = '', sinPadding = false }: {
+    icon?: React.ReactNode; titulo?: string; detalle?: React.ReactNode;
+    color?: string; tinta?: string;
+    children: React.ReactNode; className?: string; sinPadding?: boolean;
+}) {
+    return (
+        <div className={`rounded-2xl overflow-hidden flex flex-col ${className}`}
+            style={{
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid color-mix(in srgb, var(--color-border) 85%, transparent)',
+                boxShadow: '0 1px 2px 0 rgb(15 76 129 / 0.05), 0 6px 16px -10px rgb(15 76 129 / 0.12)',
+            }}>
+            {titulo && (
+                <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+                    {icon && (
+                        <span className="flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0"
+                            style={{ backgroundColor: `color-mix(in srgb, ${color} 16%, var(--color-surface))`, color: tinta ?? color }}>
+                            {icon}
+                        </span>
+                    )}
+                    <h3 className="text-base font-bold flex-1 min-w-0 truncate" style={{ color: 'var(--color-text)' }}>{titulo}</h3>
+                    {detalle && <span className="text-[13px] tabular-nums flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>{detalle}</span>}
+                </div>
+            )}
+            <div className={`flex-1 flex flex-col ${sinPadding ? '' : 'px-4 pb-4'}`}>{children}</div>
         </div>
     );
 }
