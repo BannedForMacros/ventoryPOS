@@ -103,9 +103,28 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
     const dividido = modoDividir || pagos.length > 1;
     const [enfocar, setEnfocar] = useState<string | null>(null);
     const refs = useRef<Record<string, HTMLInputElement | null>>({});
+    // Montos que la cajera escribió a mano. El ÚLTIMO método, mientras no lo
+    // toque, se completa solo con lo que falta (total − los de arriba).
+    const [manuales, setManuales] = useState<Set<string>>(new Set());
 
     // Tras cobrar los pagos vuelven a [] → la siguiente venta arranca simple.
-    useEffect(() => { if (pagos.length === 0) setModoDividir(false); }, [pagos.length]);
+    useEffect(() => {
+        if (pagos.length === 0) { setModoDividir(false); setManuales(new Set()); }
+    }, [pagos.length]);
+
+    // Si el total cambia en pleno pago dividido (se agregó o quitó un
+    // producto), el último método automático se recalcula solo.
+    useEffect(() => {
+        if (pagos.length < 2 || esCredito) return;
+        const ultima = pagos[pagos.length - 1];
+        if (manuales.has(ultima.key)) return;
+        const arriba  = pagos.slice(0, -1).reduce((s, p) => s + p.monto, 0);
+        const debeSer = r2(Math.max(0, porCobrar - arriba));
+        if (Math.abs(debeSer - ultima.monto) > 0.004) {
+            onChange([...pagos.slice(0, -1), { ...ultima, monto: debeSer }]);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [porCobrar]);
 
     useEffect(() => {
         if (enfocar && refs.current[enfocar]) {
@@ -152,8 +171,25 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
         } : p));
     }
 
+    /** Con varios métodos, el último (si no se escribió a mano) = lo que falta. */
+    function completarUltimo(lineas: LineaPago[], man: Set<string>): LineaPago[] {
+        if (lineas.length < 2 || esCredito) return lineas;
+        const ultima = lineas[lineas.length - 1];
+        if (man.has(ultima.key)) return lineas;
+        const arriba = lineas.slice(0, -1).reduce((s, p) => s + p.monto, 0);
+        return [...lineas.slice(0, -1), { ...ultima, monto: r2(Math.max(0, porCobrar - arriba)) }];
+    }
+
     function actualizar(key: string, patch: Partial<LineaPago>) {
-        onChange(pagos.map(p => p.key === key ? { ...p, ...patch } : p));
+        let man = manuales;
+        if (patch.monto !== undefined && dividido) {
+            man = new Set(manuales);
+            // Escribir un monto lo fija; borrarlo en el último lo devuelve a automático.
+            const esUltima = pagos[pagos.length - 1]?.key === key;
+            if (esUltima && patch.monto <= 0) man.delete(key); else man.add(key);
+            setManuales(man);
+        }
+        onChange(completarUltimo(pagos.map(p => p.key === key ? { ...p, ...patch } : p), man));
     }
 
     function empezarDivision() {
@@ -168,17 +204,28 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
 
     function volverAUnMetodo() {
         setModoDividir(false);
+        setManuales(new Set());
         if (pagos[0]) onChange([{ ...pagos[0], monto: esCredito ? pagos[0].monto : porCobrar }]);
     }
 
     function agregarMetodo(metodo: MetodoPagoConCuentas) {
-        const nueva = lineaDe(metodo, Math.max(0, falta));
-        onChange([...pagos, nueva]);
-        setEnfocar(nueva.key);
+        const nueva = lineaDe(metodo, 0);
+        const anterior = pagos[pagos.length - 1];
+        let lineas = [...pagos];
+        // El que era último y se completaba solo pasa a ser "de arriba": queda
+        // en blanco para escribir su monto, y el NUEVO se completa solo.
+        if (anterior && !manuales.has(anterior.key) && pagos.length > 1) {
+            lineas = lineas.map(p => p.key === anterior.key ? { ...p, monto: 0 } : p);
+        }
+        onChange(completarUltimo([...lineas, nueva], manuales));
+        // El cursor va al monto que falta escribir; si ya estaba escrito, al nuevo.
+        setEnfocar(anterior && !manuales.has(anterior.key) && pagos.length > 1 ? anterior.key : nueva.key);
     }
 
     function quitar(key: string) {
-        onChange(pagos.filter(p => p.key !== key));
+        const man = new Set(manuales); man.delete(key);
+        setManuales(man);
+        onChange(completarUltimo(pagos.filter(p => p.key !== key), man));
     }
 
     const usados      = new Set(pagos.map(p => p.metodo_pago_id));
@@ -261,6 +308,7 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
                                     pago={pago}
                                     metodo={metodo}
                                     etiqueta={metodo?.nombre ?? `Pago ${i + 1}`}
+                                    automatico={!esCredito && pagos.length > 1 && i === pagos.length - 1 && !manuales.has(pago.key)}
                                     conIcono
                                     inputRef={el => { refs.current[pago.key] = el; }}
                                     placeholder={i === 0 && pago.monto === 0 ? '¿Cuánto?' : '0.00'}
@@ -355,8 +403,9 @@ function FilaMetodos({ metodos, elegido, onElegir }: {
  * tiene varias) y el N.º de operación. Etiquetas a la izquierda alineadas, así
  * se ve de un vistazo dónde se escribe cada cosa.
  */
-function DetallePago({ pago, metodo, etiqueta, conIcono = false, placeholder = '0.00', inputRef, onCambio, onQuitar }: {
+function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = false, placeholder = '0.00', inputRef, onCambio, onQuitar }: {
     pago:         LineaPago;
+    automatico?:  boolean;
     metodo?:      MetodoPagoConCuentas;
     etiqueta:     string;
     conIcono?:    boolean;
@@ -391,9 +440,18 @@ function DetallePago({ pago, metodo, etiqueta, conIcono = false, placeholder = '
                         onChange={e => onCambio({ monto: parseFloat(e.target.value) || 0 })}
                         onFocus={e => e.target.select()}
                         placeholder={placeholder}
-                        className="w-full h-10 pl-8 pr-3 text-lg text-right tabular-nums border rounded-lg focus:outline-none focus:ring-2 font-bold"
+                        className={`w-full h-10 pl-8 ${automatico ? 'pr-14' : 'pr-3'} text-lg text-right tabular-nums border rounded-lg focus:outline-none focus:ring-2 font-bold`}
                         style={{ ...inputStyle, backgroundColor: '#fff', color: 'var(--vp-navy)' }}
                     />
+                    {automatico && (
+                        <span
+                            title="Se completa solo con lo que falta. Escribe un monto para fijarlo."
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                            style={{ backgroundColor: 'var(--vp-sky-light)', color: 'var(--vp-sky)' }}
+                        >
+                            auto
+                        </span>
+                    )}
                 </div>
                 {onQuitar && (
                     <button

@@ -155,6 +155,14 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
         if (v !== (parseFloat(descuentoVal) || 0)) setDescuentoVal(String(v));
         emitir(v, descModo, tipo, conceptoId);
     }
+    // Atajo de un toque: ese % del precio de este producto (100 % = gratis).
+    function atajo(pct: number) {
+        setDescTipo('porcentaje');
+        setDescuentoVal(String(pct));
+        setAvisoTope(null);
+        emitir(pct, descModo, 'porcentaje', conceptoId);
+    }
+
     function cambiarConcepto(cid: number | null) {
         setConceptoId(cid);
         const val = parseFloat(descuentoVal) || 0;
@@ -744,6 +752,27 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                                 <option key={c.id} value={c.id}>{c.nombre}</option>
                             ))}
                         </select>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                        {[10, 20, 50, 100].map(p => {
+                            const activo = descTipo === 'porcentaje' && parseFloat(descuentoVal) === p;
+                            return (
+                                <button
+                                    key={p}
+                                    type="button"
+                                    onClick={() => atajo(p)}
+                                    className="h-6 px-2 rounded-md text-[11px] font-bold transition-colors"
+                                    style={{
+                                        backgroundColor: activo ? 'var(--color-warning)' : 'var(--color-surface)',
+                                        color: activo ? '#3b2a00' : 'color-mix(in srgb, var(--color-warning) 75%, #000)',
+                                        border: `1px solid ${activo ? 'var(--color-warning)' : 'color-mix(in srgb, var(--color-warning) 40%, transparent)'}`,
+                                    }}
+                                >
+                                    {p === 100 ? 'Gratis' : `${p} %`}
+                                </button>
+                            );
+                        })}
                     </div>
 
                     {avisoTope && (

@@ -79,7 +79,10 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
 
     function emitir(valStr: string, t: DescTipo, conceptoId: number | null) {
         const soles = solesDe(parseFloat(valStr) || 0, t);
-        onChange(soles, soles > 0 ? conceptoId : null);
+        // Un solo motivo de descuento en la empresa → se elige solo.
+        const cidFinal = conceptoId ?? (soles > 0 && conceptos.length === 1 ? conceptos[0].id : null);
+        if (cidFinal !== conceptoId) setCid(cidFinal);
+        onChange(soles, soles > 0 ? cidFinal : null);
     }
 
     function onCambioVal(v: string) {
@@ -102,6 +105,17 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
     function cambiarConcepto(conceptoId: number | null) {
         setCid(conceptoId);
         if ((parseFloat(val) || 0) > 0) emitir(val, tipo, conceptoId);
+    }
+
+    // Atajos de un toque (10/20/50/100 %): escribir un porcentaje demora.
+    // Si la empresa tiene un solo motivo de descuento, se elige solo.
+    function atajo(pct: number) {
+        const conceptoAuto = cid ?? (conceptos.length === 1 ? conceptos[0].id : null);
+        setTipo('porcentaje');
+        setVal(String(pct));
+        setCid(conceptoAuto);
+        setAvisoTope(null);
+        emitir(String(pct), 'porcentaje', conceptoAuto);
     }
 
     function quitar() {
@@ -197,6 +211,7 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
                 </div>
 
                 <select
+                    data-descuento-concepto
                     value={cid ?? ''}
                     onChange={e => cambiarConcepto(e.target.value ? Number(e.target.value) : null)}
                     className="flex-1 min-w-0 text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2"
@@ -212,6 +227,29 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
                         <option key={c.id} value={c.id}>{c.nombre}{c.requiere_aprobacion ? ' (req. aprob.)' : ''}</option>
                     ))}
                 </select>
+            </div>
+
+            {/* Atajos: un toque = ese porcentaje del total. */}
+            <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold mr-0.5" style={{ color: 'var(--color-text-muted)' }}>Rápido:</span>
+                {[10, 20, 50, 100].map(p => {
+                    const activo = tipo === 'porcentaje' && parseFloat(val) === p;
+                    return (
+                        <button
+                            key={p}
+                            type="button"
+                            onClick={() => atajo(p)}
+                            className="h-7 px-2.5 rounded-md text-xs font-bold transition-colors"
+                            style={{
+                                backgroundColor: activo ? 'var(--color-warning)' : 'var(--color-surface)',
+                                color: activo ? '#3b2a00' : 'color-mix(in srgb, var(--color-warning) 75%, #000)',
+                                border: `1px solid ${activo ? 'var(--color-warning)' : 'color-mix(in srgb, var(--color-warning) 40%, transparent)'}`,
+                            }}
+                        >
+                            {p === 100 ? 'Gratis (100 %)' : `${p} %`}
+                        </button>
+                    );
+                })}
             </div>
 
             {avisoTope && (

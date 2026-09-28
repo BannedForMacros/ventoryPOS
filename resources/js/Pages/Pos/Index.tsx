@@ -728,6 +728,52 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         return () => { vivo = false; };
     }, [cliente?.id]);
 
+    // ── Buscador siempre listo ────────────────────────────────────────────
+    // El POS arranca con el cursor en el buscador y vuelve ahí tras cada venta
+    // (la pantalla de carga y la de "venta confirmada" le quitaban el foco).
+    // Además, si la cajera escribe o escanea sin estar en ningún campo, el
+    // texto va directo al buscador. En pantallas táctiles no se fuerza el foco
+    // para no abrir el teclado en pantalla sin que lo pidan.
+    const buscadorRef = useRef<HTMLInputElement>(null);
+    const esTactil = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+    // Al volver al buscador se SELECCIONA lo que tenía: lo nuevo que se teclee
+    // o escanee reemplaza la búsqueda anterior en vez de pegarse a ella.
+    const enfocarBuscador = () => {
+        if (esTactil || !buscadorRef.current) return;
+        buscadorRef.current.focus();
+        buscadorRef.current.select();
+    };
+
+    useEffect(() => {
+        const t = setTimeout(enfocarBuscador, 250);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Carrito vacío de nuevo (venta cobrada o limpiada) → listo para la siguiente.
+    useEffect(() => {
+        if (carrito.length === 0) {
+            const t = setTimeout(enfocarBuscador, 400);
+            return () => clearTimeout(t);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [carrito.length === 0]);
+
+    useEffect(() => {
+        if (esTactil) return;
+        function alTeclear(e: KeyboardEvent) {
+            if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+            const el = document.activeElement as HTMLElement | null;
+            const enCampo = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+            // Con un modal abierto no se roba el foco.
+            if (enCampo || document.querySelector('[role="dialog"]')) return;
+            enfocarBuscador();
+        }
+        window.addEventListener('keydown', alTeclear);
+        return () => window.removeEventListener('keydown', alTeclear);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Buscamos el método con tipo.slug === 'efectivo' como conveniencia inicial.
     // El flag `admite_vuelto` se lee del método (BD).
     const efectivo = metodosPago.find(m => m.tipo?.slug === 'efectivo');
@@ -1094,6 +1140,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             };
         }
         if (hayInactivos) return { texto: `Quita ${itemsInactivos.length} ítem(s) inactivo(s)` };
+        if (descuentoTotal > 0 && !descuentoConceptoId) {
+            return { texto: 'Elige el motivo del descuento', resolver: enfocar('[data-descuento-concepto]') };
+        }
         const bajoCosto = carrito.find(i => (i.costo_minimo ?? 0) > 0 && i.precio_unitario < i.costo_minimo - 0.009);
         if (bajoCosto) return { texto: `Precio bajo el costo: ${bajoCosto.producto_nombre}` };
 
@@ -1765,6 +1814,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                                 value={busqueda}
                                 onChange={e => setBusqueda(e.target.value)}
                                 onKeyDown={onBusquedaKeyDown}
+                                ref={buscadorRef}
                                 placeholder="Buscar por nombre o código (Enter agrega)..."
                                 autoFocus
                                 autoComplete="off"

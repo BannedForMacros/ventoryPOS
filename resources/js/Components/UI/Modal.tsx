@@ -114,6 +114,9 @@ export default function Modal({ isOpen, onClose, title, size = 'md', children, f
 
             {/* Panel del Modal */}
             <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={title}
                 className={`relative w-full ${sizeClasses[size]} rounded-2xl transition-all duration-200 ease-out flex flex-col overflow-hidden`}
                 style={{
                     backgroundColor: 'var(--color-surface, #ffffff)',
