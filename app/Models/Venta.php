@@ -21,6 +21,8 @@ class Venta extends Model
         'estado', 'observacion', 'fecha_venta',
         // Datos con que se atendió ESTA venta (pueden diferir de la ficha del cliente).
         'cliente_telefono', 'cliente_direccion',
+        // Entregas: 'recojo' | 'envio', su ruta y la fecha y hora programadas.
+        'tipo_entrega', 'ruta_entrega_id', 'entrega_programada',
         'es_credito', 'monto_pagado', 'saldo_pendiente', 'fecha_vencimiento',
         'moneda', 'tipo_cambio', 'monto_moneda',
     ];
@@ -29,6 +31,7 @@ class Venta extends Model
     {
         return [
             'fecha_venta'       => 'datetime',
+            'entrega_programada' => 'datetime',
             'subtotal'          => 'decimal:2',
             'descuento_total'   => 'decimal:2',
             'igv'               => 'decimal:2',
@@ -48,6 +51,7 @@ class Venta extends Model
     public function caja(): BelongsTo            { return $this->belongsTo(Caja::class); }
     public function user(): BelongsTo            { return $this->belongsTo(User::class); }
     public function cliente(): BelongsTo         { return $this->belongsTo(Cliente::class); }
+    public function rutaEntrega(): BelongsTo     { return $this->belongsTo(RutaEntrega::class, 'ruta_entrega_id'); }
     public function descuentoConcepto(): BelongsTo { return $this->belongsTo(DescuentoConcepto::class); }
     public function items(): HasMany             { return $this->hasMany(VentaItem::class); }
     public function pagos(): HasMany             { return $this->hasMany(VentaPago::class); }

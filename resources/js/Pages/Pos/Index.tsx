@@ -4,13 +4,14 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2,
+    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2, Store,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
 import PosLayout from '@/Layouts/PosLayout';
 import { celebrarVenta } from '@/lib/celebrarVenta';
 import Button from '@/Components/UI/Button';
+import Modal from '@/Components/UI/Modal';
 import CarritoItem, { LineaCarrito, HistorialPrecioCliente, DescModo, DescTipo } from './Partials/CarritoItem';
 import PanelPago, { LineaPago, faltanCuentas } from './Partials/PanelPago';
 import SelectorComprobante from './Partials/SelectorComprobante';
@@ -32,6 +33,18 @@ import type {
 } from '@/types';
 
 interface MetodoPagoConCuentas extends MetodoPago { cuentas?: Cuenta[]; }
+
+/** Configuración de Entregas que llega al POS (Configuración → Entregas). */
+interface EntregasPos {
+    aviso_monto:            number | null;
+    ruta_obligatoria:       boolean;
+    fecha_obligatoria:      boolean;
+    envio_sale_al_entregar: boolean;
+    texto_recojo:           string;
+    texto_envio:            string;
+    rutas:                  { id: number; nombre: string; zona: string | null }[];
+}
+type TipoEntrega = 'recojo' | 'envio';
 
 interface CitaPrellenadaItem {
     producto_id:        number;
@@ -110,6 +123,9 @@ interface VentaEnEdicion {
     observacion?:          string | null;
     cliente_telefono?:     string | null;
     cliente_direccion?:    string | null;
+    tipo_entrega?:         'recojo' | 'envio' | null;
+    ruta_entrega_id?:      number | null;
+    entrega_programada?:   string | null;
     // Crédito guardado en la venta — para recargar el toggle al editar.
     es_credito?:           boolean;
     fecha_vencimiento?:    string | null;
@@ -163,6 +179,8 @@ interface Props extends PageProps {
     permitePendienteEntrega?:  boolean;
     // Pedir teléfono, dirección y observación del cliente (Configuración → Ticket).
     pideDatosCliente?:         boolean;
+    // Entregas: recojo o envío. null = la empresa no usa la función.
+    entregas?:                 EntregasPos | null;
     // A14: el backend valida que el usuario pueda operar el POS al CARGAR la
     // pantalla (admin sin local_id en modo central_y_local, almacén
     // desactivado, etc.). Si puedeVender=false bloqueamos el botón cobrar
@@ -340,7 +358,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false }: Props) {
+export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null }: Props) {
     // Configuración de la empresa (configurable por tenant).
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
@@ -485,6 +503,18 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const [entregaPendiente, setEntregaPendiente]   = useState(!!ventaEnEdicion?.entrega_pendiente);
     const [despachoAlmacen, setDespachoAlmacen]       = useState(!!ventaEnEdicion?.despacho_almacen);
     const [fechaEntrega, setFechaEntrega]             = useState(ventaEnEdicion?.fecha_entrega_estimada ?? '');
+    // Entregas: toda venta nueva empieza como recojo en tienda.
+    const [tipoEntrega, setTipoEntrega]               = useState<TipoEntrega>(entregas && ventaEnEdicion?.tipo_entrega === 'envio' ? 'envio' : 'recojo');
+    const [rutaEntregaId, setRutaEntregaId]           = useState<number | null>(ventaEnEdicion?.ruta_entrega_id ?? null);
+    const [entregaProgramada, setEntregaProgramada]   = useState(ventaEnEdicion?.entrega_programada ?? '');
+    const [avisoEnvio, setAvisoEnvio]                 = useState(false);
+    // El aviso "¿recoge o es envío?" se pregunta una sola vez por venta.
+    const avisoRespondido                             = useRef(false);
+    // Si el envío cambió la modalidad a "por entregar", volver a recojo la deshace.
+    const modalidadPorEnvio                           = useRef(false);
+    const esEnvio        = !!entregas && tipoEntrega === 'envio';
+    // En un envío la mercadería sale del stock recién al entregarse.
+    const envioPendiente = esEnvio && !!entregas?.envio_sale_al_entregar;
     const [pendientes, setPendientes]               = useState<Record<string, number>>(() => {
         const m: Record<string, number> = {};
         ventaEnEdicion?.items.forEach(it => {
@@ -1075,6 +1105,12 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         // Tampoco el pendiente por entregar.
         setEntregaPendiente(false);
         setFechaEntrega('');
+        // Ni el envío: la siguiente venta vuelve a empezar como recojo.
+        setTipoEntrega('recojo');
+        setRutaEntregaId(null);
+        setEntregaProgramada('');
+        avisoRespondido.current = false;
+        modalidadPorEnvio.current = false;
         setPendientes({});
         // Resetear advertencias de duplicados para la siguiente venta.
         advertenciasDuplicados.current.clear();
@@ -1083,7 +1119,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
 
     /** Pendiente efectivo de una línea: lo tecleado, recortado a [0, cantidad]. */
     function pendienteDe(item: LineaCarrito): number {
-        const p = pendientes[item.key] ?? 0;
+        // En un envío, lo que no se marcó como llevado queda todo por entregar.
+        const p = pendientes[item.key] ?? (envioPendiente ? item.cantidad : 0);
         return Math.min(Math.max(0, p), item.cantidad);
     }
 
@@ -1172,6 +1209,18 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         const bajoCosto = carrito.find(i => (i.costo_minimo ?? 0) > 0 && i.precio_unitario < i.costo_minimo - 0.009);
         if (bajoCosto) return { texto: `Precio bajo el costo: ${bajoCosto.producto_nombre}` };
 
+        if (esEnvio && entregas) {
+            if (esClienteGeneralSel) return { texto: 'Elige el cliente del envío', resolver: irACliente };
+            if (!datosCliente.direccion.trim() && !cliente?.direccion) {
+                return { texto: 'Falta la dirección del envío', resolver: enfocar('[data-envio-direccion]') };
+            }
+            if (entregas.ruta_obligatoria && entregas.rutas.length > 0 && !rutaEntregaId) {
+                return { texto: 'Elige la ruta del envío', resolver: enfocar('[data-envio-ruta]') };
+            }
+            if (entregas.fecha_obligatoria && !entregaProgramada) {
+                return { texto: 'Indica cuándo se entrega', resolver: enfocar('[data-envio-fecha]') };
+            }
+        }
         if (entregaPendiente) {
             if (esClienteGeneralSel) return { texto: 'Elige el cliente que recogerá lo pendiente', resolver: irACliente };
             if (totalPendientes <= 0.00009) return { texto: 'Indica cuánto se lleva ahora', resolver: enfocar('[data-pendiente-input]') };
@@ -1210,6 +1259,12 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             else toast.error(problema.texto);
             return;
         }
+        // Para no olvidar el envío: una venta grande marcada como recojo se
+        // confirma antes de cobrar (una sola vez, y no al editar una venta).
+        if (entregas?.aviso_monto && !esEnvio && !ventaEnEdicion && !avisoRespondido.current && total >= entregas.aviso_monto) {
+            setAvisoEnvio(true);
+            return;
+        }
         setModalConfirm(true);
     }
 
@@ -1226,8 +1281,13 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
 
         const payload = {
             cliente_id:            cliente?.id ?? null,
+            ...(entregas ? {
+                tipo_entrega:       tipoEntrega,
+                ruta_entrega_id:    esEnvio ? rutaEntregaId : null,
+                entrega_programada: esEnvio && entregaProgramada ? entregaProgramada : null,
+            } : {}),
             // Solo viajan si la empresa los pide: así editar una venta no los borra.
-            ...(pideDatosCliente ? {
+            ...(pideDatosCliente || esEnvio ? {
                 cliente_telefono:  datosCliente.telefono.trim() || null,
                 cliente_direccion: datosCliente.direccion.trim() || null,
                 observacion:       datosCliente.observacion.trim() || null,
@@ -1356,8 +1416,38 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     type Entrega = 'completa' | 'pendiente' | 'despacho';
     const entrega: Entrega = despachoAlmacen ? 'despacho' : entregaPendiente ? 'pendiente' : 'completa';
     function elegirEntrega(e: Entrega) {
+        if (e === 'completa' && envioPendiente) {
+            toast('En un envío la mercadería queda por entregar. Si el cliente se lleva todo ahora, marca que recoge en tienda.');
+            return;
+        }
+        modalidadPorEnvio.current = false;
         activarPendiente(e === 'pendiente');
         activarDespachoAlmacen(e === 'despacho');
+    }
+
+    function elegirTipoEntrega(t: TipoEntrega) {
+        if (!entregas || t === tipoEntrega) return;
+        setTipoEntrega(t);
+        avisoRespondido.current = true;
+
+        if (t === 'envio') {
+            // La mercadería sale al entregarse: queda por entregar (o en despacho,
+            // si la empresa usa la bandeja del almacén).
+            if (entregas.envio_sale_al_entregar && entrega === 'completa') {
+                modalidadPorEnvio.current = true;
+                if (empresaAuth?.usa_despacho_almacen) activarDespachoAlmacen(true);
+                else activarPendiente(true);
+            }
+            return;
+        }
+
+        setRutaEntregaId(null);
+        setEntregaProgramada('');
+        if (modalidadPorEnvio.current) {
+            modalidadPorEnvio.current = false;
+            activarPendiente(false);
+            activarDespachoAlmacen(false);
+        }
     }
 
     function setPendienteLinea(key: string, valor: number) {
@@ -1385,6 +1475,23 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         onElegirEntrega:       elegirEntrega,
         // Bandeja de despacho en almacén (solo si la empresa lo activó).
         usaDespachoAlmacen:    empresaAuth?.usa_despacho_almacen ?? false,
+        // En un envío que sale al entregarse no existe "se lleva todo".
+        envioPendiente,
+        // Recojo o envío (solo si la empresa usa Entregas).
+        slotEntrega: entregas ? (
+            <EntregaVenta
+                entregas={entregas}
+                tipo={tipoEntrega}
+                onTipo={elegirTipoEntrega}
+                rutaId={rutaEntregaId}
+                onRuta={setRutaEntregaId}
+                programada={entregaProgramada}
+                onProgramada={setEntregaProgramada}
+                datos={datosCliente}
+                onDatos={setDatosCliente}
+                pedirDatosAqui={!pideDatosCliente}
+            />
+        ) : null,
         // Autofoco del precio en líneas recién agregadas con precio base 0.
         nuevaLineaPrecioKey,
         onAutoFocusPrecio:     () => setNuevaLineaPrecioKey(null),
@@ -2256,6 +2363,21 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 }}
             />
 
+            <Modal isOpen={avisoEnvio} onClose={() => setAvisoEnvio(false)} title="¿Recoge en tienda o es un envío?" size="sm"
+                footer={<>
+                    <Button variant="secondary" onClick={() => { avisoRespondido.current = true; setAvisoEnvio(false); setModalConfirm(true); }}>
+                        Recoge en tienda
+                    </Button>
+                    <Button onClick={() => { setAvisoEnvio(false); elegirTipoEntrega('envio'); }} startContent={<Truck size={15} />}>
+                        Es un envío
+                    </Button>
+                </>}>
+                <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                    Esta venta suma <strong>S/ {total.toFixed(2)}</strong> y está marcada como recojo en tienda.
+                    Si hay que llevársela al cliente, márcala como envío para que salga en los despachos con su dirección y su hora.
+                </p>
+            </Modal>
+
             <ModalConfirmacionVenta
                 isOpen={modalConfirm}
                 onClose={() => setModalConfirm(false)}
@@ -2424,6 +2546,8 @@ interface CarritoPanelProps {
     entrega: 'completa' | 'pendiente' | 'despacho';
     onElegirEntrega: (e: 'completa' | 'pendiente' | 'despacho') => void;
     usaDespachoAlmacen: boolean;
+    envioPendiente: boolean;
+    slotEntrega: React.ReactNode;
     // Autofoco del precio en líneas recién agregadas con precio base 0.
     nuevaLineaPrecioKey: string | null;
     onAutoFocusPrecio: () => void;
@@ -2444,7 +2568,7 @@ function CarritoPanel({
     permitirCredito, permitirPendiente, entregaPendiente, despachoAlmacen, fechaEntrega, pendienteDe, totalPendientes,
     onSetEntregaPendiente, onSetDespachoAlmacen, onSetFechaEntrega, onSetPendiente,
     entrega, onElegirEntrega,
-    usaDespachoAlmacen,
+    usaDespachoAlmacen, envioPendiente, slotEntrega,
     nuevaLineaPrecioKey, onAutoFocusPrecio,
     anticipoSeleccionado, montoAnticipoUsado,
 }: CarritoPanelProps) {
@@ -2605,15 +2729,18 @@ function CarritoPanel({
                             Despacho son botones que se RELLENAN de su color al activarse
                             (son excluyentes: activar uno apaga el otro; tocar el activo
                             vuelve a contado). Solo si la empresa usa alguna. */}
-                        {(permitirCredito || permitirPendiente || usaDespachoAlmacen) && (
+                        {slotEntrega}
+
+                        {(permitirCredito || permitirPendiente || usaDespachoAlmacen || envioPendiente) && (
                             <ModalidadVenta
                                 esCredito={esCredito}
                                 onCredito={onSetEsCredito}
                                 entrega={entrega}
                                 onEntrega={onElegirEntrega}
                                 credito={permitirCredito}
-                                pendiente={permitirPendiente}
+                                pendiente={permitirPendiente || envioPendiente}
                                 despacho={usaDespachoAlmacen}
+                                sinCompleta={envioPendiente}
                             />
                         )}
 
@@ -2653,7 +2780,7 @@ function CarritoPanel({
                         {/* Pendiente por entregar: pagó todo, se lleva solo parte.
                             El POS crea el anticipo material en Finanzas solo;
                             el stock pendiente sale recién al entregarse. */}
-                        {permitirPendiente && entregaPendiente && (
+                        {(permitirPendiente || envioPendiente) && entregaPendiente && (
                             <div
                                 className="rounded-xl px-3 py-2.5"
                                 style={{
@@ -2664,7 +2791,9 @@ function CarritoPanel({
                                 {entregaPendiente && (
                                     <div className="space-y-2">
                                         <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                                            Indica cuánto <strong>se lleva ahora</strong> de cada producto; el resto queda pendiente y se registra solo en Finanzas → Anticipos.
+                                            {envioPendiente
+                                                ? <>Si el cliente <strong>se lleva algo ahora</strong>, indícalo; el resto queda en Despachos para el envío.</>
+                                                : <>Indica cuánto <strong>se lleva ahora</strong> de cada producto; el resto queda pendiente y se registra solo en Finanzas → Anticipos.</>}
                                         </p>
                                         <div className="space-y-1.5">
                                             {carrito.map(item => {
@@ -2703,25 +2832,28 @@ function CarritoPanel({
                                                 );
                                             })}
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                                                Entrega estimada (opcional)
-                                            </span>
-                                            <input
-                                                type="date"
-                                                value={fechaEntrega}
-                                                onChange={e => onSetFechaEntrega(e.target.value)}
-                                                className="flex-1 text-xs rounded-lg px-2 py-1.5 border outline-none"
-                                                style={{
-                                                    borderColor: 'var(--color-border)',
-                                                    backgroundColor: 'var(--color-bg)',
-                                                    color: 'var(--color-text)',
-                                                }}
-                                            />
-                                        </div>
+                                        {/* En un envío la fecha es la programada, arriba. */}
+                                        {!envioPendiente && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                                    Entrega estimada (opcional)
+                                                </span>
+                                                <input
+                                                    type="date"
+                                                    value={fechaEntrega}
+                                                    onChange={e => onSetFechaEntrega(e.target.value)}
+                                                    className="flex-1 text-xs rounded-lg px-2 py-1.5 border outline-none"
+                                                    style={{
+                                                        borderColor: 'var(--color-border)',
+                                                        backgroundColor: 'var(--color-bg)',
+                                                        color: 'var(--color-text)',
+                                                    }}
+                                                />
+                                            </div>
+                                        )}
                                         {totalPendientes > 0 ? (
                                             <p className="text-[11px] font-medium" style={{ color: 'var(--color-warning)' }}>
-                                                {totalPendientes} und quedarán pendientes por entregar (no salen del stock hasta entregarse).
+                                                {totalPendientes} und quedarán {envioPendiente ? 'para el envío' : 'pendientes por entregar'} (no salen del stock hasta entregarse).
                                             </p>
                                         ) : (
                                             <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
@@ -3041,7 +3173,7 @@ function TituloSeccion({ children, extra }: { children: React.ReactNode; extra?:
  * tono tranquilo (borde + ✓); lo excepcional se RELLENA de su color para
  * que la cajera vea de un vistazo que es una venta especial.
  */
-function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pendiente, despacho }: {
+function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pendiente, despacho, sinCompleta = false }: {
     esCredito: boolean;
     onCredito: (v: boolean) => void;
     entrega:   'completa' | 'pendiente' | 'despacho';
@@ -3049,6 +3181,8 @@ function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pen
     credito:   boolean;
     pendiente: boolean;
     despacho:  boolean;
+    /** En un envío la mercadería siempre queda por entregar. */
+    sinCompleta?: boolean;
 }) {
     const hayEntrega = pendiente || despacho;
 
@@ -3064,7 +3198,9 @@ function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pen
                 )}
                 {hayEntrega && (
                     <FilaModalidad etiqueta="Entrega">
-                        <OpcionModalidad normal activo={entrega === 'completa'} onClick={() => onEntrega('completa')} Icono={ShoppingBag} label="Se lleva todo" />
+                        {!sinCompleta && (
+                            <OpcionModalidad normal activo={entrega === 'completa'} onClick={() => onEntrega('completa')} Icono={ShoppingBag} label="Se lleva todo" />
+                        )}
                         {pendiente && (
                             <OpcionModalidad activo={entrega === 'pendiente'} onClick={() => onEntrega('pendiente')} Icono={MODALIDADES.pendiente.Icono} label={MODALIDADES.pendiente.label} m={MODALIDADES.pendiente} />
                         )}
@@ -3072,6 +3208,83 @@ function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pen
                             <OpcionModalidad activo={entrega === 'despacho'} onClick={() => onEntrega('despacho')} Icono={MODALIDADES.despacho.Icono} label={MODALIDADES.despacho.label} m={MODALIDADES.despacho} />
                         )}
                     </FilaModalidad>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/** "ENVÍO A OBRA" → "Envío a obra": el texto del ticket, en tono de botón. */
+const comoFrase = (t: string) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+
+/**
+ * Recojo en tienda o envío. En un envío se piden la ruta y la fecha y hora
+ * programadas; la dirección y el teléfono se piden aquí solo si la empresa no
+ * los pide ya en la franja de datos del cliente.
+ */
+function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onProgramada, datos, onDatos, pedirDatosAqui }: {
+    entregas: EntregasPos;
+    tipo: TipoEntrega;
+    onTipo: (t: TipoEntrega) => void;
+    rutaId: number | null;
+    onRuta: (id: number | null) => void;
+    programada: string;
+    onProgramada: (v: string) => void;
+    datos: DatosCliente;
+    onDatos: (d: DatosCliente) => void;
+    pedirDatosAqui: boolean;
+}) {
+    const campo = 'w-full text-sm rounded-lg px-2.5 py-1.5 border outline-none focus:ring-2';
+    const estilo: React.CSSProperties = { borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' };
+
+    return (
+        <div className="space-y-1.5">
+            <TituloSeccion>¿Cómo lo recibe?</TituloSeccion>
+            <div className="rounded-xl p-2.5 space-y-2.5" style={{ backgroundColor: 'var(--color-surface)', boxShadow: '0 1px 3px rgba(15,23,42,0.08)' }}>
+                <div className="grid grid-cols-2 gap-2">
+                    <OpcionModalidad normal activo={tipo === 'recojo'} onClick={() => onTipo('recojo')} Icono={Store} label={comoFrase(entregas.texto_recojo)} />
+                    <OpcionModalidad activo={tipo === 'envio'} onClick={() => onTipo('envio')} Icono={Truck} label={comoFrase(entregas.texto_envio)} m={MODALIDADES.despacho} />
+                </div>
+
+                {tipo === 'envio' && (
+                    <div className="rounded-lg p-2.5 space-y-2" style={{ backgroundColor: MODALIDADES.despacho.tinte, border: `1px solid ${MODALIDADES.despacho.borde}` }}>
+                        {entregas.rutas.length > 0 && (
+                            <label className="block">
+                                <span className="block text-xs font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
+                                    Ruta{entregas.ruta_obligatoria ? '' : ' (opcional)'}
+                                </span>
+                                <select data-envio-ruta value={rutaId ?? ''} onChange={e => onRuta(e.target.value ? Number(e.target.value) : null)} className={campo} style={estilo}>
+                                    <option value="">Elegir ruta…</option>
+                                    {entregas.rutas.map(r => <option key={r.id} value={r.id}>{r.nombre}{r.zona ? `, ${r.zona}` : ''}</option>)}
+                                </select>
+                            </label>
+                        )}
+                        <label className="block">
+                            <span className="block text-xs font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
+                                Fecha y hora de entrega{entregas.fecha_obligatoria ? '' : ' (opcional)'}
+                            </span>
+                            <input data-envio-fecha type="datetime-local" value={programada} onChange={e => onProgramada(e.target.value)} className={campo} style={estilo} />
+                        </label>
+                        {pedirDatosAqui && (
+                            <>
+                                <label className="block">
+                                    <span className="block text-xs font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Dirección de entrega</span>
+                                    <input data-envio-direccion type="text" maxLength={255} value={datos.direccion} placeholder="Calle, número, referencia"
+                                        onChange={e => onDatos({ ...datos, direccion: e.target.value })} className={campo} style={estilo} />
+                                </label>
+                                <label className="block">
+                                    <span className="block text-xs font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Teléfono de contacto (opcional)</span>
+                                    <input type="tel" inputMode="tel" maxLength={30} value={datos.telefono}
+                                        onChange={e => onDatos({ ...datos, telefono: e.target.value })} className={campo} style={estilo} />
+                                </label>
+                            </>
+                        )}
+                        {entregas.envio_sale_al_entregar && (
+                            <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                La mercadería queda en Despachos y sale del stock cuando se confirma la entrega.
+                            </p>
+                        )}
+                    </div>
                 )}
             </div>
         </div>

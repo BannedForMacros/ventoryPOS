@@ -119,6 +119,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('impresion/verificar-pin', [ImpresionController::class, 'verificarPin'])
             ->name('impresion.verificar-pin');
 
+        // Entregas: recojo o envío, monto del aviso y rutas de reparto.
+        Route::middleware('permiso:config.entregas,ver')->get('entregas', [\App\Http\Controllers\Configuracion\EntregaConfigController::class, 'index'])->name('entregas.index');
+        Route::middleware('permiso:config.entregas,editar')->put('entregas', [\App\Http\Controllers\Configuracion\EntregaConfigController::class, 'update'])->name('entregas.update');
+        Route::middleware('permiso:config.entregas,editar')->post('entregas/rutas', [\App\Http\Controllers\Configuracion\EntregaConfigController::class, 'guardarRuta'])->name('entregas.rutas.store');
+        Route::middleware('permiso:config.entregas,editar')->put('entregas/rutas/{ruta}', [\App\Http\Controllers\Configuracion\EntregaConfigController::class, 'guardarRuta'])->name('entregas.rutas.update');
+        Route::middleware('permiso:config.entregas,editar')->delete('entregas/rutas/{ruta}', [\App\Http\Controllers\Configuracion\EntregaConfigController::class, 'eliminarRuta'])->name('entregas.rutas.destroy');
+
         // Plantilla del ticket impreso (secciones, orden, textos) con vista previa.
         Route::middleware('permiso:config.ticket,ver')->get('ticket', [\App\Http\Controllers\Configuracion\TicketPlantillaController::class, 'index'])->name('ticket.index');
         Route::middleware('permiso:config.ticket,editar')->put('ticket', [\App\Http\Controllers\Configuracion\TicketPlantillaController::class, 'update'])->name('ticket.update');
@@ -278,6 +285,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::middleware('permiso:despachos,ver')->get('/despachos', [DespachoController::class, 'index'])->name('despachos.index');
     Route::middleware('permiso:despachos,editar')->post('/despachos/{anticipo}/confirmar', [DespachoController::class, 'confirmar'])->name('despachos.confirmar');
+    Route::middleware('permiso:despachos,ver')->get('/despachos/entregas/{entrega}/ticket', [DespachoController::class, 'ticket'])->name('despachos.entrega.ticket');
 
     // ── CLIENTES ─────────────────────────────────────────────────────────
     Route::prefix('clientes')->name('clientes.')->group(function () {

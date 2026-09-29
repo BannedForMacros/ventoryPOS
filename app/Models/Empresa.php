@@ -63,6 +63,9 @@ class Empresa extends Model
         // Ticket por plantilla (JSON) y datos del cliente pedidos en el POS.
         'ticket_plantilla',
         'pos_datos_cliente',
+        // Entregas: recojo o envío, rutas y fecha programada (opcional por empresa).
+        'usa_entregas',
+        'entrega_config',
         'retiro_requiere_aprobacion',
         'cierre_pregunta_destino',
         'usa_caja_grande',
@@ -105,6 +108,8 @@ class Empresa extends Model
             'usa_planilla_caja'               => 'boolean',
             'ticket_plantilla'                => 'array',
             'pos_datos_cliente'               => 'boolean',
+            'usa_entregas'                    => 'boolean',
+            'entrega_config'                  => 'array',
             'retiro_requiere_aprobacion'      => 'boolean',
             'cierre_pregunta_destino'         => 'boolean',
             'usa_caja_grande'                 => 'boolean',

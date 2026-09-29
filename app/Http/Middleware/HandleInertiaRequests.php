@@ -43,6 +43,8 @@ class HandleInertiaRequests extends Middleware
                 // One-shot tras registrar una venta: el Show dispara la
                 // impresión automática del ticket (agente VentoryPrint).
                 'imprimir_ticket' => fn () => $request->session()->get('imprimir_ticket'),
+                // One-shot tras confirmar un despacho: id de la entrega a imprimir.
+                'despacho_entrega' => fn () => $request->session()->get('despacho_entrega'),
             ],
             // Campanita del header: cotizaciones por vencer / vencidas sin
             // respuesta. Solo para quien puede VER cotizaciones. Lazy: se

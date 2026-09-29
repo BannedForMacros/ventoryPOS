@@ -145,6 +145,9 @@ class VentaService
                         'observacion'           => $data['observacion'] ?? null,
                         'cliente_telefono'      => self::texto($data['cliente_telefono'] ?? null),
                         'cliente_direccion'     => self::texto($data['cliente_direccion'] ?? null),
+                        'tipo_entrega'          => $data['tipo_entrega'] ?? null,
+                        'ruta_entrega_id'       => $data['ruta_entrega_id'] ?? null,
+                        'entrega_programada'    => $data['entrega_programada'] ?? null,
                         'fecha_venta'           => $fechaVenta,
                     ]);
                 } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
@@ -651,6 +654,9 @@ class VentaService
                 'observacion'           => array_key_exists('observacion', $data) ? $data['observacion'] : $venta->observacion,
                 'cliente_telefono'      => array_key_exists('cliente_telefono', $data) ? self::texto($data['cliente_telefono']) : $venta->cliente_telefono,
                 'cliente_direccion'     => array_key_exists('cliente_direccion', $data) ? self::texto($data['cliente_direccion']) : $venta->cliente_direccion,
+                'tipo_entrega'          => array_key_exists('tipo_entrega', $data) ? $data['tipo_entrega'] : $venta->tipo_entrega,
+                'ruta_entrega_id'       => array_key_exists('ruta_entrega_id', $data) ? $data['ruta_entrega_id'] : $venta->ruta_entrega_id,
+                'entrega_programada'    => array_key_exists('entrega_programada', $data) ? $data['entrega_programada'] : $venta->entrega_programada,
                 'es_credito'            => $esCreditoNuevo,
                 'subtotal'              => 0,
                 'igv'                   => 0,

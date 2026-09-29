@@ -183,7 +183,7 @@ it('una sección nueva entra en su lugar aunque la empresa guardó su plantilla 
     ]]);
 
     expect(array_column($pl['secciones'], 'clave'))
-        ->toBe(['logo', 'negocio', 'documento', 'cliente', 'items', 'totales', 'pagos', 'estado_pago', 'pie']);
+        ->toBe(['logo', 'negocio', 'documento', 'cliente', 'entrega', 'items', 'pendientes', 'totales', 'pagos', 'estado_pago', 'pie']);
     expect(collect($pl['secciones'])->firstWhere('clave', 'pie')['activa'])->toBeFalse();
 
     expect(PlantillaTicket::resolver(null)['plantilla'])->toBe('estandar');

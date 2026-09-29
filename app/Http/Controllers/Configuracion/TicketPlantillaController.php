@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Configuracion;
 use App\Http\Controllers\Controller;
 use App\Models\Empresa;
 use App\Models\Local;
+use App\Models\RutaEntrega;
 use App\Services\AuditoriaService;
 use App\Services\TicketBloquesService;
+use App\Services\TicketPrintService;
+use App\Support\ConfigEntregas;
 use App\Support\PlantillaTicket;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -31,7 +34,7 @@ class TicketPlantillaController extends Controller
             'catalogo'        => PlantillaTicket::catalogo(),
             'posDatosCliente' => (bool) $empresa->pos_datos_cliente,
             // Siempre con la detallada: sirve para verla antes de elegirla.
-            'vistaPrevia'     => $this->muestras($empresa, ['plantilla' => PlantillaTicket::DETALLADA] + $plantilla),
+            'vistaPrevia'     => $this->muestras($empresa, PlantillaTicket::deEmpresa($empresa, ['plantilla' => PlantillaTicket::DETALLADA] + $plantilla)),
             // El ticket de siempre, con los mismos datos de muestra.
             'vistaEstandar'   => $this->muestrasEstandar($empresa),
             'puedeEditar'     => $request->user()->tienePermiso('config.ticket', 'editar'),
@@ -59,9 +62,10 @@ class TicketPlantillaController extends Controller
     /** Vista previa de una plantilla que todavía no se guardó. */
     public function vistaPrevia(Request $request)
     {
-        $plantilla = PlantillaTicket::resolver(['plantilla' => PlantillaTicket::DETALLADA] + $this->validar($request));
+        $empresa = $request->user()->empresa;
+        $plantilla = PlantillaTicket::deEmpresa($empresa, ['plantilla' => PlantillaTicket::DETALLADA] + $this->validar($request));
 
-        return response()->json(['vistaPrevia' => $this->muestras($request->user()->empresa, $plantilla)]);
+        return response()->json(['vistaPrevia' => $this->muestras($empresa, $plantilla)]);
     }
 
     private function validar(Request $request): array
@@ -87,20 +91,62 @@ class TicketPlantillaController extends Controller
         [$base, $conSaldo, $cotizacion] = $this->ticketsDeMuestra($empresa);
         $extras = ['cajero_telefono' => '974 123 456', 'observacion' => self::OBSERVACION];
 
-        return [
+        // Con Entregas activado, la venta pagada es un recojo y la que tiene
+        // saldo es un envío con parte de la mercadería aún por entregar.
+        $entregas = ConfigEntregas::de($empresa)['activo'];
+        $ruta     = $entregas ? RutaEntrega::deEmpresa($empresa->id)->activa()->orderBy('orden')->first() : null;
+        $envio    = !$entregas ? null : [
+            'tipo'       => 'envio',
+            'ruta'       => $ruta?->nombre ?? 'Ruta 1',
+            'zona'       => $ruta ? $ruta->zona : 'Centro',
+            'programada' => TicketPrintService::fechaHoraCorta(now()->addDay()->setTime(9, 0)),
+        ];
+
+        $muestras = [
             ['clave' => 'pagada', 'nombre' => 'Venta pagada', 'bloques' => $this->bloques->armar($base, $extras + [
                 'doc' => 'venta', 'saldo' => 0, 'a_cuenta' => 972.5,
                 'pagos' => [['nombre' => 'Efectivo', 'monto' => 472.5], ['nombre' => 'Yape', 'monto' => 500]],
+                'entrega' => $entregas ? ['tipo' => 'recojo'] : null,
             ], $plantilla)],
             ['clave' => 'saldo', 'nombre' => 'Venta con saldo', 'bloques' => $this->bloques->armar($conSaldo, $extras + [
                 'doc' => 'venta', 'saldo' => 572.5, 'a_cuenta' => 400, 'vencimiento' => now()->addDays(15)->format('d/m/Y'),
                 'pagos' => [['nombre' => 'Yape', 'monto' => 400]],
+                'entrega' => $envio,
+                'pendientes' => !$entregas ? null : [
+                    'titulo'   => 'ENTREGA DE LA MERCADERÍA',
+                    'columnas' => ['Vendida', 'Entregado', 'Pendiente'],
+                    'filas'    => [
+                        ['Cemento Azul Pacasmayo Antisalitre x Und', '20', '8', '12'],
+                        ['Arena Amarilla x m3', '5', '5', '0'],
+                        ['Alambre Negro N° 8 x Kg', '2.5', '2.5', '0'],
+                    ],
+                ],
             ], $plantilla)],
             ['clave' => 'cotizacion', 'nombre' => 'Cotización', 'bloques' => $this->bloques->armar($cotizacion, $extras + [
                 'doc' => 'cotizacion',
                 'pie' => $this->leyendaProforma(),
             ], $plantilla)],
         ];
+
+        if ($entregas) {
+            $despacho = $base;
+            $despacho['documento'] = [
+                'tipo' => $plantilla['textos']['titulo_despacho'], 'numero' => 'ENT-0007', 'fecha' => now()->format('d/m/Y'),
+                'vendedor' => $base['documento']['vendedor'], 'caja' => null,
+            ];
+            $muestras[] = ['clave' => 'despacho', 'nombre' => 'Despacho', 'bloques' => $this->bloques->armar($despacho, [
+                'doc' => 'despacho', 'cajero_telefono' => '974 123 456', 'observacion' => self::OBSERVACION,
+                'entrega' => $envio, 'saldo' => 572.5,
+                'pendientes' => [
+                    'titulo'   => 'DETALLE DE LA ENTREGA',
+                    'columnas' => ['Vendida', 'Entrega', 'Pendiente'],
+                    'filas'    => [['Cemento Azul Pacasmayo Antisalitre x Und', '20', '8', '4']],
+                ],
+                'pie' => trim("Venta V-0021\nRecibí conforme: ____________________\n" . $this->lineasExtra($empresa)),
+            ], $plantilla)];
+        }
+
+        return $muestras;
     }
 
     /**

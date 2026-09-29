@@ -380,6 +380,9 @@ class VentaController extends Controller
                     'observacion'           => $v->observacion,
                     'cliente_telefono'      => $v->cliente_telefono,
                     'cliente_direccion'     => $v->cliente_direccion,
+                    'tipo_entrega'          => $v->tipo_entrega,
+                    'ruta_entrega_id'       => $v->ruta_entrega_id,
+                    'entrega_programada'    => $v->entrega_programada?->format('Y-m-d\TH:i'),
                     // Crédito: hay que devolverlo para que el toggle cargue marcado al
                     // editar (antes salía siempre desmarcado). fecha_vencimiento solo
                     // aplica si es crédito.
@@ -502,6 +505,8 @@ class VentaController extends Controller
             'permiteCredito'           => (bool) ($user->empresa->pos_permite_credito ?? true),
             // Pedir teléfono, dirección y observación del cliente (opcional por empresa).
             'pideDatosCliente'         => (bool) ($user->empresa->pos_datos_cliente ?? false),
+            // Entregas (recojo o envío). null = la empresa no usa la función.
+            'entregas'                 => $this->entregasParaPos($user->empresa),
             'permitePendienteEntrega'  => (bool) ($user->empresa->pos_permite_pendiente_entrega ?? true),
             // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
             'monedas'            => ['PEN', 'USD'],
@@ -1824,5 +1829,29 @@ class VentaController extends Controller
     private function ajustarUmbralTrgm(): void
     {
         DB::statement('SET pg_trgm.similarity_threshold = 0.15');
+    }
+
+    /**
+     * Lo que el POS necesita para ofrecer recojo o envío: la configuración,
+     * las rutas activas y los textos del ticket (así la cajera ve "Envío a
+     * obra" si así lo llama la empresa).
+     */
+    private function entregasParaPos(?\App\Models\Empresa $empresa): ?array
+    {
+        $cfg = \App\Support\ConfigEntregas::de($empresa);
+        if (!$cfg['activo']) {
+            return null;
+        }
+
+        return [
+            'aviso_monto'            => $cfg['aviso_monto'],
+            'ruta_obligatoria'       => $cfg['ruta_obligatoria'],
+            'fecha_obligatoria'      => $cfg['fecha_obligatoria'],
+            'envio_sale_al_entregar' => $cfg['envio_sale_al_entregar'],
+            'texto_recojo'           => $cfg['textos']['recojo'],
+            'texto_envio'            => $cfg['textos']['envio'],
+            'rutas'                  => \App\Models\RutaEntrega::deEmpresa($empresa->id)->activa()
+                ->orderBy('orden')->orderBy('id')->get(['id', 'nombre', 'zona']),
+        ];
     }
 }

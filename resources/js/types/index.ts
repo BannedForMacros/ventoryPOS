@@ -51,6 +51,8 @@ export interface Empresa extends Record<string, unknown> {
     usa_planilla_caja?: boolean;
     /** El POS pide teléfono, dirección y observación del cliente. */
     pos_datos_cliente?: boolean;
+    /** Entregas: recojo en tienda o envío, con rutas y fecha programada. */
+    usa_entregas?: boolean;
     retiro_requiere_aprobacion: boolean;
     cierre_pregunta_destino: boolean;
     usa_caja_grande: boolean;
@@ -636,6 +638,8 @@ export interface Flash {
     error?: string | null;
     /** La venta se acaba de registrar: auto-imprimir el ticket una sola vez. */
     imprimir_ticket?: boolean;
+    /** Se acaba de confirmar un despacho: id de la entrega cuyo ticket hay que imprimir. */
+    despacho_entrega?: number | null;
     /** Comprobante electrónico recién emitido (badge de estado en el POS). */
     comprobante?: {
         numero: string;

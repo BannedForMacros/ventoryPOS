@@ -104,6 +104,72 @@ class TicketPrintService
         ];
     }
 
+    private const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+    /** "Lun 28/09/2026 - 9:00 a. m." */
+    public static function fechaHoraCorta(\DateTimeInterface $f): string
+    {
+        $c = Carbon::instance($f);
+
+        return self::DIAS[$c->dayOfWeek] . ' ' . $c->format('d/m/Y') . ' - ' . $c->format('g:i') . ($c->hour < 12 ? ' a. m.' : ' p. m.');
+    }
+
+    /** Recojo o envío de la venta, o null si la empresa no usa Entregas. */
+    private function entregaDe(?Venta $venta): ?array
+    {
+        if (!$venta || !$venta->tipo_entrega) {
+            return null;
+        }
+        $venta->loadMissing('rutaEntrega');
+
+        return [
+            'tipo'       => $venta->tipo_entrega,
+            'ruta'       => $venta->rutaEntrega?->nombre,
+            'zona'       => $venta->rutaEntrega?->zona,
+            'programada' => $venta->entrega_programada ? self::fechaHoraCorta($venta->entrega_programada) : null,
+        ];
+    }
+
+    /**
+     * Vendido, entregado y pendiente de cada producto de la venta. Null si no
+     * quedó (ni hubo) mercadería por entregar: el ticket no necesita la tabla.
+     */
+    private function pendientesDe(Venta $venta): ?array
+    {
+        $porItem = \App\Models\ClienteAnticipoItem::query()
+            ->whereIn('cliente_anticipo_id', \App\Models\ClienteAnticipo::where('venta_id', $venta->id)
+                ->where('tipo_valorizacion', 'material')
+                ->whereIn('estado', ['activo', 'aplicado'])
+                ->select('id'))
+            ->whereNotNull('venta_item_id')
+            ->get(['venta_item_id', 'cantidad_pendiente'])
+            ->groupBy('venta_item_id')
+            ->map(fn ($g) => (float) $g->sum('cantidad_pendiente'));
+
+        if ($porItem->isEmpty()) {
+            return null;
+        }
+
+        return [
+            'titulo'   => 'ENTREGA DE LA MERCADERÍA',
+            'columnas' => ['Vendida', 'Entregado', 'Pendiente'],
+            'filas'    => $venta->items->map(function ($item) use ($porItem) {
+                $vendida   = (float) $item->cantidad;
+                $pendiente = min($vendida, (float) ($porItem[$item->id] ?? 0));
+
+                return [
+                    trim($item->producto_nombre . ($item->unidad_nombre ? ' x ' . $item->unidad_nombre : '')),
+                    self::cantidad($vendida), self::cantidad($vendida - $pendiente), self::cantidad($pendiente),
+                ];
+            })->values()->all(),
+        ];
+    }
+
+    private static function cantidad(float $v): string
+    {
+        return rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.') ?: '0';
+    }
+
     /**
      * Ticket por plantilla: si la empresa usa una plantilla por bloques, se
      * agregan al payload. Los campos de siempre siguen viajando: un agente
@@ -111,7 +177,7 @@ class TicketPrintService
      */
     private function conBloques(array $payload, ?Empresa $empresa, array $extras): array
     {
-        $plantilla = PlantillaTicket::resolver($empresa?->ticket_plantilla);
+        $plantilla = PlantillaTicket::deEmpresa($empresa);
         if ($plantilla['plantilla'] === PlantillaTicket::ESTANDAR) {
             return $payload;
         }
@@ -247,6 +313,8 @@ class TicketPrintService
 
         return $this->conBloques($payload, $empresa, [
             'doc'             => 'venta',
+            'entrega'         => $this->entregaDe($venta),
+            'pendientes'      => $this->pendientesDe($venta),
             'cpe'             => (bool) $cpe,
             'anulada'         => $venta->estado === 'anulada',
             'cajero_telefono' => $venta->user?->telefono,
@@ -403,7 +471,7 @@ class TicketPrintService
             . ($anticipo?->venta?->numero ? "\nVenta origen: {$anticipo->venta->numero}" : '')
         );
 
-        return [
+        $payload = [
             'token' => $token,
 
             'negocio' => [
@@ -424,7 +492,7 @@ class TicketPrintService
                 'caja'     => null,
             ],
 
-            'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg),
+            'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg, $anticipo?->venta),
 
             'items' => $items,
 
@@ -448,6 +516,52 @@ class TicketPrintService
             'copias'     => 1,
             'logo'       => $this->logoBase64($empresa),
         ];
+
+        return $this->conBloquesDeDespacho($payload, $empresa, $entrega, $cfg);
+    }
+
+    /**
+     * Ticket de despacho por plantilla: qué se entrega ahora y qué queda
+     * pendiente, a dónde va y si hay que cobrar al entregar.
+     */
+    private function conBloquesDeDespacho(array $payload, ?Empresa $empresa, ClienteAnticipoAplicacion $entrega, array $cfg): array
+    {
+        $plantilla = PlantillaTicket::deEmpresa($empresa);
+        if ($plantilla['plantilla'] === PlantillaTicket::ESTANDAR) {
+            return $payload;
+        }
+
+        $venta = $entrega->anticipo?->venta;
+        $venta?->loadMissing('items');
+        $vendidas = $venta ? $venta->items->pluck('cantidad', 'id') : collect();
+
+        $payload['documento']['tipo'] = $venta ? $plantilla['textos']['titulo_despacho'] : $payload['documento']['tipo'];
+        $saldo = $venta && $venta->estado !== 'anulada' ? round((float) $venta->saldo_pendiente, 2) : 0.0;
+
+        $payload['bloques'] = app(TicketBloquesService::class)->armar($payload, [
+            'doc'             => 'despacho',
+            'cajero_telefono' => $entrega->user?->telefono,
+            'observacion'     => $entrega->observacion,
+            'entrega'         => $this->entregaDe($venta),
+            'pendientes'      => [
+                'titulo'   => 'DETALLE DE LA ENTREGA',
+                'columnas' => ['Vendida', 'Entrega', 'Pendiente'],
+                'filas'    => $entrega->items->map(fn ($ai) => [
+                    trim(($ai->item?->producto_nombre ?? 'Producto') . ($ai->item?->unidad_nombre ? ' x ' . $ai->item->unidad_nombre : '')),
+                    self::cantidad((float) ($vendidas[$ai->item?->venta_item_id] ?? $ai->item?->cantidad ?? 0)),
+                    self::cantidad((float) $ai->cantidad),
+                    self::cantidad((float) ($ai->item?->cantidad_pendiente ?? 0)),
+                ])->values()->all(),
+            ],
+            'saldo'           => $saldo,
+            // Un anticipo sin venta no tiene saldo que cobrar: sin banda.
+            'sin_estado_pago' => !$venta,
+            'pie'             => $this->conLineasExtra($cfg, trim(
+                ($venta?->numero ? "Venta {$venta->numero}\n" : '') . 'Recibí conforme: ____________________'
+            )),
+        ], $plantilla);
+
+        return $payload;
     }
 
     /**

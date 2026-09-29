@@ -13,10 +13,12 @@ use App\Support\PlantillaTicket;
  * Aquí nunca se mandan anchos: el agente reparte según el papel de cada caja.
  *
  * @phpstan-type Extras array{
- *   doc: 'venta'|'cotizacion', cpe?: bool, anulada?: bool,
+ *   doc: 'venta'|'cotizacion'|'despacho', cpe?: bool, anulada?: bool,
  *   cajero_telefono?: ?string, observacion?: ?string, pie?: ?string,
  *   pagos?: list<array{nombre:string, monto:float}>,
- *   a_cuenta?: float, saldo?: float, vencimiento?: ?string,
+ *   a_cuenta?: float, saldo?: float, vencimiento?: ?string, sin_estado_pago?: bool,
+ *   entrega?: ?array{tipo:'recojo'|'envio', ruta?:?string, zona?:?string, programada?:?string},
+ *   pendientes?: ?array{titulo:string, columnas:list<string>, filas:list<list<string>>},
  * }
  */
 class TicketBloquesService
@@ -39,7 +41,9 @@ class TicketBloquesService
                 'negocio'     => $this->negocio($p, $x),
                 'documento'   => $this->documento($p, $x, $pl),
                 'cliente'     => $this->cliente($p, $x, $pl),
+                'entrega'     => $this->entrega($x, $pl),
                 'items'       => $this->items($p, $x, $pl),
+                'pendientes'  => $this->pendientes($x),
                 'totales'     => $this->totales($p, $x),
                 'pagos'       => $this->pagos($p, $x, $pl),
                 'estado_pago' => $this->estadoPago($p, $x, $pl),
@@ -138,18 +142,22 @@ class TicketBloquesService
             $bloques[] = ['tipo' => 'texto', 'texto' => $pl['textos']['titulo_cliente'], 'negrita' => true];
         }
 
+        // En un envío la zona va con los datos de entrega, a la vista del repartidor.
+        $zona = ($x['entrega']['tipo'] ?? null) === 'envio' ? trim((string) ($x['entrega']['zona'] ?? '')) : '';
+
         $enRecuadro = $pl['opciones']['cliente_recuadro'] && ($telefono !== '' || $direccion !== '');
 
         $bloques[] = ['tipo' => 'pares', 'items' => $this->pares([
             ['Cliente:', $c['nombre'] ?? 'Cliente Varios'],
             [$etqDoc, $valDoc],
+            ['Zona:', $enRecuadro ? null : $zona],
             ['Celular:', $enRecuadro ? null : $telefono],
             ['Dirección:', $enRecuadro ? null : $direccion],
         ])];
 
         if ($enRecuadro) {
             $lineas = [];
-            foreach ([['TELÉFONO', $telefono], ['DIRECCIÓN', $direccion]] as [$titulo, $valor]) {
+            foreach ([['ZONA', $zona], ['TELÉFONO', $telefono], ['DIRECCIÓN', $direccion]] as [$titulo, $valor]) {
                 if ($valor === '') {
                     continue;
                 }
@@ -167,6 +175,56 @@ class TicketBloquesService
         }
 
         return $bloques;
+    }
+
+    /** Recojo o envío en grande, la ruta y cuándo está programada la entrega. */
+    private function entrega(array $x, array $pl): array
+    {
+        $e = $x['entrega'] ?? null;
+        if (!$e) {
+            return [];
+        }
+
+        $envio = ($e['tipo'] ?? '') === 'envio';
+        $bloques = [['tipo' => 'recuadro', 'alinear' => 'centro'] + $this->caja('recuadro', [
+            ['texto' => $pl['textos'][$envio ? 'envio' : 'recojo'], 'tamano' => 'grande', 'negrita' => true],
+        ], $pl)];
+
+        if ($envio && trim((string) ($e['ruta'] ?? '')) !== '') {
+            $bloques[] = $this->caja('banda', array_values(array_filter([
+                ['texto' => mb_strtoupper(trim($e['ruta'])), 'tamano' => 'grande', 'negrita' => true],
+                trim((string) ($e['zona'] ?? '')) !== '' ? ['texto' => mb_strtoupper(trim($e['zona'])), 'negrita' => true] : null,
+            ])), $pl);
+        }
+
+        if (!empty($e['programada'])) {
+            $bloques[] = ['tipo' => 'pares', 'items' => [
+                ['etiqueta' => 'Entrega programada:', 'valor' => $e['programada'], 'negrita' => true],
+            ]];
+        }
+
+        return $bloques;
+    }
+
+    /** Por producto: lo vendido, lo ya entregado y lo que falta entregar. */
+    private function pendientes(array $x): array
+    {
+        $t = $x['pendientes'] ?? null;
+        if (!$t || empty($t['filas'])) {
+            return [];
+        }
+
+        return [
+            ['tipo' => 'texto', 'texto' => $t['titulo'], 'negrita' => true],
+            [
+                'tipo'     => 'tabla',
+                'columnas' => array_merge(
+                    [['titulo' => 'Producto', 'flexible' => true]],
+                    array_map(fn ($titulo) => ['titulo' => $titulo], $t['columnas']),
+                ),
+                'filas'    => $t['filas'],
+            ],
+        ];
     }
 
     private function items(array $p, array $x, array $pl): array
@@ -271,6 +329,9 @@ class TicketBloquesService
 
     private function estadoPago(array $p, array $x, array $pl): array
     {
+        if (!empty($x['sin_estado_pago'])) {
+            return [];
+        }
         if (!empty($x['anulada'])) {
             return [$this->caja('banda', [['texto' => 'ANULADA', 'tamano' => 'grande', 'negrita' => true]], $pl)];
         }
@@ -283,7 +344,10 @@ class TicketBloquesService
         }
 
         $sym = $this->simbolo($p['totales']['moneda'] ?? 'PEN');
-        $detalle = trim((string) ($x['por_cancelar_detalle'] ?? $pl['textos']['por_cancelar_detalle']));
+        // En un envío, el saldo lo cobra quien entrega.
+        $detalle = ($x['entrega']['tipo'] ?? null) === 'envio'
+            ? $pl['textos']['cobrar_entrega']
+            : trim((string) $pl['textos']['por_cancelar_detalle']);
 
         return [$this->caja('banda', array_values(array_filter([
             ['texto' => $pl['textos']['por_cancelar'], 'tamano' => 'alto', 'negrita' => true],

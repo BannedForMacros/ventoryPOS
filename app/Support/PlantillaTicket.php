@@ -40,15 +40,17 @@ class PlantillaTicket
      * `docs`: en qué documentos aparece.
      */
     public const SECCIONES = [
-        'logo'        => ['nombre' => 'Logo',                 'detalle' => 'El logo de la empresa, si tiene uno.',                                   'docs' => ['venta', 'cotizacion']],
-        'negocio'     => ['nombre' => 'Datos del negocio',    'detalle' => 'Nombre, RUC, dirección y teléfono de la tienda.',                        'docs' => ['venta', 'cotizacion']],
-        'documento'   => ['nombre' => 'Documento',            'detalle' => 'Tipo y número, fecha, quién atendió y su celular, caja.',               'docs' => ['venta', 'cotizacion'], 'fija' => true],
-        'cliente'     => ['nombre' => 'Cliente',              'detalle' => 'Nombre, documento, teléfono, dirección y observación.',                 'docs' => ['venta', 'cotizacion']],
+        'logo'        => ['nombre' => 'Logo',                 'detalle' => 'El logo de la empresa, si tiene uno.',                                   'docs' => ['venta', 'cotizacion', 'despacho']],
+        'negocio'     => ['nombre' => 'Datos del negocio',    'detalle' => 'Nombre, RUC, dirección y teléfono de la tienda.',                        'docs' => ['venta', 'cotizacion', 'despacho']],
+        'documento'   => ['nombre' => 'Documento',            'detalle' => 'Tipo y número, fecha, quién atendió y su celular, caja.',               'docs' => ['venta', 'cotizacion', 'despacho'], 'fija' => true],
+        'cliente'     => ['nombre' => 'Cliente',              'detalle' => 'Nombre, documento, teléfono, dirección y observación.',                 'docs' => ['venta', 'cotizacion', 'despacho']],
+        'entrega'     => ['nombre' => 'Entrega',              'detalle' => 'Recojo o envío en grande, la ruta y la fecha programada. Solo con Entregas activado.', 'docs' => ['venta', 'despacho']],
         'items'       => ['nombre' => 'Productos',            'detalle' => 'Lo vendido: cantidad, precio e importe.',                               'docs' => ['venta', 'cotizacion'], 'fija' => true],
+        'pendientes'  => ['nombre' => 'Por entregar',         'detalle' => 'Por producto: vendido, entregado y pendiente. Solo si quedó mercadería por entregar.', 'docs' => ['venta', 'despacho']],
         'totales'     => ['nombre' => 'Totales',              'detalle' => 'Descuento, IGV si corresponde y el total.',                             'docs' => ['venta', 'cotizacion'], 'fija' => true],
         'pagos'       => ['nombre' => 'Forma de pago',        'detalle' => 'Una línea por cada medio con su monto; a cuenta y saldo si quedó deuda.', 'docs' => ['venta']],
-        'estado_pago' => ['nombre' => 'Estado de pago',       'detalle' => 'En grande: pagado, o por cancelar con el monto a cobrar.',              'docs' => ['venta']],
-        'pie'         => ['nombre' => 'Pie',                  'detalle' => 'Código QR del comprobante, mensaje final y líneas extra.',              'docs' => ['venta', 'cotizacion']],
+        'estado_pago' => ['nombre' => 'Estado de pago',       'detalle' => 'En grande: pagado, o por cancelar con el monto a cobrar.',              'docs' => ['venta', 'despacho']],
+        'pie'         => ['nombre' => 'Pie',                  'detalle' => 'Código QR del comprobante, mensaje final y líneas extra.',              'docs' => ['venta', 'cotizacion', 'despacho']],
     ];
 
     /** Textos que cada empresa puede cambiar. */
@@ -127,6 +129,18 @@ class PlantillaTicket
         }
 
         return compact('plantilla', 'secciones', 'textos', 'opciones');
+    }
+
+    /**
+     * La plantilla de una empresa lista para armar el ticket: incluye los
+     * textos de Entregas, que se configuran en Configuración → Entregas.
+     */
+    public static function deEmpresa(?\App\Models\Empresa $empresa, mixed $plantilla = null): array
+    {
+        $pl = self::resolver($plantilla ?? $empresa?->ticket_plantilla);
+        $pl['textos'] += ConfigEntregas::de($empresa)['textos'];
+
+        return $pl;
     }
 
     /** Claves de las secciones activas para un documento, en orden. */

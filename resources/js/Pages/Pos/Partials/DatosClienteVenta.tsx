@@ -38,7 +38,7 @@ export default function DatosClienteVenta({ valor, onChange }: { valor: DatosCli
                     </Campo>
                     <Campo icono={<MapPin size={14} />} etiqueta="Dirección">
                         <input type="text" maxLength={255} value={valor.direccion} onChange={set('direccion')}
-                            placeholder="Dirección (de entrega, si es otra)" aria-label="Dirección del cliente" className={CLASE} style={ESTILO} />
+                            placeholder="Dirección (de entrega, si es otra)" aria-label="Dirección del cliente" data-envio-direccion className={CLASE} style={ESTILO} />
                     </Campo>
                     <Campo icono={<MessageSquareText size={14} />} etiqueta="Observación">
                         <input type="text" maxLength={500} value={valor.observacion} onChange={set('observacion')}

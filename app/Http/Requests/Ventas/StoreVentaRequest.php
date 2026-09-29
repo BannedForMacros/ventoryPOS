@@ -16,6 +16,53 @@ class StoreVentaRequest extends FormRequest
 {
     public function authorize(): bool { return true; }
 
+    /**
+     * Entregas (opcional por empresa). Se normaliza ANTES de validar para que
+     * todo lo de abajo vea datos coherentes:
+     *  - Empresa sin la función: los campos de entrega se ignoran.
+     *  - Envío cuya mercadería sale al entregarse: queda pendiente por entregar
+     *    lo que la cajera no marcó como llevado (por defecto, todo).
+     */
+    protected function prepareForValidation(): void
+    {
+        $cfg = \App\Support\ConfigEntregas::de($this->user()?->empresa);
+
+        if (!$cfg['activo']) {
+            $this->merge(['tipo_entrega' => null, 'ruta_entrega_id' => null, 'entrega_programada' => null]);
+
+            return;
+        }
+
+        $tipo = $this->input('tipo_entrega') === \App\Support\ConfigEntregas::ENVIO
+            ? \App\Support\ConfigEntregas::ENVIO
+            : \App\Support\ConfigEntregas::RECOJO;
+        $cambios = ['tipo_entrega' => $tipo];
+
+        if ($tipo === \App\Support\ConfigEntregas::RECOJO) {
+            $cambios['ruta_entrega_id'] = null;
+        } elseif ($cfg['envio_sale_al_entregar'] && !$this->boolean('despacho_almacen') && is_array($this->input('items'))) {
+            $cambios['entrega_pendiente'] = true;
+            $cambios['items'] = array_map(function ($item) {
+                if (is_array($item) && !isset($item['cantidad_pendiente'])) {
+                    $item['cantidad_pendiente'] = $item['cantidad'] ?? 0;
+                }
+
+                return $item;
+            }, $this->input('items'));
+        }
+
+        // La fecha estimada del pedido pendiente es el día programado del envío.
+        if ($this->filled('entrega_programada') && !$this->filled('fecha_entrega_estimada')) {
+            try {
+                $cambios['fecha_entrega_estimada'] = \Illuminate\Support\Carbon::parse($this->input('entrega_programada'))->toDateString();
+            } catch (\Throwable) {
+                // La regla `date` de entrega_programada dará el mensaje.
+            }
+        }
+
+        $this->merge($cambios);
+    }
+
     public function rules(): array
     {
         $empresaId = $this->user()->empresa_id;
@@ -56,6 +103,11 @@ class StoreVentaRequest extends FormRequest
             // Requiere que la empresa tenga la opción activa.
             'despacho_almacen'       => ['nullable', 'boolean'],
             'fecha_entrega_estimada' => ['nullable', 'date'],
+            // Entregas (opcional por empresa): recojo en tienda o envío, con su
+            // ruta y la fecha y hora programadas. Ver prepareForValidation().
+            'tipo_entrega'           => ['nullable', Rule::in(['recojo', 'envio'])],
+            'ruta_entrega_id'        => ['nullable', 'integer', Rule::exists('rutas_entrega', 'id')->where('empresa_id', $empresaId)->where('activo', true)],
+            'entrega_programada'     => ['nullable', 'date'],
             // Backdate de admin: registrar la venta en un turno REABIERTO ajeno
             // con la fecha real en que ocurrió. Solo se honran si el usuario es
             // admin (guardas en el controlador).
@@ -175,6 +227,7 @@ class StoreVentaRequest extends FormRequest
 
             $this->validarSobrepagoNoEfectivo($validator, $total, $empresaId);
             $this->validarEntregaPendiente($validator, $empresaId);
+            $this->validarEnvio($validator, $empresaId);
             $this->validarComprobanteElectronico($validator, $empresaId, $total); // V13
         });
     }
@@ -308,7 +361,9 @@ class StoreVentaRequest extends FormRequest
         if ($esGeneral) {
             $validator->errors()->add(
                 'cliente_id',
-                'Marcar mercadería pendiente por entregar requiere un cliente identificado (no Cliente General).',
+                $this->input('tipo_entrega') === \App\Support\ConfigEntregas::ENVIO
+                    ? 'Un envío necesita un cliente identificado (no Cliente General): elige o registra al cliente.'
+                    : 'Marcar mercadería pendiente por entregar requiere un cliente identificado (no Cliente General).',
             );
         }
 
@@ -332,13 +387,47 @@ class StoreVentaRequest extends FormRequest
         }
 
         if (!$hayPendiente) {
-            $mensaje = $esDespachoAlmacen
-                ? 'La venta marcada como "Despacho en almacén" debe tener al menos un producto.'
-                : 'Marcaste "Pendiente por entregar" pero ninguna línea tiene cantidad pendiente. Indica cuánto se queda o desmarca la opción.';
+            $mensaje = match (true) {
+                $esDespachoAlmacen => 'La venta marcada como "Despacho en almacén" debe tener al menos un producto.',
+                $this->input('tipo_entrega') === \App\Support\ConfigEntregas::ENVIO
+                    => 'En un envío al menos un producto debe quedar por entregar. Si el cliente se lleva todo ahora, marca que recoge en tienda.',
+                default => 'Marcaste "Pendiente por entregar" pero ninguna línea tiene cantidad pendiente. Indica cuánto se queda o desmarca la opción.',
+            };
             $validator->errors()->add(
                 $esDespachoAlmacen ? 'items' : 'entrega_pendiente',
                 $mensaje,
             );
+        }
+    }
+
+    /**
+     * Envío: lo mínimo para que el repartidor pueda entregar. La dirección
+     * puede venir de la venta o de la ficha del cliente.
+     */
+    private function validarEnvio($validator, int $empresaId): void
+    {
+        if ($this->input('tipo_entrega') !== \App\Support\ConfigEntregas::ENVIO) {
+            return;
+        }
+
+        $cfg = \App\Support\ConfigEntregas::de($this->user()->empresa);
+
+        $direccion = trim((string) $this->input('cliente_direccion'));
+        if ($direccion === '' && $this->input('cliente_id')) {
+            $direccion = trim((string) \App\Models\Cliente::where('id', $this->input('cliente_id'))
+                ->where('empresa_id', $empresaId)->value('direccion'));
+        }
+        if ($direccion === '') {
+            $validator->errors()->add('cliente_direccion', 'Un envío necesita la dirección de entrega.');
+        }
+
+        if ($cfg['ruta_obligatoria'] && !$this->filled('ruta_entrega_id')
+            && \App\Models\RutaEntrega::deEmpresa($empresaId)->activa()->exists()) {
+            $validator->errors()->add('ruta_entrega_id', 'Elige la ruta del envío.');
+        }
+
+        if ($cfg['fecha_obligatoria'] && !$this->filled('entrega_programada')) {
+            $validator->errors()->add('entrega_programada', 'Indica la fecha y la hora programadas del envío.');
         }
     }
 
@@ -418,7 +507,11 @@ class StoreVentaRequest extends FormRequest
             );
         }
 
-        if ($this->boolean('entrega_pendiente') && !($empresa->pos_permite_pendiente_entrega ?? true)) {
+        // Un envío cuya mercadería sale al entregarse usa el pendiente por
+        // entregar aunque la empresa no lo ofrezca como opción suelta.
+        $esEnvio = $this->input('tipo_entrega') === \App\Support\ConfigEntregas::ENVIO;
+
+        if ($this->boolean('entrega_pendiente') && !$esEnvio && !($empresa->pos_permite_pendiente_entrega ?? true)) {
             $validator->errors()->add(
                 'entrega_pendiente',
                 '"Pendiente por entregar" está desactivado para esta empresa (Configuración → Empresa).',
