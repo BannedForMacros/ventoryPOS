@@ -32,6 +32,7 @@ interface ClienteLite {
     apellidos?: string | null;
     razon_social?: string | null;
     telefono?: string | null;
+    direccion?: string | null;
     es_cliente_general?: boolean;
 }
 
@@ -75,6 +76,8 @@ interface Cotizacion extends Record<string, unknown> {
     igv: string;
     total: string;
     observacion: string | null;
+    cliente_telefono?: string | null;
+    cliente_direccion?: string | null;
     notas_seguimiento: string | null;
     ultimo_contacto: string | null;
     cliente?: ClienteLite | null;
@@ -97,6 +100,8 @@ interface Props extends PageProps {
     q: string;
     clientes: ClienteLite[];
     productos: ProductoCatalogo[];
+    /** La empresa pide teléfono y dirección del cliente para el ticket. */
+    pideDatosCliente?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -150,11 +155,12 @@ const lineaVacia = (): LineaForm => ({
 
 const emptyForm = () => ({
     cliente_id: '', referencia: '', fecha: hoy(), fecha_vencimiento: '', fecha_entrega_estimada: '', observacion: '',
+    cliente_telefono: '', cliente_direccion: '',
 });
 
 // ── Página ─────────────────────────────────────────────────────────────────
 
-export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, productos }: Props) {
+export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, productos, pideDatosCliente = false }: Props) {
     const { flash, auth } = usePage<Props>().props;
     const tasaIgv = Number(auth?.user?.empresa?.tasa_igv ?? 18);
 
@@ -263,6 +269,8 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
             fecha_vencimiento:      c.fecha_vencimiento ?? '',
             fecha_entrega_estimada: c.fecha_entrega_estimada ?? '',
             observacion:            c.observacion ?? '',
+            cliente_telefono:       c.cliente_telefono ?? c.cliente?.telefono ?? '',
+            cliente_direccion:      c.cliente_direccion ?? c.cliente?.direccion ?? '',
         });
         setLineas(c.items.map(it => ({
             key:                uid(),
@@ -273,6 +281,12 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
             descuento_item:     Number(it.descuento_item) > 0 ? String(Number(it.descuento_item)) : '',
         })));
         setModalForm(true);
+    }
+
+    /** Al elegir cliente, su teléfono y dirección pasan al formulario. */
+    function elegirCliente(id: string) {
+        const c = clientes.find(x => String(x.id) === id);
+        setForm(f => ({ ...f, cliente_id: id, cliente_telefono: c?.telefono ?? '', cliente_direccion: c?.direccion ?? '' }));
     }
 
     // ── Submits ─────────────────────────────────────────────────────────
@@ -299,6 +313,8 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
             fecha_entrega_estimada: form.fecha_entrega_estimada || null,
             referencia:             form.referencia || null,
             observacion:            form.observacion || null,
+            cliente_telefono:       pideDatosCliente ? (form.cliente_telefono.trim() || null) : undefined,
+            cliente_direccion:      pideDatosCliente ? (form.cliente_direccion.trim() || null) : undefined,
             items,
         };
         const opts = {
@@ -603,7 +619,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                                     <SearchableSelect label="Cliente" required
                                         options={clientes.map(c => ({ value: String(c.id), label: nombreCliente(c) }))}
                                         value={form.cliente_id}
-                                        onChange={v => setForm(f => ({ ...f, cliente_id: String(v) }))}
+                                        onChange={v => elegirCliente(String(v))}
                                         placeholder="— Seleccionar cliente —"
                                         searchPlaceholder="Buscar por nombre..."
                                         error={errors.cliente_id}
@@ -619,7 +635,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                             {/* Acceso rápido a "Clientes varios" (cliente general) */}
                             {clienteGeneral && form.cliente_id !== String(clienteGeneral.id) && (
                                 <button type="button"
-                                    onClick={() => setForm(f => ({ ...f, cliente_id: String(clienteGeneral.id) }))}
+                                    onClick={() => elegirCliente(String(clienteGeneral.id))}
                                     className="mt-1 text-[11px] font-medium hover:underline"
                                     style={{ color: 'var(--color-primary)' }}>
                                     Usar «Clientes varios»
@@ -713,6 +729,16 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                             <p key={k} className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{v}</p>
                         ))}
                     </div>
+
+                    {pideDatosCliente && (
+                        <div className="grid grid-cols-1 sm:grid-cols-[12rem_minmax(0,1fr)] gap-3">
+                            <Input label="Teléfono del cliente" type="tel" inputMode="tel" maxLength={30} value={form.cliente_telefono}
+                                onChange={e => setForm(f => ({ ...f, cliente_telefono: e.target.value }))} error={errors.cliente_telefono} />
+                            <Input label="Dirección" maxLength={255} value={form.cliente_direccion}
+                                onChange={e => setForm(f => ({ ...f, cliente_direccion: e.target.value }))} error={errors.cliente_direccion}
+                                hint="La de la ficha del cliente, o la de entrega si es otra. Sale en la cotización impresa." />
+                        </div>
+                    )}
 
                     <Input label="Observación" value={form.observacion}
                         onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} error={errors.observacion}
@@ -872,7 +898,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                 isOpen={modalCrearCliente}
                 onClose={() => setModalCrearCliente(false)}
                 onCreated={(c: Cliente) => {
-                    setForm(f => ({ ...f, cliente_id: String(c.id) }));
+                    setForm(f => ({ ...f, cliente_id: String(c.id), cliente_telefono: c.telefono ?? '', cliente_direccion: c.direccion ?? '' }));
                     setModalCrearCliente(false);
                     toast.success(`Cliente "${nombreCliente(c as unknown as ClienteLite)}" creado y seleccionado.`);
                 }}

@@ -60,6 +60,9 @@ class Empresa extends Model
         'apertura_editable',
         'usa_retiros_caja',
         'usa_planilla_caja',
+        // Ticket por plantilla (JSON) y datos del cliente pedidos en el POS.
+        'ticket_plantilla',
+        'pos_datos_cliente',
         'retiro_requiere_aprobacion',
         'cierre_pregunta_destino',
         'usa_caja_grande',
@@ -100,6 +103,8 @@ class Empresa extends Model
             'apertura_editable'               => 'boolean',
             'usa_retiros_caja'                => 'boolean',
             'usa_planilla_caja'               => 'boolean',
+            'ticket_plantilla'                => 'array',
+            'pos_datos_cliente'               => 'boolean',
             'retiro_requiere_aprobacion'      => 'boolean',
             'cierre_pregunta_destino'         => 'boolean',
             'usa_caja_grande'                 => 'boolean',

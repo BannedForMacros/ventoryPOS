@@ -94,7 +94,9 @@ class CotizacionController extends Controller
             'clientes'     => Cliente::deEmpresa($user->empresa_id)->activo()
                 ->orderByDesc('es_cliente_general')
                 ->orderBy('nombres')
-                ->get(['id', 'nombres', 'apellidos', 'razon_social', 'telefono', 'es_cliente_general']),
+                ->get(['id', 'nombres', 'apellidos', 'razon_social', 'telefono', 'direccion', 'es_cliente_general']),
+            // Pedir teléfono y dirección del cliente (Configuración → Ticket).
+            'pideDatosCliente' => (bool) ($user->empresa->pos_datos_cliente ?? false),
             // Catálogo para el editor de ítems: unidades activas con su precio.
             'productos'    => Producto::deEmpresa($user->empresa_id)->activo()
                 ->with(['unidades' => fn ($qq) => $qq->where('activo', true), 'unidades.unidadMedida:id,nombre'])
@@ -199,7 +201,10 @@ class CotizacionController extends Controller
                 'fecha_vencimiento'      => $data['fecha_vencimiento'] ?? null,
                 'fecha_entrega_estimada' => $data['fecha_entrega_estimada'] ?? null,
                 'observacion'            => $data['observacion'] ?? null,
+                'cliente_telefono'       => trim((string) ($data['cliente_telefono'] ?? '')) ?: null,
+                'cliente_direccion'      => trim((string) ($data['cliente_direccion'] ?? '')) ?: null,
             ]);
+            \App\Services\VentaService::completarFichaCliente((int) $data['cliente_id'], $data);
 
             $this->guardarItems($cotizacion, $data['items'], $user->empresa_id);
             $cotizacion->recalcularTotales();
@@ -241,8 +246,11 @@ class CotizacionController extends Controller
                 'fecha_vencimiento'      => $data['fecha_vencimiento'] ?? null,
                 'fecha_entrega_estimada' => $data['fecha_entrega_estimada'] ?? null,
                 'observacion'            => $data['observacion'] ?? null,
+                'cliente_telefono'       => array_key_exists('cliente_telefono', $data) ? (trim((string) $data['cliente_telefono']) ?: null) : $cotizacion->cliente_telefono,
+                'cliente_direccion'      => array_key_exists('cliente_direccion', $data) ? (trim((string) $data['cliente_direccion']) ?: null) : $cotizacion->cliente_direccion,
                 'estado'                 => $venceFuturo ? Cotizacion::ESTADO_VIGENTE : Cotizacion::ESTADO_VENCIDA,
             ]);
+            \App\Services\VentaService::completarFichaCliente((int) $data['cliente_id'], $data);
 
             $cotizacion->items()->delete();
             $this->guardarItems($cotizacion, $data['items'], $user->empresa_id);
@@ -388,6 +396,8 @@ class CotizacionController extends Controller
             'fecha_vencimiento'      => ['nullable', 'date', 'after_or_equal:fecha'],
             'fecha_entrega_estimada' => ['nullable', 'date'],
             'observacion'            => ['nullable', 'string', 'max:1000'],
+            'cliente_telefono'       => ['nullable', 'string', 'max:30'],
+            'cliente_direccion'      => ['nullable', 'string', 'max:255'],
             'items'                  => ['required', 'array', 'min:1'],
             'items.*.producto_id'    => ['required', 'integer', Rule::exists('productos', 'id')->where('empresa_id', $empresaId)->where('activo', true)],
             'items.*.producto_unidad_id' => ['required', 'integer', 'exists:producto_unidades,id'],

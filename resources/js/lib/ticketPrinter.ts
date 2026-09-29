@@ -58,6 +58,11 @@ export interface TicketPayload {
   qr?: string;
   /** Logo del negocio en data URI base64 (sale si el agente lo soporta). */
   logo?: string;
+  /**
+   * Ticket por plantilla: si viene, el agente 1.3.0+ dibuja solo estos bloques.
+   * Un agente anterior ignora la clave e imprime el diseño de siempre.
+   */
+  bloques?: import('./ticketBloques').Bloque[];
   abrirCajon?: boolean;
   copias?: number;
   anchoPapelMm?: number;
@@ -126,6 +131,28 @@ export async function agenteActivo(timeoutMs = 1200): Promise<boolean> {
     return r.ok;
   } catch {
     return false;
+  }
+}
+
+export interface EstadoAgente {
+  activo: boolean;
+  version?: string;
+  /** Versión del contrato de bloques que entiende; 0 = agente anterior a 1.3.0. */
+  bloques: number;
+}
+
+/** Qué agente hay en esta PC y si ya imprime tickets por plantilla. */
+export async function estadoAgente(timeoutMs = 1200): Promise<EstadoAgente> {
+  try {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), timeoutMs);
+    const r = await fetch(`${getAgenteUrl()}/status`, { signal: ctrl.signal });
+    clearTimeout(id);
+    if (!r.ok) return { activo: false, bloques: 0 };
+    const j = await r.json().catch(() => ({}));
+    return { activo: true, version: j?.version, bloques: Number(j?.bloques ?? 0) || 0 };
+  } catch {
+    return { activo: false, bloques: 0 };
   }
 }
 

@@ -1051,6 +1051,8 @@ export default function Empresas({ empresas }: Props) {
                         <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Ticket de venta</p>
                         <p className="text-xs -mt-2" style={{ color: 'var(--color-text-muted)' }}>
                             Controla qué se imprime en la ticketera. Los cambios aplican de inmediato, sin actualizar el programa de impresión de las cajas.
+                            {' '}Las secciones, su orden, los textos y la vista previa están en{' '}
+                            <a href={route('configuracion.ticket.index')} className="font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>Configuración, Ticket</a>.
                         </p>
 
                         <label className="flex items-start gap-2 cursor-pointer">

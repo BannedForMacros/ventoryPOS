@@ -18,6 +18,7 @@ import type { LucideIcon } from 'lucide-react';
 import PanelDescuento from './Partials/PanelDescuento';
 import ModalClienteRapido from './Partials/ModalClienteRapido';
 import ModalCrearCliente from './Partials/ModalCrearCliente';
+import DatosClienteVenta, { type DatosCliente } from './Partials/DatosClienteVenta';
 import ModalConfirmacionVenta from './Partials/ModalConfirmacionVenta';
 import ModalSelectorPresentacion from './Partials/ModalSelectorPresentacion';
 import Select from '@/Components/UI/Select';
@@ -68,6 +69,9 @@ interface CotizacionPrellenada {
     numero:          string;
     referencia:      string | null;
     cliente:         Cliente;
+    observacion?:       string | null;
+    cliente_telefono?:  string | null;
+    cliente_direccion?: string | null;
     items:           CotizacionPrellenadaItem[];
     tiene_inactivos: boolean;
 }
@@ -103,6 +107,9 @@ interface VentaEnEdicion {
     es_admin:              boolean;
     expira_en:             string | null;
     cliente:               Cliente | null;
+    observacion?:          string | null;
+    cliente_telefono?:     string | null;
+    cliente_direccion?:    string | null;
     // Crédito guardado en la venta — para recargar el toggle al editar.
     es_credito?:           boolean;
     fecha_vencimiento?:    string | null;
@@ -154,6 +161,8 @@ interface Props extends PageProps {
     // Casillas que la empresa puede apagar en Configuración → Empresa.
     permiteCredito?:           boolean;
     permitePendienteEntrega?:  boolean;
+    // Pedir teléfono, dirección y observación del cliente (Configuración → Ticket).
+    pideDatosCliente?:         boolean;
     // A14: el backend valida que el usuario pueda operar el POS al CARGAR la
     // pantalla (admin sin local_id en modo central_y_local, almacén
     // desactivado, etc.). Si puedeVender=false bloqueamos el botón cobrar
@@ -331,7 +340,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true }: Props) {
+export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false }: Props) {
     // Configuración de la empresa (configurable por tenant).
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
@@ -436,6 +445,21 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const [carrito, setCarrito]             = useState<LineaCarrito[]>(ventaEnEdicion ? carritoEdicion : carritoInicial);
     const [pagos, setPagos]                 = useState<LineaPago[]>(pagosEdicion);
     const [cliente, setCliente]             = useState<Cliente | null>(clienteInicial);
+    // Datos con que se atiende ESTA venta. Al editar una venta o convertir una
+    // cotización se respetan los que ya traía; si no, los de la ficha del cliente.
+    const origenDatos = ventaEnEdicion ?? cotizacionPrellenada;
+    const [datosCliente, setDatosCliente]   = useState<DatosCliente>({
+        telefono:    origenDatos?.cliente_telefono ?? clienteInicial?.telefono ?? '',
+        direccion:   origenDatos?.cliente_direccion ?? clienteInicial?.direccion ?? '',
+        observacion: origenDatos?.observacion ?? '',
+    });
+    // Al cambiar de cliente, el teléfono y la dirección pasan a ser los suyos.
+    const clienteAnterior = useRef(clienteInicial?.id ?? null);
+    useEffect(() => {
+        if ((cliente?.id ?? null) === clienteAnterior.current) return;
+        clienteAnterior.current = cliente?.id ?? null;
+        setDatosCliente(d => ({ ...d, telefono: cliente?.telefono ?? '', direccion: cliente?.direccion ?? '' }));
+    }, [cliente]);
     // Historial de precios de venta de ESTE cliente por producto. Se carga al
     // elegir cliente y sirve para mostrar en cada línea a cuánto se le vendió
     // antes. Funciona en cualquier orden (cliente→productos o productos→cliente).
@@ -1039,6 +1063,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         setCarrito([]);
         setPagos([]);
         setCliente(clienteGeneral);
+        setDatosCliente({ telefono: clienteGeneral?.telefono ?? '', direccion: clienteGeneral?.direccion ?? '', observacion: '' });
         setMoneda('PEN');
         setDescuentoTotal(0);
         setDescuentoConceptoId(null);
@@ -1201,6 +1226,12 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
 
         const payload = {
             cliente_id:            cliente?.id ?? null,
+            // Solo viajan si la empresa los pide: así editar una venta no los borra.
+            ...(pideDatosCliente ? {
+                cliente_telefono:  datosCliente.telefono.trim() || null,
+                cliente_direccion: datosCliente.direccion.trim() || null,
+                observacion:       datosCliente.observacion.trim() || null,
+            } : {}),
             tipo_comprobante:      tipoComprobante,
             numero_comprobante:    esComprobanteExterno ? (numeroComprobante.trim() || null) : null,
             // Solo el POST de creación lo usa; en edición se ignora (no auto-imprime).
@@ -1600,6 +1631,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                     </button>
                 </div>
             </div>
+
+            {pideDatosCliente && <DatosClienteVenta valor={datosCliente} onChange={setDatosCliente} />}
 
             {/* ── Anticipos de efectivo del cliente ────────────────────────
                 Se pueden usar VARIOS: se consumen del más antiguo al más nuevo y

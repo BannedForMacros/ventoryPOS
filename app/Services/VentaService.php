@@ -143,6 +143,8 @@ class VentaService
                         'es_credito'            => $esCredito,
                         'fecha_vencimiento'     => $esCredito ? ($data['fecha_vencimiento'] ?? null) : null,
                         'observacion'           => $data['observacion'] ?? null,
+                        'cliente_telefono'      => self::texto($data['cliente_telefono'] ?? null),
+                        'cliente_direccion'     => self::texto($data['cliente_direccion'] ?? null),
                         'fecha_venta'           => $fechaVenta,
                     ]);
                 } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
@@ -169,6 +171,8 @@ class VentaService
 
             // Items + pagos + totales + tesorería. Lógica compartida con actualizar().
             $this->aplicarItemsPagos($venta, $data, $user, $turno, $almacen, $moneda, $tipoCambio, $factor, $esCredito, $clienteId, $permitirStockNegativo);
+
+            self::completarFichaCliente((int) $clienteId, $data);
 
             return $venta->fresh(['items', 'pagos', 'cliente']);
         });
@@ -642,7 +646,11 @@ class VentaService
                 'numero_comprobante'    => $data['numero_comprobante'] ?? $venta->numero_comprobante,
                 'descuento_total'       => round((float) ($data['descuento_total'] ?? 0) * $factor, 2),
                 'descuento_concepto_id' => $data['descuento_concepto_id'] ?? null,
-                'observacion'           => $data['observacion'] ?? null,
+                // Solo se tocan si el formulario los mandó: editar una venta desde
+                // un POS que no pide estos datos no debe borrarlos.
+                'observacion'           => array_key_exists('observacion', $data) ? $data['observacion'] : $venta->observacion,
+                'cliente_telefono'      => array_key_exists('cliente_telefono', $data) ? self::texto($data['cliente_telefono']) : $venta->cliente_telefono,
+                'cliente_direccion'     => array_key_exists('cliente_direccion', $data) ? self::texto($data['cliente_direccion']) : $venta->cliente_direccion,
                 'es_credito'            => $esCreditoNuevo,
                 'subtotal'              => 0,
                 'igv'                   => 0,
@@ -656,6 +664,8 @@ class VentaService
                 'numero' => $venta->numero,
                 'total'  => (float) $venta->fresh()->total,
             ], $user);
+
+            self::completarFichaCliente((int) $clienteId, $data);
 
             return $venta->fresh(['items', 'pagos', 'cliente']);
         });
@@ -953,5 +963,39 @@ class VentaService
         return "Esta venta tiene una {$tipo}{$numero} emitida fuera del sistema. "
             . 'Anularla aquí NO anula ese documento: para que cuadre con SUNAT tendrás que '
             . "emitir la nota de crédito de esa {$tipo} por donde la emitiste.";
+    }
+
+    private static function texto(mixed $v): ?string
+    {
+        $v = trim((string) ($v ?? ''));
+
+        return $v === '' ? null : $v;
+    }
+
+    /**
+     * Si la ficha del cliente no tenía teléfono o dirección y en la venta (o
+     * cotización) se escribieron, se guardan en la ficha para la próxima vez.
+     * Nunca pisa lo que ya estaba, ni toca al cliente general.
+     */
+    public static function completarFichaCliente(?int $clienteId, array $data): void
+    {
+        $telefono  = self::texto($data['cliente_telefono'] ?? null);
+        $direccion = self::texto($data['cliente_direccion'] ?? null);
+        if (!$clienteId || (!$telefono && !$direccion)) {
+            return;
+        }
+
+        $cliente = \App\Models\Cliente::find($clienteId);
+        if (!$cliente || $cliente->es_cliente_general) {
+            return;
+        }
+
+        $nuevos = array_filter([
+            'telefono'  => trim((string) $cliente->telefono) === '' ? ($telefono ? mb_substr($telefono, 0, 20) : null) : null,
+            'direccion' => trim((string) $cliente->direccion) === '' ? $direccion : null,
+        ]);
+        if ($nuevos) {
+            $cliente->update($nuevos);
+        }
     }
 }

@@ -20,6 +20,8 @@ class User extends Authenticatable
         'email',
         'password',
         'activo',
+        // Celular de quien atiende: sale en el ticket por plantilla.
+        'telefono',
     ];
 
     protected $hidden = [

@@ -119,6 +119,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('impresion/verificar-pin', [ImpresionController::class, 'verificarPin'])
             ->name('impresion.verificar-pin');
 
+        // Plantilla del ticket impreso (secciones, orden, textos) con vista previa.
+        Route::middleware('permiso:config.ticket,ver')->get('ticket', [\App\Http\Controllers\Configuracion\TicketPlantillaController::class, 'index'])->name('ticket.index');
+        Route::middleware('permiso:config.ticket,editar')->put('ticket', [\App\Http\Controllers\Configuracion\TicketPlantillaController::class, 'update'])->name('ticket.update');
+        Route::middleware('permiso:config.ticket,ver')->post('ticket/vista-previa', [\App\Http\Controllers\Configuracion\TicketPlantillaController::class, 'vistaPrevia'])->name('ticket.vista-previa');
+
         Route::middleware('permiso:config.empresas')->group(function () {
             Route::resource('empresas', EmpresaController::class)->except(['show', 'create', 'edit']);
         });

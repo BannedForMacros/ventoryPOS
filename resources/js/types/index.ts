@@ -49,6 +49,8 @@ export interface Empresa extends Record<string, unknown> {
     usa_retiros_caja: boolean;
     /** Planilla de caja por turno (función opcional). */
     usa_planilla_caja?: boolean;
+    /** El POS pide teléfono, dirección y observación del cliente. */
+    pos_datos_cliente?: boolean;
     retiro_requiere_aprobacion: boolean;
     cierre_pregunta_destino: boolean;
     usa_caja_grande: boolean;
@@ -152,6 +154,7 @@ export interface User extends Record<string, unknown> {
     rol_id: number | null;
     name: string;
     email: string;
+    telefono?: string | null;
     email_verified_at?: string | null;
     activo: boolean;
     es_superadmin?: boolean;

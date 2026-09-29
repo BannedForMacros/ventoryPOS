@@ -29,7 +29,11 @@ class StoreVentaRequest extends FormRequest
                     ->where('activo', true),
             ],
             'tipo_comprobante'       => ['required', Rule::in(['ticket', 'boleta', 'factura', 'boleta_externa', 'factura_externa'])],
-            'numero_comprobante'     => ['nullable', 'string', 'max:30'],            'observacion'            => ['nullable', 'string', 'max:500'],
+            'numero_comprobante'     => ['nullable', 'string', 'max:30'],
+            'observacion'            => ['nullable', 'string', 'max:500'],
+            // Datos con que se atiende ESTA venta (teléfono y dirección de entrega).
+            'cliente_telefono'       => ['nullable', 'string', 'max:30'],
+            'cliente_direccion'      => ['nullable', 'string', 'max:255'],
             // Multimoneda: moneda de la venta y TC del día (soles por 1 USD).
             // Los precios/pagos vienen EN esa moneda; el backend convierte a soles.
             'moneda'                 => ['nullable', Rule::in(['PEN', 'USD'])],

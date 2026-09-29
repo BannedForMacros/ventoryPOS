@@ -325,6 +325,9 @@ class VentaController extends Controller
                     'numero'          => $cotizacion->numero,
                     'referencia'      => $cotizacion->referencia,
                     'cliente'         => $cotizacion->cliente,
+                    'observacion'       => $cotizacion->observacion,
+                    'cliente_telefono'  => $cotizacion->cliente_telefono,
+                    'cliente_direccion' => $cotizacion->cliente_direccion,
                     'items'           => $items,
                     'tiene_inactivos' => $items->contains(fn ($i) => $i['inactivo']),
                 ];
@@ -374,6 +377,9 @@ class VentaController extends Controller
                         ? $v->created_at?->addSeconds($this->minutosEdicionVenta($user->empresa) * 60)->toIso8601String()
                         : null,
                     'cliente'               => $v->cliente,
+                    'observacion'           => $v->observacion,
+                    'cliente_telefono'      => $v->cliente_telefono,
+                    'cliente_direccion'     => $v->cliente_direccion,
                     // Crédito: hay que devolverlo para que el toggle cargue marcado al
                     // editar (antes salía siempre desmarcado). fecha_vencimiento solo
                     // aplica si es crédito.
@@ -494,6 +500,8 @@ class VentaController extends Controller
             'vendeTransito'      => $transitoSvc->permiteVender($user->empresa),
             // Casillas del POS que se ocultan a los negocios que no las usan.
             'permiteCredito'           => (bool) ($user->empresa->pos_permite_credito ?? true),
+            // Pedir teléfono, dirección y observación del cliente (opcional por empresa).
+            'pideDatosCliente'         => (bool) ($user->empresa->pos_datos_cliente ?? false),
             'permitePendienteEntrega'  => (bool) ($user->empresa->pos_permite_pendiente_entrega ?? true),
             // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
             'monedas'            => ['PEN', 'USD'],

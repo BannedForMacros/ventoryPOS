@@ -9,6 +9,7 @@ use App\Models\Empresa;
 use App\Models\Turno;
 use App\Models\Venta;
 use App\Support\NumeroEnLetras;
+use App\Support\PlantillaTicket;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
@@ -87,15 +88,37 @@ class TicketPrintService
     }
 
     /** Bloque cliente del payload aplicando la plantilla (qué campos salen). */
-    private function clientePayload(?\App\Models\Cliente $cliente, string $nombreCli, ?string $docCli, array $cfg): array
+    private function clientePayload(?\App\Models\Cliente $cliente, string $nombreCli, ?string $docCli, array $cfg, ?object $operacion = null): array
     {
+        // Los datos con que se atendió ESTA venta o cotización mandan sobre la
+        // ficha del cliente (la obra puede no ser su dirección de siempre).
+        $direccion = trim((string) ($operacion?->cliente_direccion ?? '')) ?: ($cliente?->direccion ?: null);
+        $telefono  = trim((string) ($operacion?->cliente_telefono ?? '')) ?: ($cliente?->telefono ?: null);
+
         return [
             'nombre'    => $nombreCli !== '' ? $nombreCli : 'Cliente Varios',
             'doc'       => $docCli,
             // null = el agente no imprime la línea; la plantilla decide.
-            'direccion' => ($cfg['cliente_direccion'] ?? true) ? ($cliente?->direccion ?: null) : null,
-            'telefono'  => ($cfg['cliente_celular'] ?? true) ? ($cliente?->telefono ?: null) : null,
+            'direccion' => ($cfg['cliente_direccion'] ?? true) ? $direccion : null,
+            'telefono'  => ($cfg['cliente_celular'] ?? true) ? $telefono : null,
         ];
+    }
+
+    /**
+     * Ticket por plantilla: si la empresa usa una plantilla por bloques, se
+     * agregan al payload. Los campos de siempre siguen viajando: un agente
+     * anterior a 1.3.0 ignora `bloques` e imprime el diseño estándar.
+     */
+    private function conBloques(array $payload, ?Empresa $empresa, array $extras): array
+    {
+        $plantilla = PlantillaTicket::resolver($empresa?->ticket_plantilla);
+        if ($plantilla['plantilla'] === PlantillaTicket::ESTANDAR) {
+            return $payload;
+        }
+
+        $payload['bloques'] = app(TicketBloquesService::class)->armar($payload, $extras, $plantilla);
+
+        return $payload;
     }
 
     /**
@@ -145,7 +168,7 @@ class TicketPrintService
         $metodo      = $pagos->map(fn ($p) => $p->metodoPago?->nombre)->filter()->unique()->implode(' + ');
         $vuelto      = round((float) $pagos->sum('vuelto'), 2);
 
-        return [
+        $payload = [
             'token' => (string) ($venta->caja?->token_impresora
                 ?? $venta->turno?->caja?->token_impresora
                 ?? ''),
@@ -180,7 +203,7 @@ class TicketPrintService
                 'electronico' => (bool) $cpe,
             ],
 
-            'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg),
+            'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg, $venta),
 
             'items' => $venta->items->map(fn ($item) => [
                 'cant'    => (float) $item->cantidad,
@@ -219,6 +242,27 @@ class TicketPrintService
             // Logo de la empresa en base64 (sale si el agente lo soporta).
             'logo'       => $this->logoBase64($empresa),
         ];
+
+        $saldo = $venta->estado === 'anulada' ? 0.0 : round((float) $venta->saldo_pendiente, 2);
+
+        return $this->conBloques($payload, $empresa, [
+            'doc'             => 'venta',
+            'cpe'             => (bool) $cpe,
+            'anulada'         => $venta->estado === 'anulada',
+            'cajero_telefono' => $venta->user?->telefono,
+            'observacion'     => $venta->observacion,
+            // Lo que entró por cada medio: monto entregado menos su vuelto.
+            'pagos'           => $pagos
+                ->groupBy(fn ($p) => $p->metodoPago?->nombre ?? 'Pago')
+                ->map(fn ($g, $nombre) => ['nombre' => (string) $nombre, 'monto' => round((float) $g->sum('monto') - (float) $g->sum('vuelto'), 2)])
+                ->filter(fn ($p) => $p['monto'] > 0)
+                ->values()->all(),
+            'saldo'           => $saldo,
+            'a_cuenta'        => round((float) $venta->total - $saldo, 2),
+            'vencimiento'     => $saldo > 0 && $venta->fecha_vencimiento
+                ? Carbon::parse($venta->fecha_vencimiento)->format('d/m/Y')
+                : null,
+        ]);
     }
 
     /**
@@ -249,13 +293,10 @@ class TicketPrintService
             ? Carbon::parse($cot->fecha_vencimiento)->format('d/m/Y')
             : null;
 
-        $pie = trim(
-            ($cot->observacion ? $cot->observacion . "\n" : '')
-            . 'Proforma — no es comprobante de pago'
-            . ($validez ? "\nVálida hasta {$validez}" : '')
-        );
+        $leyenda = 'Proforma — no es comprobante de pago' . ($validez ? "\nVálida hasta {$validez}" : '');
+        $pie = trim(($cot->observacion ? $cot->observacion . "\n" : '') . $leyenda);
 
-        return [
+        $payload = [
             'token' => $token,
 
             'negocio' => [
@@ -276,7 +317,7 @@ class TicketPrintService
                 'caja'     => null,
             ],
 
-            'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg),
+            'cliente' => $this->clientePayload($cliente, $nombreCli, $docCli, $cfg, $cot),
 
             'items' => $cot->items->map(fn ($item) => [
                 'cant'    => (float) $item->cantidad,
@@ -307,6 +348,15 @@ class TicketPrintService
             'copias'     => 1,
             'logo'       => $this->logoBase64($empresa),
         ];
+
+        // Una cotización aún no se cobra: sin forma ni estado de pago. En la
+        // plantilla por bloques la observación va con el cliente, no en el pie.
+        return $this->conBloques($payload, $empresa, [
+            'doc'             => 'cotizacion',
+            'cajero_telefono' => $cot->user?->telefono,
+            'observacion'     => $cot->observacion,
+            'pie'             => $this->conLineasExtra($cfg, $leyenda),
+        ]);
     }
 
     /**

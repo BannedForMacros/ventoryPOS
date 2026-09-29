@@ -52,6 +52,7 @@ class Cotizacion extends Model
         'fecha', 'fecha_vencimiento', 'fecha_entrega_estimada',
         'subtotal', 'descuento_total', 'igv', 'total',
         'venta_id', 'observacion', 'notas_seguimiento', 'ultimo_contacto',
+        'cliente_telefono', 'cliente_direccion',
     ];
 
     protected function casts(): array

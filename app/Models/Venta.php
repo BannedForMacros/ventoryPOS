@@ -19,6 +19,8 @@ class Venta extends Model
         'numero', 'idempotency_key', 'tipo_comprobante', 'numero_comprobante',
         'subtotal', 'descuento_total', 'descuento_concepto_id', 'igv', 'total',
         'estado', 'observacion', 'fecha_venta',
+        // Datos con que se atendió ESTA venta (pueden diferir de la ficha del cliente).
+        'cliente_telefono', 'cliente_direccion',
         'es_credito', 'monto_pagado', 'saldo_pendiente', 'fecha_vencimiento',
         'moneda', 'tipo_cambio', 'monto_moneda',
     ];

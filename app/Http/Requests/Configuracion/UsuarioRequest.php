@@ -26,6 +26,8 @@ class UsuarioRequest extends FormRequest
             'email'      => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($id)],
             'password'   => $id ? 'nullable|string|min:6' : 'required|string|min:6',
             'activo'     => 'boolean',
+            // Celular de quien atiende: sale en el ticket por plantilla.
+            'telefono'   => ['nullable', 'string', 'max:20', 'regex:/^[0-9+() \-]*$/'],
         ];
     }
 }

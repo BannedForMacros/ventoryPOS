@@ -27,6 +27,7 @@ type FormData = {
     name: string;
     email: string;
     password: string;
+    telefono: string;
     activo: boolean;
 };
 
@@ -37,6 +38,7 @@ const emptyForm: FormData = {
     name: '',
     email: '',
     password: '',
+    telefono: '',
     activo: true,
 };
 
@@ -76,6 +78,7 @@ export default function Usuarios({ usuarios, empresas, locales, roles }: Props) 
             name: u.name,
             email: u.email,
             password: '',
+            telefono: (u.telefono as string | null) ?? '',
             activo: u.activo,
         });
         setModalOpen(true);
@@ -250,6 +253,17 @@ export default function Usuarios({ usuarios, empresas, locales, roles }: Props) 
                             error={errors.email}
                         />
                     </div>
+                    <Input
+                        label="Celular"
+                        type="tel"
+                        inputMode="tel"
+                        maxLength={20}
+                        placeholder="974 123 456"
+                        hint="Opcional. Sale en el ticket para que el cliente pueda llamar a quien lo atendió."
+                        value={data.telefono}
+                        onChange={e => setData('telefono', e.target.value)}
+                        error={errors.telefono}
+                    />
                     {!editing && (
                         <Input
                             label="Contraseña"
