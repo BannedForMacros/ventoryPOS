@@ -59,12 +59,6 @@ class DashboardController extends Controller
             ->selectRaw('COUNT(*) as cant, COALESCE(SUM(total),0) as total')
             ->first();
 
-        $devolucionesMes = Devolucion::where('empresa_id', $empresaId)
-            ->whereIn('estado', ['aprobada', 'completada'])
-            ->where('fecha', '>=', $mesIni)
-            ->selectRaw('COUNT(*) as cant, COALESCE(SUM(monto_devolucion),0) as total')
-            ->first();
-
         $gastosMes = (float) Gasto::where('empresa_id', $empresaId)
             ->where('fecha', '>=', $mesIni)
             ->sum('monto');
@@ -158,17 +152,10 @@ class DashboardController extends Controller
             ->whereBetween('fecha_venta', [Carbon::yesterday(), Carbon::yesterday()->endOfDay()])
             ->sum('total');
 
-        // ── Utilidad del mes (costo congelado por ítem, criterio del reporte) ──
-        $costoSql = \App\Services\CostoVentaService::sql('venta_items', 'productos', 'ventas');
-        $cogsMes = (float) VentaItem::join('ventas', 'ventas.id', '=', 'venta_items.venta_id')
-            ->join('productos', 'productos.id', '=', 'venta_items.producto_id')
-            ->where('ventas.empresa_id', $empresaId)
-            ->where('ventas.estado', 'completada')
-            ->where('ventas.fecha_venta', '>=', $mesIni)
-            ->selectRaw("COALESCE(SUM(venta_items.cantidad_base * {$costoSql}), 0) as c")
-            ->value('c');
-        $utilidadBrutaMes = round((float) $ventasMes->total - $cogsMes, 2);
-        $utilidadNetaMes  = round($utilidadBrutaMes - $gastosMes - (float) $devolucionesMes->total, 2);
+        // ── Utilidad del mes: misma regla que el reporte de utilidad ──
+        // (ventas y costo netos de devoluciones; una devolución no es un gasto).
+        $utilidadMes = app(\App\Services\UtilidadService::class)
+            ->resumen($empresaId, $mesIni->toDateString(), Carbon::today()->toDateString());
 
         // ── Por cobrar (créditos con saldo) y pendientes por entregar ──
         $cxc = Venta::where('empresa_id', $empresaId)->conSaldoPendiente()
@@ -211,10 +198,11 @@ class DashboardController extends Controller
                 'ventas_ayer'       => $ventasAyer,
                 'ventas_mes'        => ['cant' => (int) $ventasMes->cant,    'total' => (float) $ventasMes->total],
                 'ticket_promedio'   => (int) $ventasMes->cant > 0 ? round((float) $ventasMes->total / (int) $ventasMes->cant, 2) : 0,
-                'utilidad_bruta_mes'=> $utilidadBrutaMes,
-                'utilidad_neta_mes' => $utilidadNetaMes,
-                'margen_bruto_mes'  => (float) $ventasMes->total > 0 ? round($utilidadBrutaMes / (float) $ventasMes->total * 100, 1) : null,
-                'devoluciones_mes'  => ['cant' => (int) $devolucionesMes->cant, 'total' => (float) $devolucionesMes->total],
+                'utilidad_bruta_mes'=> $utilidadMes['utilidad_bruta'],
+                'utilidad_neta_mes' => $utilidadMes['utilidad_neta'],
+                'margen_bruto_mes'  => $utilidadMes['margen_bruto'],
+                // Devoluciones completadas del mes y el dinero realmente devuelto.
+                'devoluciones_mes'  => ['cant' => $utilidadMes['devoluciones_count'], 'total' => $utilidadMes['devuelto']],
                 'gastos_mes'        => $gastosMes,
                 'stock_valorizado'  => $stockValor,
                 'diferencia_caja_mes' => $diferenciaMes,

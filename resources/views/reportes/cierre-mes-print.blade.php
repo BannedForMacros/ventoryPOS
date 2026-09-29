@@ -220,10 +220,9 @@
                 </div>
             </div>
             <div class="desglose">
-                <div class="dato"><div class="lbl">Ventas</div><div class="val verde">{{ $fmt($kpis['ventas']) }}</div></div>
+                <div class="dato"><div class="lbl">Ventas netas</div><div class="val verde">{{ $fmt($kpis['ventas_netas']) }}</div></div>
                 <div class="dato"><div class="lbl">Costo</div><div class="val menos">− {{ $fmt($kpis['costo']) }}</div></div>
                 <div class="dato"><div class="lbl">Gastos</div><div class="val rojo">− {{ $fmt($kpis['gastos']) }}</div></div>
-                <div class="dato"><div class="lbl">Devoluciones</div><div class="val rojo">− {{ $fmt($kpis['devoluciones']) }}</div></div>
             </div>
         </div>
     </div>
@@ -232,12 +231,20 @@
     <div class="seccion primer"><span class="barra"></span><span class="titulo">Estado de resultados</span>
         <span class="chip">{{ $nFmt($kpis['ventas_count']) }} ventas · {{ $kpis['gastos_count'] }} gastos</span></div>
     <div class="py">
+        {{-- Las devoluciones no son un gasto: deshacen la venta. Ya van restadas
+             de las ventas (dinero devuelto) y del costo (lo que volvió al stock). --}}
         <div class="fila">
-            <span class="nom">Ventas <span class="nota">{{ $nFmt($kpis['ventas_count']) }} comprobantes · IGV {{ $fmt($kpis['igv']) }}</span></span>
-            <span class="monto pos">{{ $fmt($kpis['ventas']) }}</span>
+            <span class="nom">Ventas netas <span class="nota">
+                @if($kpis['devuelto'] > 0)
+                    Vendiste {{ $fmt($kpis['ventas']) }} en {{ $nFmt($kpis['ventas_count']) }} comprobantes y devolviste {{ $fmt($kpis['devuelto']) }} en {{ $kpis['devoluciones_count'] }} devoluciones · IGV {{ $fmt($kpis['igv']) }}
+                @else
+                    {{ $nFmt($kpis['ventas_count']) }} comprobantes · IGV {{ $fmt($kpis['igv']) }}
+                @endif
+            </span></span>
+            <span class="monto pos">{{ $fmt($kpis['ventas_netas']) }}</span>
         </div>
         <div class="fila">
-            <span class="nom">Costo de lo vendido <span class="nota">Costo congelado al momento de cada venta</span></span>
+            <span class="nom">Costo de lo vendido <span class="nota">Costo congelado al momento de cada venta{{ $kpis['recuperado'] > 0 ? ' · sin ' . $fmt($kpis['recuperado']) . ' que volvió al stock' : '' }}{{ $kpis['costo_danado'] > 0 ? ' · incluye ' . $fmt($kpis['costo_danado']) . ' devuelto dañado' : '' }}</span></span>
             <span class="monto neg">− {{ $fmt($kpis['costo']) }}</span>
         </div>
         <div class="fila">
@@ -247,10 +254,6 @@
         <div class="fila">
             <span class="nom">Gastos operativos <span class="nota">Detalle por tipo más abajo</span></span>
             <span class="monto neg">− {{ $fmt($kpis['gastos']) }}</span>
-        </div>
-        <div class="fila">
-            <span class="nom">Devoluciones <span class="nota">{{ $kpis['devoluciones_count'] }} devoluciones en el período</span></span>
-            <span class="monto neg">− {{ $fmt($kpis['devoluciones']) }}</span>
         </div>
         <div class="fila final">
             <span class="nom">Utilidad neta del período <span class="nota">Margen neto {{ $kpis['margen_neto'] ?? 0 }}%</span></span>

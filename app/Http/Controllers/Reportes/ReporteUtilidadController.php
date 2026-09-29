@@ -3,10 +3,8 @@
 namespace App\Http\Controllers\Reportes;
 
 use App\Http\Controllers\Controller;
-use App\Models\Gasto;
-use App\Models\Venta;
-use App\Services\CostoVentaService;
 use App\Services\LocalScopeService;
+use App\Services\UtilidadService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,19 +13,8 @@ use Inertia\Inertia;
 /**
  * Reporte de UTILIDAD: cuánto deja el negocio en un período.
  *
- *   VENTAS NETAS   = ventas (ya sin descuentos) − dinero devuelto a clientes
- *   COSTO NETO     = costo de lo vendido − costo de lo que volvió al stock
- *   UTILIDAD BRUTA = ventas netas − costo neto
- *   UTILIDAD NETA  = bruta − gastos del período
- *
- * Una devolución NO es un gasto: deshace (parte de) una venta. Si el producto
- * vuelve al stock y se devuelve el dinero, venta y costo se anulan y el
- * patrimonio queda igual. Solo hay pérdida real cuando la mercadería vuelve
- * dañada (sin restock): se devuelve el dinero pero su costo no se recupera.
- * Solo cuentan devoluciones COMPLETADAS; "sin reembolso" no resta dinero.
- *
- * El costo usa el costo CONGELADO al vender (CostoVentaService::sql). Todos
- * los montos incluyen IGV, igual que el balance diario.
+ * La regla (ventas y costo netos de devoluciones, bruta, neta) vive en
+ * UtilidadService, compartida con el dashboard y el cierre de mes.
  *
  * Arquitectura de datos: ventas y devoluciones se unen en UNA consulta por
  * producto (porProducto()). De ahí salen la tabla (filtrada, ordenada y
@@ -40,7 +27,7 @@ class ReporteUtilidadController extends Controller
     private const ORDENES = ['utilidad', 'ventas', 'margen', 'cantidad'];
     private const VISTAS  = ['perdida', 'bajo', 'sincosto'];
 
-    public function __construct(private LocalScopeService $scope) {}
+    public function __construct(private LocalScopeService $scope, private UtilidadService $utilidad) {}
 
     public function index(Request $request)
     {
@@ -58,7 +45,7 @@ class ReporteUtilidadController extends Controller
         $porProducto = fn () => $this->porProducto($empresa, $desde, $hasta, $localId);
 
         return Inertia::render('Reportes/Utilidad', [
-            'kpis'       => fn () => $this->kpis($empresa, $desde, $hasta, $localId),
+            'kpis'       => fn () => $this->utilidad->resumen($empresa, $desde, $hasta, $localId),
             'productos'  => fn () => $this->tabla($porProducto(), $orden, $vista, $categoria, $buscar),
             'conteos'    => fn () => $this->conteos($porProducto()),
             'mas_vendidos' => fn () => $this->masVendidos($porProducto()),
@@ -76,54 +63,6 @@ class ReporteUtilidadController extends Controller
         ]);
     }
 
-    /* ── KPIs del periodo ─────────────────────────────────────────────── */
-
-    private function kpis(int $empresa, string $desde, string $hasta, ?int $localId): array
-    {
-        $ventas = Venta::deEmpresa($empresa)
-            ->where('estado', 'completada')
-            ->whereBetween('fecha_venta', [$desde . ' 00:00:00', $hasta . ' 23:59:59'])
-            ->when($localId, fn ($q, $v) => $q->where('local_id', $v));
-        $items = $this->items($empresa, $desde, $hasta, $localId);
-
-        $ventasTotal = (float) (clone $ventas)->sum('total');
-        $cogsTotal   = (float) (clone $items)->selectRaw('COALESCE(SUM(vi.cantidad_base * ' . $this->costo() . '), 0) as c')->value('c');
-        $descuentos  = (float) (clone $ventas)->sum('descuento_total')
-            + (float) (clone $items)->selectRaw('COALESCE(SUM(vi.descuento_item * vi.cantidad), 0) as d')->value('d');
-
-        $gastos = (float) Gasto::deEmpresa($empresa)
-            ->whereBetween('fecha', [$desde, $hasta])
-            ->when($localId, fn ($q, $v) => $q->where('local_id', $v))
-            ->sum('monto');
-
-        $dev = $this->devoluciones($empresa, $desde, $hasta, $localId)
-            ->selectRaw("COALESCE(SUM({$this->devuelto()}), 0) as devuelto,
-                         COALESCE(SUM({$this->recuperado()}), 0) as recuperado,
-                         COALESCE(SUM(CASE WHEN NOT dd.restock AND d.forma_reembolso <> 'sin_reembolso'
-                                           THEN dd.cantidad_base * ({$this->costo()}) ELSE 0 END), 0) as danado")
-            ->first();
-
-        $ventasNeta = $ventasTotal - (float) $dev->devuelto;
-        $costoNeto  = $cogsTotal - (float) $dev->recuperado;
-        $bruta      = round($ventasNeta - $costoNeto, 2);
-        $neta       = round($bruta - $gastos, 2);
-
-        return [
-            'ventas'         => round($ventasNeta, 2),
-            'costo'          => round($costoNeto, 2),
-            'utilidad_bruta' => $bruta,
-            'margen_bruto'   => $ventasNeta > 0 ? round($bruta / $ventasNeta * 100, 1) : null,
-            'descuentos'     => round($descuentos, 2),
-            'gastos'         => round($gastos, 2),
-            // Devoluciones del periodo, ya restadas arriba (solo informativo):
-            'devuelto'       => round((float) $dev->devuelto, 2),   // dinero devuelto a clientes
-            'recuperado'     => round((float) $dev->recuperado, 2), // costo de lo que volvió al stock
-            'costo_danado'   => round((float) $dev->danado, 2),     // devuelto dañado: pérdida real
-            'utilidad_neta'  => $neta,
-            'margen_neto'    => $ventasNeta > 0 ? round($neta / $ventasNeta * 100, 1) : null,
-        ];
-    }
-
     /* ── Por producto: ventas − devoluciones, agregado en SQL ─────────── */
 
     /**
@@ -132,13 +71,14 @@ class ReporteUtilidadController extends Controller
      */
     private function porProducto(int $empresa, string $desde, string $hasta, ?int $localId): Builder
     {
-        $vendido = $this->items($empresa, $desde, $hasta, $localId)
+        $u = $this->utilidad;
+        $vendido = $u->items($empresa, $desde, $hasta, $localId)
             ->selectRaw('vi.producto_id, vi.cantidad as cantidad, vi.subtotal as ventas,
-                         vi.cantidad_base * (' . $this->costo() . ') as costo');
+                         vi.cantidad_base * (' . $u->costo() . ') as costo');
 
-        $devuelto = $this->devoluciones($empresa, $desde, $hasta, $localId)
-            ->selectRaw("vi.producto_id, -dd.cantidad as cantidad, -({$this->devuelto()}) as ventas,
-                         -({$this->recuperado()}) as costo");
+        $devuelto = $u->devoluciones($empresa, $desde, $hasta, $localId)
+            ->selectRaw("vi.producto_id, -dd.cantidad as cantidad, -({$u->devuelto()}) as ventas,
+                         -({$u->recuperado()}) as costo");
 
         $agregado = DB::query()
             ->fromSub($vendido->unionAll($devuelto), 'm')
@@ -260,51 +200,5 @@ class ReporteUtilidadController extends Controller
     {
         $r = DB::query()->fromSub($base, 'mp')->selectRaw('SUM(mp.ventas) as v, SUM(mp.utilidad) as u')->first();
         return (float) $r->v > 0 ? round((float) $r->u / (float) $r->v * 100, 1) : null;
-    }
-
-    /* ── Piezas de consulta ───────────────────────────────────────────── */
-
-    /** Ítems vendidos del rango (ventas completadas). */
-    private function items(int $empresa, string $desde, string $hasta, ?int $localId): Builder
-    {
-        return DB::table('venta_items as vi')
-            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
-            ->join('productos as p', 'p.id', '=', 'vi.producto_id')
-            ->where('v.empresa_id', $empresa)
-            ->where('v.estado', 'completada')
-            ->whereBetween('v.fecha_venta', [$desde . ' 00:00:00', $hasta . ' 23:59:59'])
-            ->when($localId, fn ($q, $v) => $q->where('v.local_id', $v));
-    }
-
-    /** Líneas de devoluciones completadas del rango, con su ítem de venta original. */
-    private function devoluciones(int $empresa, string $desde, string $hasta, ?int $localId): Builder
-    {
-        return DB::table('devoluciones_detalle as dd')
-            ->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
-            ->join('venta_items as vi', 'vi.id', '=', 'dd.venta_item_id')
-            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
-            ->join('productos as p', 'p.id', '=', 'vi.producto_id')
-            ->where('d.empresa_id', $empresa)
-            ->where('d.estado', 'completada')
-            ->whereBetween('d.fecha', [$desde . ' 00:00:00', $hasta . ' 23:59:59'])
-            ->when($localId, fn ($q, $v) => $q->where('d.local_id', $v));
-    }
-
-    /** Costo por unidad base de cada línea: regla única. */
-    private function costo(): string
-    {
-        return CostoVentaService::sql('vi', 'p');
-    }
-
-    /** Dinero devuelto por una línea de devolución (0 si fue sin reembolso). */
-    private function devuelto(): string
-    {
-        return "CASE WHEN d.forma_reembolso <> 'sin_reembolso' THEN dd.subtotal ELSE 0 END";
-    }
-
-    /** Costo de lo que volvió al stock en una línea de devolución. */
-    private function recuperado(): string
-    {
-        return 'CASE WHEN dd.restock THEN dd.cantidad_base * (' . $this->costo() . ') ELSE 0 END';
     }
 }

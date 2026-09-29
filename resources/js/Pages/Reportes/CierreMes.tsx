@@ -18,9 +18,12 @@ interface Kpis {
     ventas: number; ventas_count: number; ticket_promedio: number;
     anuladas_count: number; anuladas_monto: number;
     descuentos: number; igv: number;
+    /** Ventas menos el dinero devuelto a clientes (base del estado de resultados). */
+    ventas_netas: number;
+    /** Costo de lo vendido menos lo que volvió al stock por devoluciones. */
     costo: number; utilidad_bruta: number; margen_bruto: number | null;
     gastos: number; gastos_count: number;
-    devoluciones: number; devoluciones_count: number;
+    devuelto: number; recuperado: number; costo_danado: number; devoluciones_count: number;
     utilidad_neta: number; margen_neto: number | null;
     credito_otorgado: number; credito_count: number; credito_cobrado: number;
     por_cobrar: number; por_cobrar_count: number;
@@ -176,10 +179,9 @@ export default function ReportesCierreMes({
                 {/* Desglose de dónde sale la utilidad */}
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm ml-auto">
                     {[
-                        { label: 'Ventas', monto: kpis.ventas, signo: '', color: 'var(--color-success)' },
+                        { label: 'Ventas netas', monto: kpis.ventas_netas, signo: '', color: 'var(--color-success)' },
                         { label: 'Costo de lo vendido', monto: kpis.costo, signo: '−', color: 'var(--color-text-muted)' },
                         { label: 'Gastos', monto: kpis.gastos, signo: '−', color: 'var(--color-danger)' },
-                        { label: 'Devoluciones', monto: kpis.devoluciones, signo: '−', color: 'var(--color-warning)' },
                     ].map(x => (
                         <div key={x.label}>
                             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>{x.label}</p>
@@ -203,7 +205,7 @@ export default function ReportesCierreMes({
                     sub="ventas de contado + abonos a créditos"
                     color="var(--color-primary)" />
                 <Kpi icon={<TrendingDown size={18} />} label="Gastos" value={fmtS(kpis.gastos)}
-                    sub={`${fmtInt(kpis.gastos_count)} gastos${kpis.devoluciones > 0 ? ` · devoluciones ${fmtS(kpis.devoluciones)}` : ''}`}
+                    sub={`${fmtInt(kpis.gastos_count)} gastos`}
                     color="var(--color-danger)" />
                 <Kpi icon={<HandCoins size={18} />} label="Por cobrar (créditos)" value={fmtS(kpis.por_cobrar)}
                     sub={kpis.credito_otorgado > 0
@@ -226,11 +228,18 @@ export default function ReportesCierreMes({
                     <table className="w-full text-sm">
                         <tbody>
                             {[
-                                { label: 'Ventas (netas de vuelto)', monto: kpis.ventas, nota: `${fmtInt(kpis.ventas_count)} comprobantes · IGV incluido ${fmtS(kpis.igv)}`, color: 'var(--color-success)' },
-                                { label: 'Costo de lo vendido', monto: -kpis.costo, nota: 'costo congelado al momento de cada venta', color: 'var(--color-text-muted)' },
+                                { label: 'Ventas netas', monto: kpis.ventas_netas, color: 'var(--color-success)',
+                                  nota: kpis.devuelto > 0
+                                      ? `vendiste ${fmtS(kpis.ventas)} en ${fmtInt(kpis.ventas_count)} comprobantes y devolviste ${fmtS(kpis.devuelto)} en ${fmtInt(kpis.devoluciones_count)} devoluciones · IGV incluido ${fmtS(kpis.igv)}`
+                                      : `${fmtInt(kpis.ventas_count)} comprobantes · IGV incluido ${fmtS(kpis.igv)}` },
+                                { label: 'Costo de lo vendido', monto: -kpis.costo, color: 'var(--color-text-muted)',
+                                  nota: [
+                                      'costo congelado al momento de cada venta',
+                                      kpis.recuperado > 0 ? `sin ${fmtS(kpis.recuperado)} que volvió al stock` : '',
+                                      kpis.costo_danado > 0 ? `incluye ${fmtS(kpis.costo_danado)} devuelto dañado` : '',
+                                  ].filter(Boolean).join(' · ') },
                                 { label: 'Utilidad bruta', monto: kpis.utilidad_bruta, nota: kpis.margen_bruto !== null ? `margen ${kpis.margen_bruto}%` : '', color: 'var(--color-primary)', fuerte: true },
                                 { label: 'Gastos operativos', monto: -kpis.gastos, nota: `${fmtInt(kpis.gastos_count)} gastos registrados`, color: 'var(--color-danger)' },
-                                { label: 'Devoluciones', monto: -kpis.devoluciones, nota: kpis.devoluciones_count > 0 ? `${fmtInt(kpis.devoluciones_count)} devoluciones` : 'sin devoluciones', color: 'var(--color-warning)' },
                                 { label: 'Utilidad neta del período', monto: kpis.utilidad_neta, nota: kpis.margen_neto !== null ? `margen neto ${kpis.margen_neto}%` : '', color: kpis.utilidad_neta >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fuerte: true },
                             ].map((f, i) => (
                                 <tr key={f.label} style={{

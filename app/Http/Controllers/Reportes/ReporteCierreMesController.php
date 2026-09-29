@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Reportes;
 
 use App\Http\Controllers\Controller;
-use App\Models\Devolucion;
 use App\Models\Entrada;
 use App\Models\Gasto;
 use App\Models\MetodoPago;
@@ -11,6 +10,7 @@ use App\Models\Venta;
 use App\Models\VentaAbono;
 use App\Models\VentaPago;
 use App\Services\LocalScopeService;
+use App\Services\UtilidadService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -103,10 +103,6 @@ class ReporteCierreMesController extends Controller
             ->whereBetween('fecha', [$d, $h])
             ->when($localId, fn ($q, $v) => $q->where('local_id', $v));
 
-        $devolucionesBase = fn (string $d, string $h) => Devolucion::deEmpresa($user->empresa_id)
-            ->whereIn('estado', ['aprobada', 'completada'])
-            ->whereBetween('fecha', [$d . ' 00:00:00', $h . ' 23:59:59'])
-            ->when($localId, fn ($q, $v) => $q->where('local_id', $v));
 
         $abonosBase = fn (string $d, string $h) => VentaAbono::query()
             ->whereHas('venta', fn ($q) => $q->where('empresa_id', $user->empresa_id)
@@ -116,15 +112,10 @@ class ReporteCierreMesController extends Controller
         // ── Estado de resultados del período ────────────────────────────
         $ventasTotal       = (float) (clone $completadas)->sum('total');
         $ventasCount       = (int)   (clone $completadas)->count();
-        $descuentosTotal   = (float) (clone $completadas)->sum('descuento_total');
         $igvTotal          = (float) (clone $completadas)->sum('igv');
-        $cogsTotal         = (float) (clone $itemsBase($desde, $hasta))
-            ->selectRaw('COALESCE(SUM(vi.cantidad_base * ' . self::costoSql() . '), 0) as c')
-            ->value('c');
-        $gastosTotal       = (float) $gastosBase($desde, $hasta)->sum('monto');
-        $devolucionesTotal = (float) $devolucionesBase($desde, $hasta)->sum('monto_devolucion');
-        $utilidadBruta     = round($ventasTotal - $cogsTotal, 2);
-        $utilidadNeta      = round($utilidadBruta - $gastosTotal - $devolucionesTotal, 2);
+        // Utilidad: misma regla que el reporte de utilidad y el dashboard
+        // (ventas y costo netos de devoluciones; una devolución no es un gasto).
+        $utilidad          = app(UtilidadService::class)->resumen($user->empresa_id, $desde, $hasta, $localId);
 
         // Créditos: otorgados en el período, cobrado (abonos) y saldo al corte
         $creditoOtorgado = (float) (clone $completadas)->where('es_credito', true)->sum('total');
@@ -157,17 +148,21 @@ class ReporteCierreMesController extends Controller
             'ticket_promedio'   => $ventasCount > 0 ? round($ventasTotal / $ventasCount, 2) : 0,
             'anuladas_count'    => (int)   $ventasBase($desde, $hasta)->where('estado', 'anulada')->count(),
             'anuladas_monto'    => (float) $ventasBase($desde, $hasta)->where('estado', 'anulada')->sum('total'),
-            'descuentos'        => round($descuentosTotal, 2),
+            'descuentos'        => $utilidad['descuentos'],       // globales + por línea
             'igv'               => round($igvTotal, 2),
-            'costo'             => round($cogsTotal, 2),
-            'utilidad_bruta'    => $utilidadBruta,
-            'margen_bruto'      => $ventasTotal > 0 ? round($utilidadBruta / $ventasTotal * 100, 1) : null,
-            'gastos'            => round($gastosTotal, 2),
+            // Estado de resultados (netos de devoluciones):
+            'ventas_netas'      => $utilidad['ventas'],           // ventas − dinero devuelto
+            'costo'             => $utilidad['costo'],            // costo − lo que volvió al stock
+            'utilidad_bruta'    => $utilidad['utilidad_bruta'],
+            'margen_bruto'      => $utilidad['margen_bruto'],
+            'gastos'            => $utilidad['gastos'],
             'gastos_count'      => (int) $gastosBase($desde, $hasta)->count(),
-            'devoluciones'      => round($devolucionesTotal, 2),
-            'devoluciones_count'=> (int) $devolucionesBase($desde, $hasta)->count(),
-            'utilidad_neta'     => $utilidadNeta,
-            'margen_neto'       => $ventasTotal > 0 ? round($utilidadNeta / $ventasTotal * 100, 1) : null,
+            'devuelto'          => $utilidad['devuelto'],
+            'recuperado'        => $utilidad['recuperado'],
+            'costo_danado'      => $utilidad['costo_danado'],
+            'devoluciones_count'=> $utilidad['devoluciones_count'],
+            'utilidad_neta'     => $utilidad['utilidad_neta'],
+            'margen_neto'       => $utilidad['margen_neto'],
             'credito_otorgado'  => round($creditoOtorgado, 2),
             'credito_count'     => $creditoCount,
             'credito_cobrado'   => round($creditoCobrado, 2),
@@ -194,22 +189,22 @@ class ReporteCierreMesController extends Controller
             ->selectRaw('fecha as dia, SUM(monto) as total')
             ->groupBy('dia')->get()
             ->mapWithKeys(fn ($r) => [substr((string) $r->dia, 0, 10) => (float) $r->total]);
-        $devolucionesDia = $devolucionesBase($desde, $hasta)
-            ->selectRaw('DATE(fecha) as dia, SUM(monto_devolucion) as total')
-            ->groupBy('dia')->pluck('total', 'dia');
+        // Devoluciones del día: se restan de lo vendido (dinero devuelto) y del
+        // costo (lo que volvió al stock), no como un gasto aparte.
+        $devolucionesDia = app(UtilidadService::class)->devolucionesPorDia($user->empresa_id, $desde, $hasta, $localId);
 
         $serieDiaria = [];
         for ($d = Carbon::parse($desde); $d->lte(Carbon::parse($hasta)); $d->addDay()) {
             $k     = $d->toDateString();
-            $venta = (float) ($ventasDia[$k] ?? 0);
-            $costo = (float) ($cogsDia[$k] ?? 0);
+            $dev   = $devolucionesDia[$k] ?? null;
+            $venta = (float) ($ventasDia[$k] ?? 0) - (float) ($dev->devuelto ?? 0);
+            $costo = (float) ($cogsDia[$k] ?? 0) - (float) ($dev->recuperado ?? 0);
             $gasto = (float) ($gastosDia[$k] ?? 0);
-            $dev   = (float) ($devolucionesDia[$k] ?? 0);
             $serieDiaria[] = [
                 'dia'    => $k,
                 'ventas' => round($venta, 2),
                 'gastos' => round($gasto, 2),
-                'neta'   => round($venta - $costo - $gasto - $dev, 2),
+                'neta'   => round($venta - $costo - $gasto, 2),
             ];
         }
 
