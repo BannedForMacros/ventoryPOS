@@ -49,6 +49,7 @@ use App\Http\Controllers\Finanzas\ConsolidacionController;
 use App\Http\Controllers\Finanzas\PlanillaDescuentoController;
 use App\Http\Controllers\Finanzas\TesoreriaController;
 use App\Http\Controllers\Inventario\AjusteInventarioController;
+use App\Http\Controllers\Inventario\InventarioInicialController;
 use App\Http\Controllers\Inventario\CierreInventarioController;
 use App\Http\Controllers\GuiaRemisionController;
 use App\Http\Controllers\Inventario\DespachoController;
@@ -226,6 +227,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 ->parameters(['cierres' => 'cierre'])
                 ->except(['edit', 'update']);
         });
+
+        // Inventario inicial (stock contado con el que arranca cada producto):
+        // a mano o desde un Excel con columnas elegidas por el usuario.
+        Route::middleware('permiso:inventario.inicial,ver')->get('inicial', [InventarioInicialController::class, 'index'])->name('inicial.index');
+        Route::middleware('permiso:inventario.inicial,ver')->get('inicial/productos', [InventarioInicialController::class, 'buscar'])->name('inicial.buscar');
+        Route::middleware('permiso:inventario.inicial,editar')->post('inicial', [InventarioInicialController::class, 'guardar'])->name('inicial.guardar');
+        Route::middleware('permiso:inventario.inicial,editar')->post('inicial/emparejar', [InventarioInicialController::class, 'emparejar'])->name('inicial.emparejar');
+        Route::middleware('permiso:inventario.inicial,editar')->delete('inicial/{producto}', [InventarioInicialController::class, 'quitar'])->name('inicial.quitar');
 
         // Ajustes de inventario (ingreso/salida por ajuste, sin dinero)
         Route::middleware('permiso:inventario.ajustes,ver')->get('ajustes', [AjusteInventarioController::class, 'index'])->name('ajustes.index');
