@@ -86,6 +86,9 @@ class TurnoController extends Controller
             'cajasDisponibles' => $cajasDisponibles,
             'metodosPago'      => $metodosPago,
             'turnoActivo'      => $turnoActivo,
+            // Todos los turnos abiertos que este usuario puede ver (admin: todas
+            // las cajas; cajera: el suyo), con lo esperado por medio de pago.
+            'turnosAbiertos'   => $this->turnosAbiertos($user, $turnoActivo?->id),
             'configFondos'     => $configFondos,
             'configEfectivo'   => [
                 'modo_apertura_caja'         => $empresa?->modo_apertura_caja ?? 'libre',
@@ -94,6 +97,42 @@ class TurnoController extends Controller
                 'retiro_requiere_aprobacion' => (bool) ($empresa?->retiro_requiere_aprobacion ?? true),
             ],
         ]);
+    }
+
+    /**
+     * Turnos abiertos visibles para el usuario, resumidos para la pantalla de
+     * turnos: la cajera ve el suyo; el admin, los de todas las cajas (de su
+     * local si tiene uno fijo). Son pocos (uno por caja), así que el cálculo
+     * del esperado por turno no pesa.
+     */
+    private function turnosAbiertos($user, ?int $miTurnoId): array
+    {
+        return Turno::deEmpresa($user->empresa_id)
+            ->where('estado', 'abierto')
+            ->when(!$user->rol->es_admin, fn ($q) => $q->where('user_id', $user->id))
+            ->when($user->rol->es_admin && $user->local_id, fn ($q) => $q->where('local_id', $user->local_id))
+            ->with(['caja:id,nombre', 'local', 'user:id,name']) // local completo: el esperado lee su config
+            ->withCount(['ventas as ventas_count' => fn ($q) => $q->where('estado', 'completada')])
+            ->withSum(['ventas as ventas_total' => fn ($q) => $q->where('estado', 'completada')], 'total')
+            ->withSum('gastos as gastos_total', 'monto')
+            ->orderBy('fecha_apertura')
+            ->get()
+            ->map(fn (Turno $t) => [
+                'id'                => $t->id,
+                'caja'              => $t->caja?->nombre,
+                'local'             => $t->local?->nombre,
+                'usuario'           => $t->user?->name,
+                'es_mio'            => $t->id === $miTurnoId,
+                'fecha_apertura'    => $t->fecha_apertura,
+                'monto_apertura'    => (float) $t->monto_apertura,
+                'ventas_count'      => (int) $t->ventas_count,
+                'ventas_total'      => (float) ($t->ventas_total ?? 0),
+                'gastos_total'      => (float) ($t->gastos_total ?? 0),
+                'retiros_total'     => (float) $t->retiros()->where('momento', 'turno')->sum('monto'),
+                'efectivo_esperado' => $t->calcularMontoEsperado(),
+                'cobros'            => $t->cobrosPorMetodo(),
+            ])
+            ->all();
     }
 
     public function show(Request $request, Turno $turno)
@@ -444,6 +483,8 @@ class TurnoController extends Controller
             // El frontend pide confirmación explícita antes de cerrar.
             'productosStockNegativo'       => $turno->productosVendidosConStockNegativo(),
             'ventasPorMetodo'              => $ventasPorMetodo,
+            // Lo que entró por cada medio de pago (ventas sin vuelto + abonos + anticipos − reembolsos).
+            'cobrosPorMetodo'              => $turno->cobrosPorMetodo(),
             'totalVentas'                  => $totalVentas,
             'totalGastos'                  => $totalGastos,
             'montoEsperado'                => $montoEsperado,
