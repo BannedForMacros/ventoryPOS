@@ -17,6 +17,7 @@ class MetodoPago extends Model
         'tipo_id',
         'admite_vuelto',
         'activo',
+        'planilla_columna_id',
     ];
 
     protected function casts(): array
@@ -36,6 +37,12 @@ class MetodoPago extends Model
      * Catalogo del tipo (efectivo, yape, plin, etc.). Reemplaza el enum nativo.
      * Para queries antiguas que comparaban con string usa: $metodo->tipo->slug.
      */
+    /** Columna de la planilla de caja a la que suma este medio (null = columna propia). */
+    public function planillaColumna(): BelongsTo
+    {
+        return $this->belongsTo(PlanillaColumna::class, 'planilla_columna_id');
+    }
+
     public function tipo(): BelongsTo
     {
         return $this->belongsTo(TipoMetodoPago::class, 'tipo_id');

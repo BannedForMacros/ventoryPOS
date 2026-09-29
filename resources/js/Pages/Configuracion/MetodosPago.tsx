@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { Plus, Check } from 'lucide-react';
+import { Plus, Check, Columns3, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -39,7 +39,11 @@ interface MetodoPago extends Record<string, unknown> {
     admite_vuelto:  boolean;
     activo:         boolean;
     cuentas:        CuentaMin[];
+    planilla_columna_id: number | null;
 }
+
+/** Columna de la planilla de caja (función opcional por empresa). */
+interface PlanillaColumna { id: number; nombre: string; orden: number; }
 
 interface FormState {
     nombre:        string;
@@ -47,19 +51,22 @@ interface FormState {
     admite_vuelto: boolean;
     activo:        boolean;
     cuenta_ids:    number[];
+    planilla_columna_id: number | '';
 }
 
 interface Props extends PageProps {
-    metodos:         MetodoPago[];
-    cuentas:         CuentaMin[];
-    tiposMetodoPago: TipoMetodoPago[];
+    metodos:          MetodoPago[];
+    cuentas:          CuentaMin[];
+    tiposMetodoPago:  TipoMetodoPago[];
+    usaPlanilla?:     boolean;
+    planillaColumnas?: PlanillaColumna[];
 }
 
 const emptyForm = (): FormState => ({
-    nombre: '', tipo_id: '', admite_vuelto: false, activo: true, cuenta_ids: [],
+    nombre: '', tipo_id: '', admite_vuelto: false, activo: true, cuenta_ids: [], planilla_columna_id: '',
 });
 
-export default function MetodosPago({ metodos, cuentas, tiposMetodoPago }: Props) {
+export default function MetodosPago({ metodos, cuentas, tiposMetodoPago, usaPlanilla = false, planillaColumnas = [] }: Props) {
     const { flash } = usePage<Props>().props;
     const [modal, setModal]         = useState(false);
     const [editing, setEditing]     = useState<MetodoPago | null>(null);
@@ -85,6 +92,7 @@ export default function MetodosPago({ metodos, cuentas, tiposMetodoPago }: Props
             admite_vuelto: m.admite_vuelto ?? !!m.tipo?.admite_vuelto_default,
             activo:        m.activo,
             cuenta_ids:    (m.cuentas as CuentaMin[]).map(c => c.id),
+            planilla_columna_id: m.planilla_columna_id ?? '',
         });
         setErrors({}); setModal(true);
     }
@@ -164,6 +172,15 @@ export default function MetodosPago({ metodos, cuentas, tiposMetodoPago }: Props
                 );
             },
         },
+        ...(usaPlanilla ? [{
+            key: 'planilla', label: 'En la planilla', sortable: false,
+            render: (m: MetodoPago) => {
+                const col = planillaColumnas.find(c => c.id === m.planilla_columna_id);
+                return col
+                    ? <Badge variant="info">{col.nombre}</Badge>
+                    : <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Columna propia</span>;
+            },
+        } as Column<MetodoPago>] : []),
         {
             key: 'activo', label: 'Estado', sortable: true,
             render: (m) => (
@@ -191,6 +208,8 @@ export default function MetodosPago({ metodos, cuentas, tiposMetodoPago }: Props
                     </Button>
                 }
             />
+
+            {usaPlanilla && <ColumnasPlanilla columnas={planillaColumnas} metodos={metodos} />}
 
             <Table
                 data={metodos}
@@ -245,6 +264,24 @@ export default function MetodosPago({ metodos, cuentas, tiposMetodoPago }: Props
                             Marca esto solo en métodos donde el cajero puede devolver el excedente físicamente.
                         </p>
                     </div>
+                    {usaPlanilla && (
+                        <div>
+                            <Select
+                                label="Columna en la planilla de caja"
+                                value={form.planilla_columna_id === '' ? '' : String(form.planilla_columna_id)}
+                                onChange={v => setForm(f => ({ ...f, planilla_columna_id: v ? Number(v) : '' }))}
+                                options={[
+                                    { value: '', label: 'Su propia columna (con su nombre)' },
+                                    ...planillaColumnas.map(c => ({ value: String(c.id), label: c.nombre })),
+                                ]}
+                                disabled={saving}
+                            />
+                            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                                En el reporte de caja del turno, lo cobrado con este medio suma en esa columna. Varios medios pueden ir en la misma.
+                            </p>
+                            {errors.planilla_columna_id && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.planilla_columna_id}</p>}
+                        </div>
+                    )}
                     <Switch
                         label="Activo"
                         checked={form.activo}
@@ -320,5 +357,117 @@ export default function MetodosPago({ metodos, cuentas, tiposMetodoPago }: Props
                 </p>
             </Modal>
         </AppLayout>
+    );
+}
+
+/* ── Columnas de la planilla de caja ──────────────────────────────────── */
+/**
+ * Las columnas de dinero del reporte de caja del turno. Cada medio de pago
+ * elige en su formulario a qué columna suma; aquí se crean, renombran,
+ * ordenan y borran. "Anticipo" y "Créditos" las arma el sistema solo.
+ */
+function ColumnasPlanilla({ columnas, metodos }: { columnas: PlanillaColumna[]; metodos: MetodoPago[] }) {
+    const [nueva, setNueva] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [nombres, setNombres] = useState<Record<number, string>>({});
+    const ordenadas = [...columnas].sort((a, b) => a.orden - b.orden || a.id - b.id);
+
+    function crear() {
+        if (!nueva.trim()) return;
+        router.post(route('configuracion.planilla-columnas.store'), { nombre: nueva.trim() }, {
+            preserveScroll: true,
+            onSuccess: () => { setNueva(''); setError(null); },
+            onError: e => setError((e as Record<string, string>).nombre ?? 'No se pudo crear la columna.'),
+        });
+    }
+
+    function renombrar(c: PlanillaColumna) {
+        const nombre = (nombres[c.id] ?? c.nombre).trim();
+        if (!nombre || nombre === c.nombre) return;
+        router.put(route('configuracion.planilla-columnas.update', c.id), { nombre, orden: c.orden }, {
+            preserveScroll: true,
+            onError: e => { toast.error((e as Record<string, string>).nombre ?? 'No se pudo renombrar.'); setNombres(n => ({ ...n, [c.id]: c.nombre })); },
+        });
+    }
+
+    /** Intercambia el orden con la vecina (arriba o abajo). */
+    function mover(i: number, dir: -1 | 1) {
+        const a = ordenadas[i], b = ordenadas[i + dir];
+        if (!b) return;
+        const ordenA = a.orden === b.orden ? i + dir : b.orden;
+        const ordenB = a.orden === b.orden ? i : a.orden;
+        router.put(route('configuracion.planilla-columnas.update', a.id), { nombre: a.nombre, orden: ordenA }, {
+            preserveScroll: true,
+            onSuccess: () => router.put(route('configuracion.planilla-columnas.update', b.id), { nombre: b.nombre, orden: ordenB }, { preserveScroll: true }),
+        });
+    }
+
+    function borrar(c: PlanillaColumna) {
+        if (!confirm(`¿Borrar la columna "${c.nombre}"? Sus medios de pago pasarán a mostrarse con su propio nombre.`)) return;
+        router.delete(route('configuracion.planilla-columnas.destroy', c.id), { preserveScroll: true });
+    }
+
+    return (
+        <section className="rounded-2xl mb-5 overflow-hidden"
+            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            <header className="flex items-start gap-3 px-4 pt-4 pb-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg flex-shrink-0"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 9%, var(--color-surface))', color: 'var(--vp-navy)' }}>
+                    <Columns3 size={18} />
+                </span>
+                <div>
+                    <h2 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Columnas de la planilla de caja</h2>
+                    <p className="text-[13px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                        Las columnas de dinero del reporte de caja de cada turno, en este orden. Asigna cada medio de pago a su columna al editarlo.
+                        "Anticipo" y "Créditos" se agregan solas, y una columna sin montos en el turno no se muestra.
+                    </p>
+                </div>
+            </header>
+
+            <ul>
+                {ordenadas.length === 0 && (
+                    <li className="px-4 py-3 text-sm" style={{ color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)' }}>
+                        Todavía no hay columnas: cada medio de pago sale con su propio nombre.
+                    </li>
+                )}
+                {ordenadas.map((c, i) => {
+                    const suyos = metodos.filter(m => m.planilla_columna_id === c.id);
+                    return (
+                        <li key={c.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5" style={{ borderTop: '1px solid var(--color-border)' }}>
+                            <div className="flex flex-col">
+                                <button type="button" onClick={() => mover(i, -1)} disabled={i === 0} aria-label={`Subir ${c.nombre}`}
+                                    className="p-0.5 rounded disabled:opacity-25 hover:bg-black/5" style={{ color: 'var(--color-text-muted)' }}><ArrowUp size={14} /></button>
+                                <button type="button" onClick={() => mover(i, 1)} disabled={i === ordenadas.length - 1} aria-label={`Bajar ${c.nombre}`}
+                                    className="p-0.5 rounded disabled:opacity-25 hover:bg-black/5" style={{ color: 'var(--color-text-muted)' }}><ArrowDown size={14} /></button>
+                            </div>
+                            <input value={nombres[c.id] ?? c.nombre} aria-label="Nombre de la columna" maxLength={60}
+                                onChange={e => setNombres(n => ({ ...n, [c.id]: e.target.value }))}
+                                onBlur={() => renombrar(c)}
+                                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                                className="w-56 rounded-lg px-3 py-1.5 text-sm font-semibold border outline-none focus:ring-2"
+                                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)' }} />
+                            <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+                                {suyos.length === 0
+                                    ? <span className="text-[13px]" style={{ color: 'var(--vp-amber-ink)' }}>Ningún medio de pago asignado</span>
+                                    : suyos.map(m => <Badge key={m.id} variant="secondary">{m.nombre}</Badge>)}
+                            </div>
+                            <button type="button" onClick={() => borrar(c)} aria-label={`Borrar ${c.nombre}`}
+                                className="p-1.5 rounded-lg hover:bg-black/5" style={{ color: 'var(--color-danger)' }}><Trash2 size={15} /></button>
+                        </li>
+                    );
+                })}
+            </ul>
+
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                <input value={nueva} onChange={e => setNueva(e.target.value)} placeholder='Nueva columna, ej. "Depósitos"' maxLength={60}
+                    onKeyDown={e => { if (e.key === 'Enter') crear(); }} aria-label="Nombre de la nueva columna"
+                    className="w-64 rounded-lg px-3 py-1.5 text-sm border outline-none focus:ring-2"
+                    style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', backgroundColor: 'var(--color-surface)' }} />
+                <Button size="sm" onClick={crear} disabled={!nueva.trim()}>
+                    <Plus size={14} className="mr-1" />Agregar columna
+                </Button>
+                {error && <span className="text-xs" style={{ color: 'var(--color-danger)' }}>{error}</span>}
+            </div>
+        </section>
     );
 }

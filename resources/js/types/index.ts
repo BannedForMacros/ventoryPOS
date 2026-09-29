@@ -47,6 +47,8 @@ export interface Empresa extends Record<string, unknown> {
     modo_apertura_caja: 'libre' | 'arrastre' | 'fondo_fijo';
     apertura_editable: boolean;
     usa_retiros_caja: boolean;
+    /** Planilla de caja por turno (función opcional). */
+    usa_planilla_caja?: boolean;
     retiro_requiere_aprobacion: boolean;
     cierre_pregunta_destino: boolean;
     usa_caja_grande: boolean;

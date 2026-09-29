@@ -303,6 +303,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::apiResource('configuracion/metodos-pago', MetodoPagoController::class)
              ->names('configuracion.metodos-pago')
              ->except(['show']);
+        // Columnas de la planilla de caja (función opcional por empresa).
+        Route::post('configuracion/planilla-columnas', [\App\Http\Controllers\Configuracion\PlanillaColumnaController::class, 'store'])->name('configuracion.planilla-columnas.store');
+        Route::put('configuracion/planilla-columnas/{columna}', [\App\Http\Controllers\Configuracion\PlanillaColumnaController::class, 'update'])->name('configuracion.planilla-columnas.update');
+        Route::delete('configuracion/planilla-columnas/{columna}', [\App\Http\Controllers\Configuracion\PlanillaColumnaController::class, 'destroy'])->name('configuracion.planilla-columnas.destroy');
     });
 
     Route::middleware('permiso:configuracion.cuentas')->group(function () {
@@ -370,6 +374,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Retiros de efectivo (sangría / entrega a administración)
         Route::middleware('permiso:turnos,crear')->post('/{turno}/retiros', [\App\Http\Controllers\Turnos\TurnoRetiroController::class, 'store'])->name('retiros.store');
         Route::middleware('permiso:turnos,editar')->post('/retiros/{retiro}/aprobar', [\App\Http\Controllers\Turnos\TurnoRetiroController::class, 'aprobar'])->name('retiros.aprobar');
+        // Planilla de caja del turno (función opcional por empresa)
+        Route::middleware('permiso:turnos,ver')->get('/{turno}/planilla/excel', [\App\Http\Controllers\Turnos\TurnoPlanillaController::class, 'excel'])->name('planilla.excel');
+        Route::middleware('permiso:turnos,ver')->get('/{turno}/planilla/imprimir', [\App\Http\Controllers\Turnos\TurnoPlanillaController::class, 'imprimir'])->name('planilla.imprimir');
     });
 
     // ── GASTOS ───────────────────────────────────────────────────────────

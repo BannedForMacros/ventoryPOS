@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Configuracion\MetodoPagoRequest;
 use App\Models\Cuenta;
 use App\Models\MetodoPago;
+use App\Models\PlanillaColumna;
 use App\Models\TipoMetodoPago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -35,10 +36,17 @@ class MetodoPagoController extends Controller
             ->orderBy('orden')
             ->get(['id', 'slug', 'nombre', 'icono', 'admite_vuelto_default', 'requiere_referencia']);
 
+        $usaPlanilla = (bool) ($request->user()->empresa?->usa_planilla_caja ?? false);
+
         return Inertia::render('Configuracion/MetodosPago', [
             'metodos'         => $metodos,
             'cuentas'         => $cuentas,
             'tiposMetodoPago' => $tiposMetodoPago,
+            // Planilla de caja (función opcional): columnas donde suma cada medio.
+            'usaPlanilla'     => $usaPlanilla,
+            'planillaColumnas'=> $usaPlanilla
+                ? PlanillaColumna::deEmpresa($empresaId)->orderBy('orden')->orderBy('id')->get(['id', 'nombre', 'orden'])
+                : [],
         ]);
     }
 
@@ -51,6 +59,7 @@ class MetodoPagoController extends Controller
                 'tipo_id'       => $request->input('tipo_id'),
                 'admite_vuelto' => $request->boolean('admite_vuelto'),
                 'activo'        => $request->input('activo', true),
+                'planilla_columna_id' => $request->input('planilla_columna_id') ?: null,
             ]);
 
             $metodo->cuentas()->sync($request->input('cuenta_ids', []));
@@ -69,6 +78,9 @@ class MetodoPagoController extends Controller
                 'tipo_id'       => $request->input('tipo_id'),
                 'admite_vuelto' => $request->boolean('admite_vuelto'),
                 'activo'        => $request->input('activo', $metodos_pago->activo),
+                'planilla_columna_id' => $request->has('planilla_columna_id')
+                    ? ($request->input('planilla_columna_id') ?: null)
+                    : $metodos_pago->planilla_columna_id,
             ]);
 
             $metodos_pago->cuentas()->sync($request->input('cuenta_ids', []));

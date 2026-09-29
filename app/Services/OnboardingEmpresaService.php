@@ -87,6 +87,7 @@ class OnboardingEmpresaService
                 'requiere_aprobacion_devolucion'  => false,
                 'restock_default'                 => true,
                 'usa_agenda'                      => false,
+                'usa_planilla_caja'               => false,
                 // Nacen apagadas: la mayoría de negocios nuevos no vende al
                 // crédito ni deja mercadería pendiente. Se activan en Empresa.
                 'pos_permite_credito'             => false,

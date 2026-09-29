@@ -62,6 +62,7 @@ type FormData = {
     modo_apertura_caja: ModoApertura;
     apertura_editable: boolean;
     usa_retiros_caja: boolean;
+    usa_planilla_caja: boolean;
     retiro_requiere_aprobacion: boolean;
     cierre_pregunta_destino: boolean;
     usa_caja_grande: boolean;
@@ -120,6 +121,7 @@ const emptyForm: FormData = {
     modo_apertura_caja: 'libre',
     apertura_editable: true,
     usa_retiros_caja: false,
+    usa_planilla_caja: false,
     retiro_requiere_aprobacion: true,
     cierre_pregunta_destino: false,
     usa_caja_grande: false,
@@ -192,6 +194,7 @@ export default function Empresas({ empresas }: Props) {
             modo_apertura_caja: (emp.modo_apertura_caja as ModoApertura) ?? 'libre',
             apertura_editable: emp.apertura_editable ?? true,
             usa_retiros_caja: emp.usa_retiros_caja ?? false,
+            usa_planilla_caja: emp.usa_planilla_caja ?? false,
             retiro_requiere_aprobacion: emp.retiro_requiere_aprobacion ?? true,
             cierre_pregunta_destino: emp.cierre_pregunta_destino ?? false,
             usa_caja_grande: emp.usa_caja_grande ?? false,
@@ -899,6 +902,19 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </label>
                         )}
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.usa_planilla_caja}
+                                onChange={e => setData('usa_planilla_caja', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Planilla de caja por turno</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    En el detalle de cada turno aparece el reporte de caja: una fila por comprobante, el dinero repartido en columnas, casilla de revisado y exportación a Excel o PDF. Las columnas se arman en Métodos de pago.
+                                </span>
+                            </span>
+                        </label>
 
                         <label className="flex items-start gap-2 cursor-pointer">
                             <Checkbox

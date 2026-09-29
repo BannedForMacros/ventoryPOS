@@ -184,6 +184,11 @@ class TurnoController extends Controller
                 'modo_apertura_caja' => $empresa?->modo_apertura_caja ?? 'libre',
                 'apertura_editable'  => (bool) ($empresa?->apertura_editable ?? true),
             ],
+            // Lo que entró por cada medio de pago (ventas sin vuelto + abonos + anticipos − reembolsos).
+            'cobrosPorMetodo' => $turno->cobrosPorMetodo(),
+            // Reporte de caja del turno (función opcional por empresa): en el
+            // detalle solo van los botones de descarga, no la tabla.
+            'reporteCaja'     => (bool) ($empresa?->usa_planilla_caja ?? false),
         ]);
     }
 

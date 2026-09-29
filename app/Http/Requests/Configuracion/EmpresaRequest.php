@@ -70,6 +70,7 @@ class EmpresaRequest extends FormRequest
             'modo_apertura_caja'              => 'sometimes|in:libre,arrastre,fondo_fijo',
             'apertura_editable'               => 'boolean',
             'usa_retiros_caja'                => 'boolean',
+            'usa_planilla_caja'               => 'boolean',
             'retiro_requiere_aprobacion'      => 'boolean',
             'cierre_pregunta_destino'         => 'boolean',
             'usa_caja_grande'                 => 'boolean',

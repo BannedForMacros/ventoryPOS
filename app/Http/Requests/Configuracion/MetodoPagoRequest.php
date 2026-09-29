@@ -32,6 +32,8 @@ class MetodoPagoRequest extends FormRequest
             // Flag explicito por método. Reemplaza la inferencia desde el tipo.
             'admite_vuelto' => 'nullable|boolean',
             'activo'     => 'boolean',
+            // Columna de la planilla de caja (solo columnas de la misma empresa).
+            'planilla_columna_id' => ['nullable', 'integer', Rule::exists('planilla_columnas', 'id')->where('empresa_id', $empresaId)],
             'cuenta_ids' => 'nullable|array',
             'cuenta_ids.*' => [
                 'integer',
