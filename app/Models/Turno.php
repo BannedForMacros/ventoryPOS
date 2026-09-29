@@ -76,11 +76,13 @@ class Turno extends Model
                   ->orWhereHas('cuenta', fn($c) => $c->where('es_efectivo', true))
             )->sum('monto');
 
+        // Lo que QUEDÓ en el cajón: lo recibido menos el vuelto entregado
+        // (igual que el ingreso que registra tesorería al vender).
         $ventasEfectivo = (float) \App\Models\VentaPago::whereHas('venta', fn($q) =>
             $q->where('turno_id', $this->id)->where('estado', 'completada')
         )->whereHas('metodoPago.tipo', fn($q) =>
             $q->where('slug', 'efectivo')
-        )->sum('monto');
+        )->sum(\Illuminate\Support\Facades\DB::raw('monto - COALESCE(vuelto, 0)'));
 
         // Abonos a cuentas por cobrar cobrados EN EFECTIVO durante el turno:
         // ese billete entra al cajón, así que el sistema debe esperarlo.
@@ -228,6 +230,61 @@ class Turno extends Model
              - $devolucionAnticipoEfectivo
              - $cancelacionPendienteEfectivo
              + ($sumaFondos ? $fondos : 0.0);
+    }
+
+    /**
+     * Lo que entró por CADA medio de pago durante el turno, neto:
+     *   ventas completadas (lo recibido menos el vuelto)
+     *   + abonos a cuentas por cobrar + anticipos de clientes (no anulados)
+     *   − reembolsos de devoluciones del turno.
+     *
+     * Es lo que la cajera debería encontrar en su Yape, su POS o la cuenta de
+     * cada método. Para el EFECTIVO, lo que debe haber en el cajón es
+     * calcularMontoEsperado() (que además suma la apertura y resta gastos,
+     * retiros y demás salidas); aquí solo está lo cobrado en efectivo.
+     *
+     * @return array<int, array{metodo_pago_id:int, nombre:string, es_efectivo:bool, ventas:float, otros:float, devoluciones:float, total:float}>
+     */
+    public function cobrosPorMetodo(): array
+    {
+        $porMetodo = fn ($q, string $expr = 'monto') => $q
+            ->whereNotNull('metodo_pago_id')
+            ->groupBy('metodo_pago_id')
+            ->selectRaw("metodo_pago_id, SUM({$expr}) as total")
+            ->pluck('total', 'metodo_pago_id')
+            ->map(fn ($v) => (float) $v);
+
+        $ventas = $porMetodo(\App\Models\VentaPago::whereHas('venta', fn ($q) =>
+            $q->where('turno_id', $this->id)->where('estado', 'completada')), 'monto - COALESCE(vuelto, 0)');
+        $abonos = $porMetodo(\App\Models\VentaAbono::where('turno_id', $this->id));
+        $anticipos = $porMetodo(\App\Models\ClienteAnticipo::where('turno_id', $this->id)->where('estado', '<>', 'anulado'));
+        $reembolsos = $porMetodo(\App\Models\DevolucionPago::whereHas('devolucion', fn ($q) =>
+            $q->where('turno_id', $this->id)->whereIn('estado', ['aprobada', 'completada'])));
+
+        $ids = $ventas->keys()->merge($abonos->keys())->merge($anticipos->keys())->merge($reembolsos->keys())->unique();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return \App\Models\MetodoPago::with('tipo:id,slug')->whereIn('id', $ids)->get()
+            ->map(function ($m) use ($ventas, $abonos, $anticipos, $reembolsos) {
+                $v = $ventas[$m->id] ?? 0.0;
+                $o = ($abonos[$m->id] ?? 0.0) + ($anticipos[$m->id] ?? 0.0);
+                $d = $reembolsos[$m->id] ?? 0.0;
+                return [
+                    'metodo_pago_id' => $m->id,
+                    'nombre'         => $m->nombre,
+                    'es_efectivo'    => $m->tipo?->slug === 'efectivo',
+                    'ventas'         => round($v, 2),
+                    'otros'          => round($o, 2),
+                    'devoluciones'   => round($d, 2),
+                    'total'          => round($v + $o - $d, 2),
+                ];
+            })
+            // Efectivo primero; luego de mayor a menor.
+            ->sortBy(fn ($r) => [$r['es_efectivo'] ? 0 : 1, -$r['total']])
+            ->values()
+            ->all();
     }
 
     /**
