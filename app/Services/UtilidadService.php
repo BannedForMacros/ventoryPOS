@@ -104,6 +104,67 @@ class UtilidadService
             ]]);
     }
 
+    /**
+     * Utilidad de UNA venta: costo congelado por línea y lo que deshicieron
+     * sus devoluciones completadas (misma regla que el período).
+     *
+     * @return array{items: array<int, array{costo: float, utilidad: float, margen: ?float, sin_costo: bool}>,
+     *               total: float, costo: float, utilidad_bruta: float, devuelto: float, recuperado: float,
+     *               utilidad: float, margen: ?float, sin_costo: int}
+     */
+    public function deVenta(Venta $venta): array
+    {
+        $lineas = DB::table('venta_items as vi')
+            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
+            ->join('productos as p', 'p.id', '=', 'vi.producto_id')
+            ->where('vi.venta_id', $venta->id)
+            ->selectRaw('vi.id, vi.subtotal, vi.cantidad_base * (' . $this->costo() . ') as costo')
+            ->get();
+
+        $items = [];
+        foreach ($lineas as $l) {
+            $sub   = (float) $l->subtotal;
+            $costo = round((float) $l->costo, 2);
+            $items[$l->id] = [
+                'costo'     => $costo,
+                'utilidad'  => round($sub - $costo, 2),
+                'margen'    => $sub > 0 ? round(($sub - $costo) / $sub * 100, 1) : null,
+                'sin_costo' => $sub > 0 && $costo <= 0,
+            ];
+        }
+
+        $dev = DB::table('devoluciones_detalle as dd')
+            ->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
+            ->join('venta_items as vi', 'vi.id', '=', 'dd.venta_item_id')
+            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
+            ->join('productos as p', 'p.id', '=', 'vi.producto_id')
+            ->where('vi.venta_id', $venta->id)
+            ->where('d.estado', 'completada')
+            ->selectRaw("COALESCE(SUM({$this->devuelto()}), 0) as devuelto, COALESCE(SUM({$this->recuperado()}), 0) as recuperado")
+            ->first();
+
+        // El total ya trae el descuento global; el costo, lo que se entregó.
+        $total    = (float) $venta->total;
+        $costo    = round(array_sum(array_column($items, 'costo')), 2);
+        $bruta    = round($total - $costo, 2);
+        $devuelto = round((float) $dev->devuelto, 2);
+        $recup    = round((float) $dev->recuperado, 2);
+        $utilidad = round($bruta - $devuelto + $recup, 2);
+        $neto     = $total - $devuelto;
+
+        return [
+            'items'          => $items,
+            'total'          => round($total, 2),
+            'costo'          => $costo,
+            'utilidad_bruta' => $bruta,
+            'devuelto'       => $devuelto,
+            'recuperado'     => $recup,
+            'utilidad'       => $utilidad,
+            'margen'         => $neto > 0 ? round($utilidad / $neto * 100, 1) : null,
+            'sin_costo'      => count(array_filter($items, fn ($i) => $i['sin_costo'])),
+        ];
+    }
+
     /* ── Piezas de consulta (también las usa el reporte por producto) ──── */
 
     /** Ítems vendidos del rango (ventas completadas), alias vi / v / p. */

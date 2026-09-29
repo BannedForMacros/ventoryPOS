@@ -1320,6 +1320,12 @@ class VentaController extends Controller
             'avisoExterno'  => VentaService::avisoComprobanteExterno($venta),
             // Payload listo para el agente local de impresión (VentoryPrint.exe).
             'ticketImpresion' => app(TicketPrintService::class)->payloadDeVenta($venta),
+            // Cuánto dejó la venta. Revela costos: solo para quien puede ver el
+            // reporte de utilidad (el admin siempre; la cajera, si se le dio).
+            // Una venta anulada no genera utilidad.
+            'utilidad' => $request->user()->tienePermiso('reportes.utilidad', 'ver') && $venta->estado === 'completada'
+                ? app(\App\Services\UtilidadService::class)->deVenta($venta)
+                : null,
         ]);
     }
 

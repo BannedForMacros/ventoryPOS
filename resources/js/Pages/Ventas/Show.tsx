@@ -8,9 +8,7 @@ import {
     FileCheck2, Download, RefreshCw, KeyRound, AlertTriangle, FileText, PackageOpen, History, Undo2,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
-import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
-import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import ModalModificarPedido from '@/Components/Ventas/ModalModificarPedido';
@@ -49,39 +47,157 @@ interface Props extends PageProps {
     bloqueoFiscal?: string | null;
     /** Factura/boleta emitida fuera del sistema: se avisa, no se bloquea. */
     avisoExterno?: string | null;
+    /** Cuánto dejó la venta; null si el usuario no puede ver utilidad o si está anulada. */
+    utilidad?: UtilidadVenta | null;
 }
 
-function SectionCard({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
+/** Cuánto dejó la venta (lo manda el servidor solo a quien puede ver la utilidad). */
+interface UtilidadLinea { costo: number; utilidad: number; margen: number | null; sin_costo: boolean; }
+interface UtilidadVenta {
+    items:          Record<number, UtilidadLinea>;
+    total:          number;
+    costo:          number;
+    utilidad_bruta: number;
+    devuelto:       number;
+    recuperado:     number;
+    utilidad:       number;
+    margen:         number | null;
+    sin_costo:      number;
+}
+
+const num = (v: string | number | null | undefined) => parseFloat(String(v ?? 0)) || 0;
+const fmtS = (n: number) => 'S/ ' + n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtCant = (n: number) => n.toLocaleString('es-PE', { maximumFractionDigits: 3 });
+const fmtPct = (n: number | null) => (n === null ? '—' : `${n.toLocaleString('es-PE', { maximumFractionDigits: 1 })}%`);
+
+/** Tarjeta de la página: título legible con ícono (sin mayúsculas diminutas). */
+function SectionCard({ icon: Icon, title, children, flush = false }: { icon: React.ElementType; title: string; children: React.ReactNode; flush?: boolean }) {
     return (
-        <div
-            className="rounded-xl overflow-hidden"
-            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-        >
-            <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <Icon size={14} style={{ color: 'var(--color-primary)' }} />
-                <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                    {title}
-                </h3>
-            </div>
-            <div className="p-4">
-                {children}
-            </div>
+        <section className="rounded-2xl overflow-hidden"
+            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: '0 6px 16px -10px rgb(15 76 129 / 0.12)' }}>
+            <header className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 9%, var(--color-surface))', color: 'var(--vp-navy)' }}>
+                    <Icon size={16} />
+                </span>
+                <h2 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>{title}</h2>
+            </header>
+            <div className={flush ? '' : 'px-4 pb-4'}>{children}</div>
+        </section>
+    );
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+    return (
+        <div className="flex items-baseline justify-between gap-4 py-2" style={{ borderTop: '1px solid color-mix(in srgb, var(--color-border) 60%, transparent)' }}>
+            <dt className="text-[13px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>{label}</dt>
+            <dd className="text-sm font-medium text-right min-w-0" style={{ color: 'var(--color-text)' }}>{value}</dd>
         </div>
     );
 }
 
-function InfoRow({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) {
+function Resumen({ label, children }: { label: string; children: React.ReactNode }) {
     return (
-        <div className="flex items-baseline justify-between py-2 text-sm" style={{ borderBottom: '1px solid color-mix(in srgb, var(--color-border) 50%, transparent)' }}>
-            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</span>
-            <span className={`font-medium text-right ${muted ? 'text-xs' : ''}`} style={{ color: muted ? 'var(--color-text-muted)' : 'var(--color-text)' }}>
-                {value}
-            </span>
+        <div className="px-5 py-4 min-w-0 border-b sm:border-b-0 sm:border-l sm:first:border-l-0" style={{ borderColor: 'var(--color-border)' }}>
+            <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            {children}
         </div>
     );
 }
 
-export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, avisoExterno = null }: Props) {
+function EstadoVenta({ anulada }: { anulada: boolean }) {
+    const [texto, color, tinta] = anulada
+        ? ['Anulada', 'var(--vp-coral)', 'var(--vp-coral-ink)']
+        : ['Completada', 'var(--vp-mint)', 'var(--vp-mint-ink)'];
+    return (
+        <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold px-2.5 py-1 rounded-full"
+            style={{ color: tinta, backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)` }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} /> {texto}
+        </span>
+    );
+}
+
+function Th({ children, right = false }: { children: React.ReactNode; right?: boolean }) {
+    return (
+        <th className={`px-3 first:px-4 last:px-4 py-2.5 text-[13px] font-semibold whitespace-nowrap ${right ? 'text-right' : 'text-left'}`}
+            style={{ color: 'var(--color-text-muted)' }}>
+            {children}
+        </th>
+    );
+}
+
+function FilaTotal({ label, valor, color, tenue = false }: { label: string; valor: string; color?: string; tenue?: boolean }) {
+    return (
+        <div className="flex items-baseline justify-between gap-3">
+            <dt style={{ color: 'var(--color-text-muted)' }}>{label}</dt>
+            <dd className="tabular-nums font-semibold" style={{ color: color ?? (tenue ? 'var(--color-text-muted)' : 'var(--color-text)') }}>{valor}</dd>
+        </div>
+    );
+}
+
+/** Ganancia de una línea: monto y margen, o aviso si falta el costo. */
+function GananciaLinea({ linea, conTexto = false }: { linea?: UtilidadLinea; conTexto?: boolean }) {
+    if (!linea) return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
+    if (linea.sin_costo) {
+        return <span className="font-semibold" style={{ color: 'var(--vp-amber-ink)' }}>{conTexto ? 'Falta registrar el costo de este producto' : 'falta el costo'}</span>;
+    }
+    const color = linea.utilidad < 0 ? 'var(--vp-coral-ink)' : 'var(--vp-mint-ink)';
+    return (
+        <span className="tabular-nums" style={{ color }}>
+            {conTexto && (linea.utilidad < 0 ? 'Perdiste ' : 'Ganaste ')}
+            <strong>{fmtS(conTexto ? Math.abs(linea.utilidad) : linea.utilidad)}</strong>
+            {linea.margen !== null && <span className="ml-1 text-[13px]">({fmtPct(linea.margen)})</span>}
+        </span>
+    );
+}
+
+/** La cuenta de la venta: vendido − costo = ganancia (y lo que deshicieron las devoluciones). */
+function CuantoGanaste({ u }: { u: UtilidadVenta }) {
+    const hubo = u.devuelto > 0 || u.recuperado > 0;
+    const color = u.utilidad >= 0 ? 'var(--vp-mint)' : 'var(--vp-coral)';
+    return (
+        <section className="rounded-2xl overflow-hidden"
+            style={{ backgroundColor: 'var(--color-surface)', border: `1px solid color-mix(in srgb, ${color} 35%, var(--color-border))`, boxShadow: '0 6px 16px -10px rgb(15 76 129 / 0.12)' }}>
+            <header className="px-4 pt-4 pb-3" style={{ backgroundColor: `color-mix(in srgb, ${color} 10%, var(--color-surface))` }}>
+                <h2 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Cuánto ganaste con esta venta</h2>
+                <p className="font-display text-[26px] font-extrabold tabular-nums leading-tight mt-1"
+                    style={{ color: u.utilidad >= 0 ? 'var(--vp-mint-ink)' : 'var(--vp-coral-ink)' }}>
+                    {fmtS(u.utilidad)}
+                </p>
+                {u.margen !== null && (
+                    <p className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>{fmtPct(u.margen)} de lo que cobraste</p>
+                )}
+            </header>
+            <dl className="px-4 py-3 space-y-1.5 text-sm">
+                <FilaTotal label="Cobraste" valor={fmtS(u.total)} />
+                <FilaTotal label="Te costó la mercadería" valor={`−${fmtS(u.costo)}`} color="var(--color-text-muted)" />
+                {hubo && (
+                    <>
+                        <FilaTotal label="Devolviste al cliente" valor={`−${fmtS(u.devuelto)}`} color="var(--vp-coral-ink)" />
+                        {u.recuperado > 0 && <FilaTotal label="Volvió al stock" valor={`+${fmtS(u.recuperado)}`} color="var(--vp-mint-ink)" />}
+                    </>
+                )}
+                <div className="flex items-baseline justify-between pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                    <dt className="font-bold" style={{ color: 'var(--color-text)' }}>Ganancia</dt>
+                    <dd className="font-bold tabular-nums" style={{ color: u.utilidad >= 0 ? 'var(--vp-mint-ink)' : 'var(--vp-coral-ink)' }}>{fmtS(u.utilidad)}</dd>
+                </div>
+            </dl>
+            <div className="px-4 pb-4 space-y-2">
+                {u.sin_costo > 0 && (
+                    <p className="rounded-xl px-3 py-2 text-[13px] font-semibold"
+                        style={{ color: 'var(--vp-amber-ink)', backgroundColor: 'color-mix(in srgb, var(--vp-amber) 13%, var(--color-surface))' }}>
+                        {u.sin_costo === 1 ? 'Un producto no tiene' : `${u.sin_costo} productos no tienen`} costo registrado: la ganancia sale más alta de lo real.
+                    </p>
+                )}
+                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    El costo es el del día de la venta. {hubo ? 'Las devoluciones deshacen esa parte de la venta; lo que volvió al stock no es pérdida.' : ''}
+                </p>
+            </div>
+        </section>
+    );
+}
+
+export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, avisoExterno = null, utilidad = null }: Props) {
     const [modalPedido, setModalPedido] = useState(false);
     const { auth } = usePage<Props>().props;
     const esAdmin  = auth.user.rol?.es_admin ?? false;
@@ -189,6 +305,7 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
     const items    = (venta.items   ?? []) as VentaItem[];
     const pagos    = (venta.pagos   ?? []) as VentaPago[];
     const descLogs = (venta.descuentos_log ?? []) as DescuentoLog[];
+    const anulada  = venta.estado === 'anulada';
 
     function clienteNombre() {
         if (!venta.cliente) return 'Cliente general';
@@ -196,98 +313,81 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
         return c.razon_social ?? `${c.nombres} ${c.apellidos ?? ''}`.trim();
     }
 
+    const fecha = new Date(venta.fecha_venta).toLocaleString('es-PE', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
     return (
         <AppLayout title={`Venta ${venta.numero}`}>
-            <PageHeader
-                title={
-                    <div className="flex items-center gap-3 flex-wrap">
-                        <span>Venta</span>
-                        <span
-                            className="font-mono text-sm px-2.5 py-1 rounded-lg"
-                            style={{
-                                backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
-                                color: 'var(--color-primary)',
-                            }}
-                        >
-                            {venta.numero}
+            {/* ── Encabezado ─────────────────────────────────────────────────── */}
+            <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 mb-4">
+                <div className="min-w-0">
+                    <Link href={route('ventas.index')}
+                        className="inline-flex items-center gap-1.5 text-sm font-semibold mb-2 hover:underline" style={{ color: 'var(--color-primary)' }}>
+                        <ArrowLeft size={15} /> Volver a ventas
+                    </Link>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        <h1 className="font-display text-[28px] font-extrabold tracking-tight leading-none tabular-nums" style={{ color: 'var(--vp-navy)' }}>
+                            Venta {venta.numero}
+                        </h1>
+                        <EstadoVenta anulada={anulada} />
+                        {/* ID interno: útil para buscar la venta al hacer una devolución. */}
+                        <span className="text-[13px] tabular-nums px-2 py-0.5 rounded-md" title="ID interno de la venta (para devoluciones)"
+                            style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
+                            ID {venta.id}
                         </span>
-                        {/* ID interno — útil para buscar la venta al hacer una devolución. */}
-                        <span
-                            className="font-mono text-xs px-2 py-1 rounded-lg"
-                            style={{
-                                backgroundColor: 'var(--color-bg)',
-                                color: 'var(--color-text-muted)',
-                                border: '1px solid var(--color-border)',
-                            }}
-                            title="ID interno de la venta (para devoluciones)"
-                        >
-                            ID: {venta.id}
-                        </span>
-                        <Badge variant={venta.estado === 'completada' ? 'success' : 'danger'}>
-                            {venta.estado === 'completada' ? 'Completada' : 'Anulada'}
-                        </Badge>
                     </div>
-                }
-                actions={
-                    <div className="flex gap-2">
-                        <Link href={route('ventas.index')}>
-                            <Button variant="ghost" startContent={<ArrowLeft size={15} />} size="sm">
-                                <span className="hidden sm:inline">Volver</span>
+                    <p className="text-[15px] mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                        {fecha}, a <strong style={{ color: 'var(--color-text)' }}>{clienteNombre()}</strong>
+                        {(venta.user as any)?.name && <>. Atendió {(venta.user as any).name}</>}
+                    </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        startContent={<Printer size={15} />}
+                        onClick={() => void imprimir()}
+                        disabled={!ticketImpresion || !ticketImpresion.token}
+                        title={
+                            !ticketImpresion || !ticketImpresion.token
+                                ? 'La caja no tiene token de impresora configurado'
+                                : 'Imprimir ticket en la ticketera de esta caja'
+                        }
+                    >
+                        <span className="hidden sm:inline">Imprimir ticket</span>
+                    </Button>
+                    <a href={route('ventas.pdf', venta.id)} target="_blank" rel="noopener noreferrer">
+                        <Button variant="secondary" size="sm" startContent={<FileText size={15} />} title="Exportar la venta en PDF (A4)">
+                            PDF
+                        </Button>
+                    </a>
+                    {puedeModificarPedido && (
+                        <Button variant="primary" size="sm" startContent={<PackageOpen size={15} />} onClick={() => setModalPedido(true)}
+                            title="Cambiar lo que el cliente dejó pendiente por entregar">
+                            <span className="hidden sm:inline">Modificar pedido</span>
+                        </Button>
+                    )}
+                    {puedeAnular() && !anulada && (
+                        <Button variant="danger" size="sm" startContent={<XCircle size={15} />} onClick={anular}>
+                            <span className="hidden sm:inline">Anular</span>
+                        </Button>
+                    )}
+                    {/* La salida, en el mismo sitio donde antes estaba Anular:
+                        quien viene a corregir la venta encuentra qué hacer, en
+                        vez de un botón que le va a decir que no. */}
+                    {!!bloqueoFiscal && !anulada && (
+                        <Link href={route('devoluciones.create', { venta_id: venta.id })}>
+                            <Button variant="primary" size="sm" startContent={<Undo2 size={15} />}
+                                title="La corrección de una venta ya declarada se hace con una nota de crédito, y esa nace de una devolución">
+                                <span className="hidden sm:inline">Devolver / Nota de crédito</span>
                             </Button>
                         </Link>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            startContent={<Printer size={15} />}
-                            onClick={() => void imprimir()}
-                            disabled={!ticketImpresion || !ticketImpresion.token}
-                            title={
-                                !ticketImpresion || !ticketImpresion.token
-                                    ? 'La caja no tiene token de impresora configurado'
-                                    : 'Imprimir ticket en la ticketera de esta caja'
-                            }
-                        >
-                            <span className="hidden sm:inline">Imprimir ticket</span>
-                        </Button>
-                        <a href={route('ventas.pdf', venta.id)} target="_blank" rel="noopener noreferrer">
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                startContent={<FileText size={15} />}
-                                title="Exportar la venta en PDF (A4)"
-                            >
-                                PDF
-                            </Button>
-                        </a>
-                        {puedeModificarPedido && (
-                            <Button variant="primary" size="sm" startContent={<PackageOpen size={15} />} onClick={() => setModalPedido(true)}
-                                title="Cambiar lo que el cliente dejó pendiente por entregar">
-                                <span className="hidden sm:inline">Modificar pedido</span>
-                            </Button>
-                        )}
-                        {puedeAnular() && venta.estado !== 'anulada' && (
-                            <Button variant="danger" size="sm" startContent={<XCircle size={15} />} onClick={anular}>
-                                <span className="hidden sm:inline">Anular</span>
-                            </Button>
-                        )}
-                        {/* La salida, en el mismo sitio donde antes estaba Anular:
-                            quien viene a corregir la venta encuentra qué hacer, en
-                            vez de un botón que le va a decir que no. */}
-                        {!!bloqueoFiscal && venta.estado !== 'anulada' && (
-                            <Link href={route('devoluciones.create', { venta_id: venta.id })}>
-                                <Button variant="primary" size="sm" startContent={<Undo2 size={15} />}
-                                    title="La corrección de una venta ya declarada se hace con una nota de crédito, y esa nace de una devolución">
-                                    <span className="hidden sm:inline">Devolver / Nota de crédito</span>
-                                </Button>
-                            </Link>
-                        )}
-                    </div>
-                }
-            />
+                    )}
+                </div>
+            </div>
 
             {/* Por qué esta venta ya no se toca, dicho ANTES de intentarlo. El
                 texto viene del servidor: es el mismo que cortaría la operación. */}
-            {!!bloqueoFiscal && venta.estado !== 'anulada' && (
+            {!!bloqueoFiscal && !anulada && (
                 <Callout variant="warning" title="Esta venta ya no se puede anular ni editar" className="mb-4">
                     {bloqueoFiscal}
                     <span className="block mt-1">
@@ -299,60 +399,151 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
 
             {/* Comprobante de fuera: no bloquea nada, pero conviene saberlo antes
                 de anular, no después de que el cliente ya tenga el papel. */}
-            {!!avisoExterno && venta.estado !== 'anulada' && (
+            {!!avisoExterno && !anulada && (
                 <Callout variant="info" title="Ojo: el comprobante de esta venta se emitió fuera del sistema" className="mb-4">
                     {avisoExterno}
                 </Callout>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* ── Resumen ────────────────────────────────────────────────────── */}
+            <section className="rounded-2xl mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 overflow-hidden"
+                style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: '0 6px 16px -10px rgb(15 76 129 / 0.14)' }}>
+                <Resumen label={anulada ? 'Total (anulada)' : 'Total cobrado'}>
+                    <p className={`font-display text-[28px] font-extrabold tabular-nums leading-tight ${anulada ? 'line-through' : ''}`}
+                        style={{ color: anulada ? 'var(--color-text-muted)' : 'var(--vp-navy)' }}>
+                        {fmtS(num(venta.total))}
+                    </p>
+                    <p className="text-[13px] tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                        IGV incluido {fmtS(num(venta.igv))}
+                    </p>
+                </Resumen>
+                {utilidad ? (
+                    <Resumen label="Ganaste">
+                        <p className="font-display text-[28px] font-extrabold tabular-nums leading-tight"
+                            style={{ color: utilidad.utilidad >= 0 ? 'var(--vp-mint-ink)' : 'var(--vp-coral-ink)' }}>
+                            {fmtS(utilidad.utilidad)}
+                        </p>
+                        <p className="text-[13px] tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                            {utilidad.margen !== null ? `${fmtPct(utilidad.margen)} de lo vendido` : 'sin venta neta'}
+                            {utilidad.sin_costo > 0 && <span style={{ color: 'var(--vp-amber-ink)' }}>, falta un costo</span>}
+                        </p>
+                    </Resumen>
+                ) : (
+                    <Resumen label="Productos">
+                        <p className="font-display text-[28px] font-extrabold tabular-nums leading-tight" style={{ color: 'var(--color-text)' }}>
+                            {items.length}
+                        </p>
+                        <p className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
+                            {items.length === 1 ? 'línea en la venta' : 'líneas en la venta'}
+                        </p>
+                    </Resumen>
+                )}
+                <Resumen label="Pagó con">
+                    {pagos.length === 0 ? (
+                        <p className="text-[15px] font-semibold" style={{ color: 'var(--color-text)' }}>{venta.es_credito ? 'Crédito, sin pago inicial' : 'Sin pagos'}</p>
+                    ) : (
+                        <ul className="space-y-0.5">
+                            {pagos.map(p => (
+                                <li key={p.id} className="flex items-baseline justify-between gap-3 text-[15px]">
+                                    <span className="font-semibold truncate" style={{ color: 'var(--color-text)' }}>{(p.metodo_pago as any)?.nombre ?? '—'}</span>
+                                    <span className="tabular-nums font-bold whitespace-nowrap" style={{ color: 'var(--color-text)' }}>{fmtS(num(p.monto))}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                    {venta.es_credito && num(venta.saldo_pendiente) > 0 && (
+                        <p className="text-[13px] mt-1 font-semibold tabular-nums" style={{ color: 'var(--vp-amber-ink)' }}>
+                            Debe {fmtS(num(venta.saldo_pendiente))}
+                        </p>
+                    )}
+                </Resumen>
+                <Resumen label="Comprobante">
+                    <p className="text-[15px] font-bold" style={{ color: 'var(--color-text)' }}>{etiquetaComprobante(venta.tipo_comprobante as any)}</p>
+                    <p className="text-[13px] tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                        {venta.numero_comprobante || `Caja ${(venta.caja as any)?.nombre ?? '—'}`}
+                    </p>
+                </Resumen>
+            </section>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
                 {/* ── Columna principal ──────────────────────────────── */}
-                <div className="lg:col-span-2 flex flex-col gap-4">
-                    {/* Datos generales */}
-                    <SectionCard icon={Receipt} title="Datos de la venta">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-                            <InfoRow label="Número" value={<span className="font-mono">{venta.numero}</span>} />
-                            <InfoRow label="ID (para devolución)" value={<span className="font-mono">{venta.id}</span>} />
-                            <InfoRow label="Fecha" value={
-                                <span className="flex items-center gap-1">
-                                    <Calendar size={12} className="opacity-50" />
-                                    {new Date(venta.fecha_venta).toLocaleString('es-PE')}
-                                </span>
-                            } />
-                            <InfoRow label="Comprobante" value={
-                                <span className="capitalize">
-                                    {etiquetaComprobante(venta.tipo_comprobante as any)}
-                                    {venta.numero_comprobante && (
-                                        <span className="block text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>
-                                            {venta.numero_comprobante}
-                                        </span>
-                                    )}
-                                </span>
-                            } />
-                            <InfoRow label="Cliente" value={
-                                <span className="flex items-center gap-1">
-                                    <User size={12} className="opacity-50" />
-                                    {clienteNombre()}
-                                </span>
-                            } />
-                            <InfoRow label="Vendedor" value={
-                                <span className="flex items-center gap-1">
-                                    <UserCheck size={12} className="opacity-50" />
-                                    {(venta.user as any)?.name ?? '—'}
-                                </span>
-                            } />
-                            <InfoRow label="Caja" value={
-                                <span className="flex items-center gap-1">
-                                    <Store size={12} className="opacity-50" />
-                                    {(venta.caja as any)?.nombre ?? '—'}
-                                </span>
-                            } />
-                            {venta.observacion && (
-                                <div className="sm:col-span-2">
-                                    <InfoRow label="Observación" value={venta.observacion} />
-                                </div>
-                            )}
+                <div className="lg:col-span-2 flex flex-col gap-4 min-w-0">
+                    <SectionCard icon={ShoppingBag} title={`Productos (${items.length})`} flush>
+                        {/* Tabla desktop */}
+                        <div className="hidden sm:block overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                        <Th>Producto</Th><Th right>Cant.</Th><Th right>P. unit.</Th><Th right>Desc.</Th><Th right>Subtotal</Th>
+                                        {utilidad && <><Th right>Costo</Th><Th right>Ganancia</Th></>}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {items.map(item => {
+                                        const u = utilidad?.items[item.id];
+                                        return (
+                                            <tr key={item.id} style={{ borderTop: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
+                                                <td className="px-4 py-3">
+                                                    <p className="font-semibold" style={{ color: 'var(--color-text)' }}>{item.producto_nombre}</p>
+                                                    <p className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>{item.unidad_nombre}</p>
+                                                </td>
+                                                <td className="px-3 py-3 text-right tabular-nums font-semibold" style={{ color: 'var(--color-text)' }}>{fmtCant(num(item.cantidad))}</td>
+                                                <td className="px-3 py-3 text-right tabular-nums" style={{ color: 'var(--color-text)' }}>{fmtS(num(item.precio_unitario))}</td>
+                                                <td className="px-3 py-3 text-right tabular-nums">
+                                                    {num(item.descuento_item) > 0
+                                                        ? <span style={{ color: 'var(--vp-coral-ink)' }}>−{fmtS(num(item.descuento_item))} c/u</span>
+                                                        : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+                                                </td>
+                                                <td className="px-3 py-3 text-right tabular-nums font-bold" style={{ color: 'var(--color-text)' }}>{fmtS(num(item.subtotal))}</td>
+                                                {utilidad && (
+                                                    <>
+                                                        <td className="px-3 py-3 text-right tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                                                            {u?.sin_costo ? <span style={{ color: 'var(--vp-amber-ink)' }}>sin costo</span> : fmtS(u?.costo ?? 0)}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
+                                                            <GananciaLinea linea={u} />
+                                                        </td>
+                                                    </>
+                                                )}
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
+
+                        {/* Móvil */}
+                        <ul className="sm:hidden">
+                            {items.map(item => {
+                                const u = utilidad?.items[item.id];
+                                return (
+                                    <li key={item.id} className="px-4 py-3" style={{ borderTop: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
+                                        <div className="flex items-baseline justify-between gap-3">
+                                            <p className="text-sm font-semibold min-w-0" style={{ color: 'var(--color-text)' }}>{item.producto_nombre}</p>
+                                            <span className="text-sm font-bold tabular-nums whitespace-nowrap" style={{ color: 'var(--color-text)' }}>{fmtS(num(item.subtotal))}</span>
+                                        </div>
+                                        <p className="text-[13px] mt-0.5 tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                                            {fmtCant(num(item.cantidad))} {item.unidad_nombre} a {fmtS(num(item.precio_unitario))}
+                                            {num(item.descuento_item) > 0 && <span style={{ color: 'var(--vp-coral-ink)' }}>, desc. {fmtS(num(item.descuento_item))} c/u</span>}
+                                        </p>
+                                        {utilidad && <p className="text-[13px] mt-1"><GananciaLinea linea={u} conTexto /></p>}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+
+                        {/* Totales */}
+                        <dl className="px-4 py-3 space-y-1.5 text-sm" style={{ borderTop: '1px solid var(--color-border)', backgroundColor: 'color-mix(in srgb, var(--vp-navy) 3%, var(--color-surface))' }}>
+                            <FilaTotal label="Subtotal" valor={fmtS(num(venta.subtotal))} />
+                            {num(venta.descuento_total) > 0 && (
+                                <FilaTotal label="Descuento de la venta" valor={`−${fmtS(num(venta.descuento_total))}`} color="var(--vp-coral-ink)" />
+                            )}
+                            <FilaTotal label="IGV incluido" valor={fmtS(num(venta.igv))} tenue />
+                            <div className="flex items-baseline justify-between pt-2" style={{ borderTop: '1px solid var(--color-border)' }}>
+                                <dt className="text-[15px] font-bold" style={{ color: 'var(--color-text)' }}>Total</dt>
+                                <dd className="font-display text-xl font-extrabold tabular-nums" style={{ color: 'var(--vp-navy)' }}>{fmtS(num(venta.total))}</dd>
+                            </div>
+                        </dl>
                     </SectionCard>
 
                     {/* Historial de modificaciones del pedido pendiente */}
@@ -363,20 +554,20 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                                     const c = m.contexto ?? {};
                                     const l = c.liquidacion;
                                     const dinero = !l ? '' : l.tipo === 'cobro'
-                                        ? `Cobrado S/ ${((l.del_anticipo ?? 0) + (l.pago ?? 0)).toFixed(2)}${(l.al_credito ?? 0) > 0.009 ? ` · al crédito S/ ${(l.al_credito ?? 0).toFixed(2)}` : ''}`
-                                        : l.tipo === 'saldo_favor' ? `S/ ${(l.excedente ?? 0).toFixed(2)} a favor (anticipo #${l.anticipo_id})`
-                                        : l.tipo === 'devolver' ? `Devuelto S/ ${(l.excedente ?? 0).toFixed(2)}`
+                                        ? `Cobrado ${fmtS((l.del_anticipo ?? 0) + (l.pago ?? 0))}${(l.al_credito ?? 0) > 0.009 ? `, al crédito ${fmtS(l.al_credito ?? 0)}` : ''}`
+                                        : l.tipo === 'saldo_favor' ? `${fmtS(l.excedente ?? 0)} a favor (anticipo #${l.anticipo_id})`
+                                        : l.tipo === 'devolver' ? `Devuelto ${fmtS(l.excedente ?? 0)}`
                                         : 'Sin diferencia de dinero';
                                     return (
-                                        <div key={m.id} className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                        <div key={m.id} className="rounded-xl px-3 py-2.5 text-sm" style={{ border: '1px solid var(--color-border)' }}>
                                             <div className="flex flex-wrap items-center justify-between gap-2">
-                                                <span className="font-medium">{c.motivo ?? 'Modificación'}</span>
-                                                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                    {new Date(m.created_at).toLocaleString('es-PE')} · {m.user_name ?? '—'}
+                                                <span className="font-semibold" style={{ color: 'var(--color-text)' }}>{c.motivo ?? 'Modificación'}</span>
+                                                <span className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                    {new Date(m.created_at).toLocaleString('es-PE')}, {m.user_name ?? '—'}
                                                 </span>
                                             </div>
-                                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                                Total S/ {Number(c.total_antes ?? 0).toFixed(2)} → S/ {Number(c.total_nuevo ?? 0).toFixed(2)} · {dinero}
+                                            <p className="text-[13px] mt-0.5 tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                                                Total {fmtS(Number(c.total_antes ?? 0))} → {fmtS(Number(c.total_nuevo ?? 0))}. {dinero}
                                             </p>
                                         </div>
                                     );
@@ -384,111 +575,22 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                             </div>
                         </SectionCard>
                     )}
-
-                    {/* Items */}
-                    <SectionCard icon={ShoppingBag} title={`Productos (${items.length})`}>
-                        {/* Tabla desktop */}
-                        <div className="hidden sm:block -mx-4 -mb-4">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
-                                        {['Producto', 'Presentación', 'Cant.', 'P. Unit.', 'Desc.', 'Subtotal'].map(h => (
-                                            <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                                                {h}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {items.map((item, idx) => (
-                                        <tr
-                                            key={item.id}
-                                            style={{
-                                                borderBottom: idx < items.length - 1 ? '1px solid var(--color-border)' : undefined,
-                                                backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--color-bg)',
-                                            }}
-                                        >
-                                            <td className="px-4 py-2.5 font-medium" style={{ color: 'var(--color-text)' }}>{item.producto_nombre}</td>
-                                            <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--color-text-muted)' }}>{item.unidad_nombre}</td>
-                                            <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--color-text)' }}>{parseFloat(item.cantidad).toFixed(0)}</td>
-                                            <td className="px-4 py-2.5" style={{ color: 'var(--color-text)' }}>S/ {parseFloat(item.precio_unitario).toFixed(2)}</td>
-                                            <td className="px-4 py-2.5">
-                                                {parseFloat(item.descuento_item) > 0 ? (
-                                                    <span className="font-medium" style={{ color: 'var(--color-danger)' }}>
-                                                        -S/ {parseFloat(item.descuento_item).toFixed(2)}
-                                                    </span>
-                                                ) : (
-                                                    <span style={{ color: 'var(--color-text-muted)' }}>—</span>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-2.5 font-bold" style={{ color: 'var(--color-text)' }}>
-                                                S/ {parseFloat(item.subtotal).toFixed(2)}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Cards móvil */}
-                        <div className="sm:hidden flex flex-col gap-2 -mx-1">
-                            {items.map(item => (
-                                <div
-                                    key={item.id}
-                                    className="rounded-lg p-3"
-                                    style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
-                                >
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>
-                                                {item.producto_nombre}
-                                            </p>
-                                            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                                {item.unidad_nombre} · S/ {parseFloat(item.precio_unitario).toFixed(2)} × {parseFloat(item.cantidad).toFixed(0)}
-                                                {parseFloat(item.descuento_item) > 0 && (
-                                                    <span className="ml-1" style={{ color: 'var(--color-danger)' }}>
-                                                        -S/ {parseFloat(item.descuento_item).toFixed(2)}/u
-                                                    </span>
-                                                )}
-                                            </p>
-                                        </div>
-                                        <span className="text-sm font-bold flex-shrink-0 ml-2" style={{ color: 'var(--color-primary)' }}>
-                                            S/ {parseFloat(item.subtotal).toFixed(2)}
-                                        </span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </SectionCard>
                 </div>
 
                 {/* ── Columna lateral ────────────────────────────────── */}
-                <div className="flex flex-col gap-4">
-                    {/* Resumen financiero */}
-                    <div
-                        className="rounded-xl overflow-hidden"
-                        style={{ border: '1px solid var(--color-border)' }}
-                    >
-                        <div
-                            className="px-4 py-3"
-                            style={{
-                                background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))',
-                                color: '#fff',
-                            }}
-                        >
-                            <p className="text-xs font-medium opacity-80">Total de la venta</p>
-                            <p className="text-2xl font-bold mt-0.5">S/ {parseFloat(venta.total).toFixed(2)}</p>
-                        </div>
-                        <div className="p-4 space-y-0" style={{ backgroundColor: 'var(--color-surface)' }}>
-                            <InfoRow label="Subtotal" value={`S/ ${parseFloat(venta.subtotal).toFixed(2)}`} />
-                            {parseFloat(venta.descuento_total) > 0 && (
-                                <InfoRow label="Descuento" value={
-                                    <span style={{ color: 'var(--color-danger)' }}>-S/ {parseFloat(venta.descuento_total).toFixed(2)}</span>
-                                } />
-                            )}
-                            <InfoRow label="IGV (18%)" value={`S/ ${parseFloat(venta.igv).toFixed(2)}`} />
-                        </div>
-                    </div>
+                <div className="flex flex-col gap-4 min-w-0">
+                    {utilidad && <CuantoGanaste u={utilidad} />}
+
+                    <SectionCard icon={Receipt} title="Datos de la venta">
+                        <dl>
+                            <InfoRow label="Fecha" value={<span className="flex items-center gap-1.5"><Calendar size={13} className="opacity-50" />{new Date(venta.fecha_venta).toLocaleString('es-PE')}</span>} />
+                            <InfoRow label="Cliente" value={<span className="flex items-center gap-1.5"><User size={13} className="opacity-50" />{clienteNombre()}</span>} />
+                            <InfoRow label="Atendió" value={<span className="flex items-center gap-1.5"><UserCheck size={13} className="opacity-50" />{(venta.user as any)?.name ?? '—'}</span>} />
+                            <InfoRow label="Caja" value={<span className="flex items-center gap-1.5"><Store size={13} className="opacity-50" />{(venta.caja as any)?.nombre ?? '—'}</span>} />
+                            <InfoRow label="Tipo de venta" value={venta.es_credito ? 'Al crédito' : 'Al contado'} />
+                            {venta.observacion && <InfoRow label="Observación" value={venta.observacion} />}
+                        </dl>
+                    </SectionCard>
 
                     {/* V11 — Comprobante electrónico. Las ventas `ticket` son notas
                         de venta internas: no se consulta nada y no se pinta nada. */}
@@ -499,64 +601,45 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                         />
                     )}
 
-                    {/* Pagos */}
                     <SectionCard icon={CreditCard} title="Pagos">
-                        <div className="flex flex-col gap-2 -mt-1">
-                            {pagos.map(pago => (
-                                <div
-                                    key={pago.id}
-                                    className="flex justify-between items-center text-sm py-2"
-                                    style={{ borderBottom: '1px solid color-mix(in srgb, var(--color-border) 50%, transparent)' }}
-                                >
-                                    <div>
-                                        <p className="font-medium" style={{ color: 'var(--color-text)' }}>
-                                            {(pago.metodo_pago as any)?.nombre ?? '—'}
-                                        </p>
-                                        {pago.referencia && (
-                                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                                Ref: {pago.referencia}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="font-bold" style={{ color: 'var(--color-success)' }}>
-                                            S/ {parseFloat(pago.monto).toFixed(2)}
-                                        </p>
-                                        {parseFloat(pago.vuelto) > 0 && (
-                                            <p className="text-xs font-medium" style={{ color: 'var(--color-warning)' }}>
-                                                Vuelto: S/ {parseFloat(pago.vuelto).toFixed(2)}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                        {pagos.length === 0 ? (
+                            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                {venta.es_credito ? 'Venta al crédito sin pago inicial.' : 'Sin pagos registrados.'}
+                            </p>
+                        ) : (
+                            <ul>
+                                {pagos.map((pago, i) => (
+                                    <li key={pago.id} className="flex justify-between items-start gap-3 py-2.5"
+                                        style={{ borderTop: i ? '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' : undefined }}>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{(pago.metodo_pago as any)?.nombre ?? '—'}</p>
+                                            {pago.referencia && <p className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>Ref. {pago.referencia}</p>}
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[15px] font-bold tabular-nums" style={{ color: 'var(--vp-mint-ink)' }}>{fmtS(num(pago.monto))}</p>
+                                            {num(pago.vuelto) > 0 && (
+                                                <p className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--vp-amber-ink)' }}>vuelto {fmtS(num(pago.vuelto))}</p>
+                                            )}
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </SectionCard>
 
-                    {/* Logs de descuento */}
                     {descLogs.length > 0 && (
                         <SectionCard icon={Percent} title="Descuentos aplicados">
-                            <div className="flex flex-col gap-2 -mt-1">
-                                {descLogs.map(log => (
-                                    <div
-                                        key={log.id}
-                                        className="py-2"
-                                        style={{ borderBottom: '1px solid color-mix(in srgb, var(--color-border) 50%, transparent)' }}
-                                    >
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                                                {(log.concepto as any)?.nombre ?? '—'}
-                                            </span>
-                                            <span className="text-sm font-bold" style={{ color: 'var(--color-danger)' }}>
-                                                -S/ {parseFloat(log.monto_descuento).toFixed(2)}
-                                            </span>
+                            <ul>
+                                {descLogs.map((log, i) => (
+                                    <li key={log.id} className="py-2.5" style={{ borderTop: i ? '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' : undefined }}>
+                                        <div className="flex justify-between items-baseline gap-3">
+                                            <span className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{(log.concepto as any)?.nombre ?? '—'}</span>
+                                            <span className="text-[15px] font-bold tabular-nums" style={{ color: 'var(--vp-coral-ink)' }}>−{fmtS(num(log.monto_descuento))}</span>
                                         </div>
-                                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                            Por: {(log.user as any)?.name ?? '—'}
-                                        </p>
-                                    </div>
+                                        <p className="text-[13px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>Lo aplicó {(log.user as any)?.name ?? '—'}</p>
+                                    </li>
                                 ))}
-                            </div>
+                            </ul>
                         </SectionCard>
                     )}
                 </div>
