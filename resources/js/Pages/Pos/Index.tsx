@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2, Store,
+    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2, Store, Plus,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
@@ -20,6 +20,7 @@ import PanelDescuento from './Partials/PanelDescuento';
 import ModalClienteRapido from './Partials/ModalClienteRapido';
 import ModalCrearCliente from './Partials/ModalCrearCliente';
 import DatosClienteVenta, { type DatosCliente } from './Partials/DatosClienteVenta';
+import ModalNuevoProducto from './Partials/ModalNuevoProducto';
 import ModalConfirmacionVenta from './Partials/ModalConfirmacionVenta';
 import ModalSelectorPresentacion from './Partials/ModalSelectorPresentacion';
 import Select from '@/Components/UI/Select';
@@ -181,6 +182,8 @@ interface Props extends PageProps {
     pideDatosCliente?:         boolean;
     // Entregas: recojo o envío. null = la empresa no usa la función.
     entregas?:                 EntregasPos | null;
+    // Puede crear productos desde el POS (permiso de Catálogo → Productos).
+    puedeCrearProducto?:       boolean;
     // A14: el backend valida que el usuario pueda operar el POS al CARGAR la
     // pantalla (admin sin local_id en modo central_y_local, almacén
     // desactivado, etc.). Si puedeVender=false bloqueamos el botón cobrar
@@ -358,7 +361,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null }: Props) {
+export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null, puedeCrearProducto = false }: Props) {
     // Configuración de la empresa (configurable por tenant).
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
@@ -527,6 +530,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const [modalCliente, setModalCliente]   = useState(false);
     // Alta de cliente sin salir del POS (se abre desde el modal de selección).
     const [modalCrearCliente, setModalCrearCliente] = useState(false);
+    // Alta rápida de productos: el nombre arranca con lo que se estaba buscando.
+    const [modalNuevoProducto, setModalNuevoProducto] = useState(false);
+    const [nombreNuevoProducto, setNombreNuevoProducto] = useState('');
     const [modalConfirm, setModalConfirm]   = useState(false);
     const [loading, setLoading]             = useState(false);
     const [carritoAbierto, setCarritoAbierto] = useState(false);
@@ -1940,6 +1946,16 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                                 <RefreshCw size={13} className={refrescando ? 'animate-spin' : ''} />
                                 <span className="hidden sm:inline">{refrescando ? 'Actualizando…' : 'Actualizar'}</span>
                             </button>
+                            {puedeCrearProducto && (
+                                <button
+                                    onClick={() => { setNombreNuevoProducto(''); setModalNuevoProducto(true); }}
+                                    title="Crear un producto y agregarlo al carrito"
+                                    className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors hover:brightness-95"
+                                    style={{ color: 'var(--color-primary)', backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)' }}
+                                >
+                                    <Plus size={13} /> <span>Nuevo producto</span>
+                                </button>
+                            )}
                         </div>
 
                         <div className="relative">
@@ -2116,6 +2132,11 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                                 <div className="col-span-full flex flex-col items-center justify-center py-16 gap-3" style={{ color: 'var(--color-text-muted)' }}>
                                     <Package size={48} className="opacity-20" />
                                     <p className="text-sm">No se encontraron productos</p>
+                                    {busqueda && puedeCrearProducto && (
+                                        <Button size="sm" onClick={() => { setNombreNuevoProducto(busqueda.trim()); setModalNuevoProducto(true); }} startContent={<Plus size={14} />}>
+                                            Crear «{busqueda.trim().slice(0, 40)}»
+                                        </Button>
+                                    )}
                                     {busqueda && (
                                         <button
                                             onClick={() => { setBusqueda(''); setCategoriaActiva(null); }}
@@ -2351,6 +2372,21 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 onSelect={setCliente}
                 onCrearNuevo={() => { setModalCliente(false); setModalCrearCliente(true); }}
             />
+
+            {puedeCrearProducto && (
+                <ModalNuevoProducto
+                    isOpen={modalNuevoProducto}
+                    onClose={() => setModalNuevoProducto(false)}
+                    nombreInicial={nombreNuevoProducto}
+                    ventaId={ventaEnEdicion?.id ?? null}
+                    onCreado={p => {
+                        // Entra al carrito como uno buscado y queda en el catálogo de la pantalla.
+                        setListaProductos(prev => [p, ...prev.filter(x => x.id !== p.id)]);
+                        setBusqueda('');
+                        agregarProducto(p);
+                    }}
+                />
+            )}
 
             <ModalCrearCliente
                 isOpen={modalCrearCliente}

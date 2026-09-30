@@ -505,6 +505,8 @@ class VentaController extends Controller
             'permiteCredito'           => (bool) ($user->empresa->pos_permite_credito ?? true),
             // Pedir teléfono, dirección y observación del cliente (opcional por empresa).
             'pideDatosCliente'         => (bool) ($user->empresa->pos_datos_cliente ?? false),
+            // Alta rápida de productos desde el POS: con el mismo permiso del Catálogo.
+            'puedeCrearProducto'       => $user->tienePermiso('catalogo.productos', 'crear'),
             // Entregas (recojo o envío). null = la empresa no usa la función.
             'entregas'                 => $this->entregasParaPos($user->empresa),
             'permitePendienteEntrega'  => (bool) ($user->empresa->pos_permite_pendiente_entrega ?? true),
@@ -1695,9 +1697,26 @@ class VentaController extends Controller
         $hasMore   = $productos->count() > $limite;
         $productos = $productos->take($limite);
 
-        // Stock y tránsito para el almacén que corresponda: modo edición usa el
-        // local de la venta; venta normal usa el almacén de ventas del usuario.
-        $ventaId = $request->query('venta_id');
+        $this->completarStockPos($productos, $user, $request->query('venta_id'));
+
+        $nextCursor = $hasMore && $productos->last()
+            ? $this->codificarCursor((string) $productos->last()->nombre, (int) $productos->last()->id)
+            : null;
+
+        return response()->json([
+            'productos' => $productos,
+            'has_more'  => $hasMore,
+            'cursor'    => $nextCursor,
+        ]);
+    }
+
+    /**
+     * Stock y tránsito de cada producto en el almacén que corresponda: al
+     * editar una venta, el del local de esa venta; si no, el de ventas del usuario.
+     */
+    private function completarStockPos(\Illuminate\Support\Collection $productos, \App\Models\User $user, $ventaId = null): void
+    {
+        $empresaId = $user->empresa_id;
         $ventaObjetivo = $ventaId ? Venta::where('id', $ventaId)->where('empresa_id', $empresaId)->first() : null;
         $almacenVentas = $ventaObjetivo
             ? $this->scope->almacenVentasDeLocal($ventaObjetivo->empresa_id, $ventaObjetivo->local_id)
@@ -1726,16 +1745,48 @@ class VentaController extends Controller
             $p->stock_en_transito = $controlaStock ? (float) ($transitoMap[$p->id]['cantidad'] ?? 0) : 0;
             $p->transito_fecha    = $controlaStock ? ($transitoMap[$p->id]['fecha'] ?? null) : null;
         });
+    }
 
-        $nextCursor = $hasMore && $productos->last()
-            ? $this->codificarCursor((string) $productos->last()->nombre, (int) $productos->last()->id)
-            : null;
+    /**
+     * Lo que necesita el modal "Nuevo producto" del POS: categorías,
+     * presentaciones, si los precios suelen incluir IGV y dónde queda el stock.
+     */
+    public function datosNuevoProducto(Request $request)
+    {
+        $user = $request->user();
+        $empresaId = $user->empresa_id;
+        $almacen = app(\App\Services\ProductoCreacionService::class)->almacenInicial($user);
+
+        // Por defecto, lo que usa la mayoría de sus productos.
+        $conIgv = Producto::deEmpresa($empresaId)->where('incluye_igv', true)->count();
+        $sinIgv = Producto::deEmpresa($empresaId)->where('incluye_igv', false)->count();
 
         return response()->json([
-            'productos' => $productos,
-            'has_more'  => $hasMore,
-            'cursor'    => $nextCursor,
+            'categorias'        => \App\Models\Categoria::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(['id', 'nombre']),
+            'unidades'          => \App\Models\UnidadMedida::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(['id', 'nombre', 'abreviatura']),
+            'incluye_igv'       => $conIgv >= $sinIgv,
+            'inventarioInicial' => $almacen ? [
+                'almacen' => $almacen->nombre,
+                'fecha'   => app(\App\Services\InventarioInicialService::class)->fechaParaProductoNuevo($almacen->id),
+            ] : null,
         ]);
+    }
+
+    /**
+     * Alta rápida de un producto desde el POS. Se crea igual que en el Catálogo
+     * y vuelve con la forma de la búsqueda del POS, lista para el carrito.
+     */
+    public function crearProducto(\App\Http\Requests\Catalogo\ProductoRequest $request, \App\Services\ProductoCreacionService $creacion)
+    {
+        $user = $request->user();
+        ['producto' => $nuevo, 'aviso' => $aviso] = $creacion->crear($user, $request->validated());
+
+        \App\Services\AuditoriaService::log('producto.creado', $nuevo, ['origen' => 'pos', 'nombre' => $nuevo->nombre], $user);
+
+        $productos = $this->productosPosSelect(Producto::whereKey($nuevo->id))->get();
+        $this->completarStockPos($productos, $user, $request->input('venta_id'));
+
+        return response()->json(['producto' => $productos->first(), 'aviso' => $aviso]);
     }
 
     public function buscarClientes(Request $request)

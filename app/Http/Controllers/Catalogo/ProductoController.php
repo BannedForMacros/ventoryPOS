@@ -7,9 +7,8 @@ use App\Http\Requests\Catalogo\ProductoRequest;
 use App\Models\Categoria;
 use App\Models\Producto;
 use App\Models\UnidadMedida;
-use App\Services\AuditoriaService;
 use App\Services\InventarioInicialService;
-use App\Services\LocalScopeService;
+use App\Services\ProductoCreacionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -47,7 +46,7 @@ class ProductoController extends Controller
     {
         $empresaId = $request->user()->empresa_id;
 
-        $almacen = $this->almacenInicial($request);
+        $almacen = app(ProductoCreacionService::class)->almacenInicial($request->user());
 
         return Inertia::render('Catalogo/Productos/Create', [
             'categorias' => Categoria::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
@@ -60,138 +59,12 @@ class ProductoController extends Controller
         ]);
     }
 
-    public function store(ProductoRequest $request)
+    public function store(ProductoRequest $request, ProductoCreacionService $creacion)
     {
-        $data = $request->validated();
-
-        $producto = DB::transaction(function () use ($data, $request) {
-            $esProducto = $data['tipo'] === 'producto';
-
-            $producto = Producto::create([
-                'empresa_id'     => $request->user()->empresa_id,
-                'categoria_id'   => $data['categoria_id'] ?? null,
-                'codigo'         => $data['codigo'] ?? null,
-                'nombre'         => $data['nombre'],
-                'descripcion'    => $data['descripcion'] ?? null,
-                'imagen'         => $data['imagen'] ?? null,
-                'tipo'           => $data['tipo'],
-                // Para productos físicos el precio real está en cada unidad; guardamos 0 como placeholder.
-                'tipo_precio'    => $esProducto ? 'fijo' : $data['tipo_precio'],
-                'precio_venta'   => $esProducto ? 0 : $data['precio_venta'],
-                'precio_costo'   => 0,
-                'activo'         => $data['activo'] ?? true,
-                'incluye_igv'    => $data['incluye_igv'] ?? false,
-                'controla_stock' => $esProducto ? ($data['controla_stock'] ?? null) : false,
-                'es_retornable'  => $esProducto ? ($data['es_retornable'] ?? null) : false,
-            ]);
-
-            $unidades = $data['unidades'] ?? [];
-
-            // Procesa presentaciones para AMBOS tipos (productos y servicios con variantes).
-            // Si el form no envia ninguna y es servicio, se crea una unica presentacion
-            // por defecto para que el POS pueda agregarlo al carrito (precio del servicio).
-            if (!empty($unidades)) {
-                foreach ($unidades as $u) {
-                    $producto->unidades()->create([
-                        'unidad_medida_id'  => $u['unidad_medida_id'],
-                        'es_base'           => $u['es_base'],
-                        'factor_conversion' => $u['es_base'] ? 1 : $u['factor_conversion'],
-                        'tipo_precio'       => $u['tipo_precio'],
-                        'precio_venta'      => $u['precio_venta'],
-                        'precio_costo'      => 0,
-                        'activo'            => $u['activo'] ?? true,
-                    ]);
-                }
-            } elseif ($producto->esServicio()) {
-                $this->crearPresentacionDefaultServicio($producto, $data);
-            }
-
-            return $producto;
-        });
-
-        $aviso = $this->cargarInventarioInicial($request, $producto, $data);
+        ['aviso' => $aviso] = $creacion->crear($request->user(), $request->validated());
 
         return redirect()->route('catalogo.productos.index')
             ->with('success', 'Producto creado correctamente.' . ($aviso ? " {$aviso}" : ''));
-    }
-
-    /**
-     * Stock inicial y costo escritos al crear un producto físico (opcionales).
-     *  - Con stock: queda como su inventario inicial en el almacén del usuario,
-     *    con la fecha del último conteo (ver fechaParaProductoNuevo), y el
-     *    costo es su costo promedio.
-     *  - Solo costo: se guarda como costo de referencia del producto; se usa
-     *    para la utilidad de sus ventas hasta que entre la primera compra.
-     */
-    private function cargarInventarioInicial(Request $request, Producto $producto, array $data): ?string
-    {
-        if (!$producto->esProductoFisico()) {
-            return null;
-        }
-
-        $stock = (float) ($data['stock_inicial'] ?? 0);
-        $costo = isset($data['costo_inicial']) && $data['costo_inicial'] !== '' ? (float) $data['costo_inicial'] : null;
-
-        if ($stock > 0 && $producto->controla_stock !== false) {
-            $almacen = $this->almacenInicial($request);
-            if (!$almacen) {
-                return 'No se cargó el stock inicial: tu usuario no tiene un almacén asignado. Cárgalo en Inventario inicial.';
-            }
-
-            $servicio = app(InventarioInicialService::class);
-            $fecha = $servicio->fechaParaProductoNuevo($almacen->id);
-            $servicio->guardar($producto->empresa_id, $almacen->id, $fecha, [
-                ['producto_id' => $producto->id, 'cantidad' => $stock, 'costo' => $costo],
-            ]);
-
-            AuditoriaService::log('inventario_inicial.cargado', $almacen, [
-                'origen' => 'producto_nuevo', 'fecha' => $fecha, 'productos' => 1, 'producto_id' => $producto->id,
-            ], $request->user());
-
-            return "Arranca con {$this->cantidad($stock)} en stock en {$almacen->nombre}.";
-        }
-
-        if ($costo !== null && $costo > 0) {
-            $producto->update(['precio_costo' => round($costo, 4)]);
-        }
-
-        return null;
-    }
-
-    /** Almacén donde queda el stock inicial: el de ventas del usuario, o el primero que puede ver. */
-    private function almacenInicial(Request $request): ?\App\Models\Almacen
-    {
-        $scope = app(LocalScopeService::class);
-
-        return $scope->almacenParaVentas($request->user()) ?? $scope->almacenesVisibles($request->user())->first();
-    }
-
-    private function cantidad(float $v): string
-    {
-        return rtrim(rtrim(number_format($v, 4, '.', ''), '0'), '.');
-    }
-
-    /**
-     * Para servicios sin variantes explicitas, crea una presentacion default
-     * con la unidad "Servicio" (la crea si no existe) y el precio del servicio.
-     * Esto garantiza que todo servicio sea agregable desde el POS.
-     */
-    private function crearPresentacionDefaultServicio(Producto $producto, array $data): void
-    {
-        $um = UnidadMedida::firstOrCreate(
-            ['empresa_id' => $producto->empresa_id, 'nombre' => 'Servicio'],
-            ['abreviatura' => 'srv', 'activo' => true]
-        );
-
-        $producto->unidades()->create([
-            'unidad_medida_id'  => $um->id,
-            'es_base'           => true,
-            'factor_conversion' => 1,
-            'tipo_precio'       => $data['tipo_precio'] ?? 'fijo',
-            'precio_venta'      => $data['precio_venta'] ?? 0,
-            'precio_costo'      => 0,
-            'activo'            => true,
-        ]);
     }
 
     public function edit(Request $request, Producto $producto)
@@ -278,7 +151,7 @@ class ProductoController extends Controller
                     );
                 }
             } elseif ($producto->esServicio() && $producto->unidades()->count() === 0) {
-                $this->crearPresentacionDefaultServicio($producto, $data);
+                app(ProductoCreacionService::class)->crearPresentacionDefaultServicio($producto, $data);
             }
         });
 

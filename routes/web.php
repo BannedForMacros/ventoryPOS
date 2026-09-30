@@ -416,6 +416,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('permiso:pos,ver')->get('/pos/historial-precios', [VentaController::class, 'historialPreciosCliente'])->name('pos.historial-precios');
     // Búsqueda server-side de productos y clientes para el POS.
     Route::middleware(['permiso:pos,ver', 'throttle:60,1'])->get('/pos/productos', [VentaController::class, 'buscarProductos'])->name('pos.productos');
+    // Alta rápida de productos desde el POS (mismo permiso que crear en el Catálogo).
+    Route::middleware('permiso:catalogo.productos,crear')->get('/pos/productos/nuevo', [VentaController::class, 'datosNuevoProducto'])->name('pos.productos.nuevo');
+    Route::middleware('permiso:catalogo.productos,crear')->post('/pos/productos', [VentaController::class, 'crearProducto'])->name('pos.productos.crear');
     Route::middleware(['permiso:pos,ver', 'throttle:60,1'])->get('/pos/clientes', [VentaController::class, 'buscarClientes'])->name('pos.clientes');
     // Anticipos de efectivo activos de un cliente para usar en el POS.
     Route::middleware(['permiso:pos,ver', 'throttle:60,1'])->get('/pos/clientes/{cliente}/anticipos', [VentaController::class, 'anticiposCliente'])->name('pos.clientes.anticipos');
