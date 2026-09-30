@@ -104,6 +104,21 @@ class InventarioInicialService
         return ['guardados' => count($porProducto), 'sin_costo' => $sinCosto];
     }
 
+    /**
+     * Fecha del inventario inicial de un producto que se crea hoy: la del
+     * último conteo cargado en el almacén, para que quede junto a los demás.
+     * Si nunca se cargó uno, o el último es de hoy, ayer: el conteo vale al
+     * cierre de su fecha, y con fecha de hoy las ventas de hoy de este
+     * producto no se descontarían.
+     */
+    public function fechaParaProductoNuevo(int $almacenId): string
+    {
+        $ayer   = now()->subDay()->toDateString();
+        $ultima = DB::table('stock_iniciales')->where('almacen_id', $almacenId)->max('fecha');
+
+        return $ultima ? min(substr((string) $ultima, 0, 10), $ayer) : $ayer;
+    }
+
     /** Quita el inventario inicial: el stock vuelve a salir de todos sus movimientos. */
     public function quitar(int $almacenId, int $productoId): bool
     {

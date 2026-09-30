@@ -7,6 +7,9 @@ use App\Http\Requests\Catalogo\ProductoRequest;
 use App\Models\Categoria;
 use App\Models\Producto;
 use App\Models\UnidadMedida;
+use App\Services\AuditoriaService;
+use App\Services\InventarioInicialService;
+use App\Services\LocalScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -44,9 +47,16 @@ class ProductoController extends Controller
     {
         $empresaId = $request->user()->empresa_id;
 
+        $almacen = $this->almacenInicial($request);
+
         return Inertia::render('Catalogo/Productos/Create', [
             'categorias' => Categoria::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
             'unidades'   => UnidadMedida::deEmpresa($empresaId)->activo()->orderBy('nombre')->get(),
+            // Dónde y con qué fecha queda el stock inicial que se escriba al crear.
+            'inventarioInicial' => $almacen ? [
+                'almacen' => $almacen->nombre,
+                'fecha'   => app(InventarioInicialService::class)->fechaParaProductoNuevo($almacen->id),
+            ] : null,
         ]);
     }
 
@@ -54,7 +64,7 @@ class ProductoController extends Controller
     {
         $data = $request->validated();
 
-        DB::transaction(function () use ($data, $request) {
+        $producto = DB::transaction(function () use ($data, $request) {
             $esProducto = $data['tipo'] === 'producto';
 
             $producto = Producto::create([
@@ -95,10 +105,70 @@ class ProductoController extends Controller
             } elseif ($producto->esServicio()) {
                 $this->crearPresentacionDefaultServicio($producto, $data);
             }
+
+            return $producto;
         });
 
+        $aviso = $this->cargarInventarioInicial($request, $producto, $data);
+
         return redirect()->route('catalogo.productos.index')
-            ->with('success', 'Producto creado correctamente.');
+            ->with('success', 'Producto creado correctamente.' . ($aviso ? " {$aviso}" : ''));
+    }
+
+    /**
+     * Stock inicial y costo escritos al crear un producto físico (opcionales).
+     *  - Con stock: queda como su inventario inicial en el almacén del usuario,
+     *    con la fecha del último conteo (ver fechaParaProductoNuevo), y el
+     *    costo es su costo promedio.
+     *  - Solo costo: se guarda como costo de referencia del producto; se usa
+     *    para la utilidad de sus ventas hasta que entre la primera compra.
+     */
+    private function cargarInventarioInicial(Request $request, Producto $producto, array $data): ?string
+    {
+        if (!$producto->esProductoFisico()) {
+            return null;
+        }
+
+        $stock = (float) ($data['stock_inicial'] ?? 0);
+        $costo = isset($data['costo_inicial']) && $data['costo_inicial'] !== '' ? (float) $data['costo_inicial'] : null;
+
+        if ($stock > 0 && $producto->controla_stock !== false) {
+            $almacen = $this->almacenInicial($request);
+            if (!$almacen) {
+                return 'No se cargó el stock inicial: tu usuario no tiene un almacén asignado. Cárgalo en Inventario inicial.';
+            }
+
+            $servicio = app(InventarioInicialService::class);
+            $fecha = $servicio->fechaParaProductoNuevo($almacen->id);
+            $servicio->guardar($producto->empresa_id, $almacen->id, $fecha, [
+                ['producto_id' => $producto->id, 'cantidad' => $stock, 'costo' => $costo],
+            ]);
+
+            AuditoriaService::log('inventario_inicial.cargado', $almacen, [
+                'origen' => 'producto_nuevo', 'fecha' => $fecha, 'productos' => 1, 'producto_id' => $producto->id,
+            ], $request->user());
+
+            return "Arranca con {$this->cantidad($stock)} en stock en {$almacen->nombre}.";
+        }
+
+        if ($costo !== null && $costo > 0) {
+            $producto->update(['precio_costo' => round($costo, 4)]);
+        }
+
+        return null;
+    }
+
+    /** Almacén donde queda el stock inicial: el de ventas del usuario, o el primero que puede ver. */
+    private function almacenInicial(Request $request): ?\App\Models\Almacen
+    {
+        $scope = app(LocalScopeService::class);
+
+        return $scope->almacenParaVentas($request->user()) ?? $scope->almacenesVisibles($request->user())->first();
+    }
+
+    private function cantidad(float $v): string
+    {
+        return rtrim(rtrim(number_format($v, 4, '.', ''), '0'), '.');
     }
 
     /**

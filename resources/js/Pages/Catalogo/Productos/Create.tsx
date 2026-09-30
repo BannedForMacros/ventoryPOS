@@ -1,5 +1,5 @@
 import { useForm, router } from '@inertiajs/react';
-import { Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, PackageCheck } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -37,11 +37,15 @@ interface FormData {
     incluye_igv: boolean;
     controla_stock: ControlaStockSel;
     unidades: UnidadRow[];
+    stock_inicial: string;
+    costo_inicial: string;
 }
 
 interface Props extends PageProps {
     categorias: Categoria[];
     unidades: UnidadMedida[];
+    /** Dónde y con qué fecha queda el stock inicial (null: el usuario no tiene almacén). */
+    inventarioInicial?: { almacen: string; fecha: string } | null;
 }
 
 const emptyUnidad = (): UnidadRow => ({
@@ -49,19 +53,23 @@ const emptyUnidad = (): UnidadRow => ({
     tipo_precio: 'fijo', precio_venta: '', activo: true,
 });
 
-export default function Create({ categorias, unidades }: Props) {
+export default function Create({ categorias, unidades, inventarioInicial = null }: Props) {
     const { data, setData, transform, post, processing, errors } = useForm<FormData>({
         categoria_id: '', codigo: '', nombre: '', descripcion: '', imagen: '',
         tipo: 'producto', tipo_precio: 'fijo',
         precio_venta: '', activo: true, incluye_igv: false,
         controla_stock: 'heredar',
         unidades: [{ ...emptyUnidad(), es_base: true }],
+        stock_inicial: '', costo_inicial: '',
     });
 
     transform(d => ({
         ...d,
         imagen: d.imagen.trim() || null,
         controla_stock: d.controla_stock === 'heredar' ? null : d.controla_stock === 'si',
+        // Solo en productos físicos; vacío = no se carga.
+        stock_inicial: d.tipo === 'producto' && d.controla_stock !== 'no' && d.stock_inicial.trim() !== '' ? d.stock_inicial : null,
+        costo_inicial: d.tipo === 'producto' && d.costo_inicial.trim() !== '' ? d.costo_inicial : null,
     }));
 
     function setUnidad(index: number, field: keyof UnidadRow, value: unknown) {
@@ -84,6 +92,10 @@ export default function Create({ categorias, unidades }: Props) {
     }
 
     const baseCount = data.unidades.filter(u => u.es_base).length;
+    const unidadBase = unidades.find(um => um.id === data.unidades.find(u => u.es_base)?.unidad_medida_id);
+    const fechaConteo = inventarioInicial
+        ? new Date(`${inventarioInicial.fecha}T12:00:00`).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })
+        : '';
 
     return (
         <AppLayout title="Nuevo producto">
@@ -422,6 +434,52 @@ export default function Create({ categorias, unidades }: Props) {
                             </div>
                         ))}
                     </section>
+
+                {/* ── Sección 3: Stock inicial (solo productos físicos, solo al crear) ── */}
+                {data.tipo === 'producto' && (
+                    <section className="rounded-2xl border p-6 space-y-4"
+                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg"
+                                style={{ backgroundColor: 'color-mix(in srgb, var(--vp-mint) 16%, transparent)', color: 'var(--vp-mint-ink)' }}>
+                                <PackageCheck size={18} />
+                            </span>
+                            <div>
+                                <h2 className="text-[15px] font-semibold" style={{ color: 'var(--color-text)' }}>
+                                    Stock inicial <span className="font-normal" style={{ color: 'var(--color-text-muted)' }}>(opcional)</span>
+                                </h2>
+                                <p className="text-[13px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si ya lo tienes en tienda, escribe cuánto hay y cuánto te costó cada uno. Si lo dejas vacío, arranca en 0.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {data.controla_stock !== 'no' && (
+                                <Input
+                                    label={`Cantidad${unidadBase ? ` (en ${unidadBase.nombre.toLowerCase()})` : ''}`}
+                                    type="number" min="0" step="any" inputMode="decimal" placeholder="0"
+                                    value={data.stock_inicial}
+                                    onChange={e => setData('stock_inicial', e.target.value)}
+                                    error={(errors as Record<string, string>).stock_inicial} />
+                            )}
+                            <Input
+                                label={`Costo unitario${unidadBase ? ` (por ${unidadBase.nombre.toLowerCase()})` : ''}`}
+                                type="number" min="0" step="any" inputMode="decimal" placeholder="0.00"
+                                value={data.costo_inicial}
+                                onChange={e => setData('costo_inicial', e.target.value)}
+                                error={(errors as Record<string, string>).costo_inicial} />
+                        </div>
+
+                        <p className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
+                            {data.controla_stock === 'no'
+                                ? 'Este producto no controla stock: el costo solo sirve para calcular la utilidad de sus ventas.'
+                                : inventarioInicial
+                                    ? <>El stock queda como inventario inicial en <strong style={{ color: 'var(--color-text)' }}>{inventarioInicial.almacen}</strong>, contado al {fechaConteo}. Si solo pones el costo, se usa para la utilidad hasta la primera compra. Para corregirlo después: Inventario, Inventario inicial.</>
+                                    : 'Tu usuario no tiene un almacén asignado: el stock se podrá cargar luego en Inventario, Inventario inicial.'}
+                        </p>
+                    </section>
+                )}
 
                 <div className="flex gap-3">
                     <Button type="button" variant="ghost" onClick={() => router.visit(route('catalogo.productos.index'))}>

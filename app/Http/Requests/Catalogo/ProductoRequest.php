@@ -40,6 +40,10 @@ class ProductoRequest extends FormRequest
             'incluye_igv'    => 'boolean',
             'controla_stock' => 'nullable|boolean',
             'es_retornable'  => 'nullable|boolean',
+            // Solo al crear un producto físico: stock con el que arranca (en su
+            // unidad base) y costo unitario. Ambos opcionales.
+            'stock_inicial'  => 'nullable|numeric|min:0|max:99999999',
+            'costo_inicial'  => 'nullable|numeric|min:0|max:99999999',
         ];
 
         // Productos: unidades obligatorias (1+).
