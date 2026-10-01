@@ -21,7 +21,8 @@ class StoreVentaRequest extends FormRequest
      * todo lo de abajo vea datos coherentes:
      *  - Empresa sin la función: los campos de entrega se ignoran.
      *  - Envío cuya mercadería sale al entregarse: queda pendiente por entregar
-     *    lo que la cajera no marcó como llevado (por defecto, todo).
+     *    lo que la cajera no marcó como llevado (por defecto, todo), salvo que
+     *    la venta venga marcada como "Entregado" (envio_entregado).
      */
     protected function prepareForValidation(): void
     {
@@ -40,6 +41,12 @@ class StoreVentaRequest extends FormRequest
 
         if ($tipo === \App\Support\ConfigEntregas::RECOJO) {
             $cambios['ruta_entrega_id'] = null;
+        } elseif ($this->boolean('envio_entregado')) {
+            // Envío que ya sale entregado (p. ej. "Puesto en obra" con el
+            // camión): la mercadería sale del stock al vender, sin pedido
+            // pendiente, aunque la empresa tenga "sale al entregarse".
+            $cambios['entrega_pendiente'] = false;
+            $cambios['despacho_almacen']  = false;
         } elseif ($cfg['envio_sale_al_entregar'] && !$this->boolean('despacho_almacen') && is_array($this->input('items'))) {
             $cambios['entrega_pendiente'] = true;
             $cambios['items'] = array_map(function ($item) {
@@ -106,6 +113,7 @@ class StoreVentaRequest extends FormRequest
             // Entregas (opcional por empresa): recojo en tienda o envío, con su
             // ruta y la fecha y hora programadas. Ver prepareForValidation().
             'tipo_entrega'           => ['nullable', Rule::in(['recojo', 'envio'])],
+            'envio_entregado'        => ['nullable', 'boolean'],
             'ruta_entrega_id'        => ['nullable', 'integer', Rule::exists('rutas_entrega', 'id')->where('empresa_id', $empresaId)->where('activo', true)],
             'entrega_programada'     => ['nullable', 'date'],
             // Backdate de admin: registrar la venta en un turno REABIERTO ajeno

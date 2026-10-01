@@ -142,6 +142,25 @@ it('si la empresa lo decide, el envío sale del stock al vender', function () {
         ->and(ClienteAnticipo::where('venta_id', enUltimaVenta($this)->id)->exists())->toBeFalse();
 });
 
+it('un envío marcado "Entregado" sale del stock al vender aunque la empresa use "sale al entregarse"', function () {
+    // Caso HYC: "Puesto en obra" que sale hoy con el camión.
+    enActivar($this, ['ruta_obligatoria' => false, 'fecha_obligatoria' => false, 'textos' => ['envio' => 'PUESTO EN OBRA']]);
+
+    $this->post(route('ventas.store'), enVenta($this, [
+        'tipo_entrega' => 'envio', 'envio_entregado' => true, 'cliente_direccion' => 'Obra Pomalca',
+    ]))->assertSessionHasNoErrors();
+
+    $venta = enUltimaVenta($this);
+    expect($venta->tipo_entrega)->toBe('envio')                                   // sigue siendo un envío (ticket, ruta)
+        ->and(enStock($this))->toBe(40.0)                                         // salió al vender
+        ->and(ClienteAnticipo::where('venta_id', $venta->id)->exists())->toBeFalse(); // sin pedido pendiente
+
+    // Sin marcarlo, el mismo envío sigue quedando por entregar (comportamiento por defecto).
+    $this->post(route('ventas.store'), enVenta($this, ['tipo_entrega' => 'envio', 'cliente_direccion' => 'Obra Pomalca']))
+        ->assertSessionHasNoErrors();
+    expect(ClienteAnticipo::where('venta_id', enUltimaVenta($this)->id)->exists())->toBeTrue();
+});
+
 it('la cajera puede marcar lo que el cliente se lleva ahora en un envío', function () {
     enActivar($this, ['ruta_obligatoria' => false, 'fecha_obligatoria' => false]);
 

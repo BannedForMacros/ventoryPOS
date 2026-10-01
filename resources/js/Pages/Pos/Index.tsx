@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2, Store, Plus,
+    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2, Store, Plus, PackageCheck,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
@@ -516,8 +516,15 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // Si el envío cambió la modalidad a "por entregar", volver a recojo la deshace.
     const modalidadPorEnvio                           = useRef(false);
     const esEnvio        = !!entregas && tipoEntrega === 'envio';
-    // En un envío la mercadería sale del stock recién al entregarse.
-    const envioPendiente = esEnvio && !!entregas?.envio_sale_al_entregar;
+    // La empresa configuró que en un envío la mercadería sale al entregarse:
+    // por defecto queda "Por entregar". Pero en cada venta se puede marcar
+    // "Entregado" (p. ej. Puesto en obra que sale hoy con el camión): sale del
+    // stock al cobrar y no se crea el pedido pendiente.
+    const envioSaleAlEntregar = esEnvio && !!entregas?.envio_sale_al_entregar;
+    const [envioEntregado, setEnvioEntregado] = useState(
+        ventaEnEdicion?.tipo_entrega === 'envio' && !ventaEnEdicion?.entrega_pendiente && !ventaEnEdicion?.despacho_almacen,
+    );
+    const envioPendiente = envioSaleAlEntregar && !envioEntregado;
     const [pendientes, setPendientes]               = useState<Record<string, number>>(() => {
         const m: Record<string, number> = {};
         ventaEnEdicion?.items.forEach(it => {
@@ -1113,6 +1120,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         setFechaEntrega('');
         // Ni el envío: la siguiente venta vuelve a empezar como recojo.
         setTipoEntrega('recojo');
+        setEnvioEntregado(false);
         setRutaEntregaId(null);
         setEntregaProgramada('');
         avisoRespondido.current = false;
@@ -1289,6 +1297,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             cliente_id:            cliente?.id ?? null,
             ...(entregas ? {
                 tipo_entrega:       tipoEntrega,
+                // Envío ya entregado: el servidor no lo convierte en pedido pendiente.
+                envio_entregado:    esEnvio && envioEntregado,
                 ruta_entrega_id:    esEnvio ? rutaEntregaId : null,
                 entrega_programada: esEnvio && entregaProgramada ? entregaProgramada : null,
             } : {}),
@@ -1422,10 +1432,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     type Entrega = 'completa' | 'pendiente' | 'despacho';
     const entrega: Entrega = despachoAlmacen ? 'despacho' : entregaPendiente ? 'pendiente' : 'completa';
     function elegirEntrega(e: Entrega) {
-        if (e === 'completa' && envioPendiente) {
-            toast('En un envío la mercadería queda por entregar. Si el cliente se lleva todo ahora, marca que recoge en tienda.');
-            return;
-        }
+        // En un envío, "Entregado" = la mercadería sale ya con el envío.
+        if (envioSaleAlEntregar) setEnvioEntregado(e === 'completa');
         modalidadPorEnvio.current = false;
         activarPendiente(e === 'pendiente');
         activarDespachoAlmacen(e === 'despacho');
@@ -1434,6 +1442,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     function elegirTipoEntrega(t: TipoEntrega) {
         if (!entregas || t === tipoEntrega) return;
         setTipoEntrega(t);
+        setEnvioEntregado(false);
         avisoRespondido.current = true;
 
         if (t === 'envio') {
@@ -1483,6 +1492,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         usaDespachoAlmacen:    empresaAuth?.usa_despacho_almacen ?? false,
         // En un envío que sale al entregarse no existe "se lleva todo".
         envioPendiente,
+        envioSaleAlEntregar,
         // Recojo o envío (solo si la empresa usa Entregas).
         slotEntrega: entregas ? (
             <EntregaVenta
@@ -1496,6 +1506,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 datos={datosCliente}
                 onDatos={setDatosCliente}
                 pedirDatosAqui={!pideDatosCliente}
+                entregado={envioEntregado}
             />
         ) : null,
         // Autofoco del precio en líneas recién agregadas con precio base 0.
@@ -2583,6 +2594,7 @@ interface CarritoPanelProps {
     onElegirEntrega: (e: 'completa' | 'pendiente' | 'despacho') => void;
     usaDespachoAlmacen: boolean;
     envioPendiente: boolean;
+    envioSaleAlEntregar: boolean;
     slotEntrega: React.ReactNode;
     // Autofoco del precio en líneas recién agregadas con precio base 0.
     nuevaLineaPrecioKey: string | null;
@@ -2604,7 +2616,7 @@ function CarritoPanel({
     permitirCredito, permitirPendiente, entregaPendiente, despachoAlmacen, fechaEntrega, pendienteDe, totalPendientes,
     onSetEntregaPendiente, onSetDespachoAlmacen, onSetFechaEntrega, onSetPendiente,
     entrega, onElegirEntrega,
-    usaDespachoAlmacen, envioPendiente, slotEntrega,
+    usaDespachoAlmacen, envioPendiente, envioSaleAlEntregar, slotEntrega,
     nuevaLineaPrecioKey, onAutoFocusPrecio,
     anticipoSeleccionado, montoAnticipoUsado,
 }: CarritoPanelProps) {
@@ -2767,16 +2779,16 @@ function CarritoPanel({
                             vuelve a contado). Solo si la empresa usa alguna. */}
                         {slotEntrega}
 
-                        {(permitirCredito || permitirPendiente || usaDespachoAlmacen || envioPendiente) && (
+                        {(permitirCredito || permitirPendiente || usaDespachoAlmacen || envioSaleAlEntregar) && (
                             <ModalidadVenta
                                 esCredito={esCredito}
                                 onCredito={onSetEsCredito}
                                 entrega={entrega}
                                 onEntrega={onElegirEntrega}
                                 credito={permitirCredito}
-                                pendiente={permitirPendiente || envioPendiente}
+                                pendiente={permitirPendiente || envioSaleAlEntregar}
                                 despacho={usaDespachoAlmacen}
-                                sinCompleta={envioPendiente}
+                                envio={envioSaleAlEntregar}
                             />
                         )}
 
@@ -3209,7 +3221,7 @@ function TituloSeccion({ children, extra }: { children: React.ReactNode; extra?:
  * tono tranquilo (borde + ✓); lo excepcional se RELLENA de su color para
  * que la cajera vea de un vistazo que es una venta especial.
  */
-function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pendiente, despacho, sinCompleta = false }: {
+function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pendiente, despacho, envio = false }: {
     esCredito: boolean;
     onCredito: (v: boolean) => void;
     entrega:   'completa' | 'pendiente' | 'despacho';
@@ -3217,8 +3229,8 @@ function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pen
     credito:   boolean;
     pendiente: boolean;
     despacho:  boolean;
-    /** En un envío la mercadería siempre queda por entregar. */
-    sinCompleta?: boolean;
+    /** Envío: la primera opción se llama "Entregado" (sale ya con el envío). */
+    envio?: boolean;
 }) {
     const hayEntrega = pendiente || despacho;
 
@@ -3234,9 +3246,8 @@ function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pen
                 )}
                 {hayEntrega && (
                     <FilaModalidad etiqueta="Entrega">
-                        {!sinCompleta && (
-                            <OpcionModalidad normal activo={entrega === 'completa'} onClick={() => onEntrega('completa')} Icono={ShoppingBag} label="Se lleva todo" />
-                        )}
+                        <OpcionModalidad normal activo={entrega === 'completa'} onClick={() => onEntrega('completa')}
+                            Icono={envio ? PackageCheck : ShoppingBag} label={envio ? 'Entregado' : 'Se lleva todo'} />
                         {pendiente && (
                             <OpcionModalidad activo={entrega === 'pendiente'} onClick={() => onEntrega('pendiente')} Icono={MODALIDADES.pendiente.Icono} label={MODALIDADES.pendiente.label} m={MODALIDADES.pendiente} />
                         )}
@@ -3258,7 +3269,7 @@ const comoFrase = (t: string) => t.charAt(0).toUpperCase() + t.slice(1).toLowerC
  * programadas; la dirección y el teléfono se piden aquí solo si la empresa no
  * los pide ya en la franja de datos del cliente.
  */
-function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onProgramada, datos, onDatos, pedirDatosAqui }: {
+function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onProgramada, datos, onDatos, pedirDatosAqui, entregado = false }: {
     entregas: EntregasPos;
     tipo: TipoEntrega;
     onTipo: (t: TipoEntrega) => void;
@@ -3269,6 +3280,8 @@ function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onPr
     datos: DatosCliente;
     onDatos: (d: DatosCliente) => void;
     pedirDatosAqui: boolean;
+    /** El envío se marcó "Entregado" en Modalidad. */
+    entregado?: boolean;
 }) {
     const campo = 'w-full text-sm rounded-lg px-2.5 py-1.5 border outline-none focus:ring-2';
     const estilo: React.CSSProperties = { borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' };
@@ -3317,7 +3330,9 @@ function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onPr
                         )}
                         {entregas.envio_sale_al_entregar && (
                             <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                                La mercadería queda en Despachos y sale del stock cuando se confirma la entrega.
+                                {entregado
+                                    ? 'Marcado como entregado: la mercadería sale del stock al cobrar, no queda en Despachos.'
+                                    : 'La mercadería queda en Despachos y sale del stock cuando se confirma la entrega. Si sale ahora, marca "Entregado" en Modalidad.'}
                             </p>
                         )}
                     </div>
