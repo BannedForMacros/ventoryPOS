@@ -99,6 +99,8 @@ interface VentaEnEdicionItem {
     unidad_nombre:         string;
     cantidad:              number;
     cantidad_pendiente?:   number;
+    // Ya entregado del pendiente: se conserva al editar (piso de la línea).
+    entregado?:            number;
     precio_unitario:       number;
     descuento_item:        number;
     descuento_concepto_id: number | null;
@@ -134,12 +136,11 @@ interface VentaEnEdicion {
     monto_pagado?:         number;
     saldo_pendiente?:      number;
     total?:                number;
-    // Pendiente por entregar existente (prellenado del panel). Si ya hubo
-    // entregas registradas, la edición está bloqueada en el backend.
+    // Pendiente por entregar existente (prellenado del panel). Lo ya
+    // entregado se conserva al editar (items[].entregado).
     entrega_pendiente?:      boolean;
     despacho_almacen?:       boolean;
     fecha_entrega_estimada?: string | null;
-    pendiente_bloqueado?:    boolean;
     items:                 VentaEnEdicionItem[];
     pagos:                 VentaEnEdicionPago[];
 }
@@ -1469,12 +1470,15 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         setPendientes(prev => ({ ...prev, [key]: valor }));
     }
 
+    // Edición de una venta con entregas registradas: "3000 Unidad de Alambre…".
+    const yaEntregado = (ventaEnEdicion?.items ?? [])
+        .filter(it => (it.entregado ?? 0) > 0)
+        .map(it => `${+(it.entregado ?? 0).toFixed(4)} ${it.unidad_nombre} de ${it.producto_nombre}`);
+
     const propsPendiente = {
-        // Editable también en edición de venta, SALVO que ya haya entregas
-        // registradas del pendiente (el backend bloquea toda la edición ahí).
+        // Editable también en edición de venta (lo ya entregado se conserva).
         // Oculto si la empresa lo apagó, salvo al editar una venta que ya lo usa.
-        permitirPendiente:     (permitePendienteEntrega || !!ventaEnEdicion?.entrega_pendiente)
-                               && !ventaEnEdicion?.pendiente_bloqueado,
+        permitirPendiente:     permitePendienteEntrega || !!ventaEnEdicion?.entrega_pendiente,
         // Idem crédito: una venta que nació al crédito sigue mostrando la casilla.
         permitirCredito:       permiteCredito || !!ventaEnEdicion?.es_credito,
         entregaPendiente,
@@ -1534,11 +1538,15 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                         <span style={{ color: 'var(--color-text-muted)' }}>
                             Modifica productos, cantidades, precios o pagos y guarda los cambios.
                             {!ventaEnEdicion.es_admin && ' Tienes 3 minutos desde que se creó la venta.'}
-                            {ventaEnEdicion.pendiente_bloqueado && (
-                                <strong style={{ color: 'var(--color-danger)' }}>
-                                    {' '}Esta venta ya tiene entregas del pendiente registradas: no se puede editar (anúlala y regístrala de nuevo).
+                            {yaEntregado.length > 0 && (ventaEnEdicion.es_admin ? (
+                                <strong>
+                                    {' '}Ya entregado: {yaEntregado.join(' · ')}. Eso se conserva y no puedes vender menos.
                                 </strong>
-                            )}
+                            ) : (
+                                <strong style={{ color: 'var(--color-danger)' }}>
+                                    {' '}Esta venta ya tiene entregas registradas: solo un administrador puede editarla.
+                                </strong>
+                            ))}
                         </span>
                     </div>
                     <Link href={route('ventas.index')}

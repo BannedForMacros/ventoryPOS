@@ -90,7 +90,7 @@ it('NO deja editar una venta cuyo comprobante quedó anulado ante SUNAT', functi
             'incluye_igv'        => true,
         ]],
         'pagos' => [['metodo_pago_id' => $this->efectivo->id, 'monto' => 90]],
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('venta'); // bloqueado, como aviso en el POS
 
     expect((float) $venta->fresh()->total)->toBe(20.0);
 });

@@ -203,6 +203,8 @@ class VentaService
         ?int $clienteId,
         bool $permitirStockNegativo,
         array $costosPrevios = [],
+        array $entregasPrevias = [],
+        ?ClienteAnticipo $anticipoPrevio = null,
     ): void {
         // Pendiente por entregar: el cliente paga todo pero se lleva solo parte.
         // Lo pendiente NO descuenta stock aquí (sale recién al entregarse) y se
@@ -212,6 +214,9 @@ class VentaService
         $esEntregaPendiente = !empty($data['entrega_pendiente']);
         $esDespachoAlmacen  = !empty($data['despacho_almacen']);
         $itemsPendientes    = [];
+        // Edición de una venta con entregas ya registradas: líneas del anticipo
+        // que se conservan (con su histórico de despachos) y se re-vinculan.
+        $itemsConservados   = [];
 
         // Items
         foreach ($data['items'] as $itemData) {
@@ -227,6 +232,22 @@ class VentaService
             $cantPendiente  = ($esEntregaPendiente || $esDespachoAlmacen)
                 ? ($esDespachoAlmacen ? $cantidad : min(max(0, (float) ($itemData['cantidad_pendiente'] ?? 0)), $cantidad))
                 : 0.0;
+
+            // Lo YA ENTREGADO de esta línea (edición): ya salió del almacén con
+            // la entrega, así que ni queda pendiente ni vuelve a salir al vender.
+            // Se asignan líneas completas del anticipo mientras la cantidad nueva
+            // las cubra; lo que no alcance se rechaza al final.
+            $clave     = $producto->id . '-' . $unidad->id;
+            $asignados = [];
+            $entregado = 0.0;
+            foreach ($entregasPrevias[$clave] ?? [] as $i => $prev) {
+                if ($entregado + $prev['entregado'] <= $cantidad + 0.00009) {
+                    $entregado  += $prev['entregado'];
+                    $asignados[] = $prev;
+                    unset($entregasPrevias[$clave][$i]);
+                }
+            }
+            $cantPendiente = min($cantPendiente, max(0, round($cantidad - $entregado, 4)));
 
             // Costo CONGELADO por unidad base con la regla única (CostoVentaService):
             // costo promedio del kardex al momento de la venta; null = desconocido.
@@ -257,7 +278,7 @@ class VentaService
             if ($this->config->deboDescontarStock($producto, $turno->local)) {
                 // Solo sale del almacén lo que el cliente SE LLEVA ahora; lo
                 // pendiente se descuenta al registrar la entrega del anticipo.
-                $baseEntregada = round(($cantidad - $cantPendiente) * (float) $unidad->factor_conversion, 4);
+                $baseEntregada = round(($cantidad - $cantPendiente - $entregado) * (float) $unidad->factor_conversion, 4);
                 if ($baseEntregada > 0.00009) {
                     Stock::ajustar($almacen->id, $producto->id, -$baseEntregada, 0, $permitirStockNegativo, contexto: [
                         'tipo'            => 'venta',
@@ -270,7 +291,20 @@ class VentaService
                 }
             }
 
-            if ($cantPendiente > 0.00009) {
+            if ($asignados) {
+                // La línea conserva sus ítems del anticipo: todos quedan con lo
+                // que ya entregaron y el pendiente nuevo va al último.
+                $ultimo = count($asignados) - 1;
+                foreach ($asignados as $i => $prev) {
+                    $itemsConservados[] = [
+                        'item'      => $prev['item'],
+                        'venta_item'=> $item,
+                        'entregado' => $prev['entregado'],
+                        'pendiente' => $i === $ultimo ? $cantPendiente : 0.0,
+                        'precio'    => round($precioUnitario - $descuentoItem, 2),
+                    ];
+                }
+            } elseif ($cantPendiente > 0.00009) {
                 $itemsPendientes[] = [
                     'venta_item_id'      => $item->id,
                     'producto_id'        => $producto->id,
@@ -394,6 +428,55 @@ class VentaService
             'saldo_pendiente' => $esCredito ? max(0, round((float) $venta->total - $montoPagadoReal, 2)) : 0,
             'monto_moneda'    => $moneda !== 'PEN' && $factor > 0 ? round((float) $venta->total / $factor, 2) : null,
         ]);
+
+        // ── Edición con entregas ya registradas ─────────────────────────
+        // Lo entregado no se puede "des-vender" editando: si la venta nueva ya
+        // no lo cubre, el camino es una devolución.
+        foreach ($entregasPrevias as $sinCubrir) {
+            foreach ($sinCubrir as $prev) {
+                $ai = $prev['item'];
+                throw ValidationException::withMessages([
+                    'items' => "Ya se entregaron " . self::cantidadLegible($prev['entregado']) . " {$ai->unidad_nombre} de {$ai->producto_nombre}: "
+                        . 'la venta debe incluir al menos esa cantidad de ese producto. Para devolver mercadería entregada usa Devoluciones.',
+                ]);
+            }
+        }
+
+        // El anticipo con entregas se CONSERVA (su histórico de despachos sigue
+        // valiendo): sus líneas se re-vinculan a los ítems nuevos con el
+        // pendiente y el precio nuevos, y lo pendiente nuevo se le agrega.
+        if ($anticipoPrevio) {
+            foreach ($itemsConservados as $c) {
+                $c['item']->update([
+                    'venta_item_id'      => $c['venta_item']->id,
+                    'cantidad'           => round($c['entregado'] + $c['pendiente'], 4),
+                    'cantidad_pendiente' => round($c['pendiente'], 4),
+                    'precio_unitario'    => $c['precio'],
+                ]);
+            }
+            if (!empty($itemsPendientes)) {
+                $anticipoPrevio->items()->createMany($itemsPendientes);
+            }
+
+            $items     = $anticipoPrevio->items()->get();
+            $saldo     = round($items->sum(fn ($i) => (float) $i->cantidad_pendiente * (float) $i->precio_unitario), 2);
+            $anticipoPrevio->update([
+                'cliente_id'             => $venta->cliente_id,
+                'monto'                  => round($items->sum(fn ($i) => (float) $i->cantidad * (float) $i->precio_unitario), 2),
+                'saldo'                  => $saldo,
+                'estado'                 => $saldo <= 0.01 ? 'aplicado' : 'activo',
+                'fecha_entrega_estimada' => $data['fecha_entrega_estimada'] ?? $anticipoPrevio->fecha_entrega_estimada,
+            ]);
+
+            \App\Services\AuditoriaService::log('anticipo_cliente.editado', $anticipoPrevio, [
+                'origen'   => 'edicion_venta',
+                'venta_id' => $venta->id,
+                'saldo'    => $saldo,
+                'items'    => $items->count(),
+            ], $user);
+
+            return;
+        }
 
         // ── Pendiente por entregar → anticipo material automático ────────
         // Toda la mercadería pagada y NO llevada queda como pasivo en
@@ -530,18 +613,54 @@ class VentaService
             $this->revertirAnticiposDeVenta($venta, $user);
 
             // Pendiente por entregar en edición:
-            //  - Si ya hubo ENTREGAS registradas (aplicaciones del anticipo),
-            //    la edición se bloquea: el histórico de despachos y el stock
-            //    ya movido quedarían desalineados. Anular y rehacer.
             //  - Si aún NO hay entregas, el anticipo vinculado se ANULA y se
             //    vuelve a crear desde el detalle nuevo (aplicarItemsPagos),
             //    devolviendo/ajustando el stock según el pendiente nuevo.
-            $tieneEntregas = $venta->anticipos()
+            //  - Si ya hubo ENTREGAS, el anticipo se CONSERVA con su histórico:
+            //    lo entregado ya salió del almacén y no se toca; la edición solo
+            //    re-vincula sus líneas con el pendiente y el precio nuevos.
+            $anticipoConEntregas = null;
+            $entregasPrevias     = [];
+            $conEntregas = $venta->anticipos()
                 ->whereIn('estado', ['activo', 'aplicado'])
                 ->whereHas('aplicaciones')
-                ->exists();
-            if ($tieneEntregas) {
-                abort(422, 'Esta venta tiene entregas de mercadería pendiente ya registradas. Para corregirla, anúlala y regístrala de nuevo.');
+                ->with('items')
+                ->get();
+            if ($conEntregas->isNotEmpty()) {
+                // Corregir una venta ya despachada (típico: precio mal digitado)
+                // es decisión de un administrador: cualquier rol marcado es_admin
+                // en su empresa, no un id de rol fijo.
+                if (!$user->rol?->es_admin) {
+                    abort(422, 'Esta venta ya tiene entregas registradas: solo un administrador puede editarla.');
+                }
+                $anticipoConEntregas = $conEntregas->first();
+                $entregadoPorItem = DB::table('cliente_anticipo_aplicacion_items as cai')
+                    ->join('cliente_anticipo_aplicaciones as ca', 'ca.id', '=', 'cai.cliente_anticipo_aplicacion_id')
+                    ->where('ca.cliente_anticipo_id', $anticipoConEntregas->id)
+                    ->selectRaw('cai.cliente_anticipo_item_id, SUM(cai.cantidad) as t')
+                    ->groupBy('cai.cliente_anticipo_item_id')
+                    ->pluck('t', 'cliente_anticipo_item_id');
+
+                // Solo el caso limpio: cada línea = entregado + pendiente. Si hubo
+                // cancelaciones de pendiente, cambios de producto o varios
+                // anticipos con entregas, la cuenta no cierra editando.
+                $cuadra = $conEntregas->count() === 1
+                    && !DB::table('cliente_anticipo_cancelaciones')->where('cliente_anticipo_id', $anticipoConEntregas->id)->exists()
+                    && $anticipoConEntregas->items->every(fn ($ai) => abs(
+                        (float) $ai->cantidad - (float) ($entregadoPorItem[$ai->id] ?? 0) - (float) $ai->cantidad_pendiente
+                    ) < 0.0001);
+                if (!$cuadra) {
+                    abort(422, 'Esta venta tiene entregas con cancelaciones o cambios de producto en su pendiente. Para corregirla usa «Modificar pedido» en el anticipo, o anúlala y regístrala de nuevo.');
+                }
+
+                foreach ($anticipoConEntregas->items as $ai) {
+                    $entregado = round((float) ($entregadoPorItem[$ai->id] ?? 0), 4);
+                    if ($entregado > 0.00009) {
+                        $entregasPrevias[$ai->producto_id . '-' . $ai->producto_unidad_id][] = [
+                            'item' => $ai, 'entregado' => $entregado,
+                        ];
+                    }
+                }
             }
 
             // V15 — Una venta con devoluciones ya registradas no se puede editar
@@ -579,6 +698,16 @@ class VentaService
                     }
                 }
             }
+            // Lo ya entregado salió con la ENTREGA, no con la venta: tampoco se
+            // restaura (sigue fuera del almacén).
+            foreach ($entregasPrevias as $lineas) {
+                foreach ($lineas as $prev) {
+                    if ($prev['item']->venta_item_id) {
+                        $pendienteBasePorItem[$prev['item']->venta_item_id] = ($pendienteBasePorItem[$prev['item']->venta_item_id] ?? 0)
+                            + round($prev['entregado'] * (float) $prev['item']->factor_conversion, 4);
+                    }
+                }
+            }
 
             foreach ($venta->items as $item) {
                 $producto = Producto::find($item->producto_id);
@@ -602,6 +731,9 @@ class VentaService
             // deja su pendiente en 0: si no, esos items quedan "vivos" y el
             // recálculo de stock/kardex los revive como mercadería fantasma.
             foreach ($anticiposPendientes as $ant) {
+                if ($anticipoConEntregas && $ant->id === $anticipoConEntregas->id) {
+                    continue; // se conserva: aplicarItemsPagos lo re-vincula
+                }
                 $ant->items()->update(['cantidad_pendiente' => 0]);
                 $ant->update(['estado' => 'anulado']);
                 \App\Services\AuditoriaService::log('anticipo_cliente.anulado', $ant, [
@@ -664,7 +796,7 @@ class VentaService
             ]);
 
             // 3) Re-aplicar detalle nuevo
-            $this->aplicarItemsPagos($venta, $data, $user, $turno, $almacen, $moneda, $tipoCambio, $factor, $esCreditoNuevo, (int) $clienteId, $permitirStockNegativo, $costosPrevios);
+            $this->aplicarItemsPagos($venta, $data, $user, $turno, $almacen, $moneda, $tipoCambio, $factor, $esCreditoNuevo, (int) $clienteId, $permitirStockNegativo, $costosPrevios, $entregasPrevias, $anticipoConEntregas);
 
             \App\Services\AuditoriaService::log('venta.editada', $venta, [
                 'numero' => $venta->numero,
@@ -969,6 +1101,12 @@ class VentaService
         return "Esta venta tiene una {$tipo}{$numero} emitida fuera del sistema. "
             . 'Anularla aquí NO anula ese documento: para que cuadre con SUNAT tendrás que '
             . "emitir la nota de crédito de esa {$tipo} por donde la emitiste.";
+    }
+
+    /** 3000.0000 → "3000"; 2.5 → "2.5". */
+    private static function cantidadLegible(float $v): string
+    {
+        return rtrim(rtrim(number_format($v, 4, '.', ''), '0'), '.');
     }
 
     private static function texto(mixed $v): ?string

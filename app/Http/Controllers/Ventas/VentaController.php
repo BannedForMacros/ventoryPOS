@@ -347,8 +347,8 @@ class VentaController extends Controller
                     ? (float) $v->tipo_cambio : 1.0;
 
                 // Pendiente por entregar de la venta (para prellenar el panel).
-                // Si ya hubo ENTREGAS registradas, la edición está bloqueada en
-                // el backend; el POS lo avisa desde el inicio.
+                // Si ya hubo ENTREGAS, se editan igual: lo entregado se conserva
+                // y el POS lo muestra como piso de cada línea.
                 $anticiposPend = $v->anticipos()->where('estado', 'activo')->with('items')->get();
                 $pendPorItem   = [];
                 foreach ($anticiposPend as $ant) {
@@ -359,10 +359,16 @@ class VentaController extends Controller
                         }
                     }
                 }
-                $pendienteBloqueado = $v->anticipos()
-                    ->whereIn('estado', ['activo', 'aplicado'])
-                    ->whereHas('aplicaciones')
-                    ->exists();
+                $entregadoPorItem = DB::table('cliente_anticipo_aplicacion_items as cai')
+                    ->join('cliente_anticipo_aplicaciones as ca', 'ca.id', '=', 'cai.cliente_anticipo_aplicacion_id')
+                    ->join('cliente_anticipo_items as ci', 'ci.id', '=', 'cai.cliente_anticipo_item_id')
+                    ->join('cliente_anticipos as an', 'an.id', '=', 'ca.cliente_anticipo_id')
+                    ->where('an.venta_id', $v->id)
+                    ->whereIn('an.estado', ['activo', 'aplicado'])
+                    ->whereNotNull('ci.venta_item_id')
+                    ->selectRaw('ci.venta_item_id, SUM(cai.cantidad) as t')
+                    ->groupBy('ci.venta_item_id')
+                    ->pluck('t', 'venta_item_id');
 
                 $ventaEnEdicion = [
                     'id'                    => $v->id,
@@ -394,7 +400,6 @@ class VentaController extends Controller
                     'total'                 => (float) $v->total,
                     'entrega_pendiente'     => $anticiposPend->isNotEmpty(),
                     'fecha_entrega_estimada'=> $anticiposPend->first()?->fecha_entrega_estimada?->toDateString(),
-                    'pendiente_bloqueado'   => $pendienteBloqueado,
                     'items'                 => $v->items->map(fn($it) => [
                         'producto_id'           => $it->producto_id,
                         'producto_unidad_id'    => $it->producto_unidad_id,
@@ -402,6 +407,7 @@ class VentaController extends Controller
                         'unidad_nombre'         => $it->unidad_nombre,
                         'cantidad'              => (float) $it->cantidad,
                         'cantidad_pendiente'    => (float) ($pendPorItem[$it->id] ?? 0),
+                        'entregado'             => (float) ($entregadoPorItem[$it->id] ?? 0),
                         'precio_unitario'       => $factor > 0 ? round((float) $it->precio_unitario / $factor, 2) : (float) $it->precio_unitario,
                         'descuento_item'        => $factor > 0 ? round((float) $it->descuento_item / $factor, 2) : (float) $it->descuento_item,
                         'descuento_concepto_id' => $it->descuento_concepto_id,
@@ -1359,7 +1365,14 @@ class VentaController extends Controller
             return back()->withErrors(['venta' => 'El plazo para editar esta venta (3 minutos) ya venció. Si necesitas corregirla, anúlala.']);
         }
 
-        $venta = $this->ventaService->actualizar($venta, $request->validated(), $user);
+        // Los rechazos de negocio del servicio (abort 422) vuelven como aviso al
+        // POS; sin esto Inertia mostraba la pantalla técnica de error.
+        try {
+            $venta = $this->ventaService->actualizar($venta, $request->validated(), $user);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            if ($e->getStatusCode() !== 422) throw $e;
+            return back()->withErrors(['venta' => $e->getMessage()]);
+        }
 
         // V12 — La edición puede cambiar el tipo de comprobante (ticket →
         // boleta/factura) o el detalle de uno aún no emitido. Llegar aquí ya
@@ -1425,7 +1438,12 @@ class VentaController extends Controller
             return back()->withErrors(['turno' => 'No tienes un turno activo.']);
         }
 
-        $venta = $this->ventaService->crear($data, $user, $turno);
+        try {
+            $venta = $this->ventaService->crear($data, $user, $turno);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            if ($e->getStatusCode() !== 422) throw $e;
+            return back()->withErrors(['venta' => $e->getMessage()]);
+        }
 
         // Si la venta vino desde una cita prellenada, vincular y marcar la cita
         // como completada. Falla silenciosamente si la cita no existe / no aplica.

@@ -306,17 +306,97 @@ it('una venta a crédito SALDADA sí puede marcarse como pendiente por entregar'
     expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(47.0); // 50 - 3
 });
 
-it('bloquea editar una venta cuyo pendiente ya tiene entregas registradas', function () {
-    [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+/** Diferencia entre el stock vivo y el que reconstruye el kardex (debe mantenerse al editar). */
+function desfaseKardex($env, int $productoId): float
+{
+    $r = app(App\Services\KardexService::class)->reconstruirPar($env->almacen->id, $productoId, true);
+
+    return round($r['cantidad_despues'] - $r['cantidad_antes'], 4);
+}
+
+it('edita una venta con entregas registradas: conserva lo entregado y ajusta precio y pendiente', function () {
+    [$venta, $fierro, $tubo] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
     $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
 
-    // Se registra una entrega parcial (2 de 7).
+    // Se entregan 2 de los 7 pendientes → stock fierro 50 - 3 - 2 = 45.
+    $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
+        'fecha' => now()->toDateString(),
+        'items' => [['id' => $anticipo->items->first()->id, 'cantidad' => 2]],
+    ])->assertSessionHasNoErrors();
+    expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(45.0);
+    $desfase = desfaseKardex($this->env, $fierro->id);
+
+    // Edición: el fierro sube a S/ 25 y queda pendiente lo mismo (5).
+    $this->service->actualizar($venta, [
+        'tipo_comprobante'  => 'ticket',
+        'cliente_id'        => $this->cliente->id,
+        'entrega_pendiente' => true,
+        'items' => [
+            ['producto_id' => $fierro->id, 'producto_unidad_id' => $fierro->unidadBase->id,
+             'cantidad' => 10, 'precio_unitario' => 25, 'cantidad_pendiente' => 5],
+            ['producto_id' => $tubo->id, 'producto_unidad_id' => $tubo->unidadBase->id,
+             'cantidad' => 4, 'precio_unitario' => 10, 'cantidad_pendiente' => 0],
+        ],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 290]],
+    ], $this->env->admin);
+
+    // El mismo anticipo sigue vivo con su entrega; la línea re-vinculada.
+    expect(ClienteAnticipo::where('venta_id', $venta->id)->count())->toBe(1);
+    $anticipo->refresh();
+    $linea = $anticipo->items()->first();
+    expect($anticipo->estado)->toBe('activo');
+    expect($anticipo->aplicaciones()->count())->toBe(1);
+    expect((float) $linea->cantidad)->toBe(7.0);            // 2 entregados + 5 pendientes
+    expect((float) $linea->cantidad_pendiente)->toBe(5.0);
+    expect((float) $linea->precio_unitario)->toBe(25.0);
+    expect((float) $anticipo->saldo)->toBe(125.0);          // 5 × 25
+    expect($linea->venta_item_id)->toBe($venta->fresh()->items->firstWhere('producto_id', $fierro->id)->id);
+
+    // Stock intacto y el kardex lo reconstruye igual que antes de editar.
+    expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(45.0);
+    expect((float) Stock::where('producto_id', $tubo->id)->first()->cantidad)->toBe(26.0);
+    expect(desfaseKardex($this->env, $fierro->id))->toBe($desfase);
+    expect((float) $venta->fresh()->total)->toBe(290.0);
+});
+
+it('edita una venta con el pendiente ya entregado completo (anticipo aplicado) y la cantidad extra sale al vender', function () {
+    [$venta, $fierro, $tubo] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
+        'fecha' => now()->toDateString(),
+        'items' => [['id' => $anticipo->items->first()->id, 'cantidad' => 7]],
+    ])->assertSessionHasNoErrors();
+    expect($anticipo->fresh()->estado)->toBe('aplicado');
+    $desfase = desfaseKardex($this->env, $fierro->id);
+
+    // Sin pendiente: 12 fierros (2 más, se los lleva ahora).
+    $this->service->actualizar($venta, [
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $this->cliente->id,
+        'items' => [
+            ['producto_id' => $fierro->id, 'producto_unidad_id' => $fierro->unidadBase->id, 'cantidad' => 12, 'precio_unitario' => 20],
+            ['producto_id' => $tubo->id, 'producto_unidad_id' => $tubo->unidadBase->id, 'cantidad' => 4, 'precio_unitario' => 10],
+        ],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 280]],
+    ], $this->env->admin);
+
+    $anticipo->refresh();
+    expect($anticipo->estado)->toBe('aplicado');
+    expect((float) $anticipo->saldo)->toBe(0.0);
+    expect((float) $anticipo->items()->first()->cantidad)->toBe(7.0);
+    // 50 - 3 (llevado) - 7 (entregado) - 2 (extra) = 38.
+    expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(38.0);
+    expect(desfaseKardex($this->env, $fierro->id))->toBe($desfase);
+});
+
+it('no deja editar una venta por debajo de lo ya entregado', function () {
+    [$venta, $fierro, $tubo] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
     $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
         'fecha' => now()->toDateString(),
         'items' => [['id' => $anticipo->items->first()->id, 'cantidad' => 2]],
     ])->assertSessionHasNoErrors();
 
-    // Ahora la edición se bloquea: el histórico de despachos quedaría desalineado.
     $this->service->actualizar($venta, [
         'tipo_comprobante' => 'ticket',
         'cliente_id'       => $this->cliente->id,
@@ -328,7 +408,67 @@ it('bloquea editar una venta cuyo pendiente ya tiene entregas registradas', func
         ]],
         'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 20]],
     ], $this->env->admin);
-})->throws(Symfony\Component\HttpKernel\Exception\HttpException::class);
+})->throws(Illuminate\Validation\ValidationException::class);
+
+it('solo un administrador edita una venta con entregas registradas', function () {
+    [$venta, $fierro, $tubo] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
+        'fecha' => now()->toDateString(),
+        'items' => [['id' => $anticipo->items->first()->id, 'cantidad' => 2]],
+    ])->assertSessionHasNoErrors();
+
+    $cajera = $this->env->admin->replicate();
+    $cajera->setRelation('rol', tap($this->env->admin->rol->replicate(), fn ($r) => $r->es_admin = false));
+
+    expect(fn () => $this->service->actualizar($venta, [
+        'tipo_comprobante'  => 'ticket',
+        'cliente_id'        => $this->cliente->id,
+        'entrega_pendiente' => true,
+        'items' => [
+            ['producto_id' => $fierro->id, 'producto_unidad_id' => $fierro->unidadBase->id,
+             'cantidad' => 10, 'precio_unitario' => 25, 'cantidad_pendiente' => 5],
+            ['producto_id' => $tubo->id, 'producto_unidad_id' => $tubo->unidadBase->id,
+             'cantidad' => 4, 'precio_unitario' => 10],
+        ],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 290]],
+    ], $cajera))->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class, 'solo un administrador');
+
+    expect((float) $venta->fresh()->total)->toBe(240.0); // nada cambió
+});
+
+it('un rechazo del servicio al editar vuelve como aviso, no como pantalla de error', function () {
+    [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
+    $venta->update(['estado' => 'completada']);
+    $anticipo = ClienteAnticipo::where('venta_id', $venta->id)->with('items')->first();
+    $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
+        'fecha' => now()->toDateString(),
+        'items' => [['id' => $anticipo->items->first()->id, 'cantidad' => 2]],
+    ])->assertSessionHasNoErrors();
+    // Caso que la edición no resuelve: hubo una cancelación de pendiente.
+    ClienteAnticipoCancelacion::create([
+        'cliente_anticipo_id'      => $anticipo->id,
+        'cliente_anticipo_item_id' => $anticipo->items->first()->id,
+        'empresa_id'               => $this->env->empresa->id,
+        'user_id'                  => $this->env->admin->id,
+        'fecha'                    => now()->toDateString(),
+        'cantidad'                 => 1,
+        'monto'                    => 20,
+        'motivo'                   => 'Cliente ya no lo quiere',
+    ]);
+
+    $this->put(route('ventas.update', $venta), [
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $this->cliente->id,
+        'items' => [[
+            'producto_id'        => $fierro->id,
+            'producto_unidad_id' => $fierro->unidadBase->id,
+            'cantidad'           => 10,
+            'precio_unitario'    => 20,
+        ]],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 200]],
+    ])->assertSessionHasErrors('venta');
+});
 
 it('puede cambiar el producto de una línea pendiente sin tocar lo ya entregado', function () {
     [$venta, $fierro] = ventaConPendiente($this->env, $this->service, $this->turno, $this->cliente);
