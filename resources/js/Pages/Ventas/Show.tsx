@@ -359,7 +359,7 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                         <span className="hidden sm:inline">Imprimir ticket</span>
                     </Button>
                     <a href={route('ventas.pdf', venta.id)} target="_blank" rel="noopener noreferrer">
-                        <Button variant="secondary" size="sm" startContent={<FileText size={15} />} title="Exportar la venta en PDF (A4)">
+                        <Button variant="secondary" size="sm" startContent={<FileText size={15} />} title="PDF de la venta. Si tiene factura o boleta electrónica emitida, abre la representación oficial de SUNAT">
                             PDF
                         </Button>
                     </a>

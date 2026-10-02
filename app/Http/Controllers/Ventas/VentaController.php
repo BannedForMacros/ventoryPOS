@@ -1293,6 +1293,13 @@ class VentaController extends Controller
             }
         }
 
+        // Factura/boleta ya emitida en FacturaMac: el PDF válido es la
+        // representación impresa OFICIAL (QR, hash, leyenda SUNAT), no esta
+        // plantilla interna. ?interno=1 fuerza la interna si hiciera falta.
+        if ($cpe && $cpe->facturamac_id && !$request->boolean('interno')) {
+            return redirect()->route('ventas.comprobante.pdf', $venta);
+        }
+
         // Logo incrustado en base64 (mismo motivo que la proforma: que la
         // imagen siempre cargue, sin depender de storage:link ni de APP_URL).
         $logoData = null;
