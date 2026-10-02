@@ -1,0 +1,3080 @@
+[
+ {
+  "producto_id": 9289,
+  "unidad_id": 9325,
+  "codigo": "100949",
+  "nombre": "ACEITE DE OLIVA CLASICO 200ML",
+  "costo": 9.79,
+  "excel": [
+   "ACEITE D OLIVA EL OLIVAR CLASICO 200 ML"
+  ]
+ },
+ {
+  "producto_id": 9867,
+  "unidad_id": 9903,
+  "codigo": "00320",
+  "nombre": "ACICLOVIR 5% CREMA X 5G FARMINDUSTRIA",
+  "costo": 1.31,
+  "excel": [
+   "ACICLOVIR AL 5% CREMA X 5GR - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 10089,
+  "unidad_id": 10125,
+  "codigo": "00197",
+  "nombre": "ACICLOVIR 800 MG X 10 PORTUGAL",
+  "costo": 0.683,
+  "excel": [
+   "ACICLOVIR 800MG X 10 TAB"
+  ]
+ },
+ {
+  "producto_id": 9575,
+  "unidad_id": 9611,
+  "codigo": "00575",
+  "nombre": "ACICLOVIR TAB AC",
+  "costo": 0.1115,
+  "excel": [
+   "ACICLOVIR 200 MG X 100 TAB"
+  ]
+ },
+ {
+  "producto_id": 9819,
+  "unidad_id": 9855,
+  "codigo": "00451",
+  "nombre": "ACIDO ACETILSALICILICO TAB",
+  "costo": 0.0386,
+  "excel": [
+   "ACIDO ACETILSALICILICO 100MG X 100 TAB - LABOT"
+  ]
+ },
+ {
+  "producto_id": 9513,
+  "unidad_id": 9549,
+  "codigo": "00693",
+  "nombre": "ACIDO FOLICO X 100 TAB",
+  "costo": 0.029,
+  "excel": [
+   "ACIDO FOLICO 0.5 MG X 100 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9614,
+  "unidad_id": 9650,
+  "codigo": "00614",
+  "nombre": "ACIDO TRANEXAMICO CAP. AC",
+  "costo": 1.421,
+  "excel": [
+   "ACIDO TRANEXAMICO 250 MG X 10 CAP"
+  ]
+ },
+ {
+  "producto_id": 9658,
+  "unidad_id": 9694,
+  "codigo": "00659",
+  "nombre": "ACLARANTA CARAMELO MENT/JENG X 25 SOBR.",
+  "costo": 1.26,
+  "excel": [
+   "CARAMELLI ACLARANTA MENT/JENG X 25 SOBRE"
+  ]
+ },
+ {
+  "producto_id": 9329,
+  "unidad_id": 10365,
+  "codigo": "100909",
+  "nombre": "ACTERIL 5MG/ML X 10ML SOL.",
+  "costo": 14.8,
+  "excel": [
+   "ACTERIL 5MG/ML X 10 ML SOL. - INDUFAR"
+  ]
+ },
+ {
+  "producto_id": 9400,
+  "unidad_id": 9436,
+  "codigo": "00756",
+  "nombre": "AERO-SIM FRESA GTS X 15ML",
+  "costo": 8.18,
+  "excel": [
+   "AERO-SIM FRESA 100MG/ML EMULSION ORAL 15 ML"
+  ]
+ },
+ {
+  "producto_id": 10063,
+  "unidad_id": 10099,
+  "codigo": "00170",
+  "nombre": "AGUA DE AZAHAR X 120ML",
+  "costo": 0.75,
+  "excel": [
+   "AGUA DE AZAHAR 120 ML X 12 UNID"
+  ]
+ },
+ {
+  "producto_id": 10062,
+  "unidad_id": 10098,
+  "codigo": "00169",
+  "nombre": "AGUA OXIGENADA X 120ML",
+  "costo": 0.72,
+  "excel": [
+   "AGUA OXIGENADA 10 VOL 120 ML X 12 UNID"
+  ]
+ },
+ {
+  "producto_id": 9458,
+  "unidad_id": 10387,
+  "codigo": "00816",
+  "nombre": "ALCOHOL GEL X 350ML",
+  "costo": 4.75,
+  "excel": [
+   "ALKOFARMA ALCOHOL GEL 70 350ML"
+  ]
+ },
+ {
+  "producto_id": 9688,
+  "unidad_id": 9724,
+  "codigo": "00500",
+  "nombre": "ALERLIV 5MG TAB",
+  "costo": 0.1067,
+  "excel": [
+   "ALERLIV 5MG X 30 TAB REC(LEVOCETIRIZINA)"
+  ]
+ },
+ {
+  "producto_id": 10016,
+  "unidad_id": 10052,
+  "codigo": "00121",
+  "nombre": "ALGODÓN 25",
+  "costo": 1.3,
+  "excel": [
+   "ALGODON COPPON X 25GR"
+  ]
+ },
+ {
+  "producto_id": 9936,
+  "unidad_id": 9972,
+  "codigo": "00215",
+  "nombre": "ALICAM FORTE",
+  "costo": 0.1543,
+  "excel": [
+   "ALICAM FORTE 500MG X 100 TAB - PHARMED"
+  ]
+ },
+ {
+  "producto_id": 9324,
+  "unidad_id": 9360,
+  "codigo": "100914",
+  "nombre": "ALOPURINOL 100MG X 30 TAB FARMAINDUSTRIA",
+  "costo": 0.2217,
+  "excel": [
+   "ALOPURINOL 100MG X 30 TAB - FARMINDUSTRIA"
+  ]
+ },
+ {
+  "producto_id": 10006,
+  "unidad_id": 10042,
+  "codigo": "00285",
+  "nombre": "AMBROXOL SOLUCION ORAL X 120ML 15MG/5ML PTGL",
+  "costo": 1.94,
+  "excel": [
+   "AMBROXOL 15 MG/5ML SOL ORAL X 120 ML"
+  ]
+ },
+ {
+  "producto_id": 9526,
+  "unidad_id": 9562,
+  "codigo": "00706",
+  "nombre": "AMBROXOL30MG/5ML SOL ORAL X 120ML",
+  "costo": 2.04,
+  "excel": [
+   "AMBROXOL 30 MG/5ML SOL ORAL X 120 ML C/C."
+  ]
+ },
+ {
+  "producto_id": 9716,
+  "unidad_id": 9752,
+  "codigo": "00529",
+  "nombre": "AMIKACINA 500MG/2ML AMPOLLA",
+  "costo": 1.268,
+  "excel": [
+   "AMIKACINA 500MG/2ML IM/IV X 10 AMP"
+  ]
+ },
+ {
+  "producto_id": 9960,
+  "unidad_id": 9996,
+  "codigo": "00239",
+  "nombre": "AMOXICILINA 500MG TAB PORTUGAL",
+  "costo": 0.1709,
+  "excel": [
+   "AMOXICILINA 500 MG X 100 CAP."
+  ]
+ },
+ {
+  "producto_id": 10008,
+  "unidad_id": 10044,
+  "codigo": "00287",
+  "nombre": "AMOXICILINA JB 250MG/5ML X 60ML",
+  "costo": 2.48,
+  "excel": [
+   "AMOXICILINA 250MG SUSP X 60ML - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 10084,
+  "unidad_id": 10120,
+  "codigo": "00192",
+  "nombre": "ATORVASTATINA 10MG PORTUGAL TB",
+  "costo": 0.0869,
+  "excel": [
+   "ATORVASTATINA 10 MG X 100 TAB.REC."
+  ]
+ },
+ {
+  "producto_id": 10083,
+  "unidad_id": 10119,
+  "codigo": "00191",
+  "nombre": "ATORVASTATINA 20MG PORTUGAL TB",
+  "costo": 0.1066,
+  "excel": [
+   "ATORVASTATINA 20MG X 100 TAB -PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9308,
+  "unidad_id": 9344,
+  "codigo": "100930",
+  "nombre": "ATORVASTATINA 40MG X 100 TAB - LABOGEN",
+  "costo": 0.2315,
+  "excel": [
+   "ATORVASTATINA 40MG X 100 TAB - LABOGEN"
+  ]
+ },
+ {
+  "producto_id": 9334,
+  "unidad_id": 9370,
+  "codigo": "100904",
+  "nombre": "AUDAL NF GTS X 10ML",
+  "costo": 12.8,
+  "excel": [
+   "AUDAL NF GOTAS X 10ML"
+  ]
+ },
+ {
+  "producto_id": 9902,
+  "unidad_id": 9938,
+  "codigo": "00355",
+  "nombre": "AZITROMICINA 500MG X 100 TABLETAS RECUBIERTAS",
+  "costo": 0.6235,
+  "excel": [
+   "AZITROMICINA 500 MG X 100 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9981,
+  "unidad_id": 10017,
+  "codigo": "00260",
+  "nombre": "AZITROMICINA JB X 15ML PORTUGAL",
+  "costo": 2.5875,
+  "excel": [
+   "AZITROMICINA 200MG SUSP X 15ML - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9982,
+  "unidad_id": 10018,
+  "codigo": "00261",
+  "nombre": "AZITROMICINA JB X 30ML PORTUGAL",
+  "costo": 4.875,
+  "excel": [
+   "AZITROMICINA 200MG SUSP X 30ML - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9228,
+  "unidad_id": 9264,
+  "codigo": "101010",
+  "nombre": "BABY TES DIGITAL SEMANAS",
+  "costo": 15.74,
+  "excel": [
+   "TEST DE EMB. BABY TEST SEMANAS"
+  ]
+ },
+ {
+  "producto_id": 9764,
+  "unidad_id": 10392,
+  "codigo": "00394",
+  "nombre": "BABYSEC M",
+  "costo": 0.4412,
+  "excel": [
+   "BABYSEC PREMIUM S/E M 68"
+  ]
+ },
+ {
+  "producto_id": 9767,
+  "unidad_id": 9803,
+  "codigo": "00397",
+  "nombre": "BABYSEC XXG",
+  "costo": 0.625,
+  "excel": [
+   "BABYSEC PREMIUM MEGA PAQUETON XXG 72UNG"
+  ]
+ },
+ {
+  "producto_id": 9772,
+  "unidad_id": 9808,
+  "codigo": "00402",
+  "nombre": "BACTAMOX 500MG",
+  "costo": 0.1899,
+  "excel": [
+   "BACTAMOX 500 MG(AMOXICILINA) X 100 CAP"
+  ]
+ },
+ {
+  "producto_id": 9465,
+  "unidad_id": 9501,
+  "codigo": "00823",
+  "nombre": "BELLISIMA 50MG+5MG X 1 AMP.CJA",
+  "costo": 10.09,
+  "excel": [
+   "BELLISSIMA 50MG+5MG.X I AMP. CJA.(SEBAL)"
+  ]
+ },
+ {
+  "producto_id": 9931,
+  "unidad_id": 9967,
+  "codigo": "00207",
+  "nombre": "BETACORT DEPOT 1ML",
+  "costo": 18.4,
+  "excel": [
+   "BETACORT DEPOT 5MG/ML+2MG/ML INY.CJA.X1"
+  ]
+ },
+ {
+  "producto_id": 9327,
+  "unidad_id": 9363,
+  "codigo": "100911",
+  "nombre": "BETACORT DEPOT 2ML AMP",
+  "costo": 26.5,
+  "excel": [
+   "BETACORT DEPOT2 AMP X 2ML"
+  ]
+ },
+ {
+  "producto_id": 9715,
+  "unidad_id": 9751,
+  "codigo": "00528",
+  "nombre": "BICARBONATO 1000G",
+  "costo": 14.19,
+  "excel": [
+   "BICARBONATO DE SODIO POTE X 1000GR - ALKOFARMA"
+  ]
+ },
+ {
+  "producto_id": 9997,
+  "unidad_id": 10033,
+  "codigo": "00276",
+  "nombre": "BICARBONATO X 100GR ALKOF",
+  "costo": 1.68,
+  "excel": [
+   "BICARBONATO DE SODIO POTE X 100GR - ALKOFARMA"
+  ]
+ },
+ {
+  "producto_id": 9314,
+  "unidad_id": 9350,
+  "codigo": "100924",
+  "nombre": "BIPERIDENO 2MG X 100 TAB -IQFARMA",
+  "costo": 0.1442,
+  "excel": [
+   "BIPERIDENO 2MG X 100 TAB - IQFARMA"
+  ]
+ },
+ {
+  "producto_id": 9332,
+  "unidad_id": 9368,
+  "codigo": "100906",
+  "nombre": "BISMUALIV SUSPENSION X 340ML",
+  "costo": 9.83,
+  "excel": [
+   "BISMUALIV SUSPENSION X 340ML"
+  ]
+ },
+ {
+  "producto_id": 9892,
+  "unidad_id": 9928,
+  "codigo": "00345",
+  "nombre": "BLADOXATO 200MG X 20 TABLETAS RECUBIERTAS",
+  "costo": 1.377,
+  "excel": [
+   "BLADOXATO 200 MG(FLAVOXATO) X 20 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9280,
+  "unidad_id": 9316,
+  "codigo": "100958",
+  "nombre": "BOLSA DE AGUA CALIENTE X 2 LT",
+  "costo": 5.25,
+  "excel": [
+   "BOLSA DE AGUA CALIENTE X 2 LT"
+  ]
+ },
+ {
+  "producto_id": 9834,
+  "unidad_id": 9870,
+  "codigo": "00466",
+  "nombre": "BONA B FORTE CAP BLAN",
+  "costo": 0.4433,
+  "excel": [
+   "BONA-B FORTE X 30 CAP BLAN"
+  ]
+ },
+ {
+  "producto_id": 9229,
+  "unidad_id": 9265,
+  "codigo": "101009",
+  "nombre": "BONA E CAP",
+  "costo": 0.2167,
+  "excel": [
+   "BONA-E 400 UI X 30 CAP BLAN ( VITAMINA E )"
+  ]
+ },
+ {
+  "producto_id": 9291,
+  "unidad_id": 9327,
+  "codigo": "100947",
+  "nombre": "BONADERM CREMA GEL X 30GR",
+  "costo": 12.8,
+  "excel": [
+   "BONADERM CREMA GEL X 30 G"
+  ]
+ },
+ {
+  "producto_id": 9253,
+  "unidad_id": 9289,
+  "codigo": "100985",
+  "nombre": "BONAFEMINA CAP",
+  "costo": 1.049,
+  "excel": [
+   "BONAFEMINA DHA X 30 CAP"
+  ]
+ },
+ {
+  "producto_id": 9752,
+  "unidad_id": 9788,
+  "codigo": "00566",
+  "nombre": "BRONCOPHAR PLUS JBE",
+  "costo": 7.342,
+  "excel": [
+   "BRONCOPHAR PLUS NF SOL ORAL X 120 ML"
+  ]
+ },
+ {
+  "producto_id": 9267,
+  "unidad_id": 9303,
+  "codigo": "100971",
+  "nombre": "BRONCOTRIM NF 250MG/4ML/5ML JBE X 60ML",
+  "costo": 4.79,
+  "excel": [
+   "BRONCOTRIM NF 250MG/4MG/5ML PPSO X 60 ML (AMOX+BROMHEX)"
+  ]
+ },
+ {
+  "producto_id": 9338,
+  "unidad_id": 9374,
+  "codigo": "100900",
+  "nombre": "BRONCOTRIN DILAT",
+  "costo": 4.47,
+  "excel": [
+   "BRONCOTRIN DILAT PEDIATRICO SOL ORAL X 120ML (AMBROX+CLENBUTEROL)"
+  ]
+ },
+ {
+  "producto_id": 10184,
+  "unidad_id": 10220,
+  "codigo": "00006",
+  "nombre": "BUSCAPINA",
+  "costo": 0.9695,
+  "excel": [
+   "BUSCAPINA COMP N 10MG-500MG CJA 100 COMP"
+  ]
+ },
+ {
+  "producto_id": 10032,
+  "unidad_id": 10068,
+  "codigo": "00137",
+  "nombre": "BUSDOL COMPOSITUM TB",
+  "costo": 0.426,
+  "excel": [
+   "BUSDOL COMPOSITUM 10MG+500MG X 100 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9309,
+  "unidad_id": 9345,
+  "codigo": "100929",
+  "nombre": "CALTRACID-D X 30 TAB",
+  "costo": 0.2537,
+  "excel": [
+   "CALTRACID-D X 30 TAB"
+  ]
+ },
+ {
+  "producto_id": 9293,
+  "unidad_id": 9329,
+  "codigo": "100945",
+  "nombre": "CANESTEN CREMA X 20GR",
+  "costo": 14.26,
+  "excel": [
+   "CANESTEN 1% CREMA CUTANEA X 20 GR"
+  ]
+ },
+ {
+  "producto_id": 9951,
+  "unidad_id": 9987,
+  "codigo": "00230",
+  "nombre": "CAPTOPRIL 25MG FARMINDUSTRIA",
+  "costo": 0.0334,
+  "excel": [
+   "CAPTOPRIL 25 MG X 100 TAB."
+  ]
+ },
+ {
+  "producto_id": 9333,
+  "unidad_id": 9369,
+  "codigo": "100905",
+  "nombre": "CEFATRIAX 1GR AMP",
+  "costo": 1.299,
+  "excel": [
+   "CEFTRIAXONA 1GR IM/IV X 10 AMP (CEFATRIAX) - OQPHARMA"
+  ]
+ },
+ {
+  "producto_id": 9566,
+  "unidad_id": 9602,
+  "codigo": "00748",
+  "nombre": "CEFZIM -500MG . X 10 CAP",
+  "costo": 1.278,
+  "excel": [
+   "CEFZIM-500 500MG X 10 TAB REC(CEFUROXIMA)"
+  ]
+ },
+ {
+  "producto_id": 9507,
+  "unidad_id": 9543,
+  "codigo": "00687",
+  "nombre": "CELEPOXX 200MG (CELECOXIB) X 100 CAP.",
+  "costo": 0.1491,
+  "excel": [
+   "CELEPOXX 200MG (CELECOXIB) X 100 CAP"
+  ]
+ },
+ {
+  "producto_id": 10168,
+  "unidad_id": 10204,
+  "codigo": "00108",
+  "nombre": "CEPILLO KOLYNOS",
+  "costo": 2.2914,
+  "excel": [
+   "CEPILLO KOLY.MASTER PLUS X 14 UNI."
+  ]
+ },
+ {
+  "producto_id": 9425,
+  "unidad_id": 9461,
+  "codigo": "00781",
+  "nombre": "CIPROZONE 500MG TAB",
+  "costo": 0.3185,
+  "excel": [
+   "CIPROZONE 500MG.(CIPROFLOX) X 100 TAB. REC. (CSP)"
+  ]
+ },
+ {
+  "producto_id": 9240,
+  "unidad_id": 9276,
+  "codigo": "100998",
+  "nombre": "CIPZY GTS",
+  "costo": 6.86,
+  "excel": [
+   "CIPZY 0.3% SOL OFT GOTAS X 5 ML(CIPROFLOXACINO)"
+  ]
+ },
+ {
+  "producto_id": 9226,
+  "unidad_id": 9262,
+  "codigo": "101012",
+  "nombre": "CIRUELAX TAB",
+  "costo": 0.8384,
+  "excel": [
+   "CIRUELAX FORTE X 100 COMP REC"
+  ]
+ },
+ {
+  "producto_id": 9336,
+  "unidad_id": 9372,
+  "codigo": "100902",
+  "nombre": "CITRATO DE MAGNESIO X 200GR",
+  "costo": 18.5,
+  "excel": [
+   "CITRATO DE MAGNESIO X 200G"
+  ]
+ },
+ {
+  "producto_id": 9906,
+  "unidad_id": 9942,
+  "codigo": "00359",
+  "nombre": "CLAVUTRIM CL JBE",
+  "costo": 7.24,
+  "excel": [
+   "CLAVUTRIM CL 250MG+62.5MG/5 ML PPSO X 60 ML (AMOXICILINA+AC CLAVU)"
+  ]
+ },
+ {
+  "producto_id": 9295,
+  "unidad_id": 9331,
+  "codigo": "100943",
+  "nombre": "CLERILAX 250MG X 10 TAB",
+  "costo": 2.155,
+  "excel": [
+   "CLERILAX 250MG X 10 TAB REC(ACIDO TRANEXAMICO)"
+  ]
+ },
+ {
+  "producto_id": 9320,
+  "unidad_id": 9356,
+  "codigo": "100918",
+  "nombre": "CLINDESS 100MG CAJA X 7 OVU",
+  "costo": 6.7143,
+  "excel": [
+   "CLINDESS 100MG CAJA X 7 OVULO"
+  ]
+ },
+ {
+  "producto_id": 9219,
+  "unidad_id": 9255,
+  "codigo": "101019",
+  "nombre": "CLOBULER 30MG ADULTO JBE",
+  "costo": 6.29,
+  "excel": [
+   "CLOBULER F 30MG/5ML SOL ORAL X 100 ML (AMBROXOL)"
+  ]
+ },
+ {
+  "producto_id": 10026,
+  "unidad_id": 10062,
+  "codigo": "00131",
+  "nombre": "CLOBULER DE 15MG /5ML",
+  "costo": 6.09,
+  "excel": [
+   "CLOBULER 15MG/5ML JBE X 100ML - GENCOPHARMACEUTICAL"
+  ]
+ },
+ {
+  "producto_id": 9223,
+  "unidad_id": 9259,
+  "codigo": "101015",
+  "nombre": "CLONAZEPAM 2MG TAB",
+  "costo": 0.1398,
+  "excel": [
+   "CLONAZEPAM 2 MG X 100 TAB REC."
+  ]
+ },
+ {
+  "producto_id": 9218,
+  "unidad_id": 9254,
+  "codigo": "101020",
+  "nombre": "CLOPEXAL JBE",
+  "costo": 22.91,
+  "excel": [
+   "CLOPEXAL 17.7MG/5ML SUSP ORAL X 120 ML (CLOPERASTINA FENDIZOATO)"
+  ]
+ },
+ {
+  "producto_id": 9411,
+  "unidad_id": 9447,
+  "codigo": "00767",
+  "nombre": "CLOPIDOGREL 75MG X 30 TAB REC",
+  "costo": 0.1613,
+  "excel": [
+   "CLOPIDOGREL 75 MG X 30 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 10028,
+  "unidad_id": 10064,
+  "codigo": "00133",
+  "nombre": "CLORFENAMINA JB X 120ML",
+  "costo": 1.4,
+  "excel": [
+   "CLORFENAMINA 2MG/5ML SOL ORAL 120 ML"
+  ]
+ },
+ {
+  "producto_id": 10088,
+  "unidad_id": 10124,
+  "codigo": "00196",
+  "nombre": "CLORFENAMINA X 100 TAB PORTUGAL",
+  "costo": 0.0163,
+  "excel": [
+   "CLORFENAMINA 4 MG X 100 TAB"
+  ]
+ },
+ {
+  "producto_id": 9791,
+  "unidad_id": 9827,
+  "codigo": "00421",
+  "nombre": "CLORURO DE SODIO 100ML FS",
+  "costo": 1.45,
+  "excel": [
+   "CLORURO DE SODIO 0.9% X 100 ML. (PHARMAGEN)"
+  ]
+ },
+ {
+  "producto_id": 10036,
+  "unidad_id": 10072,
+  "codigo": "00141",
+  "nombre": "CLORURO DE SODIO 250ML PARMA",
+  "costo": 3.5623,
+  "excel": [
+   "CLORURO DE SODIO 0.9% X250 ML. (PHARMAGEN)"
+  ]
+ },
+ {
+  "producto_id": 10037,
+  "unidad_id": 10073,
+  "codigo": "00142",
+  "nombre": "CLORURO DE SODIO DE 1000 1LT",
+  "costo": 4.59,
+  "excel": [
+   "CLORURO DE SODIO 0.9% X 1LITRO (PHARMAGEN)"
+  ]
+ },
+ {
+  "producto_id": 9508,
+  "unidad_id": 9544,
+  "codigo": "00688",
+  "nombre": "CLORZODISTEN TAB.",
+  "costo": 0.213,
+  "excel": [
+   "CLORZODISTEN 300MG+250MG X 50 TAB REC (PARACET+CLORZOXAZONA)"
+  ]
+ },
+ {
+  "producto_id": 10015,
+  "unidad_id": 10051,
+  "codigo": "00294",
+  "nombre": "CLOTRIMAZOL 1% X 20GR",
+  "costo": 1.4,
+  "excel": [
+   "CLOTRIMAZOL 1% CREMA C/C 20GR."
+  ]
+ },
+ {
+  "producto_id": 9323,
+  "unidad_id": 9359,
+  "codigo": "100915",
+  "nombre": "COLONIA CITRICA X 500ML PORTUGAL",
+  "costo": 14.0,
+  "excel": [
+   "COLONIA PORTUGAL X 500ML - CITRICA"
+  ]
+ },
+ {
+  "producto_id": 9952,
+  "unidad_id": 9988,
+  "codigo": "00231",
+  "nombre": "COMPLEJO B FORTE SHERFARMA",
+  "costo": 0.3423,
+  "excel": [
+   "COMPLEJO B FORTE X 200 CAP BLAN"
+  ]
+ },
+ {
+  "producto_id": 9292,
+  "unidad_id": 9328,
+  "codigo": "100946",
+  "nombre": "COMPLEJO B X 300 CAP",
+  "costo": 0.0473,
+  "excel": [
+   "COMPLEJO B X 300 CAP."
+  ]
+ },
+ {
+  "producto_id": 9415,
+  "unidad_id": 9451,
+  "codigo": "00771",
+  "nombre": "COMTREX ANTIGRIPAL DIA SOBRE",
+  "costo": 0.6318,
+  "excel": [
+   "COMTREX ANTIGRIPAL DIA PPSO X 60 SOBRE"
+  ]
+ },
+ {
+  "producto_id": 9414,
+  "unidad_id": 9450,
+  "codigo": "00770",
+  "nombre": "COMTREX ANTIGRIPAL NOCHE SOBRE",
+  "costo": 0.7275,
+  "excel": [
+   "COMTREX ANTIG. NOCHE X 60 SOB."
+  ]
+ },
+ {
+  "producto_id": 9416,
+  "unidad_id": 9452,
+  "codigo": "00772",
+  "nombre": "CONFORDEX 25MG X 20 TAB. REC",
+  "costo": 0.8965,
+  "excel": [
+   "CONFORDEX 25 MG X 20 TAB REC(DEXKETOPROFENO)"
+  ]
+ },
+ {
+  "producto_id": 9242,
+  "unidad_id": 9278,
+  "codigo": "100996",
+  "nombre": "COREGA C/S - S/S X 40GR",
+  "costo": 33.08,
+  "excel": [
+   "COREGA ULTRA S/MENTA X 40GR",
+   "COREGA ULTRA SIN SABOR X 40GR"
+  ]
+ },
+ {
+  "producto_id": 9443,
+  "unidad_id": 9479,
+  "codigo": "00799",
+  "nombre": "COREGA ULTRA S/S -C/S X 20GR",
+  "costo": 21.31,
+  "excel": [
+   "COREGA ULTRA SIN SABOR X 20GR"
+  ]
+ },
+ {
+  "producto_id": 10042,
+  "unidad_id": 10078,
+  "codigo": "00147",
+  "nombre": "DAMICOCYN 1.5MG",
+  "costo": 1.6,
+  "excel": [
+   "DAMICOCYN 1.5MG X 1 TAB"
+  ]
+ },
+ {
+  "producto_id": 9633,
+  "unidad_id": 9669,
+  "codigo": "00634",
+  "nombre": "DERMACALM 1% CREMA",
+  "costo": 5.88,
+  "excel": [
+   "DERMACALM 1% CREMA(HIDROCORTISONA)X 20GR.(OQ)"
+  ]
+ },
+ {
+  "producto_id": 9234,
+  "unidad_id": 9270,
+  "codigo": "101004",
+  "nombre": "DES SECRET GEL",
+  "costo": 13.0643,
+  "excel": [
+   "SECRET CLEAR GEL BERRY X45GR",
+   "SECRET CLEAR GEL JASMINE X45GR",
+   "SECRET CLEAR GEL VANILLA X45GR"
+  ]
+ },
+ {
+  "producto_id": 9844,
+  "unidad_id": 9880,
+  "codigo": "00297",
+  "nombre": "DESAXONA 4MG X 100TB",
+  "costo": 0.0717,
+  "excel": [
+   "DESAZONA 4 MG X 100 TAB(DEXAMETASONA)"
+  ]
+ },
+ {
+  "producto_id": 9432,
+  "unidad_id": 9468,
+  "codigo": "00788",
+  "nombre": "DESLOVA TAB",
+  "costo": 0.6273,
+  "excel": [
+   "DESLOVA 5 (DESLORATADINA) X 30 TAB. REC.(THEFAR)"
+  ]
+ },
+ {
+  "producto_id": 9558,
+  "unidad_id": 9594,
+  "codigo": "00740",
+  "nombre": "DESO. GILLETTE SPRAY 93GR",
+  "costo": 14.42,
+  "excel": [
+   "GILLETTE AP SPRAY ARTIC ICE 93GR"
+  ]
+ },
+ {
+  "producto_id": 10136,
+  "unidad_id": 10172,
+  "codigo": "00075",
+  "nombre": "DESODORANTE REXONA ROLL ON HOMBRE",
+  "costo": 10.17,
+  "excel": [
+   "REXONA ROLL-ON MEN ANTI/INVIS 50 ML(257823)"
+  ]
+ },
+ {
+  "producto_id": 9343,
+  "unidad_id": 9379,
+  "codigo": "00844",
+  "nombre": "DEXAFLAM 2MG/5ML JBE X 100ML",
+  "costo": 11.65,
+  "excel": [
+   "DEXAFLAM NF 2MG/5ML SOL.ORAL 100 ML."
+  ]
+ },
+ {
+  "producto_id": 10086,
+  "unidad_id": 10122,
+  "codigo": "00194",
+  "nombre": "DEXAMETASONA X 100 TAB PORTUGAL",
+  "costo": 0.0459,
+  "excel": [
+   "DEXAMETASONA 4 MG X 100 TAB.",
+   "DEXAMETASONA TAB. 4MG X 100 - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9730,
+  "unidad_id": 9766,
+  "codigo": "00543",
+  "nombre": "DEXTROMETORFANO JBE",
+  "costo": 2.2657,
+  "excel": [
+   "DEXTROMETORFANO 15 MG/5ML SOL.ORAL C/C X 120 ML",
+   "DEXTROMETORFANO 15MG.X 120ML.C/C.(P)"
+  ]
+ },
+ {
+  "producto_id": 9632,
+  "unidad_id": 9668,
+  "codigo": "00633",
+  "nombre": "DICLODOR 2.32% GEL X 50GR",
+  "costo": 8.0567,
+  "excel": [
+   "DICLODOR 2.32% GEL X 50 G(DICLOFENACO DIETILAMINA)",
+   "DICLODOR GEL (DICLOFENACO) 2.32% X 50GR. (OQ)"
+  ]
+ },
+ {
+  "producto_id": 9893,
+  "unidad_id": 9929,
+  "codigo": "00346",
+  "nombre": "DICLODOR 50 50MG X 100 COMP. REC. GASTRORRESISTENTES",
+  "costo": 0.108,
+  "excel": [
+   "DICLODOR 50MG.(DICLOFENACO) X 100 COMP."
+  ]
+ },
+ {
+  "producto_id": 9987,
+  "unidad_id": 10023,
+  "codigo": "00266",
+  "nombre": "DICLOFENACO 1% PORTUGAL",
+  "costo": 2.15,
+  "excel": [
+   "DICLOFENACO GEL 1% 50 GR.C/C"
+  ]
+ },
+ {
+  "producto_id": 9310,
+  "unidad_id": 9346,
+  "codigo": "100928",
+  "nombre": "DICYNONE AMPX 2ML CJA INDIVIDUAL",
+  "costo": 24.5,
+  "excel": [
+   "DICYNONE AMP X 2ML CJA INDIVIDUAL"
+  ]
+ },
+ {
+  "producto_id": 9302,
+  "unidad_id": 9338,
+  "codigo": "100936",
+  "nombre": "DILOLAX RETARD X 100 TAB",
+  "costo": 0.247,
+  "excel": [
+   "DILOLAX RETARD. 5MG.(BISACODILO) X 100TAB.DLRE(OQ)"
+  ]
+ },
+ {
+  "producto_id": 9412,
+  "unidad_id": 9448,
+  "codigo": "00768",
+  "nombre": "DIMENS JBE X 120ML",
+  "costo": 3.9567,
+  "excel": [
+   "DIMENS (LORATADINA) 5MG/ 5 ML X 120 ML"
+  ]
+ },
+ {
+  "producto_id": 9954,
+  "unidad_id": 9990,
+  "codigo": "00233",
+  "nombre": "DINAPEN X 100 TAB",
+  "costo": 0.4209,
+  "excel": [
+   "DINAPEN 500 MG(DICLOXACILINA) X 100 CAP."
+  ]
+ },
+ {
+  "producto_id": 9290,
+  "unidad_id": 9326,
+  "codigo": "100948",
+  "nombre": "DIPROSPAN FAST SOL INY X 1 AMP",
+  "costo": 12.55,
+  "excel": [
+   "DIPROSPAN FAST 4MG/ML SOL INY X 1 AMP (BETAMETASONA)"
+  ]
+ },
+ {
+  "producto_id": 9238,
+  "unidad_id": 9274,
+  "codigo": "101000",
+  "nombre": "DOLALIVIO ANTIMIGRAÑA",
+  "costo": 0.269,
+  "excel": [
+   "DOLALIVIO ANTIMIGRAÑA X 100 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9305,
+  "unidad_id": 9341,
+  "codigo": "100933",
+  "nombre": "DOLFEVER 10MG/1ML ENDOVENOSO",
+  "costo": 12.1,
+  "excel": [
+   "DOLFEVER 10MG/1ML.(PARACETAMOL) X 100ML.AMP."
+  ]
+ },
+ {
+  "producto_id": 9748,
+  "unidad_id": 9784,
+  "codigo": "00562",
+  "nombre": "DOLOCORDOLAN EXTRA FORTE NF CAP.",
+  "costo": 1.6002,
+  "excel": [
+   "DOLOCORDRALAN EXTRA FORTE NF X 54 CAP"
+  ]
+ },
+ {
+  "producto_id": 9851,
+  "unidad_id": 9887,
+  "codigo": "00304",
+  "nombre": "DOLOL JB",
+  "costo": 4.22,
+  "excel": [
+   "DOLOL 160MG/5ML JBE X 60 ML"
+  ]
+ },
+ {
+  "producto_id": 9347,
+  "unidad_id": 9383,
+  "codigo": "00848",
+  "nombre": "DOLORO 5MG X 30 TAB.REC",
+  "costo": 1.7933,
+  "excel": [
+   "DOLORO 5MG X 30 TAB. REC."
+  ]
+ },
+ {
+  "producto_id": 9853,
+  "unidad_id": 9889,
+  "codigo": "00306",
+  "nombre": "DONALAB 2MG TAB X 100",
+  "costo": 0.2848,
+  "excel": [
+   "DONALAB 2 MG(LOPERAMIDA) X 100 TAB"
+  ]
+ },
+ {
+  "producto_id": 9854,
+  "unidad_id": 9890,
+  "codigo": "00307",
+  "nombre": "DR. FLU CAP",
+  "costo": 0.4975,
+  "excel": [
+   "DR. FLU X 100 CAP - DROPESAC"
+  ]
+ },
+ {
+  "producto_id": 10023,
+  "unidad_id": 10059,
+  "codigo": "00128",
+  "nombre": "DUREX INVISIBLE",
+  "costo": 5.96,
+  "excel": [
+   "DUREX INVISIBLE X 3(578927)"
+  ]
+ },
+ {
+  "producto_id": 10024,
+  "unidad_id": 10060,
+  "codigo": "00129",
+  "nombre": "DUREX JEANS",
+  "costo": 2.4143,
+  "excel": [
+   "DUREX JEANS X 3"
+  ]
+ },
+ {
+  "producto_id": 9263,
+  "unidad_id": 9299,
+  "codigo": "100975",
+  "nombre": "ELA FEM CARE TOALLA NORMAL",
+  "costo": 2.43,
+  "excel": [
+   "ELA FEM CARE(25864) TOALLA HIGIENICA NORMAL X 10 UNI"
+  ]
+ },
+ {
+  "producto_id": 10187,
+  "unidad_id": 10223,
+  "codigo": "00010",
+  "nombre": "ELECTRORAL ADULTO X 1LT",
+  "costo": 10.4288,
+  "excel": [
+   "ELECTRORAL NF SOL FCOX1000ML. FRESA"
+  ]
+ },
+ {
+  "producto_id": 10188,
+  "unidad_id": 10224,
+  "codigo": "00011",
+  "nombre": "ELECTRORAL PEDIATRICO X 1LT",
+  "costo": 10.6366,
+  "excel": [
+   "ELECTRORAL PED NF SOL ORA ANIS FC1000ML",
+   "ELECTRORAL PED NF SOL ORA FRESA FC1000ML"
+  ]
+ },
+ {
+  "producto_id": 9696,
+  "unidad_id": 9732,
+  "codigo": "00509",
+  "nombre": "ELUDDE",
+  "costo": 1.47,
+  "excel": [
+   "ELUDDE 1.5 MG.(LEVONORG) X 1 TAB. REC."
+  ]
+ },
+ {
+  "producto_id": 9856,
+  "unidad_id": 9892,
+  "codigo": "00309",
+  "nombre": "EQUALAX X 100 TB",
+  "costo": 0.6346,
+  "excel": [
+   "EQUALAX 5 MG. CAJA X 100 TAB LIB RET"
+  ]
+ },
+ {
+  "producto_id": 9915,
+  "unidad_id": 9951,
+  "codigo": "00368",
+  "nombre": "EQUIPO VENOCLISIS",
+  "costo": 0.6212,
+  "excel": [
+   "EQUIPO DE VENOCLISIS X 25UND - IQ MEDIC"
+  ]
+ },
+ {
+  "producto_id": 9595,
+  "unidad_id": 9631,
+  "codigo": "00595",
+  "nombre": "ERGONEX PLUS",
+  "costo": 1.25,
+  "excel": [
+   "ERGONEX PLUS X 50 TAB REC - AC FARMA"
+  ]
+ },
+ {
+  "producto_id": 9634,
+  "unidad_id": 9670,
+  "codigo": "00635",
+  "nombre": "ERGONEX TAB",
+  "costo": 1.27,
+  "excel": [
+   "ERGONEX X 50 TAB REC - AC FARMA"
+  ]
+ },
+ {
+  "producto_id": 9796,
+  "unidad_id": 9832,
+  "codigo": "00426",
+  "nombre": "ESPARADRAPO PLASTICO 1.25CMX5M",
+  "costo": 1.3417,
+  "excel": [
+   "ESPARADRAPO PLASTICO 1.25CM X 5M X 12 UNID"
+  ]
+ },
+ {
+  "producto_id": 9795,
+  "unidad_id": 9831,
+  "codigo": "00425",
+  "nombre": "ESPARADRAPO SEDA 1.25CMX5M",
+  "costo": 1.575,
+  "excel": [
+   "ESPARADRAPO SEDA 1.25CM X 5M X 12 UNID"
+  ]
+ },
+ {
+  "producto_id": 9441,
+  "unidad_id": 9477,
+  "codigo": "00797",
+  "nombre": "EVAKUA 7.5MG/ML SOL ORAL GOTAS X 20ML",
+  "costo": 11.55,
+  "excel": [
+   "EVAKUA 7.5MG/ML SOL ORAL GOTAS X 20ML"
+  ]
+ },
+ {
+  "producto_id": 9277,
+  "unidad_id": 9313,
+  "codigo": "100961",
+  "nombre": "EVIGAX FORTE 250MG X 30 CAP BLAN",
+  "costo": 1.6043,
+  "excel": [
+   "EVIGAX FORTE 250MG X 30 CAP BLAN(SIMETICONA)"
+  ]
+ },
+ {
+  "producto_id": 10046,
+  "unidad_id": 10082,
+  "codigo": "00151",
+  "nombre": "FALEGEN",
+  "costo": 0.4432,
+  "excel": [
+   "FALEGEN 500 MG (CEFALEXINA) X 50 CAP"
+  ]
+ },
+ {
+  "producto_id": 9615,
+  "unidad_id": 9651,
+  "codigo": "00615",
+  "nombre": "FARCOX 90 MG",
+  "costo": 0.8583,
+  "excel": [
+   "FARCOX 90 (ETORICOXIB) X 30 TAB. RECUB. (THEFAR)"
+  ]
+ },
+ {
+  "producto_id": 9301,
+  "unidad_id": 9337,
+  "codigo": "100937",
+  "nombre": "FEMTRES 150MG/ML INY.X 1 AMP",
+  "costo": 12.72,
+  "excel": [
+   "FEMTRES 150 MG/ML INY. X 1 (CFALAB)"
+  ]
+ },
+ {
+  "producto_id": 9270,
+  "unidad_id": 9306,
+  "codigo": "100968",
+  "nombre": "FENAMAX 120MG X 10 TAB REC",
+  "costo": 0.903,
+  "excel": [
+   "FENAMAX 120 MG X 10 TAB REC( FEXOFENADINA)",
+   "FENAMAX 120MG X 10 TAB"
+  ]
+ },
+ {
+  "producto_id": 9307,
+  "unidad_id": 9343,
+  "codigo": "100931",
+  "nombre": "FENAMAX 180MG X 10 TAB",
+  "costo": 1.168,
+  "excel": [
+   "FENAMAX 180MG X 10 TAB. REC."
+  ]
+ },
+ {
+  "producto_id": 9321,
+  "unidad_id": 9357,
+  "codigo": "100917",
+  "nombre": "FERANIN FORTE GTS X 20ML",
+  "costo": 33.2,
+  "excel": [
+   "FERANIN FORTE GOTAS X 20ML"
+  ]
+ },
+ {
+  "producto_id": 9316,
+  "unidad_id": 9352,
+  "codigo": "100922",
+  "nombre": "FERROSIL 100MG/5MLX 5 AMP BEBIBLE",
+  "costo": 5.888,
+  "excel": [
+   "FERROSIL 100MG/5ML X 5 AMP BEBIBLE"
+  ]
+ },
+ {
+  "producto_id": 10048,
+  "unidad_id": 10084,
+  "codigo": "00153",
+  "nombre": "FISH OIL CAP.",
+  "costo": 0.2843,
+  "excel": [
+   "FISH OIL 1000MG.(OMEGA)(ACEITE PESCADO) X 30 CAP. BL.(OQ)"
+  ]
+ },
+ {
+  "producto_id": 9868,
+  "unidad_id": 9904,
+  "codigo": "00321",
+  "nombre": "FLATUZYN X 100 TAB",
+  "costo": 0.6151,
+  "excel": [
+   "FLATUZYM ADVANCE X 100 CAP."
+  ]
+ },
+ {
+  "producto_id": 9428,
+  "unidad_id": 9464,
+  "codigo": "00784",
+  "nombre": "FLAZAFORTE 30MG TAB",
+  "costo": 1.529,
+  "excel": [
+   "FLAZAFORTE (DEFLAZACORT 30MG) X 10 TAB. (CSP)"
+  ]
+ },
+ {
+  "producto_id": 9724,
+  "unidad_id": 9760,
+  "codigo": "00537",
+  "nombre": "FLORATIL SOBRE",
+  "costo": 2.418,
+  "excel": [
+   "FLORATIL 250 MG PPSO X 10 SOBRES"
+  ]
+ },
+ {
+  "producto_id": 9985,
+  "unidad_id": 10021,
+  "codigo": "00264",
+  "nombre": "FLORIL 15ML GTS",
+  "costo": 8.65,
+  "excel": [
+   "FLORIL NF SOL OFT X 15 ML."
+  ]
+ },
+ {
+  "producto_id": 9986,
+  "unidad_id": 10022,
+  "codigo": "00265",
+  "nombre": "FLORIL 8 ML GTS",
+  "costo": 6.85,
+  "excel": [
+   "FLORIL NF SOL OFT X 8 ML."
+  ]
+ },
+ {
+  "producto_id": 9948,
+  "unidad_id": 9984,
+  "codigo": "00227",
+  "nombre": "FLUCONAZOL TAB PORTUGAL",
+  "costo": 0.2204,
+  "excel": [
+   "FLUCONAZOL 150MG X 100 CAP"
+  ]
+ },
+ {
+  "producto_id": 9580,
+  "unidad_id": 9616,
+  "codigo": "00580",
+  "nombre": "FLUIMEXINA 600MG SOBRE",
+  "costo": 0.8123,
+  "excel": [
+   "FLUIMEXINA 600MG X 30 SOB. - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9281,
+  "unidad_id": 9317,
+  "codigo": "100957",
+  "nombre": "FORTZINK 0MG /5ML JBE X 120ML",
+  "costo": 32.99,
+  "excel": [
+   "FORTZINK 20MG/5ML JBE X 120 ML"
+  ]
+ },
+ {
+  "producto_id": 9282,
+  "unidad_id": 9318,
+  "codigo": "100956",
+  "nombre": "FOS HEPAN FORTE X 30 CAP BLANDAS",
+  "costo": 1.3717,
+  "excel": [
+   "FOS-HEPAN FORTE X 30 CAP BLAND"
+  ]
+ },
+ {
+  "producto_id": 9859,
+  "unidad_id": 9895,
+  "codigo": "00312",
+  "nombre": "FRAMIDEX GTS",
+  "costo": 6.34,
+  "excel": [
+   "FRAMIDEX NF GOTAS SOL OFTAL. FCO. X 2.5 ML"
+  ]
+ },
+ {
+  "producto_id": 10189,
+  "unidad_id": 10225,
+  "codigo": "00012",
+  "nombre": "FRUTIFLEX X 1LT (00012)",
+  "costo": 6.2919,
+  "excel": [
+   "FRUTTIFLEX SOL.ORAL FCOX1L, FRESA",
+   "FRUTTIFLEX SOL.ORAL FCOX1L, TUTTI FRUTTI"
+  ]
+ },
+ {
+  "producto_id": 10072,
+  "unidad_id": 10108,
+  "codigo": "00179",
+  "nombre": "GASA ESTERIL 7.5 CMX 7.5CM",
+  "costo": 0.5,
+  "excel": [
+   "GASA DE ALGODON ESTERIL 7.5CM X 7.5CM X 20 SOBRES(N)",
+   "GASA ESTERIL 7.5 X 7.5CM X5 CORTES"
+  ]
+ },
+ {
+  "producto_id": 9579,
+  "unidad_id": 9615,
+  "codigo": "00579",
+  "nombre": "GASEO END TAB",
+  "costo": 0.49,
+  "excel": [
+   "GASEO-END 80MG X 100 TAB."
+  ]
+ },
+ {
+  "producto_id": 9405,
+  "unidad_id": 9441,
+  "codigo": "00761",
+  "nombre": "GASEOVET GTS X 15ML",
+  "costo": 22.4367,
+  "excel": [
+   "GASEOVET 80MG/ML GOTAS 15 ML FRESA",
+   "GASEOVET 80MG/ML SUSP ORAL GTS 15 ML FRESA"
+  ]
+ },
+ {
+  "producto_id": 9861,
+  "unidad_id": 9897,
+  "codigo": "00314",
+  "nombre": "GASTRORAL JB",
+  "costo": 13.43,
+  "excel": [
+   "GASTRORAL 800MG+60MG/10ML SUSP ORAL X 200 ML"
+  ]
+ },
+ {
+  "producto_id": 9862,
+  "unidad_id": 9898,
+  "codigo": "00315",
+  "nombre": "GENSARNA LOCION",
+  "costo": 7.8,
+  "excel": [
+   "GENSARNA 25% LOCION X 60 ML"
+  ]
+ },
+ {
+  "producto_id": 9274,
+  "unidad_id": 9310,
+  "codigo": "100964",
+  "nombre": "GINACABA 2% CREM VAG X 20G",
+  "costo": 16.02,
+  "excel": [
+   "GINACABA (CLOTRIMAZOL) 2% CREM VAG X 20 G"
+  ]
+ },
+ {
+  "producto_id": 9780,
+  "unidad_id": 9816,
+  "codigo": "00410",
+  "nombre": "GLIBENCLAMIDA 5MG X 100 TAB IQF",
+  "costo": 0.0294,
+  "excel": [
+   "GLIBENCLAMIDA 5 MG X 100 TAB."
+  ]
+ },
+ {
+  "producto_id": 9869,
+  "unidad_id": 9905,
+  "codigo": "00322",
+  "nombre": "GLUCOVERT X 30 SOBRES",
+  "costo": 1.4067,
+  "excel": [
+   "GLUCOFERVET MSM PPSO X 30 SOBRES NARANJA"
+  ]
+ },
+ {
+  "producto_id": 9563,
+  "unidad_id": 9599,
+  "codigo": "00745",
+  "nombre": "GOMITAS AGUAJE SABOR GUARANA X 60UNI",
+  "costo": 24.58,
+  "excel": [
+   "AGUAJE SABOR GUARANA X 60 GOMITAS (DAXO)"
+  ]
+ },
+ {
+  "producto_id": 9870,
+  "unidad_id": 9906,
+  "codigo": "00323",
+  "nombre": "GYNOMAX OV X 10 UNID",
+  "costo": 1.971,
+  "excel": [
+   "GYNOMAX NF 500MG+100 000UI X 10 OVULOS"
+  ]
+ },
+ {
+  "producto_id": 9265,
+  "unidad_id": 9301,
+  "codigo": "100973",
+  "nombre": "HAMMAMELIS LOCION 180ML",
+  "costo": 3.39,
+  "excel": [
+   "HAMAMELIS LOCION 180 ML"
+  ]
+ },
+ {
+  "producto_id": 9763,
+  "unidad_id": 9799,
+  "codigo": "00393",
+  "nombre": "HEPABIONTA FORTE",
+  "costo": 2.0808,
+  "excel": [
+   "HEPABIONTA FORTE X12U"
+  ]
+ },
+ {
+  "producto_id": 9895,
+  "unidad_id": 9931,
+  "codigo": "00348",
+  "nombre": "HEPALIVIO B X 100 CAPSULAS",
+  "costo": 0.2769,
+  "excel": [
+   "HEPALIVIO B 150MG+COMP B X 100 CAP"
+  ]
+ },
+ {
+  "producto_id": 9275,
+  "unidad_id": 9311,
+  "codigo": "100963",
+  "nombre": "HIDROCREMA PANTENE X 300 ML",
+  "costo": 15.0,
+  "excel": [
+   "PANTENE CREMA PEINAR RIZOS 300ML"
+  ]
+ },
+ {
+  "producto_id": 9545,
+  "unidad_id": 9581,
+  "codigo": "00727",
+  "nombre": "HISOPOS CRESSE X 200 UNI",
+  "costo": 2.4,
+  "excel": [
+   "CRESSE HISOPOS X 200 UND(NUEVO)"
+  ]
+ },
+ {
+  "producto_id": 9617,
+  "unidad_id": 9653,
+  "codigo": "00617",
+  "nombre": "HUGGIES VERDE XXG",
+  "costo": 0.6486,
+  "excel": [
+   "HUGGIES ACTIVE SEC PAQUETON XXG 74"
+  ]
+ },
+ {
+  "producto_id": 9864,
+  "unidad_id": 9900,
+  "codigo": "00317",
+  "nombre": "HUMED GTS",
+  "costo": 8.8,
+  "excel": [
+   "HUMED 0.3% GOTAS SOL OFTAL. FCO. X 15 ML"
+  ]
+ },
+ {
+  "producto_id": 9753,
+  "unidad_id": 9789,
+  "codigo": "00567",
+  "nombre": "IBANCHECK 150MG",
+  "costo": 0.8323,
+  "excel": [
+   "IBANCHECK 150 MG(PREGABALINA) X 30 CAP"
+  ]
+ },
+ {
+  "producto_id": 9865,
+  "unidad_id": 9901,
+  "codigo": "00318",
+  "nombre": "IBUPROFENO 400MG TAB X 100 PORTUGAL",
+  "costo": 0.079,
+  "excel": [
+   "IBUPROFENO 400MG TAB X 100 - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9980,
+  "unidad_id": 10016,
+  "codigo": "00259",
+  "nombre": "IBUPROFENO JB PORTUGAL",
+  "costo": 1.34,
+  "excel": [
+   "IBUPROFENO 100 MG/5ML SUSP ORAL X 60 ML"
+  ]
+ },
+ {
+  "producto_id": 9550,
+  "unidad_id": 9586,
+  "codigo": "00732",
+  "nombre": "IBUZONE JBE X 60ML",
+  "costo": 3.0057,
+  "excel": [
+   "IBUZONE (IBUPROFENO 100MG/5ML) X 60 ML. (NORDIC)",
+   "IBUZONE 100MG/5ML SUSP ORAL X 60 ML(IBUPROFENO)"
+  ]
+ },
+ {
+  "producto_id": 9950,
+  "unidad_id": 9986,
+  "codigo": "00229",
+  "nombre": "IRBESARTAN 150MG X 50 TAB PORTUGAL",
+  "costo": 0.2737,
+  "excel": [
+   "IRBESARTAN 150 MG X 50 TAB REC",
+   "IRBESARTAN 150MG X 50 TAB - AC FARMA",
+   "IRBESARTAN 150MG X 50 TAB - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9808,
+  "unidad_id": 9844,
+  "codigo": "00438",
+  "nombre": "JABON ASEPXIA CARBON X 100GR",
+  "costo": 9.88,
+  "excel": [
+   "ASEPXIA JAB CARBON X 100 GR"
+  ]
+ },
+ {
+  "producto_id": 9813,
+  "unidad_id": 9849,
+  "codigo": "00443",
+  "nombre": "JABON ASEPXIA EXFOLIANTE X 100GR",
+  "costo": 7.89,
+  "excel": [
+   "ASEPXIA JAB.EXFOLIANTE X 100 GR"
+  ]
+ },
+ {
+  "producto_id": 10161,
+  "unidad_id": 10197,
+  "codigo": "00101",
+  "nombre": "JABON DOVE ORIGINAL X 90GR",
+  "costo": 3.1275,
+  "excel": [
+   "DOVE JABON ORIGINAL 90 GR(168942)"
+  ]
+ },
+ {
+  "producto_id": 10163,
+  "unidad_id": 10199,
+  "codigo": "00103",
+  "nombre": "JABON DOVE REVIGORANTE X 90GR",
+  "costo": 3.14,
+  "excel": [
+   "DOVE JABON REVIGORIZANTE 90GR(267974)"
+  ]
+ },
+ {
+  "producto_id": 9781,
+  "unidad_id": 9817,
+  "codigo": "00411",
+  "nombre": "JABON GLICI X 90 GR",
+  "costo": 1.84,
+  "excel": [
+   "GLICI JAB.GLICER.NATURAL X 90 GR."
+  ]
+ },
+ {
+  "producto_id": 9311,
+  "unidad_id": 9347,
+  "codigo": "100927",
+  "nombre": "JABON GRISI X 125GR -CONCHA NACAR",
+  "costo": 4.26,
+  "excel": [
+   "JABON GRISI X 125GR - CONCHA NACAR"
+  ]
+ },
+ {
+  "producto_id": 9524,
+  "unidad_id": 9560,
+  "codigo": "00704",
+  "nombre": "JABON HENO DE PRAVIA X 150GR",
+  "costo": 4.65,
+  "excel": [
+   "JABON HENO DE PRAVIA 150GR - AMARILLO"
+  ]
+ },
+ {
+  "producto_id": 9431,
+  "unidad_id": 9467,
+  "codigo": "00787",
+  "nombre": "JABON INTIMO NOSOTRAS X 200ML",
+  "costo": 18.2,
+  "excel": [
+   "NOSOTRAS JAB INTIMO HERBAL-V X 200 ML(563772)"
+  ]
+ },
+ {
+  "producto_id": 10167,
+  "unidad_id": 10203,
+  "codigo": "00107",
+  "nombre": "JABON NEKO EXTRA SUAVE X 110GR",
+  "costo": 2.26,
+  "excel": [
+   "NEKO JABON BLANCO E/SUAVE X 110 GR."
+  ]
+ },
+ {
+  "producto_id": 10067,
+  "unidad_id": 10103,
+  "codigo": "00174",
+  "nombre": "JERINGA 5ML",
+  "costo": 0.12,
+  "excel": [
+   "JERINGA TOP MEDIC 5 ML/21G X 100 UNI"
+  ]
+ },
+ {
+  "producto_id": 9262,
+  "unidad_id": 9298,
+  "codigo": "100976",
+  "nombre": "KETOCONAZOL 2% CREMA X 20GR",
+  "costo": 1.89,
+  "excel": [
+   "KETOCONAZOL 2% CREMA X 20 GR"
+  ]
+ },
+ {
+  "producto_id": 9266,
+  "unidad_id": 9302,
+  "codigo": "100972",
+  "nombre": "KETOFUNGOL 2% CREMA X 20GR",
+  "costo": 3.79,
+  "excel": [
+   "KETOFUNGOL 2% CREMA X 20 G"
+  ]
+ },
+ {
+  "producto_id": 9787,
+  "unidad_id": 9823,
+  "codigo": "00417",
+  "nombre": "KITADOL MIGRAÑA SOBRES",
+  "costo": 1.6448,
+  "excel": [
+   "KITADOL MIGRAÑA 40 SOBRE X 2 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 10116,
+  "unidad_id": 10152,
+  "codigo": "00055",
+  "nombre": "KOTEX NOCTURNA",
+  "costo": 3.4571,
+  "excel": [
+   "TOA FEMEN KOTX NOCTURNA X6"
+  ]
+ },
+ {
+  "producto_id": 10117,
+  "unidad_id": 10153,
+  "codigo": "00056",
+  "nombre": "KOTEX NORMAL",
+  "costo": 2.8075,
+  "excel": [
+   "KOTEX FEM. NORMAL. X 10"
+  ]
+ },
+ {
+  "producto_id": 9756,
+  "unidad_id": 9792,
+  "codigo": "00384",
+  "nombre": "KRYTZINA JBE",
+  "costo": 5.45,
+  "excel": [
+   "KRYTZINA"
+  ]
+ },
+ {
+  "producto_id": 9276,
+  "unidad_id": 9312,
+  "codigo": "100962",
+  "nombre": "LACTACYD PRO BIO CLARITY X 220ML",
+  "costo": 23.69,
+  "excel": [
+   "LACTACYD PRO BIO CLARITY X 220ML"
+  ]
+ },
+ {
+  "producto_id": 9586,
+  "unidad_id": 9622,
+  "codigo": "00586",
+  "nombre": "LANCIPROX 0.3% GTS",
+  "costo": 18.81,
+  "excel": [
+   "LANCIPROX 0.3% GOTAS SOL OFTAL X 5 ML"
+  ]
+ },
+ {
+  "producto_id": 9872,
+  "unidad_id": 9908,
+  "codigo": "00325",
+  "nombre": "LAXALIV JB X 120ML",
+  "costo": 8.52,
+  "excel": [
+   "LAXALIV 3.3G/5 ML SOL ORAL X 120 ML (LACTULOSA)"
+  ]
+ },
+ {
+  "producto_id": 9599,
+  "unidad_id": 9635,
+  "codigo": "00599",
+  "nombre": "LERGYNN PLUS TAB X 100",
+  "costo": 1.092,
+  "excel": [
+   "LERGYNN PLUS (CETIRI+PSEUDOEFREDINA) X 100 TAB.(OQ)"
+  ]
+ },
+ {
+  "producto_id": 9303,
+  "unidad_id": 9339,
+  "codigo": "100935",
+  "nombre": "LESSTAMIN JBE X 60ML CAFERMA",
+  "costo": 9.43,
+  "excel": [
+   "LESSTAMIN 2.5MG.(LEVOCETIRICINA) X 60ML.(CAFERMA)"
+  ]
+ },
+ {
+  "producto_id": 9268,
+  "unidad_id": 9304,
+  "codigo": "100970",
+  "nombre": "LEVOCTRIM FORTE 750MG X 7 TAB REC",
+  "costo": 0.8057,
+  "excel": [
+   "LEVOCTRIM FORTE 750MG X 7 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9328,
+  "unidad_id": 9364,
+  "codigo": "100910",
+  "nombre": "LEXIN 250MG/5ML JBE X 60ML",
+  "costo": 5.58,
+  "excel": [
+   "LEXIN 250MG/5ML JBE X 60ML - ACFARMA"
+  ]
+ },
+ {
+  "producto_id": 10191,
+  "unidad_id": 10227,
+  "codigo": "00014",
+  "nombre": "LIMONADA MARKOS",
+  "costo": 6.5,
+  "excel": [
+   "LIMONADA MARKOS LIBRE DE CAL FCOX200ML"
+  ]
+ },
+ {
+  "producto_id": 9570,
+  "unidad_id": 9606,
+  "codigo": "00569",
+  "nombre": "LIVOLIN",
+  "costo": 1.2693,
+  "excel": [
+   "LIVOLIN FORTE X 30 CAP BLAN"
+  ]
+ },
+ {
+  "producto_id": 10085,
+  "unidad_id": 10121,
+  "codigo": "00193",
+  "nombre": "LOPERAMIDA PORTUGAL TB X 100",
+  "costo": 0.065,
+  "excel": [
+   "LOPERAMIDA 2 MG X 100 TAB"
+  ]
+ },
+ {
+  "producto_id": 10049,
+  "unidad_id": 10085,
+  "codigo": "00154",
+  "nombre": "LOSARTAN DE 50MG ACE",
+  "costo": 0.066,
+  "excel": [
+   "LOSARTAN 50MG X 100 TAB - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9491,
+  "unidad_id": 9527,
+  "codigo": "00671",
+  "nombre": "LUBRICANTE CLICK X 120GR",
+  "costo": 11.02,
+  "excel": [
+   "LUBRI CLICK (LUBRICANTE) X 120GR.(OQPHARMA)"
+  ]
+ },
+ {
+  "producto_id": 9922,
+  "unidad_id": 9958,
+  "codigo": "00375",
+  "nombre": "LYONS 100",
+  "costo": 2.5,
+  "excel": [
+   "LYONS 100MG"
+  ]
+ },
+ {
+  "producto_id": 9873,
+  "unidad_id": 9909,
+  "codigo": "00326",
+  "nombre": "MAGNEALIV KIDS X 150ML",
+  "costo": 3.44,
+  "excel": [
+   "MAGNEALIV KIDS 400MG/5ML X 150ML"
+  ]
+ },
+ {
+  "producto_id": 9264,
+  "unidad_id": 9300,
+  "codigo": "100974",
+  "nombre": "MASCARA C/NEBULIZADOR ADULTO DE OXIGENO",
+  "costo": 2.85,
+  "excel": [
+   "MASCARA DE OXIGENO C/NEBULIZADOR ADULTO"
+  ]
+ },
+ {
+  "producto_id": 9702,
+  "unidad_id": 9738,
+  "codigo": "00515",
+  "nombre": "MASCARILLAS CELESTES",
+  "costo": 0.084,
+  "excel": [
+   "MASCARILLA DESCART MEDWAR X 50UND"
+  ]
+ },
+ {
+  "producto_id": 9257,
+  "unidad_id": 9293,
+  "codigo": "100981",
+  "nombre": "MASSULF TAB X 100 TAB",
+  "costo": 0.2538,
+  "excel": [
+   "MASSULF 800MG/160MG X 100 TAB"
+  ]
+ },
+ {
+  "producto_id": 9806,
+  "unidad_id": 9842,
+  "codigo": "00436",
+  "nombre": "MEDICASP SHAMPOO X 130ML",
+  "costo": 26.05,
+  "excel": [
+   "MEDICASP SHAMPO 130 ML"
+  ]
+ },
+ {
+  "producto_id": 9601,
+  "unidad_id": 9637,
+  "codigo": "00601",
+  "nombre": "MELATONINA TAB",
+  "costo": 0.2663,
+  "excel": [
+   "MELATONINA 3 MG X 30 TAB"
+  ]
+ },
+ {
+  "producto_id": 9949,
+  "unidad_id": 9985,
+  "codigo": "00228",
+  "nombre": "METFORMINA 850 TAB",
+  "costo": 0.07,
+  "excel": [
+   "METFORMINA 850MG X 100 TAB - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9555,
+  "unidad_id": 9591,
+  "codigo": "00737",
+  "nombre": "METOCLOPRAMIDA 10MG./2ML .AMP",
+  "costo": 0.586,
+  "excel": [
+   "METOCLOPRAMIDA 10MG. IV-IM.(ECLOX)X 10 AMP. (M&F)"
+  ]
+ },
+ {
+  "producto_id": 9639,
+  "unidad_id": 9675,
+  "codigo": "00640",
+  "nombre": "MICOMISIL 1%CREMA X 20GR",
+  "costo": 8.93,
+  "excel": [
+   "MICOMISIL 1% CREMA X 20GR"
+  ]
+ },
+ {
+  "producto_id": 10091,
+  "unidad_id": 10127,
+  "codigo": "00200",
+  "nombre": "MICROGYNON",
+  "costo": 6.92,
+  "excel": [
+   "MICROGYNON 0.15MG+0.03MG X 21 GRAGEAS"
+  ]
+ },
+ {
+  "producto_id": 9947,
+  "unidad_id": 9983,
+  "codigo": "00226",
+  "nombre": "MIODEL RELAX",
+  "costo": 0.7113,
+  "excel": [
+   "MIODEL RELAX NF 450MG+35MG X 100 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9304,
+  "unidad_id": 9340,
+  "codigo": "100934",
+  "nombre": "MIODROL 100MG X 100 TAB",
+  "costo": 0.2775,
+  "excel": [
+   "MIODROL 100MG.(ORFENADRINA)X 100TAB.LIB.SOSTENID."
+  ]
+ },
+ {
+  "producto_id": 9694,
+  "unidad_id": 9730,
+  "codigo": "00507",
+  "nombre": "MUCOCETIL JBE",
+  "costo": 9.8,
+  "excel": [
+   "MUCOCETIL 100MG/5ML SOL ORAL X 120 ML"
+  ]
+ },
+ {
+  "producto_id": 9972,
+  "unidad_id": 10008,
+  "codigo": "00251",
+  "nombre": "MUCOTRIM DILAT X 120ML",
+  "costo": 10.208,
+  "excel": [
+   "MUCOTRIM DILAT 7.5MG+0.005MG/5ML SOL.ORAL X 120 ML",
+   "MUCOTRIM DILAT FORTE JRB X 120 ML"
+  ]
+ },
+ {
+  "producto_id": 9273,
+  "unidad_id": 9309,
+  "codigo": "100965",
+  "nombre": "MULTI FROST FLEX 20% UNG X 100G",
+  "costo": 12.42,
+  "excel": [
+   "MULTI FROST FLEX 20% UNG X 100 G"
+  ]
+ },
+ {
+  "producto_id": 9880,
+  "unidad_id": 9916,
+  "codigo": "00333",
+  "nombre": "NAPROXPORT X 100 TAB",
+  "costo": 0.211,
+  "excel": [
+   "NAPROXENO 550 MG X 100 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 10045,
+  "unidad_id": 10081,
+  "codigo": "00150",
+  "nombre": "NAYFLEX MUJER",
+  "costo": 0.3763,
+  "excel": [
+   "NAYFLEX MUJER (IBUPRO. 200MG.) X 100 CAP. BL. (DIPHASAC)"
+  ]
+ },
+ {
+  "producto_id": 10047,
+  "unidad_id": 10083,
+  "codigo": "00152",
+  "nombre": "NEOALERGINE PLUS",
+  "costo": 0.2237,
+  "excel": [
+   "NEOALERGINE PLUS 10MG (CETIRIZINA) X 30 CAP BLA"
+  ]
+ },
+ {
+  "producto_id": 9881,
+  "unidad_id": 9917,
+  "codigo": "00334",
+  "nombre": "NEONYPOL OV X 12 UNI",
+  "costo": 2.9683,
+  "excel": [
+   "NEONYPOL X 12 CAP BLANDAS VAG"
+  ]
+ },
+ {
+  "producto_id": 9418,
+  "unidad_id": 9454,
+  "codigo": "00774",
+  "nombre": "NEUROALIV 5000 X 60 CAP. BLAN",
+  "costo": 1.96,
+  "excel": [
+   "NEUROALIV 5000 B-1,B6,B12.X 60 CAP.(INTIP)"
+  ]
+ },
+ {
+  "producto_id": 9224,
+  "unidad_id": 9260,
+  "codigo": "101014",
+  "nombre": "NINET L",
+  "costo": 0.6333,
+  "excel": [
+   "NINET PANAL S/E L X 60UNDS."
+  ]
+ },
+ {
+  "producto_id": 9272,
+  "unidad_id": 9308,
+  "codigo": "100966",
+  "nombre": "NISTAMUG 100000 UI/ML GTS X 12ML",
+  "costo": 11.15,
+  "excel": [
+   "NISTAMUG 100 000 UI/ML SUS ORAL GTAS X 12 ML"
+  ]
+ },
+ {
+  "producto_id": 10052,
+  "unidad_id": 10088,
+  "codigo": "00157",
+  "nombre": "NITOXADIN 100 JB",
+  "costo": 4.57,
+  "excel": [
+   "NITOXADIN 100MG/5ML X 60ML - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9945,
+  "unidad_id": 9981,
+  "codigo": "00224",
+  "nombre": "NITOXADIN 500MG",
+  "costo": 0.9833,
+  "excel": [
+   "NITOXADIN 500MG X 6 TAB - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9539,
+  "unidad_id": 9575,
+  "codigo": "00721",
+  "nombre": "NIVEA CREMA X 150ML",
+  "costo": 17.03,
+  "excel": [
+   "NIVEA CREMA X 150 ML(284500)"
+  ]
+ },
+ {
+  "producto_id": 9232,
+  "unidad_id": 9268,
+  "codigo": "101006",
+  "nombre": "NIVEA LABIAL",
+  "costo": 10.97,
+  "excel": [
+   "NIVEA LIPS CARE BLACKBERRY X 4.8G(285101)",
+   "NIVEA LIPS CARE CHERRY X 4.8G(285164)",
+   "NIVEA LIPS CARE STRAWBERRY X 4.8G(285171)"
+  ]
+ },
+ {
+  "producto_id": 10043,
+  "unidad_id": 10079,
+  "codigo": "00148",
+  "nombre": "NOGESTROL",
+  "costo": 1.46,
+  "excel": [
+   "NOGESTROL 1 1.5MG X 1 TAB REC(LEVONORGESTREL)"
+  ]
+ },
+ {
+  "producto_id": 10113,
+  "unidad_id": 10149,
+  "codigo": "00052",
+  "nombre": "NOSOTRAS BUENAS NOCHES INVISIBLE",
+  "costo": 6.6835,
+  "excel": [
+   "T.H. NOSOTRAS BUENAS NOCHES INV. RAPIS*10UND",
+   "T.H.NOSOT. BUENAS NOCHES*10UND+2BUENAS N.*1UND(PEGOTE)"
+  ]
+ },
+ {
+  "producto_id": 10115,
+  "unidad_id": 10151,
+  "codigo": "00054",
+  "nombre": "NOSOTRAS DIARIAS",
+  "costo": 2.4331,
+  "excel": [
+   "PROT. DIARIOS NOSOTRAS PH BALANCEADO*15 UND"
+  ]
+ },
+ {
+  "producto_id": 9525,
+  "unidad_id": 9561,
+  "codigo": "00705",
+  "nombre": "NOSOTRAS INVISIBLE RAPIGEL X 10 UNI",
+  "costo": 3.9564,
+  "excel": [
+   "T.H. NOSOTRAS INVISIBLE RAPIGEL*10 UND"
+  ]
+ },
+ {
+  "producto_id": 9731,
+  "unidad_id": 9767,
+  "codigo": "00544",
+  "nombre": "NOTIL CREMA (00544)",
+  "costo": 12.15,
+  "excel": [
+   "NOTIL 1.00G+0.10G+0.05G CREMA X 10 G"
+  ]
+ },
+ {
+  "producto_id": 9284,
+  "unidad_id": 9320,
+  "codigo": "100954",
+  "nombre": "NUCLEO CMP FORTE X 20 CAP",
+  "costo": 3.5,
+  "excel": [
+   "NUCLEO CMP FORTE X 20 CAP"
+  ]
+ },
+ {
+  "producto_id": 9319,
+  "unidad_id": 9355,
+  "codigo": "100919",
+  "nombre": "NUTRIBELA TRATAMIENTO SACHETS",
+  "costo": 1.0917,
+  "excel": [
+   "TRAT.CAPILAR NUTRIBELA SACHET 27ML X 6UND - BIOKERATINA",
+   "TRAT.CAPILAR NUTRIBELA SACHET 27ML X 6UND - CELULAS MADRE"
+  ]
+ },
+ {
+  "producto_id": 9786,
+  "unidad_id": 9822,
+  "codigo": "00416",
+  "nombre": "OMEPRAZOL TAB PHARMA",
+  "costo": 0.086,
+  "excel": [
+   "OMEPRAZOL 20 MG X 100 CAP LIB RET"
+  ]
+ },
+ {
+  "producto_id": 9616,
+  "unidad_id": 9652,
+  "codigo": "00616",
+  "nombre": "OMISWISS 20MG",
+  "costo": 0.0831,
+  "excel": [
+   "OMISWISS 20 (OMEPRAZOL) X 100 CAP. LIB.RET.(THEFAR)"
+  ]
+ },
+ {
+  "producto_id": 9297,
+  "unidad_id": 9333,
+  "codigo": "100941",
+  "nombre": "ORAMIN F X 30 CAP BLAN",
+  "costo": 0.8907,
+  "excel": [
+   "ORAMIN-F X 30 CAP BLAN"
+  ]
+ },
+ {
+  "producto_id": 9984,
+  "unidad_id": 10020,
+  "codigo": "00263",
+  "nombre": "OTIDOL GTS",
+  "costo": 7.85,
+  "excel": [
+   "OTIDOL NF GOTAS <OTICAS> 5ML"
+  ]
+ },
+ {
+  "producto_id": 9656,
+  "unidad_id": 9692,
+  "codigo": "00657",
+  "nombre": "OXIGENTA IGORA X 50ML",
+  "costo": 4.0,
+  "excel": [
+   "OXIGENTA IGORA X 50ML - 20 VOL C/FRAG.",
+   "OXIGENTA IGORA X 50ML - 30 VOL C/FRAG."
+  ]
+ },
+ {
+  "producto_id": 9659,
+  "unidad_id": 9695,
+  "codigo": "00660",
+  "nombre": "P.D DOCTOR FAMILY X 220",
+  "costo": 3.18,
+  "excel": [
+   "FAMILY D(13504) CR/DENT SENSITIVE X 220G",
+   "FAMILY D(13505) CR/DENT HERBAL X 220G"
+  ]
+ },
+ {
+  "producto_id": 9298,
+  "unidad_id": 9334,
+  "codigo": "100940",
+  "nombre": "PACK AMMENS BABY SH ORIG 400ML+FRASCOJIN 400ML+TALC 60GR",
+  "costo": 27.79,
+  "excel": [
+   "AMMENS BABY SH ORIG 400ML + FRASCOJIN 400 ML+ TALC 60"
+  ]
+ },
+ {
+  "producto_id": 10053,
+  "unidad_id": 10089,
+  "codigo": "00158",
+  "nombre": "PALATOX JBE",
+  "costo": 4.8825,
+  "excel": [
+   "PALATOX JARABE X 120ML"
+  ]
+ },
+ {
+  "producto_id": 10111,
+  "unidad_id": 10147,
+  "codigo": "00050",
+  "nombre": "PALETTE 6.68 CHOCOLATE CLARO",
+  "costo": 18.0,
+  "excel": [
+   "TINTE PALETTE DUO CHOCOLATE CLARO N° 6-68"
+  ]
+ },
+ {
+  "producto_id": 10181,
+  "unidad_id": 10368,
+  "codigo": "00003",
+  "nombre": "PANADOL ANTIGRIPAL",
+  "costo": 2.2096,
+  "excel": [
+   "PANADOL ANTIGRIPAL NF 52 X 2 TAB(NUEVO)"
+  ]
+ },
+ {
+  "producto_id": 10182,
+  "unidad_id": 10218,
+  "codigo": "00004",
+  "nombre": "PANADOL FORTE",
+  "costo": 0.9016,
+  "excel": [
+   "PANADOL FORTE 500MG/65MG X 56 TAB"
+  ]
+ },
+ {
+  "producto_id": 9447,
+  "unidad_id": 10366,
+  "codigo": "00803",
+  "nombre": "PANADOL JARABE X 60ML",
+  "costo": 14.1275,
+  "excel": [
+   "PANADOL NIÑOS 160MG/5ML JARABE X 60 ML."
+  ]
+ },
+ {
+  "producto_id": 9492,
+  "unidad_id": 9528,
+  "codigo": "00672",
+  "nombre": "PANTOZEX 40MG",
+  "costo": 0.405,
+  "excel": [
+   "PANTOZEX 40MG.(PANTOPRAZOL) X 30 TAB.LIB.RETA(CSP)"
+  ]
+ },
+ {
+  "producto_id": 9990,
+  "unidad_id": 10026,
+  "codigo": "00269",
+  "nombre": "PARACETAMOL TAB PORTUGAL",
+  "costo": 0.0475,
+  "excel": [
+   "PARACETAMOL 500 MG X 100 TAB"
+  ]
+ },
+ {
+  "producto_id": 9665,
+  "unidad_id": 9701,
+  "codigo": "00477",
+  "nombre": "PARIS 20MG",
+  "costo": 1.875,
+  "excel": [
+   "PARIS 20 MG (TADALAFILO)X 4 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9955,
+  "unidad_id": 9991,
+  "codigo": "00234",
+  "nombre": "PARIS 5MG X 28",
+  "costo": 0.6793,
+  "excel": [
+   "PARIS 5 MG (TADALAFILO)X 28 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9385,
+  "unidad_id": 9421,
+  "codigo": "00886",
+  "nombre": "PAÑAL HUGGIES NATURAL CARE ROJO G X 66 UNI",
+  "costo": 0.7273,
+  "excel": [
+   "HUGGIES NATURAL CARE PAQUETON G 66UND"
+  ]
+ },
+ {
+  "producto_id": 9386,
+  "unidad_id": 9422,
+  "codigo": "00887",
+  "nombre": "PAÑAL HUGGIES NATURAL CARE ROJO P X 50 UNID",
+  "costo": 0.62,
+  "excel": [
+   "HUGGIES NATURAL CARE P 50"
+  ]
+ },
+ {
+  "producto_id": 9384,
+  "unidad_id": 9420,
+  "codigo": "00885",
+  "nombre": "PAÑAL HUGGIES NATURAL CARE ROJO XG X 60 UNID",
+  "costo": 0.8,
+  "excel": [
+   "HUGGIES NATURAL CARE PAQUETON XG 60UND"
+  ]
+ },
+ {
+  "producto_id": 9383,
+  "unidad_id": 9419,
+  "codigo": "00884",
+  "nombre": "PAÑAL HUGGIES NATURAL CARE ROJO XXG X 58 UNI",
+  "costo": 0.8276,
+  "excel": [
+   "HUGGIES NATURAL CARE PAQUETON XXG 58UND"
+  ]
+ },
+ {
+  "producto_id": 9251,
+  "unidad_id": 9287,
+  "codigo": "100987",
+  "nombre": "PAÑITOS HUGGIES RN X 80",
+  "costo": 13.5,
+  "excel": [
+   "HUGGIES PURO &NATURAL RN 80UND"
+  ]
+ },
+ {
+  "producto_id": 9519,
+  "unidad_id": 9555,
+  "codigo": "00699",
+  "nombre": "PONDS CLARANT B3 X 100GR",
+  "costo": 15.96,
+  "excel": [
+   "POND S CLARANT B3 P/SECA 100 GR(163330)"
+  ]
+ },
+ {
+  "producto_id": 10174,
+  "unidad_id": 10210,
+  "codigo": "00114",
+  "nombre": "PONDS CLARANT B3 X 50GR",
+  "costo": 9.038,
+  "excel": [
+   "POND S CLARANT B3 P/SECA 50 GR(161448)",
+   "PONDS CR CLARANT B3 GRASA X 50G",
+   "PONDS CR CLARANT B3 SECA X 50 GR"
+  ]
+ },
+ {
+  "producto_id": 9773,
+  "unidad_id": 9809,
+  "codigo": "00403",
+  "nombre": "PONDS CREMA X 20 SACHETS",
+  "costo": 0.94,
+  "excel": [
+   "POND S REJUVENESS X 20 SACHET(123534)"
+  ]
+ },
+ {
+  "producto_id": 10075,
+  "unidad_id": 10111,
+  "codigo": "00182",
+  "nombre": "PORTIL 20G",
+  "costo": 2.08,
+  "excel": [
+   "PORTIL NF CREMA X 20 G."
+  ]
+ },
+ {
+  "producto_id": 9699,
+  "unidad_id": 9735,
+  "codigo": "00512",
+  "nombre": "PRACTIPAÑAL PLENITUD X 10 UNID",
+  "costo": 5.5,
+  "excel": [
+   "PLENITUD PRACTIPANAL 10"
+  ]
+ },
+ {
+  "producto_id": 9457,
+  "unidad_id": 9493,
+  "codigo": "00815",
+  "nombre": "PRACTIPAÑAL PLENITUD X 20 UNI",
+  "costo": 9.16,
+  "excel": [
+   "PLENITUD PRACTIPANAL 20"
+  ]
+ },
+ {
+  "producto_id": 9299,
+  "unidad_id": 9335,
+  "codigo": "100939",
+  "nombre": "PRES. PIEL FRESA 24 X 3 UNID",
+  "costo": 1.8121,
+  "excel": [
+   "PIEL FRESA 24 X 3 UNID"
+  ]
+ },
+ {
+  "producto_id": 9701,
+  "unidad_id": 9737,
+  "codigo": "00514",
+  "nombre": "PRUDENTIAL M/G",
+  "costo": 1.645,
+  "excel": [
+   "PRUDENTIAL COMFORT TOTAL G 20",
+   "PRUDENTIAL COMFORT TOTAL M 20"
+  ]
+ },
+ {
+  "producto_id": 10090,
+  "unidad_id": 10126,
+  "codigo": "00198",
+  "nombre": "RESTOFLORA X 10 UNI",
+  "costo": 0.844,
+  "excel": [
+   "RESTORFLORA BC X 10 AMP BEBIBLES"
+  ]
+ },
+ {
+  "producto_id": 9651,
+  "unidad_id": 9687,
+  "codigo": "00652",
+  "nombre": "REUMA FROST X 30 GR",
+  "costo": 3.5,
+  "excel": [
+   "REUMA FROST X 30GR PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 10038,
+  "unidad_id": 10074,
+  "codigo": "00143",
+  "nombre": "RYLAMAX AMPOLLA",
+  "costo": 3.8939,
+  "excel": [
+   "RYLAMAX 1G PPSOI + SOLV LIDOC 1% X 1 VIAL (CEFTRIAXONA)",
+   "RYLAMAX 1GR. + DISOLV. (OQPHARMA) IM."
+  ]
+ },
+ {
+  "producto_id": 9996,
+  "unidad_id": 10032,
+  "codigo": "00275",
+  "nombre": "SAL DE ANDREWS NORMAL",
+  "costo": 0.5584,
+  "excel": [
+   "SAL DE ANDREWS X 100 SOBRES"
+  ]
+ },
+ {
+  "producto_id": 9410,
+  "unidad_id": 9446,
+  "codigo": "00766",
+  "nombre": "SALBUTAMOL INHALADOR LABOT",
+  "costo": 5.666,
+  "excel": [
+   "SALBUTAMOL 100MCG AEROSOL P/INHAL X 200 DOSIS",
+   "SALBUTAMOL AEROSOL100MCG X 200 DOSIS"
+  ]
+ },
+ {
+  "producto_id": 10097,
+  "unidad_id": 10133,
+  "codigo": "00036",
+  "nombre": "SHAMPOO CLEAR MEN X 400ML",
+  "costo": 10.82,
+  "excel": [
+   "CLEAR MEN ANTICA SH 2EN1 FCX400ML DEFF",
+   "CLEAR MEN ANTICASP SH FX400ML CAID CONT"
+  ]
+ },
+ {
+  "producto_id": 10207,
+  "unidad_id": 10243,
+  "codigo": "00031",
+  "nombre": "SHAMPOO EGO MEN X 400ML",
+  "costo": 11.4,
+  "excel": [
+   "EGO SHAMP. MEN BLACK ANTI CASP X 400 ML(205357)",
+   "SHAMPOO EGO X 400ML - BLACK"
+  ]
+ },
+ {
+  "producto_id": 10205,
+  "unidad_id": 10241,
+  "codigo": "00029",
+  "nombre": "SHAMPOO ELVIVE X 370ML",
+  "costo": 14.01,
+  "excel": [
+   "ELVIVE SH COLOR VIVE PROTECT FCO 370ML"
+  ]
+ },
+ {
+  "producto_id": 9294,
+  "unidad_id": 9330,
+  "codigo": "100944",
+  "nombre": "SHAMPOO JOHNSON X 200ML",
+  "costo": 15.42,
+  "excel": [
+   "JHON SHAMPOO X 200 ML.(NUEVO)"
+  ]
+ },
+ {
+  "producto_id": 10196,
+  "unidad_id": 10232,
+  "codigo": "00020",
+  "nombre": "SHAMPOO SAVITAL ANTICASPA",
+  "costo": 10.075,
+  "excel": [
+   "SAVITAL SH ANTIC MENT Y EUCAL FCO X510ML"
+  ]
+ },
+ {
+  "producto_id": 10198,
+  "unidad_id": 10234,
+  "codigo": "00022",
+  "nombre": "SHAMPOO SAVITAL COLAGENO Y SABILA",
+  "costo": 8.87,
+  "excel": [
+   "SAVITAL SH COLAGENO Y SABILA FCO 510ML"
+  ]
+ },
+ {
+  "producto_id": 10199,
+  "unidad_id": 10235,
+  "codigo": "00023",
+  "nombre": "SHAMPOO SAVITAL COMPLEJO HIALURONICO Y SABILA",
+  "costo": 8.87,
+  "excel": [
+   "SAVITAL SH HIALUR Y SAB FCO 510 ML"
+  ]
+ },
+ {
+  "producto_id": 10195,
+  "unidad_id": 10231,
+  "codigo": "00019",
+  "nombre": "SHAMPOO SAVITAL ELIXIR DE ROMERO",
+  "costo": 8.87,
+  "excel": [
+   "SAVITAL SH ELIXIR ROMERO FCO 510ML"
+  ]
+ },
+ {
+  "producto_id": 10197,
+  "unidad_id": 10233,
+  "codigo": "00021",
+  "nombre": "SHAMPOO SEDAL X 340ML",
+  "costo": 8.5267,
+  "excel": [
+   "SEDAL SH 2EN1 ZERO CASPA FCO 340ML"
+  ]
+ },
+ {
+  "producto_id": 9888,
+  "unidad_id": 9924,
+  "codigo": "00341",
+  "nombre": "SIFACOX X 100 TAB",
+  "costo": 0.294,
+  "excel": [
+   "SIFACOX 200MG.(CELECOCIB) X 100 CAP.(THEFAR)"
+  ]
+ },
+ {
+  "producto_id": 10051,
+  "unidad_id": 10087,
+  "codigo": "00156",
+  "nombre": "SILDEX 100",
+  "costo": 1.18,
+  "excel": [
+   "SILDEX 100 MG X 1 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 10050,
+  "unidad_id": 10086,
+  "codigo": "00155",
+  "nombre": "SIMETICONA 80MG IQFARMA",
+  "costo": 0.2549,
+  "excel": [
+   "SIMETICONA 80MG X 30TAB - FARMINDUSTRIA"
+  ]
+ },
+ {
+  "producto_id": 9932,
+  "unidad_id": 9968,
+  "codigo": "00208",
+  "nombre": "SOLOUNA 5",
+  "costo": 11.83,
+  "excel": [
+   "SOLOUNA 5 50MG+5MG/ML I.M X 1 AMP.S/JER."
+  ]
+ },
+ {
+  "producto_id": 9483,
+  "unidad_id": 9519,
+  "codigo": "00663",
+  "nombre": "SOLUNA NF AMPOLLA",
+  "costo": 11.84,
+  "excel": [
+   "SOLUNA NF 50MG/ML+5MG/ML SOL INY IM X 1 AMP"
+  ]
+ },
+ {
+  "producto_id": 9478,
+  "unidad_id": 9514,
+  "codigo": "00836",
+  "nombre": "SUCRALFLAM JARABE 1G/5ML X 200ML",
+  "costo": 5.88,
+  "excel": [
+   "SUCRALFLAM 1G/5ML.(SUCLAFATO) 200ML. (PORTUGAL)"
+  ]
+ },
+ {
+  "producto_id": 9988,
+  "unidad_id": 10024,
+  "codigo": "00267",
+  "nombre": "SULFANIL 1% X 20G",
+  "costo": 6.105,
+  "excel": [
+   "SULFANIL CREMA 1% X 20G"
+  ]
+ },
+ {
+  "producto_id": 9356,
+  "unidad_id": 9392,
+  "codigo": "00857",
+  "nombre": "SULFANIL CREMA X 50G",
+  "costo": 10.15,
+  "excel": [
+   "SULFANIL CREMA 1% X 50G"
+  ]
+ },
+ {
+  "producto_id": 9440,
+  "unidad_id": 9476,
+  "codigo": "00796",
+  "nombre": "SUPRACORT 15MG/5ML SOL ORAL X 100ML",
+  "costo": 13.17,
+  "excel": [
+   "SUPRACORT 15MG/5ML SOL ORAL X 100ML (PREDNISOLONA)"
+  ]
+ },
+ {
+  "producto_id": 9286,
+  "unidad_id": 9322,
+  "codigo": "100952",
+  "nombre": "TALCO TUINIS 100G",
+  "costo": 2.92,
+  "excel": [
+   "TUINIES(29100) TALCO 100 G"
+  ]
+ },
+ {
+  "producto_id": 9288,
+  "unidad_id": 9324,
+  "codigo": "100950",
+  "nombre": "TALCO TUINIS X 750G",
+  "costo": 8.9,
+  "excel": [
+   "TUINIES(29750) TALCO 750 G"
+  ]
+ },
+ {
+  "producto_id": 9591,
+  "unidad_id": 9627,
+  "codigo": "00591",
+  "nombre": "TAMPONES NOSOTRAS REGULAR C/APLIADOR",
+  "costo": 13.94,
+  "excel": [
+   "NOSOTRAS TAMP C/APLIC REGULAR X 8 UNID(193301)"
+  ]
+ },
+ {
+  "producto_id": 9664,
+  "unidad_id": 9700,
+  "codigo": "00476",
+  "nombre": "TAMSULOSINA 0.4MG",
+  "costo": 0.2833,
+  "excel": [
+   "TAMSULOSINA 0.4MG X 30 CAP LIB PROL"
+  ]
+ },
+ {
+  "producto_id": 9331,
+  "unidad_id": 9367,
+  "codigo": "100907",
+  "nombre": "TERBINAFINA 250MG X 100 TAB -LABOGEN",
+  "costo": 0.295,
+  "excel": [
+   "TERBINAFINA 250MG X 100 TAB - LABOGEN"
+  ]
+ },
+ {
+  "producto_id": 10095,
+  "unidad_id": 10131,
+  "codigo": "00205",
+  "nombre": "TERMOMETRO DIGITAL",
+  "costo": 4.5,
+  "excel": [
+   "TERMOMETRO DIGITAL RIGIDO T12L X 1 UNID"
+  ]
+ },
+ {
+  "producto_id": 9810,
+  "unidad_id": 9846,
+  "codigo": "00440",
+  "nombre": "TERRAMIZOL -A X 6GR",
+  "costo": 10.05,
+  "excel": [
+   "TERRAMISOL-A OFTALMICO X 6GR - LANSIER",
+   "TERRAMISOL-A UNGTO OFTAL X 6 GRS"
+  ]
+ },
+ {
+  "producto_id": 9396,
+  "unidad_id": 9432,
+  "codigo": "00752",
+  "nombre": "TIDOL MIGRAÑA X 24 SOB X 2 TAB",
+  "costo": 0.8104,
+  "excel": [
+   "TIDOL MIGRAÑA 500+65MG X 24 SOB X 2 TAB"
+  ]
+ },
+ {
+  "producto_id": 9326,
+  "unidad_id": 9362,
+  "codigo": "100912",
+  "nombre": "TINTE PALETTE X 2 TUBOS SURTIDO",
+  "costo": 18.0,
+  "excel": [
+   "TINTE PALETTE DUO CASTAÑO CLARO N° 5-0",
+   "TINTE PALETTE DUO CASTAÑO MEDIO N° 4-0",
+   "TINTE PALETTE DUO CASTAÑO OSCURO N° 3-0",
+   "TINTE PALETTE DUO CASTAÑO ROJIZO N° 4-88",
+   "TINTE PALETTE DUO NEGRO AZUL N° 1-1",
+   "TINTE PALETTE DUO NEGRO N° 1-0",
+   "TINTE PALETTE DUO RUBI N° 6-88",
+   "TINTE PALETTE DUO RUBIO MEDIO CENIZO N° 7-1",
+   "TINTE PALETTE DUO RUBIO MEDIO N° 7-0",
+   "TINTE PALETTE DUO RUBIO OSCURO N° 6-0"
+  ]
+ },
+ {
+  "producto_id": 9283,
+  "unidad_id": 9319,
+  "codigo": "100955",
+  "nombre": "TOBAN F 2MG X 100TAB",
+  "costo": 0.5116,
+  "excel": [
+   "TOBAN F 2MG X 100 TAB."
+  ]
+ },
+ {
+  "producto_id": 9576,
+  "unidad_id": 9612,
+  "codigo": "00576",
+  "nombre": "TRAMINOFENOL TAB .RECU",
+  "costo": 0.568,
+  "excel": [
+   "TRAMINOFENOL (TRAMADOL 37.5+PARAC.325)X10 TAB.REC."
+  ]
+ },
+ {
+  "producto_id": 9831,
+  "unidad_id": 9867,
+  "codigo": "00463",
+  "nombre": "TRETOCHECK 10MG",
+  "costo": 0.645,
+  "excel": [
+   "TRETOCHECK 10 10 MG(ISOTRETINOINA)X 30 CAP BLA"
+  ]
+ },
+ {
+  "producto_id": 9222,
+  "unidad_id": 9258,
+  "codigo": "101016",
+  "nombre": "TRIAMCINOLONA LOCION 0.025%",
+  "costo": 8.77,
+  "excel": [
+   "TRIAMCINOLONA 0.025 % LOCION X 60ML. (AC)"
+  ]
+ },
+ {
+  "producto_id": 9237,
+  "unidad_id": 9273,
+  "codigo": "101001",
+  "nombre": "TUSILEXIL JBE",
+  "costo": 24.27,
+  "excel": [
+   "TUSILEXIL NF 15MG/5ML+7.5MG/5MG SOL. ORAL X 120 ML"
+  ]
+ },
+ {
+  "producto_id": 9278,
+  "unidad_id": 9314,
+  "codigo": "100960",
+  "nombre": "ULCEALIV 20MG",
+  "costo": 0.1689,
+  "excel": [
+   "ULCEALIV 20 MG(ESOMEPRAZOL) X 28 CAP LIB RET"
+  ]
+ },
+ {
+  "producto_id": 9269,
+  "unidad_id": 9305,
+  "codigo": "100969",
+  "nombre": "ULCEALIV 40 MG X 30 CAP LIB .RET",
+  "costo": 0.213,
+  "excel": [
+   "ULCEALIV 40 MG(ESOMEPRAZOL) X 30 CAP LIB RET"
+  ]
+ },
+ {
+  "producto_id": 9464,
+  "unidad_id": 9500,
+  "codigo": "00822",
+  "nombre": "UREN MAX 200MG TAB",
+  "costo": 0.9498,
+  "excel": [
+   "UREN MAX 200MG (FENAZOPIRIDINA) X 100 TAB REC"
+  ]
+ },
+ {
+  "producto_id": 9330,
+  "unidad_id": 9366,
+  "codigo": "100908",
+  "nombre": "VALSARTAN 160MG X 20 TAB",
+  "costo": 0.482,
+  "excel": [
+   "VALSARTAN 160MG X 20 TAB - PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9910,
+  "unidad_id": 9946,
+  "codigo": "00363",
+  "nombre": "VAPORUB X 50GR",
+  "costo": 10.48,
+  "excel": [
+   "VICK VAPORUB UNG PTEX50G PTE 50 G"
+  ]
+ },
+ {
+  "producto_id": 9998,
+  "unidad_id": 10371,
+  "codigo": "00277",
+  "nombre": "VASELINA PURA X 100GR",
+  "costo": 4.42,
+  "excel": [
+   "VASELINA ALKOFARMA X 100GR - PURA"
+  ]
+ },
+ {
+  "producto_id": 9675,
+  "unidad_id": 9711,
+  "codigo": "00487",
+  "nombre": "VINAGRE BULLY X 120ML",
+  "costo": 1.2,
+  "excel": [
+   "VINAGRE BULLY X 120ML - D LEOS"
+  ]
+ },
+ {
+  "producto_id": 9325,
+  "unidad_id": 9361,
+  "codigo": "100913",
+  "nombre": "VITAMINA C +D3+ZINCX 20 TAB EFERV-FAST UP",
+  "costo": 9.64,
+  "excel": [
+   "VITAMINA C + D3+ ZINC X 20 TAB EFERV. - FAST UP"
+  ]
+ },
+ {
+  "producto_id": 9742,
+  "unidad_id": 9778,
+  "codigo": "00556",
+  "nombre": "WELLPORT NF X 345ML",
+  "costo": 15.98,
+  "excel": [
+   "WELLPORT NF 312.5MG+6.25MG+2.5MG/5ML X 345 ML"
+  ]
+ },
+ {
+  "producto_id": 9420,
+  "unidad_id": 9456,
+  "codigo": "00776",
+  "nombre": "XORLYST 120MG X 30 CAPSULAS",
+  "costo": 1.0286,
+  "excel": [
+   "XORLYST 120MG X 30 CAP. PORTUGAL"
+  ]
+ },
+ {
+  "producto_id": 9215,
+  "unidad_id": 9251,
+  "codigo": "101023",
+  "nombre": "YODOX ESPUMA",
+  "costo": 7.11,
+  "excel": [
+   "YODOX 7.5% ESPUMA X 60ML - GENCOPHARMACEUTICAL"
+  ]
+ }
+]
