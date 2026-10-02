@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Ventas;
 
+use App\Support\VentanaEmisionSunat;
 use App\Support\Xlsx;
 
 use App\Http\Controllers\Controller;
@@ -516,6 +517,15 @@ class VentaController extends Controller
             // Entregas (recojo o envío). null = la empresa no usa la función.
             'entregas'                 => $this->entregasParaPos($user->empresa),
             'permitePendienteEntrega'  => (bool) ($user->empresa->pos_permite_pendiente_entrega ?? true),
+            // Ventana de SUNAT para la fecha del comprobante (hoy y hasta 3 días atrás),
+            // calculada AQUÍ y no con el reloj del equipo de la caja. La usan el
+            // selector de fecha de la factura y el aviso del turno reabierto.
+            'ventanaEmision'           => [
+                'minima' => VentanaEmisionSunat::minima()->toDateString(),
+                'maxima' => VentanaEmisionSunat::maxima()->toDateString(),
+            ],
+            // ¿Se muestra el selector de fecha al elegir Factura? Opcional por empresa.
+            'permiteFechaFactura'      => (bool) ($user->empresa->pos_fecha_emision_factura ?? false),
             // Multimoneda: monedas disponibles y TC del día (soles por 1 USD).
             'monedas'            => ['PEN', 'USD'],
             'tipoCambioHoy'      => $this->tipoCambioHoy(),

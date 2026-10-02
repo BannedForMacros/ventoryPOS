@@ -51,6 +51,8 @@ class EmpresaRequest extends FormRequest
             'permite_stock_negativo'          => 'boolean',
             'pos_permite_credito'             => 'boolean',
             'pos_permite_pendiente_entrega'   => 'boolean',
+            // Selector de fecha de emisión al elegir Factura (hoy y hasta 3 días atrás).
+            'pos_fecha_emision_factura'       => 'boolean',
             // Si esta activo, el POS permite agregar el mismo producto/presentación
             // varias veces en una misma venta. Útil para precios variables.
             'permite_duplicar_items_venta'    => 'boolean',

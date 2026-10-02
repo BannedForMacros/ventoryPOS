@@ -35,6 +35,7 @@ type FormData = {
     permite_stock_negativo: boolean;
     pos_permite_credito: boolean;
     pos_permite_pendiente_entrega: boolean;
+    pos_fecha_emision_factura: boolean;
     permite_duplicar_items_venta: boolean;
     tasa_igv: number | '';
     modo_cierre_caja: ModoCierre;
@@ -97,6 +98,7 @@ const emptyForm: FormData = {
     permite_stock_negativo: false,
     pos_permite_credito: true,
     pos_permite_pendiente_entrega: true,
+    pos_fecha_emision_factura: false,
     permite_duplicar_items_venta: false,
     tasa_igv: 18,
     modo_cierre_caja: 'con_declaraciones',
@@ -170,6 +172,7 @@ export default function Empresas({ empresas }: Props) {
             permite_stock_negativo: emp.permite_stock_negativo ?? false,
             pos_permite_credito: emp.pos_permite_credito ?? true,
             pos_permite_pendiente_entrega: emp.pos_permite_pendiente_entrega ?? true,
+            pos_fecha_emision_factura: emp.pos_fecha_emision_factura ?? false,
             permite_duplicar_items_venta: emp.permite_duplicar_items_venta ?? false,
             tasa_igv: emp.tasa_igv != null ? Number(emp.tasa_igv) : 18,
             modo_cierre_caja: (emp.modo_cierre_caja as ModoCierre) ?? 'con_declaraciones',
@@ -481,6 +484,18 @@ export default function Empresas({ empresas }: Props) {
                                 <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Mostrar "Pendiente por entregar"</span>
                                 <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                     Si está activo, el POS permite que el cliente pague todo y se lleve solo una parte: lo demás queda pendiente y sale del stock recién al entregarse. Apágalo si siempre entregas todo en el momento.
+                                </span>
+                            </span>
+                        </label>
+                        <label className="flex items-start gap-2 cursor-pointer mt-3">
+                            <Checkbox
+                                checked={data.pos_fecha_emision_factura}
+                                onChange={e => setData('pos_fecha_emision_factura', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Elegir la fecha de emisión de la factura</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Al elegir Factura en el POS aparece un selector de fecha (por defecto hoy) para emitirla con fecha de hoy o de hasta 3 días atrás, el máximo que acepta SUNAT. La venta se sigue registrando hoy en la caja; solo la factura lleva la fecha elegida.
                                 </span>
                             </span>
                         </label>
