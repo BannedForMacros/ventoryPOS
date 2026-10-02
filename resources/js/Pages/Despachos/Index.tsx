@@ -13,6 +13,7 @@ import { Empty, fmtInt, fmtS, plural } from '@/Components/Reportes/ReportUI';
 import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import { hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 
 interface ClienteLite {
     id: number;
@@ -96,6 +97,9 @@ const atrasado = (iso: string) => new Date(iso).getTime() < new Date().setHours(
 
 export default function Despachos({ pendientes, buscar = '', filtros, usaEntregas, conteos, rutas }: Props) {
     const { flash } = usePage<Props>().props;
+
+    // Tiempo real: un pedido nuevo o una entrega hecha en otra PC aparece sola.
+    useTiempoReal(['despachos'], () => router.reload({ only: ['pendientes', 'conteos'] }));
     const [q, setQ] = useState(buscar);
     const [despachando, setDespachando] = useState<Pendiente | null>(null);
     const [cantidades, setCantidades] = useState<Record<number, string>>({});

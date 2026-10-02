@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,6 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 class Venta extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['ventas']; }
+
     /** Clave del advisory lock que serializa la numeración. Solo la usa generarNumero(). */
     private const LOCK_CORRELATIVO = 774_201;
 

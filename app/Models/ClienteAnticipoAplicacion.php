@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +10,10 @@ use Illuminate\Support\Facades\DB;
 
 class ClienteAnticipoAplicacion extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['despachos']; }
+
     protected $table = 'cliente_anticipo_aplicaciones';
 
     protected $fillable = [

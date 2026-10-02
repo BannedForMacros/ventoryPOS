@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Search, User, Check, UserPlus, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 import Modal from '@/Components/UI/Modal';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 import type { Cliente } from '@/types';
 
 interface Props {
@@ -40,6 +41,12 @@ export default function ModalClienteRapido({ isOpen, onClose, selected, onSelect
         cargarClientes({ q: debouncedQ, cursor: null, reset: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [debouncedQ, isOpen]);
+
+    // Tiempo real: si otro usuario registra o edita un cliente mientras la
+    // lista está abierta, se vuelve a pedir con la misma búsqueda.
+    useTiempoReal(['clientes'], () => {
+        if (isOpen) cargarClientes({ q: debouncedQ, cursor: null, reset: true });
+    });
 
     // Scroll infinito dentro de la lista de clientes.
     useEffect(() => {

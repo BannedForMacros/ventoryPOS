@@ -1,0 +1,21 @@
+# Servidor WebSocket de ventoryPOS (Laravel Reverb): tiempo real.
+#
+# Escucha SOLO en 127.0.0.1:8081 (el 8080 es de GestVenin); el mundo entra por
+# nginx (location /app, ver nginx-location-app.conf) con el TLS del sitio.
+#
+# Instalar:  cp produccion/reverb/reverb-ventorypos.service /etc/systemd/system/
+#            systemctl daemon-reload && systemctl enable --now reverb-ventorypos
+[Unit]
+Description=WebSockets de ventoryPOS (Laravel Reverb)
+After=network.target
+
+[Service]
+User=ventorypos
+Group=ventorypos
+WorkingDirectory=/var/www/html/ventoryPOS
+ExecStart=/usr/bin/php artisan reverb:start --host=127.0.0.1 --port=8081
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

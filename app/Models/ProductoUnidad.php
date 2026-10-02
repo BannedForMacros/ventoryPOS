@@ -3,11 +3,24 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ProductoUnidad extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['productos']; }
+
+    public function empresaTiempoReal(): ?int
+    {
+        $id = DB::table('productos')->where('id', $this->producto_id)->value('empresa_id');
+
+        return $id ? (int) $id : null;
+    }
+
     protected $table = 'producto_unidades';
 
     protected $fillable = [

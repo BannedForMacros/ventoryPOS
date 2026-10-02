@@ -3,12 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ClienteAnticipo extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['despachos']; }
+
     protected $fillable = [
         'empresa_id', 'cliente_id', 'user_id', 'metodo_pago_id', 'cuenta_id',
         'fecha', 'monto', 'saldo', 'tipo_valorizacion',

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
@@ -685,6 +686,22 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             onFinally?.();
         }
     }
+
+    // Tiempo real: otra caja vendió, entró mercadería o cambió un precio →
+    // se actualizan en silencio el stock y los precios de las tarjetas a la
+    // vista, sin tocar el carrito, la búsqueda ni el scroll.
+    useTiempoReal(['stock', 'productos'], async () => {
+        const { q, categoria, tipo } = paramsProductosRef.current;
+        try {
+            const params: Record<string, any> = { q: q.trim(), categoria_id: categoria, tipo };
+            if (ventaEnEdicion?.id) params.venta_id = ventaEnEdicion.id;
+            const { data } = await axios.get<{ productos: Producto[] }>(route('pos.productos'), { params });
+            const frescos = new Map(data.productos.map(p => [p.id, p]));
+            setListaProductos(prev => prev.map(p => frescos.get(p.id) ?? p));
+        } catch {
+            // Sin conexión: el próximo aviso (o la reconexión) lo intenta de nuevo.
+        }
+    });
 
     // Debounce de la búsqueda y fetch automático cuando cambian filtros.
     useEffect(() => {

@@ -20,6 +20,7 @@ import {
 } from '@/lib/comprobanteElectronico';
 import type { ComprobanteElectronico, Local, PageProps, Venta } from '@/types';
 import Select from '@/Components/UI/Select';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
@@ -96,6 +97,9 @@ const money = (v: number) => `S/ ${Number(v ?? 0).toFixed(2)}`;
 
 export default function VentasIndex({ ventas, locales, turnos, resumen, filters, flash }: Props) {
     const { auth } = usePage<Props>().props;
+
+    // Tiempo real: una venta nueva, editada o anulada en otra caja aparece sola.
+    useTiempoReal(['ventas'], () => router.reload({ only: ['ventas', 'resumen'] }));
     const esAdmin  = auth.user.rol?.es_admin ?? false;
 
     // Configuración de empresa: permisos de edición/anulación de cajeras.

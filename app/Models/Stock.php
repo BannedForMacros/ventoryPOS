@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Exceptions\InsufficientStockException;
 use App\Services\KardexService;
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -13,6 +14,18 @@ use Illuminate\Support\Facades\Log;
 
 class Stock extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['stock']; }
+
+    /** El stock no guarda empresa: sale de su almacén (memorizado: un almacén no cambia de empresa). */
+    public function empresaTiempoReal(): ?int
+    {
+        static $porAlmacen = [];
+
+        return $porAlmacen[$this->almacen_id] ??= (int) DB::table('almacenes')->where('id', $this->almacen_id)->value('empresa_id') ?: null;
+    }
+
     protected $table = 'stock';
 
     protected $fillable = [
