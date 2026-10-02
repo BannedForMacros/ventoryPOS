@@ -62,9 +62,18 @@ class DecolectaService
 
         $data = $response->json();
 
+        $direccion = trim((string) ($data['direccion'] ?? ''));
+        // Dirección fiscal como figura en SUNAT: calle + distrito, provincia y
+        // departamento (Decolecta los manda por separado).
+        $lugar = array_filter([$data['distrito'] ?? null, $data['provincia'] ?? null, $data['departamento'] ?? null]);
+        $completa = trim($direccion . ($lugar ? ' - ' . implode(' - ', $lugar) : ''), ' -');
+
         return [
-            'razon_social' => $data['razon_social'] ?? '',
-            'direccion'    => $data['direccion']    ?? '',
+            'razon_social'       => $data['razon_social'] ?? '',
+            'direccion'          => $direccion,
+            'direccion_completa' => $completa,
+            'estado'             => $data['estado']    ?? null, // ACTIVO, BAJA DE OFICIO…
+            'condicion'          => $data['condicion'] ?? null, // HABIDO, NO HABIDO…
         ];
     }
 

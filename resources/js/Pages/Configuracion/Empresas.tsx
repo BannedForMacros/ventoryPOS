@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useForm, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
+import axios from 'axios';
+import { Loader2, Search } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -150,6 +152,26 @@ export default function Empresas({ empresas }: Props) {
     const [editing, setEditing] = useState<Empresa | null>(null);
 
     const { data, setData, post, transform, processing, errors, reset } = useForm<FormData>(emptyForm);
+
+    // Consulta SUNAT (Decolecta): razón social y dirección fiscal del RUC, para
+    // que lo impreso en boletas y facturas sea exactamente lo registrado.
+    const [consultandoRuc, setConsultandoRuc] = useState(false);
+    async function buscarRuc() {
+        if (data.ruc.length !== 11) { toast.error('El RUC debe tener 11 dígitos'); return; }
+        setConsultandoRuc(true);
+        try {
+            const { data: r } = await axios.post('/api/decolecta/ruc', { ruc: data.ruc });
+            if (!r.razon_social) { toast.error('SUNAT no devolvió datos para ese RUC'); return; }
+            setData(d => ({ ...d, razon_social: r.razon_social, direccion: r.direccion_completa || r.direccion || d.direccion }));
+            const alertas = [r.estado && r.estado !== 'ACTIVO' ? r.estado : null, r.condicion && r.condicion !== 'HABIDO' ? r.condicion : null].filter(Boolean);
+            if (alertas.length) toast(`Datos cargados, pero el RUC figura ${alertas.join(' y ')} en SUNAT: así no podrá emitir comprobantes válidos.`, { icon: '⚠️', duration: 7000 });
+            else toast.success('Razón social y dirección traídas de SUNAT');
+        } catch (e: unknown) {
+            toast.error(axios.isAxiosError(e) ? (e.response?.data?.message ?? 'No se pudo consultar el RUC') : 'No se pudo consultar el RUC');
+        } finally {
+            setConsultandoRuc(false);
+        }
+    }
     // Preview local del logo elegido (antes de subirlo).
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
@@ -314,7 +336,24 @@ export default function Empresas({ empresas }: Props) {
                         <Input label="Nombre Comercial" value={data.nombre_comercial} onChange={e => setData('nombre_comercial', e.target.value)} error={errors.nombre_comercial} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <Input label="RUC" required maxLength={11} value={data.ruc} onChange={e => setData('ruc', e.target.value)} error={errors.ruc} />
+                        <div>
+                            <div className="flex items-end gap-2">
+                                <div className="flex-1 min-w-0">
+                                    <Input label="RUC" required maxLength={11} inputMode="numeric" value={data.ruc}
+                                        onChange={e => setData('ruc', e.target.value.replace(/\D/g, ''))} error={errors.ruc}
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); buscarRuc(); } }} />
+                                </div>
+                                <button type="button" onClick={buscarRuc} disabled={consultandoRuc || data.ruc.length !== 11}
+                                    title="Traer razón social y dirección desde SUNAT"
+                                    className="mb-[1px] h-[38px] rounded-xl px-3 text-sm font-medium flex items-center gap-1 shrink-0 transition-opacity disabled:opacity-60"
+                                    style={{ color: 'var(--color-on-primary)', backgroundColor: 'var(--color-primary)' }}>
+                                    {consultandoRuc ? <><Loader2 size={14} className="animate-spin" />Consultando</> : <><Search size={14} />Buscar</>}
+                                </button>
+                            </div>
+                            <p className="mt-1 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                Trae de SUNAT la razón social y la dirección fiscal que salen en boletas y facturas.
+                            </p>
+                        </div>
                         <Input label="Email" type="email" value={data.email} onChange={e => setData('email', e.target.value)} error={errors.email} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">

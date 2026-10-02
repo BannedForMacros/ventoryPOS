@@ -77,7 +77,10 @@ class DecolectaController extends Controller
         // desde /admin y necesita el lookup del RUC.
         $puede = $user->es_superadmin
               || $user->tienePermiso('clientes', 'crear')
-              || $user->tienePermiso('proveedores', 'crear');
+              || $user->tienePermiso('proveedores', 'crear')
+              // Configuración → Empresas: completar razón social y dirección
+              // del emisor desde SUNAT (lo que sale en boletas y facturas).
+              || $user->tienePermiso('config.empresas', 'editar');
 
         if (!$puede) {
             abort(403, 'No tienes permiso para consultar datos de DNI/RUC.');

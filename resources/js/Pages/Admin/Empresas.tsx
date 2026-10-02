@@ -99,7 +99,7 @@ export default function Empresas({ empresas }: Props) {
             // Ambos forms comparten estos campos; TS no llama sobre la unión.
             const setData = form.setData as (key: 'razon_social' | 'direccion', value: string) => void;
             if (data.razon_social) setData('razon_social', data.razon_social);
-            if (data.direccion) setData('direccion', data.direccion);
+            if (data.direccion_completa || data.direccion) setData('direccion', data.direccion_completa || data.direccion);
             toast.success('Datos obtenidos de SUNAT');
         } catch (e: unknown) {
             if (axios.isCancel(e)) return;
