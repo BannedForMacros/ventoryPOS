@@ -185,6 +185,25 @@ interface ArgsValidacion {
      * Default false = comportamiento previo a la integración.
      */
     emisionActiva?:  boolean;
+    /**
+     * Fecha con la que saldrá el comprobante (Y-m-d): la elegida en el selector
+     * de la factura o la de un turno reabierto. null = hoy.
+     */
+    fechaComprobante?: string | null;
+    /** Ventana de SUNAT calculada en el servidor: hoy y hasta 3 días atrás. */
+    ventana?:          VentanaEmision | null;
+}
+
+/** Fechas (Y-m-d) que SUNAT acepta para un comprobante. Ver App\Support\VentanaEmisionSunat. */
+export interface VentanaEmision {
+    minima: string;
+    maxima: string;
+}
+
+/** dd/mm/aaaa a partir de Y-m-d, sin pasar por la zona horaria del navegador. */
+export function fechaCorta(ymd: string): string {
+    const [a, m, d] = ymd.split('-');
+    return `${d}/${m}/${a}`;
 }
 
 /**
@@ -196,7 +215,7 @@ interface ArgsValidacion {
  */
 export function validarComprobante({
     tipoComprobante, cliente, total, moneda, umbral = UMBRAL_BOLETA_IDENTIFICADA,
-    emisionActiva = false,
+    emisionActiva = false, fechaComprobante = null, ventana = null,
 }: ArgsValidacion): BloqueoComprobante | null {
     // Con la integración apagada, 'boleta' y 'factura' son hoy meras etiquetas
     // que no emiten nada. Bloquear la venta por reglas de SUNAT que nadie va a
@@ -213,6 +232,17 @@ export function validarComprobante({
     if (moneda === 'USD') {
         return {
             motivo: 'Los comprobantes electrónicos solo se emiten en soles. Cambia la moneda a S/ o elige "Sin comprobante".',
+            requiereCliente: false,
+        };
+    }
+
+    // Fecha fuera de la ventana de SUNAT (hoy y hasta 3 días atrás): FacturaMac no
+    // lo emitiría y la venta quedaría cobrada y sin comprobante. Las fechas Y-m-d se
+    // comparan como texto, sin pasar por la zona horaria del navegador.
+    if (fechaComprobante && ventana && (fechaComprobante < ventana.minima || fechaComprobante > ventana.maxima)) {
+        return {
+            motivo: `SUNAT solo acepta comprobantes con fecha desde el ${fechaCorta(ventana.minima)} hasta hoy. `
+                + 'Elige otra fecha o registra la venta como ticket.',
             requiereCliente: false,
         };
     }

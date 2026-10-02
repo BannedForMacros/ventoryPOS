@@ -27,6 +27,7 @@ import Select from '@/Components/UI/Select';
 import {
     validarComprobante, etiquetaComprobante, metaEstado, avisoModoEmision,
     UMBRAL_BOLETA_IDENTIFICADA, type BloqueoComprobante, type TipoComprobantePos,
+    type VentanaEmision, fechaCorta,
 } from '@/lib/comprobanteElectronico';
 import type {
     Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, ProductoUnidad,
@@ -185,6 +186,11 @@ interface Props extends PageProps {
     entregas?:                 EntregasPos | null;
     // Puede crear productos desde el POS (permiso de Catálogo → Productos).
     puedeCrearProducto?:       boolean;
+    // Ventana de SUNAT para la fecha del comprobante (hoy y hasta 3 días atrás),
+    // calculada en el servidor. Ver App\Support\VentanaEmisionSunat.
+    ventanaEmision?:           VentanaEmision | null;
+    // Selector de fecha de emisión al elegir Factura (Configuración → Empresas).
+    permiteFechaFactura?:      boolean;
     // A14: el backend valida que el usuario pueda operar el POS al CARGAR la
     // pantalla (admin sin local_id en modo central_y_local, almacén
     // desactivado, etc.). Si puedeVender=false bloqueamos el botón cobrar
@@ -362,7 +368,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null, puedeCrearProducto = false }: Props) {
+export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null, puedeCrearProducto = false, ventanaEmision = null, permiteFechaFactura = false }: Props) {
     // Configuración de la empresa (configurable por tenant).
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
@@ -490,6 +496,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const [descuentoConceptoId, setDescuentoConceptoId] = useState<number | null>(ventaEnEdicion?.descuento_concepto_id ?? null);
     const [tipoComprobante, setTipoComprobante]     = useState<TipoComprobante>(ventaEnEdicion?.tipo_comprobante ?? 'ticket');
     const [numeroComprobante, setNumeroComprobante] = useState(ventaEnEdicion?.numero_comprobante ?? '');
+    // Fecha de emisión de la factura (solo con el selector activo). Por defecto hoy.
+    const [fechaEmision, setFechaEmision] = useState<string>(ventanaEmision?.maxima ?? '');
     // Multimoneda: moneda de la venta. En USD los precios/pagos se ingresan en
     // dólares y el backend los convierte a soles al TC del día (congelado).
     const [moneda, setMoneda]                       = useState<'PEN' | 'USD'>(ventaEnEdicion?.moneda ?? 'PEN');
@@ -1113,6 +1121,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         setDescuentoConceptoId(null);
         setTipoComprobante('ticket');
         setNumeroComprobante('');
+        // La fecha elegida para una factura no se hereda: la siguiente vuelve a hoy.
+        setFechaEmision(ventanaEmision?.maxima ?? '');
         // La venta a crédito no debe "heredarse" a la siguiente venta.
         setEsCredito(false);
         setFechaVencimiento('');
@@ -1183,9 +1193,18 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const modoCPE   = facturacion?.modo ?? (facturacion?.produccion === false ? 'beta' : 'produccion');
     const avisoModo = feActiva ? avisoModoEmision(modoCPE) : null;
 
+    // Selector de fecha de la factura: solo si la empresa lo activó, la emisión está
+    // encendida y se eligió Factura. Fuera de eso el POS se ve como siempre.
+    const muestraFechaFactura = permiteFechaFactura && feActiva && tipoComprobante === 'factura' && !!ventanaEmision;
+    // Fecha con la que saldrá el comprobante: la elegida, o la del turno reabierto.
+    const fechaComprobante = muestraFechaFactura ? fechaEmision : (turnoBackdate?.fecha ?? null);
+
     const bloqueoComprobante: BloqueoComprobante | null = useMemo(
-        () => validarComprobante({ tipoComprobante, cliente, total, moneda, umbral: umbralCPE, emisionActiva: feActiva }),
-        [tipoComprobante, cliente, total, moneda, umbralCPE, feActiva],
+        () => validarComprobante({
+            tipoComprobante, cliente, total, moneda, umbral: umbralCPE, emisionActiva: feActiva,
+            fechaComprobante, ventana: ventanaEmision,
+        }),
+        [tipoComprobante, cliente, total, moneda, umbralCPE, feActiva, fechaComprobante, ventanaEmision],
     );
 
     // La franja informativa solo aparece si el módulo está activo (hay algo real
@@ -1326,6 +1345,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             // fecha del turno (backdate). El backend valida admin + turno abierto.
             turno_id:              turnoBackdate?.turno_id ?? null,
             fecha_venta:           turnoBackdate?.fecha ?? null,
+            // Fecha elegida para la FACTURA; la venta sigue siendo de hoy.
+            fecha_emision:         muestraFechaFactura ? fechaEmision : null,
             // Se reenvia el mismo key en cada reintento. El backend desduplica.
             idempotency_key:       idempotencyKey,
             // Si vino de una cita, lo enviamos para que el backend la vincule.
@@ -1704,6 +1725,18 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                             feActiva={feActiva}
                             onChange={v => setTipoComprobante(v as TipoComprobante)}
                         />
+                        {muestraFechaFactura && ventanaEmision && (
+                            <input
+                                type="date"
+                                value={fechaEmision}
+                                min={ventanaEmision.minima}
+                                max={ventanaEmision.maxima}
+                                onChange={e => setFechaEmision(e.target.value || ventanaEmision.maxima)}
+                                title={`Fecha de emisión de la factura (desde el ${fechaCorta(ventanaEmision.minima)} hasta hoy)`}
+                                aria-label="Fecha de emisión de la factura"
+                                className="text-xs bg-white/15 border-0 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-white/30 [color-scheme:dark]"
+                            />
+                        )}
                         {esComprobanteExterno && (
                             <input
                                 type="text"
@@ -2188,6 +2221,18 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                                 feActiva={feActiva}
                                 onChange={v => setTipoComprobante(v as TipoComprobante)}
                             />
+                            {muestraFechaFactura && ventanaEmision && (
+                                <input
+                                    type="date"
+                                    value={fechaEmision}
+                                    min={ventanaEmision.minima}
+                                    max={ventanaEmision.maxima}
+                                    onChange={e => setFechaEmision(e.target.value || ventanaEmision.maxima)}
+                                    aria-label="Fecha de emisión de la factura"
+                                    className="text-xs border rounded-lg px-2 py-1.5"
+                                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
+                                />
+                            )}
                             {/* Misma pista que en la barra superior (misma lógica, sin duplicar). */}
                             <PistaComprobante
                                 visible={emiteCPE}
