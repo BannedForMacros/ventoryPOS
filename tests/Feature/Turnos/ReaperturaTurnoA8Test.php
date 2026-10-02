@@ -100,3 +100,43 @@ it('reabrir sin cierre de inventario asociado funciona y deja la lista vacía en
         ->latest('id')->first();
     expect($audit->contexto['cierres_inventario_anulados'])->toBe([]);
 });
+
+it('reabrir anula la entrega a administración del cierre anterior (al cerrar de nuevo no queda duplicada)', function () {
+    $turno = $this->env->abrirTurno();
+    $turno->update([
+        'estado'            => 'cerrado',
+        'fecha_cierre'      => now(),
+        'efectivo_arrastre' => 1500,
+        'destino_efectivo'  => 'parcial',
+    ]);
+    // Entrega mal declarada al cerrar + un retiro hecho DURANTE el turno.
+    $alCierre = App\Models\TurnoRetiro::create([
+        'empresa_id' => $this->env->empresa->id, 'turno_id' => $turno->id, 'user_id' => $this->env->admin->id,
+        'concepto' => App\Models\TurnoRetiro::CONCEPTO_ENTREGA_ADMIN, 'monto' => 2770.20,
+        'momento' => 'cierre', 'estado' => 'aprobado',
+    ]);
+    $durante = App\Models\TurnoRetiro::create([
+        'empresa_id' => $this->env->empresa->id, 'turno_id' => $turno->id, 'user_id' => $this->env->admin->id,
+        'concepto' => App\Models\TurnoRetiro::CONCEPTO_ENTREGA_ADMIN, 'monto' => 300,
+        'momento' => 'turno', 'estado' => 'aprobado',
+    ]);
+
+    $this->post(route('turnos.reabrir', $turno), [
+        'motivo' => 'La cajera entregó mal el efectivo al cerrar',
+    ])->assertRedirect();
+
+    $turno->refresh();
+    expect(App\Models\TurnoRetiro::find($alCierre->id))->toBeNull();      // ya no cuenta: se vuelve a declarar al cerrar
+    $anulada = App\Models\TurnoRetiro::withoutGlobalScope('vigentes')->find($alCierre->id);
+    expect($anulada)->not->toBeNull();                                     // la fila se conserva
+    expect($anulada->estado)->toBe('anulado');
+    expect($anulada->observacion)->toContain('Anulada al reabrir el turno');
+    expect((float) $turno->retiros()->sum('monto'))->toBe(300.0);
+    expect(App\Models\TurnoRetiro::find($durante->id))->not->toBeNull();  // lo del turno sigue
+    expect($turno->efectivo_arrastre)->toBeNull();
+    expect($turno->destino_efectivo)->toBeNull();
+
+    $audit = Auditoria::where('accion', 'turno.reabierto')->where('modelo_id', $turno->id)->latest('id')->first();
+    expect($audit->contexto['cierre_anterior']['entregas_cierre'][0]['monto'])->toBe('2770.20');
+    expect($audit->contexto['cierre_anterior']['efectivo_arrastre'])->toEqual(1500);
+});

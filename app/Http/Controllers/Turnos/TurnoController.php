@@ -222,6 +222,22 @@ class TurnoController extends Controller
                 $turno->consolidacion->delete();
             }
 
+            // La entrega a administración del cierre anterior y lo que quedó en
+            // el cajón se vuelven a declarar al cerrar de nuevo: si no se anulan,
+            // el turno queda con dos entregas (la mal declarada y la corregida).
+            // Se ANULAN (no se borran): la fila queda como constancia.
+            $entregasCierre = $turno->retiros()->where('momento', 'cierre')->get(['id', 'monto', 'user_id', 'created_at']);
+            $snapshot['entregas_cierre']   = $entregasCierre->toArray();
+            $snapshot['efectivo_arrastre'] = $turno->efectivo_arrastre !== null ? (float) $turno->efectivo_arrastre : null;
+            $snapshot['destino_efectivo']  = $turno->destino_efectivo;
+            foreach ($turno->retiros()->where('momento', 'cierre')->get() as $retiro) {
+                $retiro->update([
+                    'estado'      => \App\Models\TurnoRetiro::ESTADO_ANULADO,
+                    'observacion' => trim(($retiro->observacion ?? '') . ' [Anulada al reabrir el turno el '
+                        . now()->format('d/m/Y H:i') . " — motivo: {$motivo}]"),
+                ]);
+            }
+
             // A8 — Anular el cierre de inventario asociado al turno (si existe).
             // Si no se anula, el cierre confirmado anterior queda "huerfano"
             // y los reportes posteriores cuentan el inventario dos veces cuando
@@ -250,6 +266,8 @@ class TurnoController extends Controller
                 'monto_cierre_esperado'  => null,
                 'diferencia'             => null,
                 'observacion_cierre'     => null,
+                'efectivo_arrastre'      => null,
+                'destino_efectivo'       => null,
             ]);
 
             \App\Services\AuditoriaService::log('turno.reabierto', $turno, [

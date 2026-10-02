@@ -17,6 +17,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TurnoRetiro extends Model
 {
     public const CONCEPTO_ENTREGA_ADMIN = 'Entrega a administración';
+    public const ESTADO_ANULADO = 'anulado';
+
+    /**
+     * Un retiro anulado (p. ej. la entrega de un cierre que se rehízo al
+     * reabrir el turno) se conserva en la tabla pero no cuenta en ningún lado.
+     * Para verlo: TurnoRetiro::withoutGlobalScope('vigentes').
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope('vigentes', fn ($q) => $q->where('turno_retiros.estado', '<>', self::ESTADO_ANULADO));
+    }
 
     protected $fillable = [
         'empresa_id', 'turno_id', 'user_id', 'aprobado_por',
