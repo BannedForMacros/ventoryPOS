@@ -141,13 +141,25 @@ export default function ReportesVentas({
     );
     const puntosHora = useMemo(() => puntosPorHora(por_hora), [por_hora]);
 
+    // El PDF resume las completadas (las anuladas van aparte): sin Estado ni buscador.
+    const pdfParams = Object.fromEntries(Object.entries({ ...filters, estado: undefined, buscar: undefined })
+        .filter(([, v]) => v !== undefined && v !== null && v !== ''));
+
     const totalCobro = por_metodo.reduce((s, m) => s + m.total, 0);
     const totalTop   = top_productos.reduce((s, p) => s + p.total, 0);
 
     return (
         <AppLayout title="Reporte de ventas">
             <EncabezadoReporte titulo="Reporte de ventas" fechaDesde={filters.fecha_desde} fechaHasta={filters.fecha_hasta}
-                filtrar={filtrar} avanzados={filtrosAvanzados} onLimpiar={limpiar}>
+                filtrar={filtrar} avanzados={filtrosAvanzados} onLimpiar={limpiar}
+                acciones={
+                    <a href={route('reportes.ventas.pdf', pdfParams)} target="_blank" rel="noopener"
+                        title="Resumen para el dueño: ventas, utilidad, cobros, horarios, productos, clientes y vendedores"
+                        className="inline-flex items-center gap-2 text-sm font-semibold px-3.5 py-2 rounded-xl text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        style={{ backgroundColor: 'var(--vp-navy)', outlineColor: 'var(--color-primary)' }}>
+                        <FileText size={16} /> PDF para el dueño
+                    </a>
+                }>
                 <FieldSelect label="Estado" value={filters.estado ?? ''}
                     onChange={v => filtrar({ estado: v || undefined })}
                     options={[

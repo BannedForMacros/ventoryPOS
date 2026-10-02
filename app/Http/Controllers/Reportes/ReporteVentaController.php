@@ -9,6 +9,7 @@ use App\Models\Venta;
 use App\Models\VentaItem;
 use App\Models\VentaPago;
 use App\Services\LocalScopeService;
+use App\Services\ReporteVentasPdfService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,18 +28,7 @@ class ReporteVentaController extends Controller
 
         // Query base con TODOS los filtros menos fechas (para reusar en la comparativa).
         // El buscador NO entra aquí: vive en la lista "Venta por venta" y solo la filtra a ella.
-        $filtrada = function (string $d, string $h) use ($request, $user) {
-            return Venta::deEmpresa($user->empresa_id)
-                ->whereBetween('fecha_venta', [$d . ' 00:00:00', $h . ' 23:59:59'])
-                ->when($request->estado, fn ($q, $v) => $q->where('estado', $v))
-                ->when($request->local_id, fn ($q, $v) => $q->where('local_id', $v))
-                ->when($request->user_id, fn ($q, $v) => $q->where('user_id', $v))
-                ->when($request->tipo === 'contado', fn ($q) => $q->where('es_credito', false))
-                ->when($request->tipo === 'credito', fn ($q) => $q->where('es_credito', true))
-                ->when($request->comprobante, fn ($q, $v) => $q->where('tipo_comprobante', $v))
-                ->when($request->metodo_pago_id, fn ($q, $v) => $q->whereHas('pagos', fn ($p) => $p->where('metodo_pago_id', $v)))
-                ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id));
-        };
+        $filtrada = $this->consulta($request);
 
         $base        = $filtrada($desde, $hasta);
         $completadas = (clone $base)->where('estado', 'completada');
@@ -223,5 +213,62 @@ class ReporteVentaController extends Controller
                 'buscar'         => $request->buscar,
             ],
         ]);
+    }
+
+    /**
+     * Reporte para el dueño en PDF: resumen, cobro, cuándo vende, qué y a quién
+     * vende, quién vende y descuentos. Mismos filtros que la pantalla (menos
+     * Estado y buscador: el PDF siempre resume las completadas y muestra las
+     * anuladas aparte).
+     */
+    public function pdf(Request $request, ReporteVentasPdfService $reporte)
+    {
+        $user  = $request->user();
+        $desde = $request->fecha_desde ?: now()->startOfMonth()->toDateString();
+        $hasta = $request->fecha_hasta ?: now()->toDateString();
+        if ($hasta < $desde) [$desde, $hasta] = [$hasta, $desde];
+
+        $request->merge(['estado' => null]);
+        $datos = $reporte->armar($user->empresa, $desde, $hasta, $this->consulta($request), [
+            'filtros' => $this->filtrosLegibles($request),
+        ]);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.reporte-ventas', $datos)->setPaper('a4')
+            ->setOption('enable_font_subsetting', true); // solo los glifos usados: ~10x más liviano para WhatsApp
+
+        return $pdf->stream("Reporte de ventas {$desde} al {$hasta}.pdf");
+    }
+
+    /** fn(desde, hasta): ventas de la empresa con los filtros de la pantalla (sin buscador). */
+    private function consulta(Request $request): \Closure
+    {
+        $user = $request->user();
+
+        return function (string $d, string $h) use ($request, $user) {
+            return Venta::deEmpresa($user->empresa_id)
+                ->whereBetween('fecha_venta', [$d . ' 00:00:00', $h . ' 23:59:59'])
+                ->when($request->estado, fn ($q, $v) => $q->where('estado', $v))
+                ->when($request->local_id, fn ($q, $v) => $q->where('local_id', $v))
+                ->when($request->user_id, fn ($q, $v) => $q->where('user_id', $v))
+                ->when($request->tipo === 'contado', fn ($q) => $q->where('es_credito', false))
+                ->when($request->tipo === 'credito', fn ($q) => $q->where('es_credito', true))
+                ->when($request->comprobante, fn ($q, $v) => $q->where('tipo_comprobante', $v))
+                ->when($request->metodo_pago_id, fn ($q, $v) => $q->whereHas('pagos', fn ($p) => $p->where('metodo_pago_id', $v)))
+                ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id));
+        };
+    }
+
+    /** Los filtros activos en palabras, para la cabecera del PDF. */
+    private function filtrosLegibles(Request $request): array
+    {
+        $empresaId = $request->user()->empresa_id;
+        $f = [];
+        if ($request->local_id)       $f[] = 'Local: ' . (\App\Models\Local::where('empresa_id', $empresaId)->find($request->local_id)?->nombre ?? '—');
+        if ($request->user_id)        $f[] = 'Vendedor: ' . (User::where('empresa_id', $empresaId)->find($request->user_id)?->name ?? '—');
+        if ($request->metodo_pago_id) $f[] = 'Método de pago: ' . (MetodoPago::where('empresa_id', $empresaId)->find($request->metodo_pago_id)?->nombre ?? '—');
+        if ($request->tipo)           $f[] = $request->tipo === 'credito' ? 'Solo crédito' : 'Solo contado';
+        if ($request->comprobante)    $f[] = 'Comprobante: ' . (ReporteVentasPdfService::COMPROBANTES[$request->comprobante] ?? $request->comprobante);
+
+        return $f;
     }
 }

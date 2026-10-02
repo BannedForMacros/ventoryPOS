@@ -337,10 +337,12 @@ export function frasePeriodo(desde: string, hasta: string): string {
  * (las fechas ya vienen incluidas). `avanzados` = cuántos de esos filtros
  * están activos: abre el panel al entrar y muestra el contador.
  */
-export function EncabezadoReporte({ titulo, fechaDesde, fechaHasta, filtrar, avanzados = 0, onLimpiar, children }: {
+export function EncabezadoReporte({ titulo, fechaDesde, fechaHasta, filtrar, avanzados = 0, onLimpiar, acciones, children }: {
     titulo: string; fechaDesde: string; fechaHasta: string;
     filtrar: (patch: Record<string, string | undefined>) => void;
     avanzados?: number; onLimpiar?: () => void;
+    /** Botones extra a la derecha (p. ej. "PDF"). */
+    acciones?: React.ReactNode;
     children?: React.ReactNode;
 }) {
     const [abierto, setAbierto] = useState(avanzados > 0);
@@ -358,6 +360,7 @@ export function EncabezadoReporte({ titulo, fechaDesde, fechaHasta, filtrar, ava
                     <p className="text-[15px] mt-2" style={{ color: 'var(--color-text-muted)' }}>{periodo}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                    {acciones}
                     <div className="inline-flex rounded-xl p-1" role="group" aria-label="Periodo rápido"
                         style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 9%, var(--color-surface))' }}>
                         {rangosBase().map(([label, calc]) => (
