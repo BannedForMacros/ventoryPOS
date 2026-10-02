@@ -18,6 +18,7 @@ import {
     type EstadoComprobanteResp,
 } from '@/lib/comprobanteElectronico';
 import type { PageProps, Venta, VentaItem, VentaPago, DescuentoLog, ComprobanteElectronico } from '@/types';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 
 /** Registro de auditoría de una modificación del pedido pendiente. */
 interface ModificacionPedido {
@@ -198,6 +199,8 @@ function CuantoGanaste({ u }: { u: UtilidadVenta }) {
 }
 
 export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, avisoExterno = null, utilidad = null }: Props) {
+    // Tiempo real: la respuesta de SUNAT, un abono o una edición se ven sin recargar.
+    useTiempoReal(['ventas'], () => router.reload());
     const [modalPedido, setModalPedido] = useState(false);
     const { auth } = usePage<Props>().props;
     const esAdmin  = auth.user.rol?.es_admin ?? false;

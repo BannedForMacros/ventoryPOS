@@ -13,6 +13,7 @@ import { CHART_COLORS } from '@/Components/UI/Charts';
 import ModalEditarApertura from './Partials/ModalEditarApertura';
 import ReporteCajaTurno from './Partials/ReporteCajaTurno';
 import type { PageProps, Turno, TurnoRetiro } from '@/types';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 
 /** Lo que entró por un medio de pago en el turno. */
 interface Cobro { metodo_pago_id: number; nombre: string; es_efectivo: boolean; total: number; }
@@ -48,6 +49,8 @@ function duracion(desde: string, hasta: string | null): string {
 }
 
 export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin, configEfectivo, cobrosPorMetodo = [], reporteCaja = false }: Props) {
+    // Tiempo real: la caja del turno se pone al día con cada venta, gasto o retiro.
+    useTiempoReal(['turnos', 'ventas'], () => router.reload());
     const { flash, auth } = usePage<Props>().props;
     const [modalReabrir, setModalReabrir] = useState(false);
     const [modalEditarApertura, setModalEditarApertura] = useState(false);

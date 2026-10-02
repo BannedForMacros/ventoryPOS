@@ -23,6 +23,7 @@ import StatGrid from '@/Components/UI/StatGrid';
 import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import { hoyLocal } from '@/lib/fechas';
 import type { PageProps, Cliente } from '@/types';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -161,6 +162,8 @@ const emptyForm = () => ({
 // ── Página ─────────────────────────────────────────────────────────────────
 
 export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, productos, pideDatosCliente = false }: Props) {
+    // Tiempo real: cotizaciones nuevas o convertidas en otra PC aparecen solas.
+    useTiempoReal(['cotizaciones'], () => router.reload({ only: ['cotizaciones', 'kpis'] }));
     const { flash, auth } = usePage<Props>().props;
     const tasaIgv = Number(auth?.user?.empresa?.tasa_igv ?? 18);
 

@@ -2,12 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Gasto extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['turnos']; }
+
     // Borrado suave: eliminar un gasto conserva la fila (para el filtro
     // "Eliminados" y poder reactivarlo). El egreso de tesorería se revierte
     // al eliminar y se vuelve a asentar al reactivar (ver GastoController).

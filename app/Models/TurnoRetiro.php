@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -16,6 +17,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class TurnoRetiro extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['turnos']; }
+
     public const CONCEPTO_ENTREGA_ADMIN = 'Entrega a administración';
     public const ESTADO_ANULADO = 'anulado';
 

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -22,6 +23,10 @@ use Illuminate\Support\Facades\DB;
  */
 class Cotizacion extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['cotizaciones']; }
+
     protected $table = 'cotizaciones';
 
     public const ESTADO_VIGENTE    = 'vigente';

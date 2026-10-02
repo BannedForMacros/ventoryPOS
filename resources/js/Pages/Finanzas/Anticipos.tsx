@@ -23,6 +23,7 @@ import Timeline from '@/Components/UI/Timeline';
 import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import ModalModificarPedido from '@/Components/Ventas/ModalModificarPedido';
 import type { PageProps, Cliente } from '@/types';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 
 interface AplicacionItem {
     id: number;
@@ -153,6 +154,8 @@ const emptyForm = () => ({
 });
 
 export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar, clientes, productos, metodosPago, cuentas, turnos, turnoActivoId, puede }: Props) {
+    // Tiempo real: anticipos, entregas y cobros hechos en otra PC aparecen solos.
+    useTiempoReal(['anticipos'], () => router.reload({ only: ['anticipos', 'totalPasivo', 'kpis'] }));
     const puedeEditarEntregas = puede?.editar ?? false;
     const { flash } = usePage<Props>().props;
     const [modalNuevo, setModalNuevo]   = useState(false);

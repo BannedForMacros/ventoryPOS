@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { usePage } from '@inertiajs/react';
 import { getEcho } from '@/lib/echo';
 
-export type RecursoTiempoReal = 'clientes' | 'productos' | 'stock' | 'ventas' | 'despachos';
+export type RecursoTiempoReal = 'clientes' | 'productos' | 'stock' | 'ventas' | 'despachos' | 'anticipos' | 'turnos' | 'cotizaciones';
 
 /**
  * La pantalla se pone al día sola cuando, en su empresa, cambia alguno de

@@ -17,6 +17,7 @@ import Badge from '@/Components/UI/Badge';
 import Callout from '@/Components/UI/Callout';
 import { hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { es_base: boolean; unidad_medida?: UnidadMedida; }
@@ -117,6 +118,8 @@ export default function Stock({
     stocks, almacenes, categorias, kpis, umbralBajo,
     mostrarSelector, filters, stocksNegativosCount, stocksNegativos, puede, autocorreccion,
 }: Props) {
+    // Tiempo real: ventas, entradas y ajustes de otras PCs actualizan el stock.
+    useTiempoReal(['stock', 'productos'], () => router.reload({ only: ['stocks', 'kpis', 'stocksNegativosCount', 'stocksNegativos'] }));
     const { flash } = usePage<Props>().props;
     const [busqueda, setBusqueda] = useState(filters.busqueda ?? '');
     const puedeAjustar = puede?.ajustar ?? false;

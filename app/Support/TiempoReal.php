@@ -17,9 +17,13 @@ class TiempoReal
     /** @var array<int, array<string, true>> empresa → recursos */
     private static array $pendientes = [];
 
-    public static function marcar(?int $empresaId, string ...$recursos): void
+    /**
+     * @param bool $enConsola true solo para cambios puntuales que llegan por la
+     *                        cola y el usuario espera ver (estado de SUNAT).
+     */
+    public static function marcar(?int $empresaId, array $recursos, bool $enConsola = false): void
     {
-        if (!$empresaId || !self::activo()) return;
+        if (!$empresaId || !self::activo($enConsola)) return;
 
         foreach ($recursos as $r) {
             self::$pendientes[$empresaId][$r] = true;
@@ -49,9 +53,9 @@ class TiempoReal
      * stock guarda miles de filas y haría recargar todas las pantallas
      * abiertas una y otra vez.
      */
-    private static function activo(): bool
+    private static function activo(bool $enConsola = false): bool
     {
-        if (app()->runningInConsole() && !app()->runningUnitTests()) return false;
+        if (!$enConsola && app()->runningInConsole() && !app()->runningUnitTests()) return false;
 
         return !in_array(config('broadcasting.default'), [null, 'null', 'log'], true);
     }

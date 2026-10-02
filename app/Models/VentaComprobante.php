@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use MacSoft\Facturacion\Contrato\Enum\EstadoComprobante;
 
@@ -17,6 +19,23 @@ use MacSoft\Facturacion\Contrato\Enum\EstadoComprobante;
  */
 class VentaComprobante extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['ventas']; }
+
+    public function empresaTiempoReal(): ?int
+    {
+        $id = DB::table('ventas')->where('id', $this->venta_id)->value('empresa_id');
+
+        return $id ? (int) $id : null;
+    }
+
+    /** La respuesta de SUNAT llega por la cola: también se avisa. */
+    protected static function avisaDesdeConsola(): bool
+    {
+        return true;
+    }
+
     protected $table = 'venta_comprobantes';
 
     /**

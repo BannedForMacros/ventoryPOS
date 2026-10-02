@@ -2,11 +2,24 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class VentaAbono extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['ventas', 'turnos']; }
+
+    public function empresaTiempoReal(): ?int
+    {
+        $id = DB::table('ventas')->where('id', $this->venta_id)->value('empresa_id');
+
+        return $id ? (int) $id : null;
+    }
+
     protected $fillable = [
         'venta_id', 'user_id', 'turno_id', 'metodo_pago_id', 'cuenta_id',
         'fecha', 'monto', 'referencia', 'observacion',

@@ -14,7 +14,7 @@ trait AvisaTiempoReal
 {
     public static function bootAvisaTiempoReal(): void
     {
-        $avisar = fn ($m) => TiempoReal::marcar($m->empresaTiempoReal(), ...static::recursosTiempoReal());
+        $avisar = fn ($m) => TiempoReal::marcar($m->empresaTiempoReal(), static::recursosTiempoReal(), static::avisaDesdeConsola());
         static::saved($avisar);
         static::deleted($avisar);
     }
@@ -25,4 +25,10 @@ trait AvisaTiempoReal
     }
 
     abstract protected static function recursosTiempoReal(): array;
+
+    /** Si también avisa cuando lo cambia la cola o un comando (por defecto no). */
+    protected static function avisaDesdeConsola(): bool
+    {
+        return false;
+    }
 }

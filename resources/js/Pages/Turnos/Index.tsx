@@ -14,6 +14,7 @@ import ModalEditarApertura from './Partials/ModalEditarApertura';
 import ModalRetiro from './Partials/ModalRetiro';
 import { imprimirCierreTurno, type ShiftClosurePayload } from '@/lib/ticketPrinter';
 import type { Caja, Gasto, MetodoPago, PageProps, Turno, TurnoRetiro, Venta } from '@/types';
+import { useTiempoReal } from '@/lib/useTiempoReal';
 
 interface CajaDisponible extends Caja {
     tiene_turno_abierto: boolean;
@@ -95,6 +96,8 @@ function haceCuanto(iso: string): string {
 const esOtroDia = (iso: string) => new Date(iso).toDateString() !== new Date().toDateString();
 
 export default function TurnosIndex({ turnos, buscar, cajasDisponibles, turnoActivo, turnosAbiertos, configFondos, configEfectivo }: Props) {
+    // Tiempo real: turnos abiertos o cerrados en otra caja aparecen solos.
+    useTiempoReal(['turnos'], () => router.reload({ only: ['turnos', 'turnosAbiertos'] }));
     const { flash } = usePage<Props>().props;
     const [modalAbrir, setModalAbrir] = useState(false);
     const [modalEditarApertura, setModalEditarApertura] = useState(false);

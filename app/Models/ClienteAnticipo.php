@@ -12,7 +12,7 @@ class ClienteAnticipo extends Model
 {
     use AvisaTiempoReal;
 
-    protected static function recursosTiempoReal(): array { return ['despachos']; }
+    protected static function recursosTiempoReal(): array { return ['despachos', 'anticipos']; }
 
     protected $fillable = [
         'empresa_id', 'cliente_id', 'user_id', 'metodo_pago_id', 'cuenta_id',

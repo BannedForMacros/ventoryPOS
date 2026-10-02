@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\AvisaTiempoReal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +10,10 @@ use Illuminate\Support\Facades\DB;
 
 class Turno extends Model
 {
+    use AvisaTiempoReal;
+
+    protected static function recursosTiempoReal(): array { return ['turnos']; }
+
     protected $fillable = [
         'empresa_id', 'local_id', 'caja_id', 'user_id', 'user_cierre_id',
         'monto_apertura', 'monto_fondos_adicionales', 'monto_caja_chica',

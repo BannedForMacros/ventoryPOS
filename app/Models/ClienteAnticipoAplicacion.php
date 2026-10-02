@@ -12,7 +12,7 @@ class ClienteAnticipoAplicacion extends Model
 {
     use AvisaTiempoReal;
 
-    protected static function recursosTiempoReal(): array { return ['despachos']; }
+    protected static function recursosTiempoReal(): array { return ['despachos', 'anticipos']; }
 
     protected $table = 'cliente_anticipo_aplicaciones';
 

@@ -80,3 +80,26 @@ it('un usuario solo puede escuchar el canal de su empresa', function () {
     $ajeno = $this->post('/broadcasting/auth', ['socket_id' => '1234.5678', 'channel_name' => 'private-empresa.' . ($this->env->empresa->id + 999)]);
     $ajeno->assertForbidden();
 });
+
+it('la respuesta de SUNAT (comprobante) avisa a la empresa de la venta', function () {
+    Event::fake([Cambio::class]);
+    $turno = $this->env->abrirTurno();
+    $p = $this->env->crearProducto(['precio_venta' => 10, 'stock_inicial' => 5]);
+    $venta = app(VentaService::class)->crear([
+        'tipo_comprobante' => 'ticket',
+        'items' => [['producto_id' => $p->id, 'producto_unidad_id' => $p->unidadBase->id, 'cantidad' => 1, 'precio_unitario' => 10]],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 10]],
+    ], $this->env->admin, $turno);
+    Event::fake([Cambio::class]); // solo lo que sigue
+
+    App\Models\VentaComprobante::create(['venta_id' => $venta->id, 'tipo' => '03', 'estado' => 'aceptado', 'intentos' => 1]);
+
+    Event::assertDispatched(Cambio::class, fn ($e) => $e->empresaId === $this->env->empresa->id && $e->recursos === ['ventas']);
+});
+
+it('un turno, un gasto o un retiro avisan a la caja', function () {
+    Event::fake([Cambio::class]);
+    $this->env->abrirTurno();
+
+    Event::assertDispatched(Cambio::class, fn ($e) => in_array('turnos', $e->recursos, true));
+});
