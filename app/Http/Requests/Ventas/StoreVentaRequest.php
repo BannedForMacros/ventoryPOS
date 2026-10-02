@@ -8,6 +8,7 @@ use App\Models\MetodoPago;
 use App\Models\ProductoUnidad;
 use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\LocalScopeService;
+use App\Support\VentanaEmisionSunat;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -121,6 +122,9 @@ class StoreVentaRequest extends FormRequest
             // admin (guardas en el controlador).
             'turno_id'               => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $empresaId)],
             'fecha_venta'            => ['nullable', 'date', 'before_or_equal:today'],
+            // Fecha de emisión elegida para la FACTURA (selector opcional por empresa).
+            // La ventana de SUNAT se valida en validarFechaEmision().
+            'fecha_emision'          => ['nullable', 'date_format:Y-m-d'],
             // Token unico generado por el frontend para prevenir duplicados por reintentos.
             // Si el cliente reenvia la misma venta (timeout, doble click, etc.) el backend
             // detecta el key y devuelve la venta ya creada en lugar de duplicarla.
@@ -253,6 +257,52 @@ class StoreVentaRequest extends FormRequest
      * El flujo `ticket` (hoy el 100 % de las ventas) NO cambia en absoluto:
      * estas reglas solo se activan con tipo_comprobante boleta o factura.
      */
+    /**
+     * La fecha con la que saldrá el comprobante tiene que caer en la ventana de
+     * SUNAT (hoy y hasta 3 días atrás). Si no, FacturaMac no lo emite y la venta
+     * quedaría cobrada y SIN comprobante: hay que decirlo ANTES de cobrar.
+     *
+     * Dos caminos llevan a una fecha distinta de hoy:
+     *   · el selector de fecha de la factura, si la empresa lo tiene activo;
+     *   · un admin vendiendo en un turno REABIERTO de otro día: el comprobante sale
+     *     con la fecha del turno.
+     */
+    private function validarFechaEmision($validator, string $tipo): void
+    {
+        $elegida = $this->input('fecha_emision');
+
+        if ($elegida) {
+            if ($tipo !== 'factura') {
+                $validator->errors()->add('fecha_emision', 'La fecha de emisión solo se elige en una factura.');
+
+                return;
+            }
+
+            if (! $this->user()->empresa?->pos_fecha_emision_factura) {
+                $validator->errors()->add('fecha_emision', 'Esta empresa no tiene activo el selector de fecha de la factura.');
+
+                return;
+            }
+
+            if (! VentanaEmisionSunat::admite($elegida)) {
+                $validator->errors()->add('fecha_emision', VentanaEmisionSunat::mensaje());
+            }
+
+            return;
+        }
+
+        // Turno reabierto (solo admins): el comprobante sale con la fecha del turno.
+        $fechaTurno = $this->input('fecha_venta');
+        if ($fechaTurno && $this->filled('turno_id') && $this->user()->rol?->es_admin
+            && ! VentanaEmisionSunat::admite($fechaTurno)) {
+            $validator->errors()->add(
+                'fecha_venta',
+                'Este turno es del ' . \Illuminate\Support\Carbon::parse($fechaTurno)->format('d/m/Y') . ': '
+                    . VentanaEmisionSunat::mensaje(),
+            );
+        }
+    }
+
     private function validarComprobanteElectronico($validator, int $empresaId, float $total): void
     {
         // Mientras la emisión de ESTA empresa esté apagada, el POS debe comportarse
@@ -272,6 +322,8 @@ class StoreVentaRequest extends FormRequest
         if (!in_array($tipo, ['boleta', 'factura'], true)) {
             return; // ticket o comprobantes externos: no aplican reglas SUNAT
         }
+
+        $this->validarFechaEmision($validator, $tipo);
 
         // G12 — La venta puede cobrarse en USD, pero ventoryPOS contabiliza
         // todo en soles al TC congelado. Emitir en dólares exigiría un mapeo

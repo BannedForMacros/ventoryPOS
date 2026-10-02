@@ -181,7 +181,9 @@ class VentaAContrato
 
     private function fechaEmision(Venta $venta): ?DateTimeImmutable
     {
-        $fecha = $venta->fecha_venta ?? $venta->created_at;
+        // La fecha elegida para la factura manda; si no se eligió, la de la venta
+        // (que en un turno reabierto es la del turno).
+        $fecha = $venta->fecha_emision ?? $venta->fecha_venta ?? $venta->created_at;
 
         return $fecha ? new DateTimeImmutable($fecha->format('Y-m-d')) : null;
     }

@@ -149,6 +149,12 @@ class VentaService
                         'ruta_entrega_id'       => $data['ruta_entrega_id'] ?? null,
                         'entrega_programada'    => $data['entrega_programada'] ?? null,
                         'fecha_venta'           => $fechaVenta,
+                        // Fecha elegida para la FACTURA (selector opcional por empresa).
+                        // La venta sigue siendo de hoy; solo el comprobante lleva esta
+                        // fecha. StoreVentaRequest ya validó la ventana de SUNAT.
+                        'fecha_emision'         => ($data['tipo_comprobante'] ?? null) === 'factura'
+                            ? ($data['fecha_emision'] ?? null)
+                            : null,
                     ]);
                 } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
                     // Caso idempotency_key: si la venta original ya existe con el
