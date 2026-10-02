@@ -19,6 +19,9 @@ class Venta extends Model
         'numero', 'idempotency_key', 'tipo_comprobante', 'numero_comprobante',
         'subtotal', 'descuento_total', 'descuento_concepto_id', 'igv', 'total',
         'estado', 'observacion', 'fecha_venta',
+        // Fecha con la que se emite el comprobante. NULL = la de la venta. Ver
+        // App\Support\VentanaEmisionSunat.
+        'fecha_emision',
         // Datos con que se atendió ESTA venta (pueden diferir de la ficha del cliente).
         'cliente_telefono', 'cliente_direccion',
         // Entregas: 'recojo' | 'envio', su ruta y la fecha y hora programadas.
@@ -31,6 +34,7 @@ class Venta extends Model
     {
         return [
             'fecha_venta'       => 'datetime',
+            'fecha_emision'     => 'date',
             'entrega_programada' => 'datetime',
             'subtotal'          => 'decimal:2',
             'descuento_total'   => 'decimal:2',
