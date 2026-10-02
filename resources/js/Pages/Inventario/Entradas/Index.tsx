@@ -14,6 +14,7 @@ import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
 import { fmtFecha } from '@/lib/fechas';
 import type { PageProps } from '@/types';
+import { avisoError } from '@/lib/avisoError';
 
 /**
  * En camino y con la fecha prometida ya vencida.
@@ -212,7 +213,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
             onSuccess: () => { setPagoEntrada(null); },
             onError:   (errs) => {
                 const first = Object.values(errs)[0];
-                toast.error(typeof first === 'string' ? first : 'No se pudo guardar el pago.');
+                avisoError(first, 'No se pudo guardar el pago.');
                 // Eject info al console para diagnosticar si el toast no es claro.
                 console.error('[entradas.pago] errores backend:', errs);
             },

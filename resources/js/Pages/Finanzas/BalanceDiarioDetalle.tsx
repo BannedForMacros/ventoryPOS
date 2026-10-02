@@ -14,6 +14,7 @@ import Collapse from '@/Components/UI/Collapse';
 import DetalleAgrupado from '@/Components/Finanzas/DetalleAgrupado';
 import CambiosCierreModal from '@/Components/Finanzas/CambiosCierreModal';
 import type { PageProps } from '@/types';
+import { avisoError } from '@/lib/avisoError';
 
 interface Item {
     id: number;
@@ -541,7 +542,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                 router.post(route('finanzas.balance.reabrir', balance.id), { motivo: motivoReabrir.trim() }, {
                                     onFinish: () => setSaving(false),
                                     onSuccess: () => { setReabriendo(false); setMotivoReabrir(''); },
-                                    onError: (errs: any) => { const m = Object.values(errs)[0]; if (m) toast.error(m as string); },
+                                    onError: (errs: any) => { avisoError(Object.values(errs)[0]); },
                                 });
                             }}>
                             {saving ? 'Reabriendo…' : 'Sí, reabrir'}

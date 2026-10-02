@@ -163,7 +163,7 @@ it('rechaza usar el anticipo de OTRO cliente', function () {
         'monto'               => 50,
         'fecha'               => now()->toDateString(),
         'cliente_anticipo_id' => $anticipoAjeno->id,
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 
     expect((float) $venta->fresh()->saldo_pendiente)->toBe(100.0);
     expect((float) $anticipoAjeno->fresh()->saldo)->toBe(60.0);
@@ -202,5 +202,5 @@ it('un abono cobrado del anticipo no se puede editar', function () {
 
     $this->put(route('finanzas.cxc.abonos.update', $abono->id), [
         'monto' => 50, 'fecha' => now()->toDateString(), 'metodo_pago_id' => $this->env->metodo('efectivo')->id,
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 });

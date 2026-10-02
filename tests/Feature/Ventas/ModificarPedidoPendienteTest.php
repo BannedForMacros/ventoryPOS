@@ -343,7 +343,7 @@ it('bloquea: venta sin pendiente, saldo a favor para Cliente General, y edición
         'items' => [['producto_id' => $p->id, 'producto_unidad_id' => $p->unidadBase->id, 'cantidad' => 1, 'precio_unitario' => 10]],
         'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 10]],
     ], $this->env->admin, $this->turno);
-    $this->post(route('ventas.modificar-pedido', $sinPendiente), ['motivo' => 'Nada que cambiar'])->assertStatus(422);
+    $this->post(route('ventas.modificar-pedido', $sinPendiente), ['motivo' => 'Nada que cambiar'])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 
     // Cliente General no puede quedarse con saldo a favor.
     [$venta, $anticipo, $itemFierro] = ventaConPedido($this, $this->env->clienteGeneral);

@@ -9,6 +9,7 @@ import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import Tabs from '@/Components/UI/Tabs';
 import type { PageProps } from '@/types';
+import AvisoProductosParecidos from '@/Components/Catalogo/AvisoProductosParecidos';
 
 interface Categoria    { id: number; nombre: string; }
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
@@ -144,8 +145,11 @@ export default function Create({ categorias, unidades, inventarioInicial = null 
                         />
                     </div>
 
-                    <Input label="Nombre" required value={data.nombre}
-                        onChange={e => setData('nombre', e.target.value)} error={errors.nombre} />
+                    <div>
+                        <Input label="Nombre" required value={data.nombre}
+                            onChange={e => setData('nombre', e.target.value)} error={errors.nombre} />
+                        <AvisoProductosParecidos nombre={data.nombre} />
+                    </div>
 
                     <div>
                         <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Descripción</label>

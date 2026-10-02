@@ -10,6 +10,7 @@ import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import toast from 'react-hot-toast';
 import type { Cliente, PageProps } from '@/types';
 import { ahoraLocalInput } from '@/lib/fechas';
+import { avisoError } from '@/lib/avisoError';
 
 interface ClienteOpt { id: number; nombres: string | null; apellidos: string | null; razon_social: string | null; tipo_documento: string | null; numero_documento: string | null; }
 interface ProductoOpt { id: number; nombre: string; codigo: string | null; tipo: 'producto' | 'servicio';
@@ -172,7 +173,7 @@ export default function AgendaForm({
             // persona está mirando los servicios ni se entera de que falló.
             onError: (errs: Record<string, string>) => {
                 const primero = errs.fecha_hora ?? Object.values(errs)[0];
-                if (primero) toast.error(primero);
+                avisoError(primero);
             },
         };
 

@@ -163,7 +163,7 @@ it('rechaza el cruce si la deuda no está vinculada al tercero correcto', functi
     $this->post(route('finanzas.deudas.pago', $deudaSinVinculo->id), [
         'tipo' => 'amortizacion', 'fecha' => now()->toDateString(), 'monto' => 100,
         'compensar_venta_id' => $venta->id,
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 
     expect((float) $deudaSinVinculo->fresh()->saldo)->toBe(400.0);
     expect((float) $venta->fresh()->saldo_pendiente)->toBe(250.0);
@@ -182,5 +182,5 @@ it('un movimiento cruzado no se puede editar', function () {
     $this->put(route('finanzas.deudas.pagos.update', $pago->id), [
         'tipo' => 'amortizacion', 'fecha' => now()->toDateString(), 'monto' => 150,
         'metodo_pago_id' => $this->env->metodo('efectivo')->id,
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 });

@@ -8,6 +8,7 @@ import Switch from '@/Components/UI/Switch';
 import Modal from '@/Components/UI/Modal';
 import { plural } from '@/Components/Reportes/ReportUI';
 import type { PageProps } from '@/types';
+import { avisoError } from '@/lib/avisoError';
 
 interface Config {
     activo: boolean;
@@ -57,7 +58,7 @@ export default function Entregas({ config, catalogoTextos, rutas, puedeEditar }:
             textos: form.textos,
         }, {
             preserveScroll: true,
-            onError: e => toast.error((Object.values(e)[0] as string) ?? 'No se pudo guardar.'),
+            onError: e => avisoError(Object.values(e)[0], 'No se pudo guardar.'),
             onFinish: () => setGuardando(false),
         });
     }

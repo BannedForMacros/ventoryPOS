@@ -42,6 +42,27 @@ class ProductoController extends Controller
         ]);
     }
 
+    /**
+     * Productos de la empresa con un nombre parecido al que se está creando,
+     * para avisar "¿no será el mismo?" antes de duplicarlo (caso ladrillo
+     * LARK: la entrada fue a un producto y la venta a su gemelo). Ignora
+     * mayúsculas, tildes y espacios; usa el índice trigram de productos.
+     */
+    public function parecidos(Request $request)
+    {
+        $nombre = trim((string) $request->query('nombre', ''));
+        if (mb_strlen($nombre) < 4) return response()->json(['productos' => []]);
+
+        $productos = Producto::where('empresa_id', $request->user()->empresa_id)
+            ->where('activo', true)
+            ->whereRaw('public.unaccent_immutable(nombre) % public.unaccent_immutable(?)', [$nombre])
+            ->orderByRaw('similarity(public.unaccent_immutable(nombre), public.unaccent_immutable(?)) DESC', [$nombre])
+            ->limit(3)
+            ->get(['id', 'codigo', 'nombre']);
+
+        return response()->json(['productos' => $productos]);
+    }
+
     public function create(Request $request)
     {
         $empresaId = $request->user()->empresa_id;

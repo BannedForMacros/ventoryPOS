@@ -5,7 +5,7 @@ import { useTiempoReal } from '@/lib/useTiempoReal';
 import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
-    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2, Store, Plus, PackageCheck,
+    Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2, Store, Plus, PackageCheck, Printer,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
@@ -34,6 +34,8 @@ import type {
     Cliente, DescuentoConcepto, MetodoPago, Cuenta, Producto, ProductoUnidad,
     Turno, PageProps, FacturacionPosConfig,
 } from '@/types';
+import { avisoError } from '@/lib/avisoError';
+import { estadoAgente } from '@/lib/ticketPrinter';
 
 interface MetodoPagoConCuentas extends MetodoPago { cuentas?: Cuenta[]; }
 
@@ -187,6 +189,7 @@ interface Props extends PageProps {
     entregas?:                 EntregasPos | null;
     // Puede crear productos desde el POS (permiso de Catálogo → Productos).
     puedeCrearProducto?:       boolean;
+    ticketPorPlantilla?:       boolean;
     // Ventana de SUNAT para la fecha del comprobante (hoy y hasta 3 días atrás),
     // calculada en el servidor. Ver App\Support\VentanaEmisionSunat.
     ventanaEmision?:           VentanaEmision | null;
@@ -369,7 +372,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null, puedeCrearProducto = false, ventanaEmision = null, permiteFechaFactura = false }: Props) {
+export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null, puedeCrearProducto = false, ventanaEmision = null, permiteFechaFactura = false, ticketPorPlantilla = false }: Props) {
     // Configuración de la empresa (configurable por tenant).
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
@@ -1404,7 +1407,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 onError: (errors) => {
                     setLoading(false);
                     const msg = Object.values(errors)[0];
-                    if (msg) toast.error(msg as string);
+                    avisoError(msg);
                 },
             });
             return;
@@ -1430,7 +1433,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             onError: (errors) => {
                 setLoading(false);
                 const msg = Object.values(errors)[0];
-                if (msg) toast.error(msg as string);
+                avisoError(msg);
             },
         });
     }
@@ -1508,6 +1511,14 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         setPendientes(prev => ({ ...prev, [key]: valor }));
     }
 
+    // ¿El programa de impresión de esta PC imprime plantillas? Si la empresa
+    // usa una y el programa es anterior a la 1.3.0, sale el ticket estándar.
+    const [agenteViejo, setAgenteViejo] = useState<string | null>(null);
+    useEffect(() => {
+        if (!ticketPorPlantilla) return;
+        estadoAgente().then(a => { if (a.activo && a.bloques < 1) setAgenteViejo(a.version ?? 'anterior'); });
+    }, [ticketPorPlantilla]);
+
     // Edición de una venta con entregas registradas: "3000 Unidad de Alambre…".
     const yaEntregado = (ventaEnEdicion?.items ?? [])
         .filter(it => (it.entregado ?? 0) > 0)
@@ -1559,6 +1570,20 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     return (
         <PosLayout>
             {/* Banner de edición de venta (POS abierto con ?venta_id=) */}
+            {agenteViejo && (
+                <div role="status" className="flex items-center gap-2 px-3 sm:px-4 py-1.5 flex-shrink-0 border-b text-xs"
+                    style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-warning) 12%, var(--color-bg))',
+                        borderColor: 'var(--color-warning)', color: 'var(--color-text)',
+                    }}>
+                    <Printer size={14} className="shrink-0" style={{ color: 'var(--color-warning)' }} />
+                    <span>
+                        El programa de impresión de esta PC es la versión <b>{agenteViejo}</b>: los tickets salen con el diseño anterior.
+                        Actualízalo a la 1.3.0 o superior (si ya lo actualizaste, cierra el programa viejo o reinicia la PC).
+                    </span>
+                    <button onClick={() => setAgenteViejo(null)} className="ml-auto shrink-0 font-semibold underline hover:opacity-80">Entendido</button>
+                </div>
+            )}
             {ventaEnEdicion && (
                 <div
                     className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 flex-shrink-0 border-b text-sm"

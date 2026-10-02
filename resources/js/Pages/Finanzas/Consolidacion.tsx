@@ -13,6 +13,7 @@ import Modal from '@/Components/UI/Modal';
 import Select from '@/Components/UI/Select';
 import Callout from '@/Components/UI/Callout';
 import type { PageProps } from '@/types';
+import { avisoError } from '@/lib/avisoError';
 
 interface ArqueoMetodo {
     id: number;
@@ -151,7 +152,7 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
             generar_descuento: genDescuento,
         } as any, {
             onSuccess: () => { setConsolidando(null); setSaving(false); },
-            onError:   (errs: any) => { setErrors(errs); setSaving(false); toast.error(Object.values(errs)[0] as string ?? 'Error'); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); avisoError(Object.values(errs)[0]); },
         });
     }
 

@@ -359,6 +359,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::apiResource('unidades-medida', UnidadMedidaController::class)->except(['show']);
         });
         Route::middleware('permiso:catalogo.productos,ver')->get('productos/crear', [ProductoController::class, 'create'])->name('productos.create');
+        Route::middleware('permiso:catalogo.productos,crear')->get('productos/parecidos', [ProductoController::class, 'parecidos'])->name('productos.parecidos');
         Route::middleware('permiso:catalogo.productos,editar')->get('productos/{producto}/editar', [ProductoController::class, 'edit'])->name('productos.edit');
         Route::middleware('permiso:catalogo.productos')->group(function () {
             Route::apiResource('productos', ProductoController::class)->except(['show']);

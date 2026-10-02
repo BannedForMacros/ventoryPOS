@@ -18,6 +18,7 @@ import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
+import { avisoError } from '@/lib/avisoError';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -379,7 +380,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                 // negocio del controller). Le avisamos al usuario con toast para que
                 // no se quede mirando un form aparentemente exitoso.
                 const first = Object.values(e)[0];
-                toast.error(typeof first === 'string' ? first : 'Revisa los campos marcados.');
+                avisoError(first, 'Revisa los campos marcados.');
             },
         });
     }

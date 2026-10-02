@@ -14,6 +14,7 @@ import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPr
 import { hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 import { useTiempoReal } from '@/lib/useTiempoReal';
+import { avisoError } from '@/lib/avisoError';
 
 interface ClienteLite {
     id: number;
@@ -178,7 +179,7 @@ export default function Despachos({ pendientes, buscar = '', filtros, usaEntrega
             onError: errs => {
                 setErrors(errs as Record<string, string>);
                 const first = Object.values(errs)[0];
-                if (first) toast.error(first as string);
+                avisoError(first);
             },
             onFinish: () => setSaving(false),
         });

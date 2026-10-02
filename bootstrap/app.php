@@ -42,6 +42,17 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->withInput();
         });
 
+        // Rechazos de negocio (abort(422, '...') en servicios y controladores):
+        // vuelven a la pantalla como el error "aviso", que el frontend muestra
+        // en un aviso en español, en vez de la pantalla técnica de error.
+        // Los JSON puros (axios/APIs) siguen recibiendo su 422 con el mensaje.
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\HttpException $e, Request $request) {
+            if ($e->getStatusCode() !== 422) return null;
+            if ($request->expectsJson() && !$request->header('X-Inertia')) return null;
+
+            return back()->withErrors(['aviso' => $e->getMessage() ?: 'No se pudo completar la operación.'])->withInput();
+        });
+
         // Renderiza una página Inertia bonita en lugar del HTML por defecto de Laravel
         // para los errores que el usuario puede llegar a ver: 401, 403, 404, 419, 429, 500, 503.
         // Se respeta el modo debug en local (ahí seguirá apareciendo Whoops) y los requests

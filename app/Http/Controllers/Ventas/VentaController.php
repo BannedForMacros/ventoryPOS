@@ -514,6 +514,9 @@ class VentaController extends Controller
             'pideDatosCliente'         => (bool) ($user->empresa->pos_datos_cliente ?? false),
             // Alta rápida de productos desde el POS: con el mismo permiso del Catálogo.
             'puedeCrearProducto'       => $user->tienePermiso('catalogo.productos', 'crear'),
+            // Para avisar en el POS si el programa de impresión de la PC aún no
+            // imprime plantillas (saldría el ticket estándar).
+            'ticketPorPlantilla'       => \App\Support\PlantillaTicket::deEmpresa($user->empresa)['plantilla'] !== \App\Support\PlantillaTicket::ESTANDAR,
             // Entregas (recojo o envío). null = la empresa no usa la función.
             'entregas'                 => $this->entregasParaPos($user->empresa),
             'permitePendienteEntrega'  => (bool) ($user->empresa->pos_permite_pendiente_entrega ?? true),

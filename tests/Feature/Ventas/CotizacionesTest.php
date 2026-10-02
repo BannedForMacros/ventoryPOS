@@ -232,5 +232,5 @@ it('convierte la cotización en venta vía POS: queda convertida y vinculada', f
     expect(Auditoria::where('accion', 'cotizacion.convertida')->where('modelo_id', $cot->id)->exists())->toBeTrue();
 
     // Una convertida ya no puede volver a convertirse ni editarse
-    $this->put(route('cotizaciones.update', $cot), payloadCotizacion())->assertStatus(422);
+    $this->put(route('cotizaciones.update', $cot), payloadCotizacion())->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 });

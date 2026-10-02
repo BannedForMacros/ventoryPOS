@@ -162,9 +162,9 @@ it('un abono/pago por compensación no se puede editar', function () {
 
     $this->put(route('finanzas.cxc.abonos.update', $abono->id), [
         'monto' => 60, 'fecha' => now()->toDateString(), 'metodo_pago_id' => $this->env->metodo('efectivo')->id,
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 
     $this->put(route('finanzas.cxp.pagos.update', $pago->id), [
         'monto' => 60, 'fecha' => now()->toDateString(), 'metodo_pago_id' => $this->env->metodo('efectivo')->id,
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 });

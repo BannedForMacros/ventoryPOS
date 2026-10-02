@@ -99,7 +99,7 @@ it('NO deja anular mientras el comprobante se está enviando a SUNAT', function 
 
     $this->post(route('ventas.anular', $venta), [
         'motivo' => 'La cajera se equivocó de cliente',
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 
     expect($venta->fresh()->estado)->toBe('completada');
 });
@@ -131,7 +131,7 @@ it('NO deja anular una venta con guía de remisión que autoriza el traslado', f
 
     $this->post(route('ventas.anular', $venta), [
         'motivo' => 'El cliente ya no quiere la mercadería',
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 
     expect($venta->fresh()->estado)->toBe('completada');
 });

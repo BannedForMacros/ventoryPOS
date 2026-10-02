@@ -11,6 +11,7 @@ import VistaPreviaEstandar from '@/Components/Tickets/VistaPreviaEstandar';
 import { estadoAgente, type EstadoAgente, type TicketPayload } from '@/lib/ticketPrinter';
 import type { Bloque } from '@/lib/ticketBloques';
 import type { PageProps } from '@/types';
+import { avisoError } from '@/lib/avisoError';
 
 interface Seccion { clave: string; activa: boolean; }
 interface Plantilla {
@@ -90,7 +91,7 @@ export default function TicketPlantilla({ plantilla, catalogo, posDatosCliente, 
         setGuardando(true);
         router.put(route('configuracion.ticket.update'), { ...form, pos_datos_cliente: pideDatos } as never, {
             preserveScroll: true,
-            onError: e => toast.error((Object.values(e)[0] as string) ?? 'No se pudo guardar.'),
+            onError: e => avisoError(Object.values(e)[0], 'No se pudo guardar.'),
             onFinish: () => setGuardando(false),
         });
     }

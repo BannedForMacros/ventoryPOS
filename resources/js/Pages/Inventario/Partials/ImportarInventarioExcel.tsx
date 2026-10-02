@@ -9,6 +9,7 @@ import {
 import Button from '@/Components/UI/Button';
 import Select from '@/Components/UI/Select';
 import { fmtCant, fmtInt, fmtS, plural } from '@/Components/Reportes/ReportUI';
+import { avisoError } from '@/lib/avisoError';
 
 /* ── Tipos ─────────────────────────────────────────────────────────────── */
 
@@ -260,7 +261,7 @@ export default function ImportarInventarioExcel({ almacenId, almacenNombre, fech
         router.post(route('inventario.inicial.guardar'), { almacen_id: almacenId, fecha, origen: 'excel', items }, {
             preserveScroll: true,
             onSuccess: () => onCerrar(),
-            onError: (e) => toast.error(Object.values(e)[0] as string ?? 'No se pudo guardar.'),
+            onError: (e) => avisoError(Object.values(e)[0], 'No se pudo guardar.'),
             onFinish: () => setGuardando(false),
         });
     }

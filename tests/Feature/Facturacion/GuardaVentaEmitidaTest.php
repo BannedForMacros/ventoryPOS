@@ -71,7 +71,7 @@ it('NO deja anular una venta cuyo comprobante quedó anulado ante SUNAT', functi
 
     $this->post(route('ventas.anular', $venta), [
         'motivo' => 'El cliente devolvió toda la mercadería',
-    ])->assertStatus(422);
+    ])->assertSessionHasErrors('aviso'); // rechazo de negocio → aviso en la pantalla
 
     // Y el stock NO se movió por segunda vez: la venta descontó 2 de 100 y ahí sigue.
     expect($venta->fresh()->estado)->toBe('completada');

@@ -10,6 +10,7 @@ import { Empty, Paginacion, fmtCant, fmtInt, fmtS, pct, plural, useRecargaTabla,
 import { fechaLocal, hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 import ImportarInventarioExcel from './Partials/ImportarInventarioExcel';
+import { avisoError } from '@/lib/avisoError';
 
 interface Fila {
     id: number;
@@ -111,7 +112,7 @@ export default function InventarioInicial({ almacenes, almacenId, categorias, re
         }, {
             preserveScroll: true,
             onSuccess: () => setCambios({}),
-            onError: (e) => toast.error((Object.values(e)[0] as string) ?? 'No se pudo guardar.'),
+            onError: (e) => avisoError(Object.values(e)[0], 'No se pudo guardar.'),
             onFinish: () => setGuardando(false),
         });
     }

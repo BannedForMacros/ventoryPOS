@@ -8,6 +8,7 @@ import Input from '@/Components/UI/Input';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Switch from '@/Components/UI/Switch';
 import type { Producto } from '@/types';
+import AvisoProductosParecidos from '@/Components/Catalogo/AvisoProductosParecidos';
 
 interface Datos {
     categorias: { id: number; nombre: string }[];
@@ -144,8 +145,11 @@ export default function ModalNuevoProducto({ isOpen, onClose, nombreInicial = ''
                         ))}
                     </div>
 
-                    <Input label="Nombre" required autoFocus maxLength={150} value={form.nombre}
-                        onChange={e => set('nombre', e.target.value)} error={errores.nombre} />
+                    <div>
+                        <Input label="Nombre" required autoFocus maxLength={150} value={form.nombre}
+                            onChange={e => set('nombre', e.target.value)} error={errores.nombre} />
+                        <AvisoProductosParecidos nombre={form.nombre} />
+                    </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <Input label="Código (opcional)" maxLength={50} value={form.codigo}

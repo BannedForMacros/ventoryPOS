@@ -12,6 +12,7 @@ import Badge from '@/Components/UI/Badge';
 import PagoForm, { MetodoPagoOption, CuentaOption } from '@/Components/PagoForm';
 import AfectaCajaSelect, { TurnoLite } from '@/Components/AfectaCajaSelect';
 import { calcularTotalVenta, redondear2 } from '@/lib/totalesVenta';
+import { avisoError } from '@/lib/avisoError';
 
 /**
  * Modificar el pedido PENDIENTE POR ENTREGAR de una venta días después.
@@ -282,7 +283,7 @@ export default function ModalModificarPedido({ isOpen, onClose, ventaId }: Props
             onError: (errs: any) => {
                 setSaving(false); setErrors(errs);
                 const first = Object.values(errs)[0];
-                toast.error(typeof first === 'string' ? first : 'Revisa los datos.');
+                avisoError(first, 'Revisa los datos.');
             },
         });
     }
