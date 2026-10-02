@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Ventas;
 
+use App\Support\EnEmpresa;
 use App\Support\Xlsx;
 
 use App\Http\Controllers\Controller;
@@ -400,7 +401,7 @@ class CotizacionController extends Controller
             'cliente_direccion'      => ['nullable', 'string', 'max:255'],
             'items'                  => ['required', 'array', 'min:1'],
             'items.*.producto_id'    => ['required', 'integer', Rule::exists('productos', 'id')->where('empresa_id', $empresaId)->where('activo', true)],
-            'items.*.producto_unidad_id' => ['required', 'integer', 'exists:producto_unidades,id'],
+            'items.*.producto_unidad_id' => ['required', 'integer', EnEmpresa::presentacion()],
             'items.*.cantidad'       => ['required', 'numeric', 'min:0.0001'],
             'items.*.precio_unitario'=> ['required', 'numeric', 'min:0'],
             'items.*.descuento_item' => ['nullable', 'numeric', 'min:0'],

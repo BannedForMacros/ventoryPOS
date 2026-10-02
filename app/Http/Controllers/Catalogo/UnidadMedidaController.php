@@ -36,6 +36,8 @@ class UnidadMedidaController extends Controller
 
     public function update(UnidadMedidaRequest $request, UnidadMedida $unidadesMedida)
     {
+        abort_if((int) $unidadesMedida->empresa_id !== (int) request()->user()->empresa_id, 404);
+
         $unidadesMedida->update($request->validated());
 
         return redirect()->back()->with('success', 'Unidad de medida actualizada correctamente.');
@@ -43,6 +45,8 @@ class UnidadMedidaController extends Controller
 
     public function destroy(UnidadMedida $unidadesMedida)
     {
+        abort_if((int) $unidadesMedida->empresa_id !== (int) request()->user()->empresa_id, 404);
+
         if ($unidadesMedida->productoUnidades()->exists()) {
             $unidadesMedida->update(['activo' => false]);
             return redirect()->back()->with('success', 'Unidad desactivada (está en uso por productos).');

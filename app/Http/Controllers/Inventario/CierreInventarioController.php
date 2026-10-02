@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Inventario;
 
+use App\Support\EnEmpresa;
 use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\CierreInventario;
@@ -120,12 +121,12 @@ class CierreInventarioController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'almacen_id'  => 'required|exists:almacenes,id',
-            'turno_id'    => 'nullable|exists:turnos,id',
+            'almacen_id'  => ['required', EnEmpresa::existe('almacenes')],
+            'turno_id'    => ['nullable', EnEmpresa::existe('turnos')],
             'fecha'       => 'required|date',
             'observacion' => 'nullable|string',
             'items'       => 'required|array|min:1',
-            'items.*.producto_id'     => 'required|exists:productos,id',
+            'items.*.producto_id'     => ['required', EnEmpresa::existe('productos')],
             // stock_sistema lo recalcula el servidor al guardar (fuente de verdad).
             'items.*.stock_sistema'   => 'nullable|numeric',
             'items.*.stock_declarado' => 'required|numeric|min:0',
@@ -251,7 +252,7 @@ class CierreInventarioController extends Controller
         $data = $request->validate([
             'observacion' => 'nullable|string',
             'items'       => 'required|array|min:1',
-            'items.*.producto_id'     => 'required|exists:productos,id',
+            'items.*.producto_id'     => ['required', EnEmpresa::existe('productos')],
             'items.*.stock_declarado' => 'required|numeric|min:0',
             'items.*.observacion'     => 'nullable|string',
         ]);

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Ventas;
 
+use App\Support\EnEmpresa;
 use App\Models\Cuenta;
 use App\Models\Empresa;
 use App\Models\MetodoPago;
@@ -157,7 +158,7 @@ class StoreVentaRequest extends FormRequest
                     ->where('empresa_id', $empresaId)
                     ->where('activo', true),
             ],
-            'items.*.producto_unidad_id'      => ['required', 'integer', 'exists:producto_unidades,id'],
+            'items.*.producto_unidad_id'      => ['required', 'integer', EnEmpresa::presentacion()],
             'items.*.cantidad'                => ['required', 'numeric', 'min:0.0001'],
             // Cuánto de la línea queda SIN entregar (solo con entrega_pendiente).
             'items.*.cantidad_pendiente'      => ['nullable', 'numeric', 'min:0'],
@@ -183,7 +184,7 @@ class StoreVentaRequest extends FormRequest
                     ->where('empresa_id', $empresaId)
                     ->where('activo', true),
             ],
-            'pagos.*.cuenta_metodo_pago_id'      => ['nullable', 'integer', 'exists:cuenta_metodo_pago,id'],
+            'pagos.*.cuenta_metodo_pago_id'      => ['nullable', 'integer', EnEmpresa::cuentaDePago()],
             'pagos.*.monto'                      => ['required', 'numeric', 'min:0.01'],
             'pagos.*.referencia'                 => ['nullable', 'string', 'max:200'],
             // El flag `es_efectivo` del frontend ya no se usa: el backend deriva

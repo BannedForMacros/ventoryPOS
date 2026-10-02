@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Devoluciones;
 
+use App\Support\EnEmpresa;
 use App\Models\VentaItem;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -41,7 +42,7 @@ class StoreDevolucionRequest extends FormRequest
 
             'pagos' => ['nullable', 'array'],
             'pagos.*.metodo_pago_id' => ['required_with:pagos', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $empresaId)->where('activo', true)],
-            'pagos.*.cuenta_metodo_pago_id' => ['nullable', 'integer', 'exists:cuenta_metodo_pago,id'],
+            'pagos.*.cuenta_metodo_pago_id' => ['nullable', 'integer', EnEmpresa::cuentaDePago()],
             'pagos.*.monto' => ['required_with:pagos', 'numeric', 'min:0.01'],
             'pagos.*.referencia' => ['nullable', 'string', 'max:100'],
         ];

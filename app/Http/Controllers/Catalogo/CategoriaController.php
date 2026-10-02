@@ -36,6 +36,8 @@ class CategoriaController extends Controller
 
     public function update(CategoriaRequest $request, Categoria $categoria)
     {
+        abort_if((int) $categoria->empresa_id !== (int) request()->user()->empresa_id, 404);
+
         $categoria->update($request->validated());
 
         return redirect()->back()->with('success', 'Categoría actualizada correctamente.');
@@ -43,6 +45,8 @@ class CategoriaController extends Controller
 
     public function destroy(Categoria $categoria)
     {
+        abort_if((int) $categoria->empresa_id !== (int) request()->user()->empresa_id, 404);
+
         if ($categoria->productos()->exists()) {
             $categoria->update(['activo' => false]);
             return redirect()->back()->with('success', 'Categoría desactivada (tiene productos asociados).');

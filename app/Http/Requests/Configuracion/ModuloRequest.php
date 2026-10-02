@@ -7,9 +7,10 @@ use Illuminate\Validation\Rule;
 
 class ModuloRequest extends FormRequest
 {
+    /** Los módulos son el menú de TODAS las empresas: solo el superadmin los cambia. */
     public function authorize(): bool
     {
-        return true;
+        return (bool) $this->user()?->es_superadmin;
     }
 
     public function rules(): array

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Inventario;
 
+use App\Support\EnEmpresa;
 use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\Cuenta;
@@ -262,8 +263,8 @@ class EntradaController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'almacen_id'       => 'required|exists:almacenes,id',
-            'proveedor_id'     => 'nullable|exists:proveedores,id',
+            'almacen_id'       => ['required', EnEmpresa::existe('almacenes')],
+            'proveedor_id'     => ['nullable', EnEmpresa::existe('proveedores')],
             'proveedor'        => 'nullable|string|max:150',
             'numero_documento' => 'nullable|string|max:50',
             'tipo'             => 'required|in:compra,ajuste,devolucion,otro',
@@ -280,8 +281,8 @@ class EntradaController extends Controller
                 Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id)],
             'observacion'      => 'nullable|string',
             'detalles'         => 'required|array|min:1',
-            'detalles.*.producto_id'       => 'required|exists:productos,id',
-            'detalles.*.unidad_medida_id'  => 'required|exists:unidades_medida,id',
+            'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
+            'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
             'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
             'detalles.*.precio_costo'      => 'required|numeric|min:0',
@@ -292,8 +293,8 @@ class EntradaController extends Controller
             // de pago). Acepta pago total, PARCIAL y múltiples métodos: `pagos` es un
             // array de líneas {metodo, cuenta opcional, monto}. El saldo queda como CxP.
             'estado_pago'      => 'nullable|in:pendiente,parcial,pagado',
-            'metodo_pago_id'   => 'nullable|exists:metodos_pago,id',
-            'cuenta_id'        => 'nullable|exists:cuentas,id',
+            'metodo_pago_id'   => ['nullable', EnEmpresa::existe('metodos_pago')],
+            'cuenta_id'        => ['nullable', EnEmpresa::existe('cuentas')],
             'pagos'                            => 'nullable|array|max:10',
             'pagos.*.metodo_pago_id'           => ['nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id), $this->reglaMetodoOAdelantoEnArray()],
             'pagos.*.cuenta_id'                => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoriaEnArray($request)],
@@ -515,8 +516,8 @@ class EntradaController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'almacen_id'       => 'required|exists:almacenes,id',
-            'proveedor_id'     => 'nullable|exists:proveedores,id',
+            'almacen_id'       => ['required', EnEmpresa::existe('almacenes')],
+            'proveedor_id'     => ['nullable', EnEmpresa::existe('proveedores')],
             'proveedor'        => 'nullable|string|max:150',
             'numero_documento' => 'nullable|string|max:50',
             'tipo'             => 'required|in:compra,ajuste,devolucion,otro',
@@ -526,8 +527,8 @@ class EntradaController extends Controller
                 Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id)],
             'observacion'      => 'nullable|string',
             'detalles'         => 'required|array|min:1',
-            'detalles.*.producto_id'       => 'required|exists:productos,id',
-            'detalles.*.unidad_medida_id'  => 'required|exists:unidades_medida,id',
+            'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
+            'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
             'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
             'detalles.*.precio_costo'      => 'required|numeric|min:0',

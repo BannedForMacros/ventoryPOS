@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Inventario;
 
+use App\Support\EnEmpresa;
 use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\Producto;
@@ -86,15 +87,15 @@ class SalidaController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'almacen_id'       => 'required|exists:almacenes,id',
+            'almacen_id'       => ['required', EnEmpresa::existe('almacenes')],
             'salida_tipo_id'   => 'required|exists:salida_tipos,id',
-            'turno_id'         => 'nullable|exists:turnos,id',
+            'turno_id'         => ['nullable', EnEmpresa::existe('turnos')],
             'numero_documento' => 'nullable|string|max:50',
             'fecha'            => 'required|date',
             'observacion'      => 'nullable|string',
             'detalles'         => 'required|array|min:1',
-            'detalles.*.producto_id'       => 'required|exists:productos,id',
-            'detalles.*.unidad_medida_id'  => 'required|exists:unidades_medida,id',
+            'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
+            'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
             'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
             'detalles.*.observacion'       => 'nullable|string',
@@ -194,14 +195,14 @@ class SalidaController extends Controller
         abort_unless($this->scope->puedeAccederAlmacen($request->user(), $salida->almacen), 403);
 
         $data = $request->validate([
-            'almacen_id'       => 'required|exists:almacenes,id',
+            'almacen_id'       => ['required', EnEmpresa::existe('almacenes')],
             'salida_tipo_id'   => 'required|exists:salida_tipos,id',
             'numero_documento' => 'nullable|string|max:50',
             'fecha'            => 'required|date',
             'observacion'      => 'nullable|string',
             'detalles'         => 'required|array|min:1',
-            'detalles.*.producto_id'       => 'required|exists:productos,id',
-            'detalles.*.unidad_medida_id'  => 'required|exists:unidades_medida,id',
+            'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
+            'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
             'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
             'detalles.*.observacion'       => 'nullable|string',

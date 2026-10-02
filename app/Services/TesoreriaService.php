@@ -37,13 +37,26 @@ class TesoreriaService
      */
     public function resolverCuenta(int $empresaId, ?int $cuentaMetodoPagoId, ?int $metodoPagoId): int
     {
+        // El pivote cuenta_metodo_pago no tiene empresa: se acota por la
+        // cuenta. Un id de otra empresa nunca puede mover su dinero.
         if ($cuentaMetodoPagoId) {
-            $cuentaId = DB::table('cuenta_metodo_pago')->where('id', $cuentaMetodoPagoId)->value('cuenta_id');
+            $cuentaId = DB::table('cuenta_metodo_pago as cmp')
+                ->join('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
+                ->where('cmp.id', $cuentaMetodoPagoId)->where('c.empresa_id', $empresaId)
+                ->value('cmp.cuenta_id');
+            // Pivote inexistente o de otra empresa: no se usa (se sigue por el
+            // medio de pago, como cuando el vínculo se borró después).
             if ($cuentaId) return (int) $cuentaId;
         }
 
         if ($metodoPagoId) {
-            $cuentas = DB::table('cuenta_metodo_pago')->where('metodo_pago_id', $metodoPagoId)->pluck('cuenta_id');
+            if (!DB::table('metodos_pago')->where('id', $metodoPagoId)->where('empresa_id', $empresaId)->exists()) {
+                abort(422, 'El medio de pago indicado no pertenece a la empresa.');
+            }
+            $cuentas = DB::table('cuenta_metodo_pago as cmp')
+                ->join('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
+                ->where('cmp.metodo_pago_id', $metodoPagoId)->where('c.empresa_id', $empresaId)
+                ->pluck('cmp.cuenta_id');
             if ($cuentas->count() >= 1) return (int) $cuentas->first();
 
             $metodo = \App\Models\MetodoPago::with('tipo:id,slug')->find($metodoPagoId);

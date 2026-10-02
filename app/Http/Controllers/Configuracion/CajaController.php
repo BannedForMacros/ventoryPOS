@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Configuracion;
 
+use App\Support\EnEmpresa;
 use App\Http\Controllers\Controller;
 use App\Models\Caja;
 use App\Services\LocalScopeService;
@@ -33,7 +34,7 @@ class CajaController extends Controller
     {
         $user = $request->user();
         $data = $request->validate([
-            'local_id'                  => ['required', 'exists:locales,id'],
+            'local_id'                  => ['required', EnEmpresa::existe('locales')],
             'nombre'                    => ['required', 'string', 'max:100'],
             'caja_chica_activa'         => ['boolean'],
             'caja_chica_monto_sugerido' => ['nullable', 'numeric', 'min:0'],

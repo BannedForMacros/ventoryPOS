@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Inventario;
 
+use App\Support\EnEmpresa;
 use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\Producto;
@@ -297,14 +298,14 @@ class TransferenciaController extends Controller
     private function validarPayload(Request $request): array
     {
         return $request->validate([
-            'almacen_origen_id'  => 'required|exists:almacenes,id',
-            'almacen_destino_id' => 'required|exists:almacenes,id|different:almacen_origen_id',
+            'almacen_origen_id'  => ['required', EnEmpresa::existe('almacenes')],
+            'almacen_destino_id' => ['required', EnEmpresa::existe('almacenes'), 'different:almacen_origen_id'],
             'fecha'              => 'required|date',
             'observacion_envio'      => 'nullable|string|max:500',
             'observacion_recepcion'  => 'nullable|string|max:500',
             'detalles'           => 'required|array|min:1',
-            'detalles.*.producto_id'       => 'required|exists:productos,id',
-            'detalles.*.unidad_medida_id'  => 'required|exists:unidades_medida,id',
+            'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
+            'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
             'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
             'detalles.*.observacion'       => 'nullable|string',

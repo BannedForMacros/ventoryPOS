@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Configuracion;
 
+use App\Support\EnEmpresa;
 use App\Http\Controllers\Controller;
 use App\Models\Almacen;
 use App\Models\Empresa;
@@ -48,7 +49,7 @@ class AlmacenController extends Controller
         $data = $request->validate([
             'nombre'   => 'required|string|max:100',
             'tipo'     => 'required|in:central,local',
-            'local_id' => 'nullable|exists:locales,id',
+            'local_id' => ['nullable', EnEmpresa::existe('locales')],
             'activo'   => 'boolean',
         ]);
 
@@ -99,7 +100,7 @@ class AlmacenController extends Controller
         $data = $request->validate([
             'nombre'   => 'required|string|max:100',
             'tipo'     => 'required|in:central,local',
-            'local_id' => 'nullable|exists:locales,id',
+            'local_id' => ['nullable', EnEmpresa::existe('locales')],
             'activo'   => 'boolean',
         ]);
 

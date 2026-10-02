@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Turnos;
 
+use App\Support\EnEmpresa;
 use App\Models\Caja;
 use App\Models\Turno;
 use Illuminate\Foundation\Http\FormRequest;
@@ -13,7 +14,7 @@ class AbrirTurnoRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'caja_id'                   => ['required', 'integer', 'exists:cajas,id'],
+            'caja_id'                   => ['required', 'integer', EnEmpresa::existe('cajas')],
             'monto_apertura'            => ['required', 'numeric', 'min:0'],
             'monto_fondos_adicionales'  => ['nullable', 'numeric', 'min:0'],
             'monto_caja_chica'          => ['nullable', 'numeric', 'min:0'],

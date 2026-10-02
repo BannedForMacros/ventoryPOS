@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Gastos;
 
+use App\Support\EnEmpresa;
 use App\Models\GastoConcepto;
 use App\Models\Turno;
 use Illuminate\Foundation\Http\FormRequest;
@@ -34,7 +35,7 @@ class StoreGastoRequest extends FormRequest
             // Id de la fila pivote cuenta_metodo_pago (NO el id de la cuenta).
             // Obligatoria si el método tiene cuentas vinculadas (con 1 el front la
             // autoselecciona; con 2+ el usuario elige). Efectivo/sin-cuenta: opcional.
-            'cuenta_metodo_pago_id' => ['nullable', 'integer', 'exists:cuenta_metodo_pago,id',
+            'cuenta_metodo_pago_id' => ['nullable', 'integer', EnEmpresa::cuentaDePago(),
                 function ($attr, $value, $fail) {
                     if (! $value && \App\Support\PagoCuenta::requiere(
                         $this->input('metodo_pago_id') ? (int) $this->input('metodo_pago_id') : null
@@ -47,7 +48,7 @@ class StoreGastoRequest extends FormRequest
             'cuenta_id'  => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $empresaId)],
             'fecha'      => ['required', 'date'],
             'comentario' => ['nullable', 'string', 'max:500'],
-            'turno_id'   => ['nullable', 'integer', 'exists:turnos,id'],
+            'turno_id'   => ['nullable', 'integer', EnEmpresa::existe('turnos')],
         ];
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Turnos;
 
+use App\Support\EnEmpresa;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -36,7 +37,7 @@ class CerrarTurnoRequest extends FormRequest
             'arqueo.*.denominacion'            => ['required', 'numeric', Rule::in([200, 100, 50, 20, 10, 5, 2, 1, 0.50, 0.20, 0.10])],
             'arqueo.*.cantidad'                => ['required', 'integer', 'min:0'],
             'arqueo_metodos'                   => ['nullable', 'array'],
-            'arqueo_metodos.*.metodo_pago_id'  => ['required', 'integer', 'exists:metodos_pago,id'],
+            'arqueo_metodos.*.metodo_pago_id'  => ['required', 'integer', EnEmpresa::existe('metodos_pago')],
             'arqueo_metodos.*.monto_declarado' => ['required', 'numeric', 'min:0'],
         ]);
     }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Agenda;
 
+use App\Support\EnEmpresa;
 use App\Models\Cita;
 use App\Models\Empresa;
 use App\Models\ProductoUnidad;
@@ -49,7 +50,7 @@ class StoreCitaRequest extends FormRequest
             // Items
             'items'                       => ['required', 'array', 'min:1'],
             'items.*.producto_id'         => ['required', 'integer', Rule::exists('productos', 'id')->where('empresa_id', $empresaId)],
-            'items.*.producto_unidad_id'  => ['required', 'integer', 'exists:producto_unidades,id'],
+            'items.*.producto_unidad_id'  => ['required', 'integer', EnEmpresa::presentacion()],
             'items.*.cantidad'            => ['nullable', 'numeric', 'min:0.0001'],
             'items.*.duracion_min'        => ['nullable', 'integer', 'min:1', 'max:1440'],
             'items.*.observaciones'       => ['nullable', 'string', 'max:300'],

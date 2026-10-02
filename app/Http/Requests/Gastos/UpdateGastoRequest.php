@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Gastos;
 
+use App\Support\EnEmpresa;
 use App\Models\GastoConcepto;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -37,7 +38,7 @@ class UpdateGastoRequest extends FormRequest
                 'nullable', 'integer',
                 Rule::exists('metodos_pago', 'id')->where('empresa_id', $empresaId)->where('activo', true),
             ],
-            'cuenta_metodo_pago_id' => ['nullable', 'integer', 'exists:cuenta_metodo_pago,id',
+            'cuenta_metodo_pago_id' => ['nullable', 'integer', EnEmpresa::cuentaDePago(),
                 function ($attr, $value, $fail) {
                     // Al editar, metodo_pago_id vacío = "mantener cuenta actual" → no exige.
                     if (! $value && \App\Support\PagoCuenta::requiere(
