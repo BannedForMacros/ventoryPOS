@@ -28,6 +28,16 @@ class StoreVentaRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
+        // Un pago en S/ 0 no es dinero: llega cuando un anticipo cubre todo y
+        // el efectivo automático del POS quedó en cero. Se descarta en vez de
+        // rechazar la venta con "monto mínimo 0.01".
+        if (is_array($this->input('pagos'))) {
+            $this->merge(['pagos' => array_values(array_filter(
+                $this->input('pagos'),
+                fn ($p) => !is_array($p) || !is_numeric($p['monto'] ?? null) || (float) $p['monto'] > 0.009,
+            ))]);
+        }
+
         $cfg = \App\Support\ConfigEntregas::de($this->user()?->empresa);
 
         if (!$cfg['activo']) {

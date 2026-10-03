@@ -1297,7 +1297,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             const m = metodosPago.find(x => x.id === enCero.metodo_pago_id);
             return { texto: `Escribe el monto de ${m?.nombre ?? 'un pago'} o quítalo`, resolver: enfocar(`[data-pago-monto="${enCero.key}"]`) };
         }
-        const sinCuenta = pagos.find(p => faltanCuentas([p], metodosPago));
+        // Un pago en cero no se envía (ver payload): no exige cuenta.
+        const sinCuenta = pagos.find(p => p.monto > 0.009 && faltanCuentas([p], metodosPago));
         if (sinCuenta) {
             const m = metodosPago.find(x => x.id === sinCuenta.metodo_pago_id);
             return { texto: `Elige la cuenta de ${m?.nombre ?? 'este pago'}`, resolver: enfocar(`[data-pago-cuenta="${sinCuenta.key}"]`) };
@@ -1387,7 +1388,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 descuento_concepto_id: i.descuento_concepto_id,
                 incluye_igv:           i.incluye_igv,
             })),
-            pagos: pagos.map(p => ({
+            // Un pago en S/ 0 no es dinero: pasa cuando el anticipo cubre todo y
+            // el efectivo automático quedó en cero. El servidor exige 0.01.
+            pagos: pagos.filter(p => p.monto > 0.009).map(p => ({
                 metodo_pago_id:        p.metodo_pago_id,
                 cuenta_metodo_pago_id: p.cuenta_metodo_pago_id,
                 monto:                 p.monto,
