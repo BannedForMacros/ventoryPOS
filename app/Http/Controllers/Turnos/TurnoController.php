@@ -497,7 +497,13 @@ class TurnoController extends Controller
 
         $empresa = $turno->empresa;
 
-        return Inertia::render('Turnos/Cerrar', [
+        // Cierre rápido (sin contar billetes ni inventario): página simple con lo
+        // vendido y cuánto debe haber en cada medio de pago.
+        $pagina = $modoCaja === 'rapido' && $modoInventario !== 'declarado'
+            ? 'Turnos/CerrarRapido'
+            : 'Turnos/Cerrar';
+
+        return Inertia::render($pagina, [
             'turno'                        => $turno,
             // Pregunta de destino del efectivo al cierre (config de empresa)
             'preguntaDestino'              => (bool) ($empresa?->cierre_pregunta_destino ?? false),

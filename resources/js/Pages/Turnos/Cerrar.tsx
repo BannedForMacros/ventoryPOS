@@ -1,26 +1,17 @@
 import { useMemo, useRef, useState } from 'react';
 import { Link, router } from '@inertiajs/react';
-import axios from 'axios';
-import toast from 'react-hot-toast';
-import { AlertTriangle, ArrowLeft, Check, ClipboardCheck, Lock, Minus, PackageX, Plus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ClipboardCheck, Lock, Minus, Plus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Modal from '@/Components/UI/Modal';
 import { fmtS, plural } from '@/Components/Reportes/ReportUI';
-import { agenteActivo, imprimirCierreTurno, type ShiftClosurePayload } from '@/lib/ticketPrinter';
+import { imprimirCierreAuto } from './Partials/imprimirCierre';
+import AvisoStockNegativo, { type ProductoStockNegativo } from './Partials/AvisoStockNegativo';
 import type { MetodoPago, ModoCierreCaja, ModoCierreInventario, Turno } from '@/types';
 
 interface CierreInventarioRef {
     id: number;
     estado: 'borrador' | 'confirmado';
-}
-
-// Producto vendido en el turno cuyo stock quedó negativo (aviso al cierre).
-interface ProductoStockNegativo {
-    producto_id:      number;
-    producto_nombre:  string;
-    cantidad_vendida: number;
-    stock_actual:     number;
 }
 
 const BILLETES = [200, 100, 50, 20, 10];
@@ -186,34 +177,17 @@ export default function CerrarTurno({ turno, cobrosPorMetodo, productosStockNega
             onSuccess: () => {
                 setSaving(false);
                 setModalStockNegativo(false);
-                void imprimirCierreAuto();
+                void imprimirCierreAutoUnaVez();
             },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); setModalStockNegativo(false); },
         });
     }
 
     /** Auto-imprime el reporte de cierre tras cerrar el turno. */
-    async function imprimirCierreAuto() {
+    async function imprimirCierreAutoUnaVez() {
         if (autoImpreso.current) return;
         autoImpreso.current = true;
-
-        if (!(await agenteActivo())) {
-            toast.error('No se imprimió el cierre: el agente VentoryPrint no está activo en esta PC.');
-            return;
-        }
-
-        try {
-            const { data } = await axios.get<ShiftClosurePayload>(route('turnos.cierre-ticket', turno.id));
-            if (!data?.token) {
-                toast.error('Esta caja no tiene ticketera configurada.');
-                return;
-            }
-            const ok = await imprimirCierreTurno(data);
-            if (ok) toast.success('Reporte de cierre enviado a la impresora');
-            else    toast.error('No se pudo imprimir el cierre. Revisa VentoryPrint en esta PC.');
-        } catch {
-            toast.error('No se pudo obtener el reporte de cierre para imprimir.');
-        }
+        await imprimirCierreAuto(turno.id);
     }
 
     // Pasos que aplican según la configuración del local.
@@ -238,34 +212,8 @@ export default function CerrarTurno({ turno, cobrosPorMetodo, productosStockNega
                 </div>
             </div>
 
-            {/* ── Aviso: productos con stock negativo ───────────────────────── */}
-            {hayStockNegativo && (
-                <div className="mb-4 rounded-2xl overflow-hidden"
-                    style={{ border: '1px solid color-mix(in srgb, var(--vp-coral) 40%, transparent)', backgroundColor: 'var(--color-surface)' }}>
-                    <div className="flex items-start gap-3 px-4 py-3.5" style={{ backgroundColor: 'color-mix(in srgb, var(--vp-coral) 10%, var(--color-surface))' }}>
-                        <PackageX size={20} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--vp-coral-ink)' }} />
-                        <div>
-                            <p className="text-[15px] font-bold" style={{ color: 'var(--vp-coral-ink)' }}>
-                                {plural(productosStockNegativo.length, 'producto quedó', 'productos quedaron')} con stock negativo
-                            </p>
-                            <p className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                Se vendió más de lo que había registrado. Regulariza con una entrada o transferencia, o confirma el cierre de todas formas.
-                            </p>
-                        </div>
-                    </div>
-                    <ul>
-                        {productosStockNegativo.map(p => (
-                            <li key={p.producto_id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm"
-                                style={{ borderTop: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
-                                <span className="font-semibold min-w-0 truncate" style={{ color: 'var(--color-text)' }}>{p.producto_nombre}</span>
-                                <span className="tabular-nums whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>
-                                    vendiste {Number(p.cantidad_vendida)}, quedan <strong style={{ color: 'var(--vp-coral-ink)' }}>{Number(p.stock_actual)}</strong>
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
+            {/* ── Aviso plegado: productos con stock negativo ──────────────── */}
+            {hayStockNegativo && <AvisoStockNegativo productos={productosStockNegativo} />}
 
             <div className="grid lg:grid-cols-[minmax(0,1fr)_360px] gap-4 items-start">
                 {/* ── Pasos ─────────────────────────────────────────────────── */}
