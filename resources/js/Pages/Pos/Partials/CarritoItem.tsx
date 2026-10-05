@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Trash2, Minus, Plus, Percent, X, AlertTriangle, Info, History } from 'lucide-react';
+import { Trash2, Minus, Plus, Percent, X, AlertTriangle, History } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
 import Select from '@/Components/UI/Select';
 
@@ -70,9 +70,23 @@ interface Props {
     onPrecio:           (key: string, precio: number) => void;
     onDescuento:        (key: string, valor: number, modo: DescModo, tipo: DescTipo, conceptoId: number | null) => void;
     onEliminar:         (key: string) => void;
+    /** Cambia cada vez que se agrega (o suma) este producto: la fila se ilumina y se hace visible. */
+    pulso?:             number;
 }
 
-export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar }: Props) {
+export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar, pulso }: Props) {
+    // Recién agregado: la fila se ilumina un instante y queda a la vista. Así la
+    // cajera ve QUÉ entró sin un aviso flotante que tape la barra superior.
+    const filaRef = useRef<HTMLLIElement | null>(null);
+    useEffect(() => {
+        const el = filaRef.current;
+        if (!pulso || !el) return;
+        el.classList.remove('vp-linea-nueva');
+        void el.offsetWidth; // reinicia la animación si se agrega dos veces seguidas
+        el.classList.add('vp-linea-nueva');
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, [pulso]);
+
     const [showHistorial, setShowHistorial] = useState(false);
     const [showDescuento, setShowDescuento] = useState((item.descuento_valor || item.descuento_item) > 0);
     const [descuentoVal, setDescuentoVal]   = useState(String(item.descuento_valor || ''));
@@ -234,14 +248,17 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
         }
     }, []);
 
-    function ajustarAlCosto() {
+    /** `avisar`: el sistema lo corrigió solo (no lo pidió la cajera) → se le cuenta. */
+    function ajustarAlCosto(avisar = true) {
         const costo = Math.round(item.costo_minimo * 100) / 100;
         setPrecioVal(costo.toFixed(2));
         onPrecio(item.key, costo);
-        toast.error(
-            `Precio ajustado al costo mínimo: S/ ${costo.toFixed(2)} ("${item.producto_nombre}").`,
-            { id: `precio-bajo-costo-${item.key}`, duration: 3500 },
-        );
+        if (avisar) {
+            toast(
+                `El precio de "${item.producto_nombre}" se subió a S/ ${costo.toFixed(2)}: no se puede vender bajo el costo.`,
+                { id: `precio-bajo-costo-${item.key}`, duration: 4000 },
+            );
+        }
     }
 
     function onCambioPrecio(valor: string) {
@@ -253,12 +270,9 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
             onPrecio(item.key, num);
         }
         if (item.costo_minimo > 0 && num > 0 && num < item.costo_minimo - 0.009) {
-            toast.error(
-                `El precio de "${item.producto_nombre}" no puede ser menor al costo: S/ ${item.costo_minimo.toFixed(2)}.`,
-                { id: `precio-bajo-costo-${item.key}`, duration: 3500 },
-            );
+            // El aviso en rojo junto al campo ya lo dice mientras escribe.
             // No dejar el precio bajo el costo: se corrige solo tras la pausa.
-            clampTimer.current = window.setTimeout(ajustarAlCosto, 900);
+            clampTimer.current = window.setTimeout(() => ajustarAlCosto(), 900);
         }
     }
 
@@ -286,272 +300,202 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
         : null;
     const sinStock = stockRestante != null && stockRestante < 0;
 
+    // Precio cambiado a mano respecto del catálogo (se muestra el de lista tachado).
+    const precioEditado = Math.abs(item.precio_unitario - item.precio_original) > 0.0001;
+    const conCosto      = item.costo_minimo > 0;
+
     return (
-        <div
-            className="rounded-xl p-3 mb-2 transition-all"
+        <li
+            ref={filaRef}
+            className="px-3 py-2"
             style={{
-                backgroundColor: esInactivo ? 'rgba(239,68,68,0.06)' : 'var(--color-surface)',
-                border: esInactivo
-                    ? '1px solid var(--color-danger)'
-                    : '1px solid var(--color-border)',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                backgroundColor: esInactivo ? 'color-mix(in srgb, var(--color-danger) 7%, var(--color-surface))' : undefined,
+                borderTop: '1px solid var(--color-border)',
             }}
         >
             {esInactivo && (
-                <div
-                    className="flex items-start gap-2 mb-2 p-2 rounded-lg"
-                    style={{ backgroundColor: 'rgba(239,68,68,0.10)' }}
-                >
-                    <AlertTriangle size={14} style={{ color: 'var(--color-danger)' }} className="flex-shrink-0 mt-0.5" />
-                    <div className="text-[11px] leading-tight" style={{ color: 'var(--color-danger)' }}>
-                        <p className="font-semibold">No se puede vender este ítem.</p>
-                        <p className="opacity-90">
-                            {item.motivo_inactivo ?? 'Producto o presentación desactivada desde que se agendó la cita.'}
-                            {' '}Elimínalo del carrito o pide al admin reactivarlo.
-                        </p>
-                    </div>
-                </div>
+                <p className="flex items-start gap-1.5 mb-1.5 text-[12px] leading-snug" style={{ color: 'var(--vp-coral-ink)' }}>
+                    <AlertTriangle size={14} className="flex-shrink-0 mt-px" />
+                    <span>
+                        <strong>No se puede vender.</strong>{' '}
+                        {item.motivo_inactivo ?? 'El producto o su presentación se desactivó desde que se agendó la cita.'}{' '}
+                        Quítalo o pide al administrador reactivarlo.
+                    </span>
+                </p>
             )}
 
-            {/* Fila 1: Nombre + Subtotal */}
-            <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                    <p
-                        className="text-sm font-semibold truncate"
-                        style={{ color: esInactivo ? 'var(--color-danger)' : 'var(--color-text)' }}
-                    >
-                        {item.producto_nombre}
-                        {esInactivo && <span className="ml-1 text-[10px] font-normal opacity-80">(inactivo)</span>}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                            {item.unidad_nombre}
-                        </span>
-                        <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>·</span>
-                        {/* Precio editable: la cajera puede subirlo o bajarlo, pero nunca
-                            por debajo del costo. La validación es EN VIVO: ni bien el
-                            valor tecleado queda bajo el costo, el input se pinta rojo,
-                            sale el aviso inline y el toast (backend revalida al cobrar). */}
-                        <span
-                            className="inline-flex items-center rounded-lg overflow-hidden border"
-                            style={{
-                                borderColor: precioBajoCosto
-                                    ? 'var(--color-danger)'
-                                    : item.precio_unitario !== item.precio_original
-                                        ? 'var(--color-warning)'
-                                        : 'var(--color-border)',
-                                backgroundColor: 'var(--color-bg)',
-                            }}
-                        >
-                            <span
-                                className="px-1.5 text-[11px] font-semibold self-stretch flex items-center"
-                                style={{
-                                    color: precioBajoCosto ? '#fff' : 'var(--color-text-muted)',
-                                    backgroundColor: precioBajoCosto
-                                        ? 'var(--color-danger)'
-                                        : 'color-mix(in srgb, var(--color-border) 35%, transparent)',
-                                }}
-                            >
-                                S/
-                            </span>
-                            <input
-                                ref={precioInputRef}
-                                type="number"
-                                inputMode="decimal"
-                                // min=0 (NO el costo): si pusiéramos min=costo, las
-                                // flechitas del navegador frenarían en el costo SIN
-                                // disparar onChange, y no saldría el aviso. Dejamos que
-                                // JS controle el piso (aviso + auto-ajuste al costo).
-                                min="0"
-                                step="0.01"
-                                value={precioVal}
-                                onChange={e => onCambioPrecio(e.target.value)}
-                                onBlur={() => { setPrecioFocus(false); aplicarPrecio(); }}
-                                onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                                onFocus={e => { setPrecioFocus(true); e.target.select(); }}
-                                aria-label="Precio de venta"
-                                className="w-24 px-2 py-1 text-xs font-bold text-right focus:outline-none border-0"
-                                style={{
-                                    backgroundColor: 'transparent',
-                                    color: precioBajoCosto ? 'var(--color-danger)' : 'var(--color-text)',
-                                } as React.CSSProperties}
-                            />
-                        </span>
-                        {/* Escalera de precios (historial de tachados): precio de
-                            LISTA → precio de VENTA editado → precio con DESCUENTO.
-                            Cada peldaño anterior queda tachado; el vigente resalta.
-                            Ej.: ~~S/20~~ (lista) → ~~S/17~~ (venta) → S/15 (con dcto). */}
-                        {item.precio_unitario !== item.precio_original && !precioBajoCosto && (
-                            <span
-                                className="text-[10px] line-through opacity-60"
-                                title="Precio de lista (catálogo)"
-                                style={{ color: 'var(--color-text-muted)' }}
-                            >
-                                S/ {item.precio_original.toFixed(2)}
-                            </span>
-                        )}
-                        {hayDescuento && !precioBajoCosto && (
-                            <>
-                                {/* El precio de venta también se tacha al aplicar el descuento */}
-                                <span
-                                    className="text-[10px] line-through"
-                                    title="Descontado por descuento"
-                                    style={{ color: 'var(--color-warning)', opacity: 0.75 }}
-                                >
-                                    S/ {item.precio_unitario.toFixed(2)}
-                                </span>
-                                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>›</span>
-                                {/* Precio vigente ya con el descuento aplicado */}
-                                <span className="text-[11px] font-extrabold" style={{ color: 'var(--color-primary)' }}>
-                                    S/ {precioEfectivo.toFixed(2)}
-                                </span>
-                                <span
-                                    className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide inline-flex items-center gap-0.5"
-                                    title="Descontado por descuento"
-                                    style={{
-                                        backgroundColor: 'color-mix(in srgb, var(--color-danger) 12%, transparent)',
-                                        color: 'var(--color-danger)',
-                                    }}
-                                >
-                                    <Percent size={8} />
-                                    -{item.descuento_item.toFixed(2)}{item.descuento_tipo === 'porcentaje' ? ` (${item.descuento_valor}%)` : ''}
-                                </span>
-                            </>
-                        )}
-                    </div>
-                    {/* Aviso EN VIVO: el precio tecleado está por debajo del costo. */}
-                    {precioBajoCosto && (
-                        <p className="flex items-center gap-1 text-[10px] font-semibold mt-1" style={{ color: 'var(--color-danger)' }}>
-                            <AlertTriangle size={11} className="flex-shrink-0" />
-                            No puede ser menor al costo: S/ {item.costo_minimo.toFixed(2)}
-                        </p>
+            {/* Fila 1: qué es y cuánto suma */}
+            <div className="flex items-baseline justify-between gap-3">
+                <p className="min-w-0 truncate text-[13px] font-semibold leading-tight"
+                    style={{ color: esInactivo ? 'var(--vp-coral-ink)' : 'var(--color-text)' }}
+                    title={item.producto_nombre}>
+                    {item.producto_nombre}
+                    {item.unidad_nombre && (
+                        <span className="font-normal" style={{ color: 'var(--color-text-muted)' }}> · {item.unidad_nombre}</span>
                     )}
-                </div>
-                <span className="text-sm font-bold whitespace-nowrap" style={{ color: 'var(--color-primary)' }}>
+                </p>
+                <span className="font-display text-[15px] font-bold tabular-nums whitespace-nowrap" style={{ color: 'var(--vp-navy)' }}>
                     S/ {item.subtotal.toFixed(2)}
                 </span>
             </div>
 
-            {/* Fila 2: Cantidad + Acciones */}
-            <div className="flex items-center justify-between mt-2 gap-2">
+            {/* Fila 2: cantidad × precio, stock y acciones */}
+            <div className="flex items-center gap-2 mt-1.5">
                 <div
-                    className="flex items-center rounded-xl overflow-hidden select-none transition-all"
+                    className="flex items-center h-8 rounded-lg overflow-hidden select-none flex-shrink-0 transition-shadow"
                     style={{
                         border: `1px solid ${cantFocus ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                        // El ring va aquí (en el contenedor): el box-shadow se dibuja
-                        // por fuera y NO lo recorta el overflow-hidden, así se ve
-                        // el resaltado completo (arriba, abajo y a los lados).
-                        boxShadow: cantFocus
-                            ? '0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent)'
-                            : 'none',
+                        // El anillo va en el contenedor: el overflow-hidden lo recortaría en el input.
+                        boxShadow: cantFocus ? '0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent)' : 'none',
+                        backgroundColor: 'var(--color-surface)',
                     }}
                 >
-                    <button
-                        onClick={() => onCantidad(item.key, -1)}
-                        aria-label="Disminuir cantidad"
-                        className="flex items-center justify-center w-9 h-10 flex-shrink-0 transition-colors hover:bg-black/5 active:bg-black/10"
-                        style={{ color: 'var(--color-text-muted)' }}
-                    >
-                        <Minus size={15} />
+                    <button onClick={() => onCantidad(item.key, -1)} aria-label="Quitar uno"
+                        disabled={item.cantidad <= 1}
+                        className="flex items-center justify-center w-7 h-full transition-colors hover:bg-black/5 active:bg-black/10 disabled:opacity-30"
+                        style={{ color: 'var(--color-text-muted)' }}>
+                        <Minus size={14} />
                     </button>
-                    {/* Cantidad editable: se puede teclear directo (soporta decimales
-                        para productos por metro/kilo), ademas de los botones +/-.
-                        Ancho amplio para que un número grande no se pierda. */}
+                    {/* Cantidad editable: admite decimales (metros, kilos). */}
                     <input
-                        type="number"
-                        inputMode="decimal"
-                        min="0"
-                        step="any"
+                        type="number" inputMode="decimal" min="0" step="any"
                         value={cantidadVal}
                         onChange={e => onCambioCantidad(e.target.value)}
                         onBlur={() => { setCantFocus(false); aplicarCantidad(); }}
                         onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                         onFocus={e => { setCantFocus(true); e.target.select(); }}
-                        aria-label="Cantidad"
-                        className="text-base font-bold w-20 text-center px-1 h-10 border-0 focus:outline-none"
+                        aria-label={`Cantidad de ${item.producto_nombre}`}
+                        className="w-12 h-full text-center text-[14px] font-bold tabular-nums border-0 px-0.5 focus:outline-none"
                         style={{
-                            color: cantFocus ? 'var(--color-primary)' : 'var(--color-text)',
-                            backgroundColor: cantFocus
-                                ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-bg))'
-                                : 'var(--color-bg)',
+                            color: 'var(--color-text)',
+                            backgroundColor: cantFocus ? 'color-mix(in srgb, var(--color-primary) 8%, var(--color-surface))' : 'transparent',
                             borderLeft: '1px solid var(--color-border)',
                             borderRight: '1px solid var(--color-border)',
-                        } as React.CSSProperties}
+                        }}
                     />
-                    <button
-                        onClick={() => onCantidad(item.key, 1)}
-                        aria-label="Aumentar cantidad"
-                        className="flex items-center justify-center w-9 h-10 flex-shrink-0 transition-colors hover:bg-black/5 active:bg-black/10"
-                        style={{ color: 'var(--color-primary)' }}
-                    >
-                        <Plus size={15} />
+                    <button onClick={() => onCantidad(item.key, 1)} aria-label="Agregar uno"
+                        className="flex items-center justify-center w-7 h-full transition-colors hover:bg-black/5 active:bg-black/10"
+                        style={{ color: 'var(--color-primary)' }}>
+                        <Plus size={14} />
                     </button>
                 </div>
 
-                {/* Stock restante EN VIVO: baja conforme sube la cantidad. Rojo si
-                    la cantidad excede el stock disponible (venta en negativo). */}
-                {stockRestante != null && (
-                    <span
-                        className="text-[10px] font-bold px-1.5 py-1 rounded-md whitespace-nowrap flex-shrink-0"
-                        title="Stock que quedaría tras esta línea"
-                        style={{
-                            color: sinStock ? 'var(--color-danger)' : 'var(--color-text-muted)',
-                            backgroundColor: sinStock
-                                ? 'rgba(239,68,68,0.10)'
-                                : 'color-mix(in srgb, var(--color-border) 30%, transparent)',
-                        }}
-                    >
-                        Stock: {stockRestante}
-                    </span>
-                )}
+                <span className="text-[12px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} aria-hidden>×</span>
 
-                <div className="flex items-center gap-1">
-                    {/* Historial de precios de venta a ESTE cliente (solo si existe).
-                        Icono resaltado + popover al hacer clic; permite aplicar el
-                        último precio con un toque. */}
+                {/* Precio editable: nunca por debajo del costo (aviso en vivo + ajuste solo). */}
+                <label
+                    className="flex items-center h-8 rounded-lg flex-shrink-0 transition-shadow"
+                    style={{
+                        border: `1px solid ${precioBajoCosto ? 'var(--color-danger)' : precioEditado ? 'var(--vp-amber)' : 'var(--color-border)'}`,
+                        backgroundColor: precioBajoCosto ? 'color-mix(in srgb, var(--color-danger) 6%, var(--color-surface))' : 'var(--color-surface)',
+                        boxShadow: precioFocus ? '0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent)' : 'none',
+                    }}
+                    title={precioEditado ? `Precio de lista: S/ ${item.precio_original.toFixed(2)}` : 'Precio por unidad'}
+                >
+                    <span className="pl-2 text-[12px] font-semibold" style={{ color: precioBajoCosto ? 'var(--vp-coral-ink)' : 'var(--color-text-muted)' }}>S/</span>
+                    <input
+                        ref={precioInputRef}
+                        type="number" inputMode="decimal"
+                        // min=0 (no el costo): las flechitas frenarían en el costo sin
+                        // disparar onChange y no saldría el aviso. JS controla el piso.
+                        min="0" step="0.01"
+                        data-precio-key={item.key}
+                        value={precioVal}
+                        onChange={e => onCambioPrecio(e.target.value)}
+                        onBlur={() => { setPrecioFocus(false); aplicarPrecio(); }}
+                        onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                        onFocus={e => { setPrecioFocus(true); e.target.select(); }}
+                        aria-label={`Precio de ${item.producto_nombre}`}
+                        className="w-[4.5rem] h-full pl-1 pr-2 text-right text-[13px] font-bold tabular-nums bg-transparent border-0 focus:outline-none"
+                        style={{ color: precioBajoCosto ? 'var(--vp-coral-ink)' : 'var(--color-text)' }}
+                    />
+                </label>
+
+                {/* Stock que quedaría con esta línea. Al tocarlo: costo, margen y lo que viene en camino. */}
+                <div className="relative min-w-0">
+                    {stockRestante != null || conCosto ? (
+                        <button
+                            type="button"
+                            onClick={() => setShowCosto(v => !v)}
+                            onBlur={() => setShowCosto(false)}
+                            className="flex items-center gap-1 h-6 px-1.5 rounded-md text-[11px] font-semibold tabular-nums whitespace-nowrap max-w-full"
+                            title="Ver costo, margen y stock"
+                            style={{
+                                color: sinStock ? 'var(--vp-coral-ink)' : 'var(--color-text-muted)',
+                                backgroundColor: sinStock
+                                    ? 'color-mix(in srgb, var(--color-danger) 12%, transparent)'
+                                    : 'color-mix(in srgb, var(--color-border) 45%, transparent)',
+                            }}
+                        >
+                            {sinStock && <AlertTriangle size={11} className="flex-shrink-0" />}
+                            <span className="truncate">{stockRestante != null ? `Stock ${stockRestante}` : 'Costo'}</span>
+                        </button>
+                    ) : null}
+                    {showCosto && (
+                        <div className="absolute bottom-full left-0 mb-1.5 z-30 rounded-lg px-3 py-2 whitespace-nowrap text-[12px] leading-snug"
+                            style={{ backgroundColor: 'var(--vp-midnight)', color: '#fff', boxShadow: '0 10px 24px -8px rgb(15 25 35 / 0.45)' }}>
+                            {conCosto ? (
+                                <>
+                                    <p className="font-semibold">Costo S/ {item.costo_minimo.toFixed(2)}</p>
+                                    <p style={{ color: 'rgb(255 255 255 / 0.75)' }}>
+                                        Margen S/ {(item.precio_unitario - item.costo_minimo).toFixed(2)}
+                                        {' '}({Math.round(((item.precio_unitario - item.costo_minimo) / item.costo_minimo) * 100)} %)
+                                    </p>
+                                </>
+                            ) : (
+                                <p className="font-semibold">Sin costo registrado</p>
+                            )}
+                            {item.stock_disponible != null && (
+                                <p className="mt-1 pt-1" style={{ borderTop: '1px solid rgb(255 255 255 / 0.15)' }}>
+                                    Hay {item.stock_disponible}, quedarían{' '}
+                                    <strong style={{ color: sinStock ? '#fca5a5' : undefined }}>{stockRestante}</strong>
+                                    {sinStock && ' (se vende sin stock)'}
+                                </p>
+                            )}
+                            {!!item.stock_en_transito && item.stock_en_transito > 0 && (
+                                <p style={{ color: '#93c5fd' }}>
+                                    En camino {item.stock_en_transito}{item.transito_fecha ? `, llega ${item.transito_fecha}` : ''}
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="ml-auto flex items-center flex-shrink-0">
+                    {/* Precios anteriores a ESTE cliente (solo si existen). */}
                     {historial && historial.historial.length > 0 && (
                         <div className="relative">
                             <button
                                 onClick={() => setShowHistorial(v => !v)}
-                                aria-label="Ver precios anteriores a este cliente"
+                                aria-label="Precios anteriores a este cliente"
                                 title="Precios anteriores a este cliente"
-                                className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-black/5 active:bg-black/10"
-                                style={{ color: showHistorial ? 'var(--color-primary)' : 'var(--color-warning)' }}
+                                className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-black/5"
+                                style={{ color: showHistorial ? 'var(--color-primary)' : 'var(--vp-amber-ink)' }}
                             >
                                 <History size={15} />
                             </button>
                             {showHistorial && (
                                 <>
-                                    {/* Capa para cerrar al tocar fuera */}
                                     <div className="fixed inset-0 z-20" onClick={() => setShowHistorial(false)} />
-                                    <div className="absolute bottom-full right-0 mb-1.5 z-30 w-60 rounded-xl p-3"
-                                        style={{
-                                            backgroundColor: 'var(--color-surface)',
-                                            border: '1px solid var(--color-border)',
-                                            boxShadow: '0 12px 32px -8px rgba(15,23,42,0.35)',
-                                        }}
-                                    >
-                                        <p className="text-[11px] font-bold mb-1.5" style={{ color: 'var(--color-text)' }}>
+                                    <div className="absolute bottom-full right-0 mb-1.5 z-30 w-64 rounded-xl p-3"
+                                        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: '0 12px 32px -8px rgba(15,23,42,0.35)' }}>
+                                        <p className="text-[12px] font-bold mb-1.5" style={{ color: 'var(--color-text)' }}>
                                             Le vendiste antes ({historial.veces} {historial.veces === 1 ? 'vez' : 'veces'})
                                         </p>
                                         <div className="space-y-1">
                                             {historial.historial.map((h, i) => (
-                                                <div key={i} className="flex items-center justify-between text-[11px]">
+                                                <div key={i} className="flex items-center justify-between text-[12px]">
                                                     <span style={{ color: 'var(--color-text-muted)' }}>
-                                                        {new Date(h.fecha).toLocaleDateString('es-PE')}
-                                                        <span className="opacity-70"> · {Number(h.cantidad)} {h.unidad}</span>
+                                                        {new Date(h.fecha).toLocaleDateString('es-PE')} · {Number(h.cantidad)} {h.unidad}
                                                     </span>
-                                                    <span className="font-mono font-semibold" style={{ color: 'var(--color-text)' }}>
-                                                        S/ {h.precio.toFixed(2)}
-                                                    </span>
+                                                    <span className="font-semibold tabular-nums" style={{ color: 'var(--color-text)' }}>S/ {h.precio.toFixed(2)}</span>
                                                 </div>
                                             ))}
                                         </div>
                                         <button
                                             onClick={() => { onPrecio(item.key, historial.ultimo_precio); setShowHistorial(false); }}
-                                            className="mt-2 w-full text-[11px] font-semibold py-1.5 rounded-lg transition-colors"
-                                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)' }}
-                                        >
+                                            className="mt-2 w-full text-[12px] font-semibold py-1.5 rounded-lg"
+                                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)' }}>
                                             Usar último precio (S/ {historial.ultimo_precio.toFixed(2)})
                                         </button>
                                     </div>
@@ -559,164 +503,87 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                             )}
                         </div>
                     )}
-                    {/* Botón informativo: consulta el precio de costo de la línea.
-                        Muestra un tooltip al pasar el mouse o al tocar (móvil). */}
-                    <div className="relative group">
-                        <button
-                            onClick={() => setShowCosto(v => !v)}
-                            aria-label="Consultar precio de costo"
-                            className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-black/5 active:bg-black/10"
-                            style={{ color: showCosto ? 'var(--color-primary)' : 'var(--color-text-muted)' }}
-                        >
-                            <Info size={15} />
-                        </button>
-                        <div
-                            className={`absolute bottom-full right-0 mb-1.5 z-20 pointer-events-none transition-opacity duration-150
-                                ${showCosto ? 'opacity-100 visible' : 'opacity-0 invisible'} group-hover:opacity-100 group-hover:visible`}
-                        >
-                            <div
-                                className="rounded-lg px-3 py-2 whitespace-nowrap"
-                                style={{
-                                    backgroundColor: 'var(--color-text)',
-                                    color: 'var(--color-bg)',
-                                    boxShadow: '0 8px 24px -6px rgba(15,23,42,0.4)',
-                                }}
-                            >
-                                {item.costo_minimo > 0 ? (
-                                    <>
-                                        <p className="text-[11px] font-bold leading-tight">
-                                            Costo: S/ {item.costo_minimo.toFixed(2)}
-                                        </p>
-                                        <p className="text-[10px] leading-tight mt-0.5 opacity-80">
-                                            Margen: S/ {(item.precio_unitario - item.costo_minimo).toFixed(2)}
-                                            {' '}({Math.round(((item.precio_unitario - item.costo_minimo) / item.costo_minimo) * 100)}%)
-                                        </p>
-                                    </>
-                                ) : (
-                                    <p className="text-[11px] font-semibold leading-tight">Sin costo registrado</p>
-                                )}
-                                {/* Stock: disponible al abrir el POS y lo que quedaría con esta línea */}
-                                {item.stock_disponible != null && (
-                                    <p className="text-[10px] leading-tight mt-1 pt-1"
-                                        style={{ borderTop: '1px solid rgba(255,255,255,0.15)' }}>
-                                        Stock: {item.stock_disponible}
-                                        {' · '}
-                                        <span style={{ color: sinStock ? '#fca5a5' : undefined }}>
-                                            Quedaría: {stockRestante}
-                                        </span>
-                                    </p>
-                                )}
-                                {/* Lo que viene en camino nunca se suma al stock: se
-                                    muestra aparte para que la cajera sepa qué prometer. */}
-                                {!!item.stock_en_transito && item.stock_en_transito > 0 && (
-                                    <p className="text-[10px] leading-tight" style={{ color: '#93c5fd' }}>
-                                        En camino: {item.stock_en_transito}
-                                        {item.transito_fecha ? ` · llega ${item.transito_fecha}` : ''}
-                                    </p>
-                                )}
-                                {/* Flechita del tooltip */}
-                                <span
-                                    className="absolute top-full right-3 -mt-px w-0 h-0"
-                                    style={{
-                                        borderLeft: '5px solid transparent',
-                                        borderRight: '5px solid transparent',
-                                        borderTop: '5px solid var(--color-text)',
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                    {!showDescuento && (
-                        <button
-                            onClick={() => setShowDescuento(true)}
-                            className="flex items-center gap-1 text-xs px-2.5 py-2 rounded-lg transition-colors hover:bg-black/5 active:bg-black/10"
-                            style={{ color: 'var(--color-text-muted)' }}
-                        >
-                            <Percent size={12} />
-                            Dcto
-                        </button>
-                    )}
+                    <button
+                        onClick={() => showDescuento ? quitarDescuento() : setShowDescuento(true)}
+                        aria-pressed={showDescuento}
+                        aria-label={showDescuento ? 'Quitar descuento' : 'Aplicar descuento a este producto'}
+                        title={showDescuento ? 'Quitar descuento' : 'Descuento a este producto'}
+                        className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-black/5"
+                        style={{
+                            color: hayDescuento || showDescuento ? 'var(--vp-amber-ink)' : 'var(--color-text-muted)',
+                            backgroundColor: hayDescuento ? 'color-mix(in srgb, var(--vp-amber) 16%, transparent)' : undefined,
+                        }}
+                    >
+                        <Percent size={15} />
+                    </button>
                     <button
                         onClick={() => onEliminar(item.key)}
-                        aria-label="Eliminar del carrito"
-                        className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-red-50 active:bg-red-100 group"
+                        aria-label={`Quitar ${item.producto_nombre} del carrito`}
+                        title="Quitar del carrito"
+                        className="group flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-red-50"
                         style={{ color: 'var(--color-text-muted)' }}
                     >
-                        <Trash2 size={15} className="group-hover:text-red-500 transition-colors" />
+                        <Trash2 size={15} className="transition-colors group-hover:text-red-500" />
                     </button>
                 </div>
             </div>
 
-            {/* Fila 3: Descuento por línea (expandible) */}
+            {/* Fila 3 (solo si aplica): de dónde sale el precio que se cobra */}
+            {(precioEditado || hayDescuento) && !precioBajoCosto && (
+                <p className="flex items-center gap-1.5 mt-1 text-[11px] tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                    {precioEditado && <span className="line-through" title="Precio de lista">S/ {item.precio_original.toFixed(2)}</span>}
+                    {precioEditado && hayDescuento && <span aria-hidden>›</span>}
+                    {hayDescuento && (
+                        <>
+                            <span className="line-through" title="Precio antes del descuento">S/ {item.precio_unitario.toFixed(2)}</span>
+                            <span aria-hidden>›</span>
+                            <strong style={{ color: 'var(--color-primary)' }}>S/ {precioEfectivo.toFixed(2)} c/u</strong>
+                            <span className="font-semibold" style={{ color: 'var(--vp-amber-ink)' }}>
+                                −S/ {(item.descuento_item * item.cantidad).toFixed(2)}{item.descuento_tipo === 'porcentaje' ? ` (${item.descuento_valor} %)` : ''}
+                            </span>
+                        </>
+                    )}
+                    {precioEditado && !hayDescuento && <span>precio cambiado</span>}
+                </p>
+            )}
+
+            {/* Aviso EN VIVO: el precio está por debajo del costo. Dice qué hacer. */}
+            {precioBajoCosto && (
+                <p role="alert" className="flex items-center gap-1.5 mt-1 text-[12px] font-semibold" style={{ color: 'var(--vp-coral-ink)' }}>
+                    <AlertTriangle size={13} className="flex-shrink-0" />
+                    <span>Está bajo el costo (S/ {item.costo_minimo.toFixed(2)}).</span>
+                    <button type="button" onClick={() => ajustarAlCosto(false)} className="underline underline-offset-2 hover:opacity-80">
+                        Subir al costo
+                    </button>
+                </p>
+            )}
+
+            {/* Descuento de esta línea (se abre con el botón %) */}
             {showDescuento && (
-                <div
-                    className="mt-2 pt-2 space-y-2"
-                    style={{ borderTop: '1px dashed var(--color-border)' }}
-                >
-                    {/* Encabezado + cerrar */}
-                    <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-warning)' }}>
-                            <Percent size={12} />
-                            Descuento
-                        </span>
-                        <button
-                            onClick={quitarDescuento}
-                            className="p-1 rounded hover:bg-black/5 transition-colors flex-shrink-0"
-                            title="Quitar descuento"
-                            style={{ color: 'var(--color-text-muted)' }}
-                        >
-                            <X size={13} />
+                <div className="mt-2 rounded-lg p-2 space-y-2"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--vp-amber) 8%, var(--color-surface))', border: '1px solid color-mix(in srgb, var(--vp-amber) 35%, transparent)' }}>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[12px] font-bold" style={{ color: 'var(--vp-amber-ink)' }}>Descuento</span>
+                        {/* Sobre qué se aplica + en qué se expresa */}
+                        <Segmento
+                            opciones={[['pu', 'Por unidad', 'El descuento se resta del precio de cada unidad'], ['total', 'A la línea', 'El descuento se resta del total de esta línea']]}
+                            valor={descModo} onCambio={v => cambiarModo(v as DescModo)} />
+                        <Segmento
+                            opciones={[['monto', 'S/', 'Descuento en soles'], ['porcentaje', '%', 'Descuento en porcentaje']]}
+                            valor={descTipo} onCambio={v => cambiarTipo(v as DescTipo)} />
+                        <button onClick={quitarDescuento} title="Quitar descuento" aria-label="Quitar descuento"
+                            className="ml-auto p-1 rounded hover:bg-black/5" style={{ color: 'var(--color-text-muted)' }}>
+                            <X size={14} />
                         </button>
                     </div>
 
-                    {/* Selectores: afecta a (P.U / Total) + tipo (S/ / %) */}
-                    <div className="flex flex-wrap items-center gap-2">
-                        {/* Afecta a */}
-                        <div className="inline-flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
-                            {(['pu', 'total'] as DescModo[]).map(m => (
-                                <button
-                                    key={m}
-                                    onClick={() => cambiarModo(m)}
-                                    className="text-[11px] font-semibold px-2.5 py-1 transition-colors"
-                                    title={m === 'pu' ? 'El descuento afecta al precio unitario' : 'El descuento afecta al total de la línea'}
-                                    style={{
-                                        backgroundColor: descModo === m ? 'var(--color-warning)' : 'transparent',
-                                        color: descModo === m ? '#fff' : 'var(--color-text-muted)',
-                                    }}
-                                >
-                                    {m === 'pu' ? 'P. Unit.' : 'Total'}
-                                </button>
-                            ))}
-                        </div>
-                        {/* Tipo: soles o porcentaje */}
-                        <div className="inline-flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
-                            {(['monto', 'porcentaje'] as DescTipo[]).map(t => (
-                                <button
-                                    key={t}
-                                    onClick={() => cambiarTipo(t)}
-                                    className="text-[11px] font-bold px-2.5 py-1 transition-colors"
-                                    title={t === 'monto' ? 'Descuento en soles' : 'Descuento en porcentaje'}
-                                    style={{
-                                        backgroundColor: descTipo === t ? 'var(--color-warning)' : 'transparent',
-                                        color: descTipo === t ? '#fff' : 'var(--color-text-muted)',
-                                    }}
-                                >
-                                    {t === 'monto' ? 'S/' : '%'}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Valor + concepto */}
                     <div className="flex flex-wrap items-center gap-2">
                         <div className="relative w-24 flex-shrink-0">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>
-                                {descTipo === 'monto' ? 'S/' : ''}
-                            </span>
+                            {descTipo === 'monto' && (
+                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>S/</span>
+                            )}
                             <input
-                                type="number"
-                                inputMode="decimal"
-                                min="0"
+                                type="number" inputMode="decimal" min="0"
                                 step={descTipo === 'porcentaje' ? '0.1' : '0.01'}
                                 max={maxDescuento(descModo, descTipo)}
                                 value={descuentoVal}
@@ -725,63 +592,70 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                                 onBlur={() => { setDescFocus(false); aplicarDescuento(); }}
                                 onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                                 placeholder={descTipo === 'porcentaje' ? '0' : '0.00'}
-                                className={`w-full ${descTipo === 'monto' ? 'pl-6' : 'pl-2'} pr-5 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2 text-right`}
+                                aria-label="Valor del descuento"
+                                className={`w-full h-8 ${descTipo === 'monto' ? 'pl-7' : 'pl-2'} pr-6 text-[13px] font-semibold text-right tabular-nums border rounded-lg focus:outline-none focus:ring-2`}
                                 style={{
-                                    borderColor: 'var(--color-border)',
-                                    backgroundColor: 'var(--color-bg)',
-                                    color: 'var(--color-text)',
-                                    '--tw-ring-color': 'color-mix(in srgb, var(--color-warning) 40%, transparent)',
+                                    borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)',
+                                    '--tw-ring-color': 'color-mix(in srgb, var(--vp-amber) 40%, transparent)',
                                 } as React.CSSProperties}
                             />
                             {descTipo === 'porcentaje' && (
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>%</span>
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[12px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>%</span>
                             )}
                         </div>
-                        <Select size="sm" className="flex-1 min-w-[100px]" ariaLabel="Concepto del descuento" placeholder="Concepto..."
-                            value={conceptoId != null ? String(conceptoId) : ''}
-                            onChange={v => cambiarConcepto(v ? Number(v) : null)}
-                            options={conceptos.map(c => ({ value: String(c.id), label: c.nombre }))} />
-                    </div>
-
-                    <div className="flex items-center gap-1">
                         {[10, 20, 50, 100].map(p => {
                             const activo = descTipo === 'porcentaje' && parseFloat(descuentoVal) === p;
                             return (
-                                <button
-                                    key={p}
-                                    type="button"
-                                    onClick={() => atajo(p)}
-                                    className="h-6 px-2 rounded-md text-[11px] font-bold transition-colors"
+                                <button key={p} type="button" onClick={() => atajo(p)}
+                                    className="h-8 px-2 rounded-lg text-[12px] font-bold transition-colors"
                                     style={{
-                                        backgroundColor: activo ? 'var(--color-warning)' : 'var(--color-surface)',
-                                        color: activo ? '#3b2a00' : 'color-mix(in srgb, var(--color-warning) 75%, #000)',
-                                        border: `1px solid ${activo ? 'var(--color-warning)' : 'color-mix(in srgb, var(--color-warning) 40%, transparent)'}`,
-                                    }}
-                                >
+                                        backgroundColor: activo ? 'var(--vp-amber)' : 'var(--color-surface)',
+                                        color: activo ? '#3b2a00' : 'var(--vp-amber-ink)',
+                                        border: `1px solid ${activo ? 'var(--vp-amber)' : 'color-mix(in srgb, var(--vp-amber) 40%, transparent)'}`,
+                                    }}>
                                     {p === 100 ? 'Gratis' : `${p} %`}
                                 </button>
                             );
                         })}
                     </div>
 
-                    {avisoTope && (
-                        <p className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--color-danger)' }} role="alert">
-                            {avisoTope}
-                        </p>
-                    )}
+                    <Select size="sm" ariaLabel="Motivo del descuento" placeholder="Motivo del descuento…"
+                        value={conceptoId != null ? String(conceptoId) : ''}
+                        onChange={v => cambiarConcepto(v ? Number(v) : null)}
+                        options={conceptos.map(c => ({ value: String(c.id), label: c.nombre }))} />
 
-                    {/* Resultado en vivo del descuento aplicado */}
-                    {hayDescuento && (
-                        <p className="text-[10px] leading-tight" style={{ color: 'var(--color-text-muted)' }}>
-                            {descModo === 'total' ? (
-                                <>Descuento total línea: <span className="font-bold" style={{ color: 'var(--color-danger)' }}>−S/ {(item.descuento_item * item.cantidad).toFixed(2)}</span>{' · '}c/u queda en <span className="font-bold" style={{ color: 'var(--color-primary)' }}>S/ {precioEfectivo.toFixed(2)}</span></>
-                            ) : (
-                                <>Precio con dcto: <span className="font-bold" style={{ color: 'var(--color-primary)' }}>S/ {precioEfectivo.toFixed(2)}</span>{' '}c/u{' · '}<span className="font-bold" style={{ color: 'var(--color-danger)' }}>−S/ {(item.descuento_item * item.cantidad).toFixed(2)}</span> total</>
-                            )}
-                        </p>
+                    {avisoTope && (
+                        <p className="text-[12px] font-semibold" style={{ color: 'var(--vp-coral-ink)' }} role="alert">{avisoTope}</p>
                     )}
                 </div>
             )}
+        </li>
+    );
+}
+
+/** Control segmentado chico (dos o tres opciones excluyentes). */
+function Segmento({ opciones, valor, onCambio }: {
+    opciones: [string, string, string][];
+    valor:    string;
+    onCambio: (v: string) => void;
+}) {
+    return (
+        <div className="inline-flex h-7 rounded-lg p-0.5" role="radiogroup"
+            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            {opciones.map(([v, label, ayuda]) => {
+                const activo = v === valor;
+                return (
+                    <button key={v} type="button" role="radio" aria-checked={activo} title={ayuda}
+                        onClick={() => onCambio(v)}
+                        className="px-2 rounded-md text-[12px] font-semibold transition-colors"
+                        style={{
+                            backgroundColor: activo ? 'var(--vp-amber)' : 'transparent',
+                            color: activo ? '#3b2a00' : 'var(--color-text-muted)',
+                        }}>
+                        {label}
+                    </button>
+                );
+            })}
         </div>
     );
 }

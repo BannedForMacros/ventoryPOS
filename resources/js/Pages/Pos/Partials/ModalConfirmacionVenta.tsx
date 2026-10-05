@@ -118,7 +118,7 @@ export default function ModalConfirmacionVenta({
                             </div>
                             <div className="flex-1 min-w-0">
                                 <p
-                                    className="text-[10px] font-bold uppercase tracking-wider"
+                                    className="text-[11px] font-bold uppercase tracking-wider"
                                     style={{ color: 'var(--color-text-muted)' }}
                                 >
                                     Facturando a
@@ -137,7 +137,7 @@ export default function ModalConfirmacionVenta({
                                 style={{ borderColor: 'var(--color-border)' }}
                             >
                                 <span
-                                    className="text-[10px] font-bold uppercase tracking-wider"
+                                    className="text-[11px] font-bold uppercase tracking-wider"
                                     style={{ color: 'var(--color-text-muted)' }}
                                 >
                                     Comprobante
@@ -195,12 +195,12 @@ export default function ModalConfirmacionVenta({
                                     <span className="font-bold">{item.cantidad}</span>
                                     <span className="ml-1" style={{ color: 'var(--color-text-muted)' }}>({item.unidad_nombre})</span>
                                     {item.descuento_item > 0 && (
-                                        <span className="ml-1.5 text-[10px] font-medium" style={{ color: 'var(--color-danger)' }}>
+                                        <span className="ml-1.5 text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
                                             -S/{item.descuento_item.toFixed(2)}/u
                                         </span>
                                     )}
                                     {entregaPendiente && pendienteDe && pendienteDe(item) > 0 && (
-                                        <span className="ml-1.5 text-[10px] font-bold" style={{ color: 'var(--color-warning)' }}>
+                                        <span className="ml-1.5 text-[11px] font-bold" style={{ color: 'var(--color-warning)' }}>
                                             · queda {pendienteDe(item)} por entregar
                                         </span>
                                     )}
@@ -233,7 +233,7 @@ export default function ModalConfirmacionVenta({
                                 </li>
                             ))}
                         </ul>
-                        <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                        <p className="text-[12px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
                             {fechaEntrega
                                 ? `Entrega estimada: ${new Date(fechaEntrega + 'T00:00:00').toLocaleDateString('es-PE')}. `
                                 : ''}
@@ -264,7 +264,7 @@ export default function ModalConfirmacionVenta({
                                 </li>
                             ))}
                         </ul>
-                        <p className="text-[11px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                        <p className="text-[12px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
                             {fechaEntrega
                                 ? `Entrega estimada: ${new Date(fechaEntrega + 'T00:00:00').toLocaleDateString('es-PE')}. `
                                 : ''}
@@ -287,7 +287,7 @@ export default function ModalConfirmacionVenta({
                             <span style={{ color: 'var(--color-text-muted)' }}>
                                 Descuento
                                 {descuentoConceptoId && (
-                                    <span className="ml-1 text-[10px]">({conceptos.find(c => c.id === descuentoConceptoId)?.nombre})</span>
+                                    <span className="ml-1 text-[11px]">({conceptos.find(c => c.id === descuentoConceptoId)?.nombre})</span>
                                 )}
                             </span>
                             <span className="font-medium" style={{ color: 'var(--color-danger)' }}>-S/ {descuentoTotal.toFixed(2)}</span>

@@ -18,7 +18,8 @@ interface Props {
     feActiva:  boolean;
     onChange:  (v: TipoComprobanteSel) => void;
     // 'primario': sobre la barra azul del POS. 'superficie': sobre fondo claro (móvil).
-    variante?: 'primario' | 'superficie';
+    // 'carrito': ancho completo, arriba del carrito (pantalla grande).
+    variante?: 'primario' | 'superficie' | 'carrito';
 }
 
 /**
@@ -38,12 +39,13 @@ export default function SelectorComprobante({ valor, feActiva, onChange, variant
     ];
 
     const primario = variante === 'primario';
+    const ancho    = variante === 'carrito';
 
     return (
         <div
             role="radiogroup"
             aria-label="Tipo de comprobante"
-            className={`inline-flex items-center gap-0.5 rounded-lg p-0.5 ${primario ? 'bg-white/15' : ''}`}
+            className={`${ancho ? 'flex w-full' : 'inline-flex'} items-center gap-0.5 rounded-lg p-0.5 ${primario ? 'bg-white/15' : ''}`}
             style={primario ? undefined : { backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
         >
             {opciones.map(({ valor: v, label, ayuda, Icono }) => {
@@ -56,7 +58,7 @@ export default function SelectorComprobante({ valor, feActiva, onChange, variant
                         aria-checked={activo}
                         title={ayuda}
                         onClick={() => onChange(v)}
-                        className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-md transition-colors whitespace-nowrap"
+                        className={`flex items-center gap-1.5 font-semibold rounded-md transition-colors whitespace-nowrap ${ancho ? 'flex-1 justify-center h-8 text-[13px]' : 'text-xs px-2.5 py-1.5'}`}
                         style={primario
                             ? {
                                 backgroundColor: activo ? '#fff' : 'transparent',

@@ -220,7 +220,7 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
 
             {/* Atajos: un toque = ese porcentaje del total. */}
             <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-semibold mr-0.5" style={{ color: 'var(--color-text-muted)' }}>Rápido:</span>
+                <span className="text-[12px] font-semibold mr-0.5" style={{ color: 'var(--color-text-muted)' }}>Rápido:</span>
                 {[10, 20, 50, 100].map(p => {
                     const activo = tipo === 'porcentaje' && parseFloat(val) === p;
                     return (
@@ -242,7 +242,7 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
             </div>
 
             {avisoTope && (
-                <p className="text-[11px] font-semibold" style={{ color: 'var(--color-danger)' }} role="alert">
+                <p className="text-[12px] font-semibold" style={{ color: 'var(--color-danger)' }} role="alert">
                     {avisoTope}
                 </p>
             )}
@@ -255,7 +255,7 @@ export default function PanelDescuento({ descuentoTotal, descuentoConceptoId, ba
                         <span className="opacity-80">({val}% de S/ {base.toFixed(2)})</span>
                     )}
                     {descuentoConceptoId && (
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                        <span className="px-1.5 py-0.5 rounded-full text-[11px] font-medium"
                             style={{ backgroundColor: 'color-mix(in srgb, var(--color-warning) 15%, transparent)', color: 'var(--color-warning)' }}>
                             {conceptos.find(c => c.id === descuentoConceptoId)?.nombre}
                         </span>

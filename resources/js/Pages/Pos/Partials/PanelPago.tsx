@@ -248,7 +248,7 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
                     <button
                         type="button"
                         onClick={dividido ? volverAUnMetodo : empezarDivision}
-                        className="flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md hover:opacity-80"
+                        className="flex items-center gap-1 text-[12px] font-semibold px-1.5 py-0.5 rounded-md hover:opacity-80"
                         style={{ color: 'var(--color-primary)' }}
                     >
                         {dividido ? <><X size={12} /> Volver a un solo método</> : <><Split size={12} /> Pagar con 2 o más métodos</>}
@@ -321,7 +321,7 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
 
                     {disponibles.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1">
-                            <span className="text-[11px] font-semibold mr-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                            <span className="text-[12px] font-semibold mr-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                 <Plus size={11} className="inline -mt-px" /> Agregar:
                             </span>
                             {disponibles.map(m => {
@@ -331,7 +331,7 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
                                         key={m.id}
                                         type="button"
                                         onClick={() => agregarMetodo(m)}
-                                        className="flex items-center gap-1 h-7 px-2 rounded-md border text-[11px] font-semibold hover:opacity-80"
+                                        className="flex items-center gap-1 h-7 px-2 rounded-md border text-[12px] font-semibold hover:opacity-80"
                                         style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
                                     >
                                         <Icono size={12} style={{ color }} />
@@ -446,7 +446,7 @@ function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = fa
                     {automatico && (
                         <span
                             title="Se completa solo con lo que falta. Escribe un monto para fijarlo."
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
                             style={{ backgroundColor: 'var(--vp-sky-light)', color: 'var(--vp-sky)' }}
                         >
                             auto
@@ -483,7 +483,7 @@ function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = fa
                                     type="button"
                                     data-pago-cuenta={i === 0 ? pago.key : undefined}
                                     onClick={() => onCambio({ cuenta_metodo_pago_id: c.pivot!.id })}
-                                    className="flex items-center gap-1 h-7 px-2 text-[11px] font-semibold rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus:ring-2 focus:ring-[var(--color-warning)]"
+                                    className="flex items-center gap-1 h-7 px-2 text-[12px] font-semibold rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus:ring-2 focus:ring-[var(--color-warning)]"
                                     style={{
                                         border: `1px solid ${activa ? 'var(--color-primary)' : 'var(--color-border)'}`,
                                         backgroundColor: activa ? 'color-mix(in srgb, var(--color-primary) 10%, var(--color-surface))' : 'var(--color-surface)',

@@ -6,6 +6,7 @@ import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
     Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2, Store, Plus, PackageCheck, Printer,
+    ArrowRight, Info,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
@@ -569,6 +570,20 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // Cuando se agrega una línea con precio base 0, guardamos su key para
     // enfocar automáticamente el input de precio y que la cajera lo cambie al toque.
     const [nuevaLineaPrecioKey, setNuevaLineaPrecioKey] = useState<string | null>(null);
+    // Línea recién agregada o sumada → se ilumina en el carrito (ver CarritoItem).
+    const [pulsos, setPulsos] = useState<Record<string, number>>({});
+
+    /**
+     * Confirma que el producto entró. En pantalla grande el carrito está a la
+     * vista: la línea se ilumina y basta. En celular/tablet el carrito está
+     * cerrado, así que ahí sí va el aviso flotante.
+     */
+    function avisarAgregado(key: string, nombre: string) {
+        setPulsos(p => ({ ...p, [key]: (p[key] ?? 0) + 1 }));
+        if (!window.matchMedia('(min-width: 1024px)').matches) {
+            toast.success(`${nombre} agregado`, { id: 'pos-agregado', duration: 1000 });
+        }
+    }
     // Advertencia al duplicar un producto: solo la primera vez por producto/unidad
     // en el carrito actual. Se resetea al limpiar el carrito.
     const advertenciasDuplicados = useRef<Set<string>>(new Set());
@@ -887,7 +902,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 key:                   uid(),
                 metodo_pago_id:        efectivo.id,
                 cuenta_metodo_pago_id: null,
-                monto:                 parseFloat(total.toFixed(2)),
+                // Lo que falta: si hay un anticipo parcial, no el total entero.
+                monto:                 parseFloat(Math.max(0, total - montoAnticipoUsado).toFixed(2)),
                 referencia:            '',
                 admite_vuelto:         !!efectivo.admite_vuelto,
                 es_efectivo:           true,
@@ -895,7 +911,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         }
         // `sinCobro`: al quitar un descuento del 100 % vuelve el efectivo automático.
         // `esCredito`: al volver de crédito a contado, también.
-    }, [carrito.length, sinCobro, esCredito]);
+        // Anticipo: si deja de cubrir todo (se quitó o subió el total), vuelve el
+        // efectivo por lo que falta en vez de quedar "Elige cómo paga".
+    }, [carrito.length, sinCobro, esCredito, !!anticipoSeleccionado && montoAnticipoUsado >= total - 0.009]);
 
     // Pago único: su monto sigue al total cuando cambia el carrito. Vale para
     // efectivo y también para Yape/tarjeta (antes solo efectivo, y con Yape
@@ -1052,7 +1070,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 setNuevaLineaPrecioKey(key);
             }
 
-            toast.success(`${nombreCompleto} agregado`, { duration: 1000 });
+            avisarAgregado(key, nombreCompleto);
             return;
         }
 
@@ -1086,7 +1104,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             setCarrito(prev => [...prev, item]);
         }
 
-        toast.success(`${nombreCompleto} agregado`, { duration: 1000 });
+        avisarAgregado(baseKey, nombreCompleto);
     }
 
     function cambiarCantidad(key: string, delta: number) {
@@ -1256,12 +1274,21 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 resolver: bloqueoComprobante.requiereCliente ? irACliente : undefined,
             };
         }
-        if (hayInactivos) return { texto: `Quita ${itemsInactivos.length} ítem(s) inactivo(s)` };
+        if (hayInactivos) {
+            return { texto: itemsInactivos.length === 1
+                ? 'Quita el producto que ya no se vende (en rojo)'
+                : `Quita los ${itemsInactivos.length} productos que ya no se venden (en rojo)` };
+        }
         if (descuentoTotal > 0 && !descuentoConceptoId) {
             return { texto: 'Elige el motivo del descuento', resolver: enfocar('[data-descuento-concepto]') };
         }
         const bajoCosto = carrito.find(i => (i.costo_minimo ?? 0) > 0 && i.precio_unitario < i.costo_minimo - 0.009);
-        if (bajoCosto) return { texto: `Precio bajo el costo: ${bajoCosto.producto_nombre}` };
+        if (bajoCosto) {
+            return {
+                texto: `Sube el precio de ${bajoCosto.producto_nombre}: está bajo el costo (S/ ${bajoCosto.costo_minimo.toFixed(2)})`,
+                resolver: enfocar(`[data-precio-key="${bajoCosto.key}"]`),
+            };
+        }
 
         if (esEnvio && entregas) {
             if (esClienteGeneralSel) return { texto: 'Elige el cliente del envío', resolver: irACliente };
@@ -1568,7 +1595,70 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         // Autofoco del precio en líneas recién agregadas con precio base 0.
         nuevaLineaPrecioKey,
         onAutoFocusPrecio:     () => setNuevaLineaPrecioKey(null),
+        pulsos,
     };
+
+    /*
+     * Comprobante, arriba del carrito y junto al cliente (pantalla grande).
+     * Antes vivía en la barra azul, lejos del cliente del que depende (la
+     * factura pide RUC) y con la misma pinta que la cabecera: se confundían.
+     * Ahora "a quién y con qué documento" se decide en un solo lugar, y lo que
+     * se va a emitir —o por qué no se puede— se lee ahí mismo.
+     */
+    const slotComprobante = (
+        <div className="space-y-1.5">
+            <SelectorComprobante
+                variante="carrito"
+                valor={tipoComprobante}
+                feActiva={feActiva}
+                onChange={v => setTipoComprobante(v as TipoComprobante)}
+            />
+            {(muestraFechaFactura && ventanaEmision) || esComprobanteExterno ? (
+                <div className="flex items-center gap-2">
+                    {muestraFechaFactura && ventanaEmision && (
+                        <label className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
+                            Fecha de emisión
+                            <input
+                                type="date"
+                                value={fechaEmision}
+                                min={ventanaEmision.minima}
+                                max={ventanaEmision.maxima}
+                                onChange={e => setFechaEmision(e.target.value || ventanaEmision.maxima)}
+                                title={`Desde el ${fechaCorta(ventanaEmision.minima)} hasta hoy`}
+                                className="h-8 text-[13px] border rounded-lg px-2"
+                                style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                            />
+                        </label>
+                    )}
+                    {esComprobanteExterno && (
+                        <input
+                            type="text"
+                            value={numeroComprobante}
+                            onChange={e => setNumeroComprobante(e.target.value.toUpperCase())}
+                            placeholder="N.º del comprobante (opcional)"
+                            aria-label="Número del comprobante emitido en otro sistema"
+                            maxLength={30}
+                            className="flex-1 h-8 text-[13px] border rounded-lg px-2.5"
+                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                        />
+                    )}
+                </div>
+            ) : null}
+            {/* Qué se va a emitir. El bloqueo (si lo hay) va en la fila del cliente. */}
+            {emiteCPE && !bloqueoComprobante && (
+                <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
+                    {etiquetaComprobante(tipoComprobante)}
+                    {serieCPE && <> · serie <strong style={{ color: 'var(--color-text)' }}>{serieCPE}</strong></>}
+                    {feActiva && ' · se envía a SUNAT al cobrar'}
+                </p>
+            )}
+            {esComprobanteExterno && (
+                <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
+                    Emitido en otro sistema: aquí solo se anota.
+                </p>
+            )}
+        </div>
+    );
 
     return (
         <PosLayout>
@@ -1762,8 +1852,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    {/* Comprobante (solo desktop/tablet) */}
-                    <div className="hidden sm:flex items-center gap-1.5">
+                    {/* Comprobante en tablet. En pantalla grande va arriba del carrito, junto al cliente. */}
+                    <div className="hidden sm:flex lg:hidden items-center gap-1.5">
                         <SelectorComprobante
                             variante="primario"
                             valor={tipoComprobante}
@@ -1825,11 +1915,11 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                         </div>
                     ) : null}
 
-                    {/* Cliente — siempre visible (incluso en móvil/PWA) */}
+                    {/* Cliente (celular y tablet). En pantalla grande está arriba del carrito. */}
                     <button
                         onClick={() => setModalCliente(true)}
                         aria-label="Cambiar cliente"
-                        className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors min-h-[36px] max-w-[180px] sm:max-w-[220px]"
+                        className="lg:hidden flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 active:bg-white/30 transition-colors min-h-[36px] max-w-[180px] sm:max-w-[220px]"
                     >
                         <User size={14} className="flex-shrink-0" />
                         <span className="truncate font-medium text-[13px]">
@@ -1946,8 +2036,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                             <span>{avisoModo.texto}</span>
                         </div>
                     )}
+                    {/* En pantalla grande esto se lee arriba del carrito (slotComprobante). */}
                     <div
-                        className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2 flex-wrap border-b text-sm"
+                        className="lg:hidden flex items-center justify-between gap-2 px-3 sm:px-4 py-2 flex-wrap border-b text-sm"
                         style={{
                             backgroundColor: bloqueoComprobante
                                 ? 'color-mix(in srgb, var(--color-danger) 12%, var(--color-bg))'
@@ -2352,6 +2443,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                         onSetFechaVencimiento={setFechaVencimiento}
                         anticipoSeleccionado={anticipoSeleccionado}
                         montoAnticipoUsado={montoAnticipoUsado}
+                        slotComprobante={slotComprobante}
                         {...propsPendiente}
                     />
                 </div>
@@ -2700,6 +2792,10 @@ interface CarritoPanelProps {
     // Anticipo de efectivo aplicado a la venta.
     anticipoSeleccionado: number | null;
     montoAnticipoUsado: number;
+    // Comprobante arriba del carrito (solo pantalla grande; en el cajón móvil va en otra parte).
+    slotComprobante?: React.ReactNode;
+    // Línea recién agregada → se ilumina (ver CarritoItem).
+    pulsos: Record<string, number>;
 }
 
 function CarritoPanel({
@@ -2717,6 +2813,7 @@ function CarritoPanel({
     usaDespachoAlmacen, envioPendiente, envioSaleAlEntregar, slotEntrega,
     nuevaLineaPrecioKey, onAutoFocusPrecio,
     anticipoSeleccionado, montoAnticipoUsado,
+    slotComprobante, pulsos,
 }: CarritoPanelProps) {
     const hayInactivos = inactivosCount > 0;
 
@@ -2731,132 +2828,115 @@ function CarritoPanel({
         || (cliente as Cliente & { es_cliente_general?: boolean }).es_cliente_general
         || cliente.numero_documento === '99999999';
 
+    const unidades = carrito.reduce((s, i) => s + i.cantidad, 0);
+    // El comprobante no se puede emitir por falta de cliente → la fila del
+    // cliente misma lo dice y ofrece arreglarlo.
+    const faltaCliente = !!bloqueoComprobante?.requiereCliente;
+
     return (
         <>
-            {/* Cabecera carrito */}
+            {/* ── Para quién y con qué documento ───────────────────────
+                Una sola zona arriba: comprobante (pantalla grande) y cliente.
+                Nada de cabecera "Carrito" que compita con la barra azul. */}
             <div
-                className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+                className="px-3 pt-3 pb-2.5 flex flex-col gap-2 flex-shrink-0"
                 style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}
             >
-                <div className="flex items-center gap-2">
-                    <ShoppingCart size={16} style={{ color: 'var(--color-primary)' }} />
-                    <span className="font-bold text-sm" style={{ color: 'var(--color-text)' }}>
-                        Carrito
-                    </span>
-                    {carrito.length > 0 && (
-                        <span
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                            style={{
-                                backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
-                                color: 'var(--color-primary)',
-                            }}
-                        >
-                            {carrito.reduce((s, i) => s + i.cantidad, 0)} items
-                        </span>
-                    )}
-                </div>
-                {carrito.length > 0 && (
-                    <button
-                        onClick={onLimpiarCarrito}
-                        className="text-xs font-medium px-2 py-1 rounded-lg transition-colors hover:bg-red-50"
-                        style={{ color: 'var(--color-danger)' }}
+                {slotComprobante}
+
+                <button
+                    type="button"
+                    onClick={onAbrirCliente}
+                    aria-label={`Cliente: ${clienteNombre}. Cambiar cliente`}
+                    className="group flex items-center gap-2.5 w-full text-left rounded-lg px-2 py-1.5 -mx-0 transition-colors"
+                    style={{
+                        border: `1px solid ${faltaCliente ? 'var(--color-danger)' : 'var(--color-border)'}`,
+                        backgroundColor: faltaCliente ? 'color-mix(in srgb, var(--color-danger) 6%, var(--color-surface))' : 'var(--color-surface)',
+                    }}
+                >
+                    <span
+                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[13px] font-bold"
+                        style={esClienteGeneral
+                            ? { backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }
+                            : { backgroundColor: 'var(--vp-navy)', color: '#fff' }}
                     >
-                        Limpiar
-                    </button>
+                        {esClienteGeneral ? <User size={16} /> : clienteInicial}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                        <span className="block text-[13px] font-semibold truncate leading-tight" style={{ color: 'var(--color-text)' }}>
+                            {clienteNombre}
+                        </span>
+                        <span className="block text-[12px] truncate leading-tight mt-0.5"
+                            style={{ color: faltaCliente ? 'var(--vp-coral-ink)' : 'var(--color-text-muted)' }}>
+                            {faltaCliente ? bloqueoComprobante!.motivo : clienteDoc ?? 'Sin documento'}
+                        </span>
+                    </span>
+                    <span className="flex items-center gap-0.5 text-[12px] font-semibold flex-shrink-0"
+                        style={{ color: faltaCliente ? 'var(--vp-coral-ink)' : 'var(--color-primary)' }}>
+                        {faltaCliente ? 'Elegir' : 'Cambiar'} <ChevronDown size={14} />
+                    </span>
+                </button>
+
+                {/* Bloqueo del comprobante que NO se arregla con el cliente (p. ej. fecha). */}
+                {bloqueoComprobante && !faltaCliente && (
+                    <Aviso tono="error">{bloqueoComprobante.motivo}</Aviso>
                 )}
             </div>
 
-            {/* Cliente activo — siempre visible mientras se revisa el carrito.
-                Tappable para cambiarlo. Se distingue visualmente entre Cliente
-                general (neutro) y un cliente identificado (acento primary). */}
-            <button
-                onClick={onAbrirCliente}
-                className="flex items-center gap-3 px-4 py-2.5 w-full text-left flex-shrink-0 transition-colors hover:bg-black/5 active:bg-black/10"
-                style={{
-                    borderBottom: '1px solid var(--color-border)',
-                    backgroundColor: 'var(--color-surface)',
-                }}
-            >
-                <div
-                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-white text-sm font-bold"
-                    style={{
-                        backgroundColor: esClienteGeneral ? 'var(--color-text-muted)' : 'var(--color-primary)',
-                    }}
-                >
-                    {esClienteGeneral ? <User size={16} /> : clienteInicial}
-                </div>
-                <div className="flex-1 min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-                        Facturando a
-                    </p>
-                    <p className="text-sm font-semibold truncate leading-tight" style={{ color: 'var(--color-text)' }}>
-                        {clienteNombre}
-                    </p>
-                    {clienteDoc && (
-                        <p className="text-[11px] truncate" style={{ color: 'var(--color-text-muted)' }}>
-                            {clienteDoc}
-                        </p>
-                    )}
-                </div>
-                <ChevronDown size={14} className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
-            </button>
-
             {/* ── Zona de scroll única ─────────────────────────────────
-                Items + descuento + crédito + pagos + desglose comparten UN
-                solo scroll: nada aplasta a nada. Abajo queda fijo solo lo
-                esencial (estado de pago, TOTAL y Cobrar), siempre visible
-                sin importar cuántos items o métodos de pago haya. */}
-            <div className="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-3">
-                {/* Banner persistente: items inactivos en la cita prellenada.
-                    Se mantiene visible mientras el cajero no resuelva los ítems
-                    (eliminándolos o pidiendo al admin reactivar el catálogo). */}
+                Productos + descuento + modalidad + pago + desglose comparten
+                UN scroll. Abajo queda fijo solo lo esencial: estado del pago,
+                TOTAL y Cobrar. */}
+            <div className="flex-1 overflow-y-auto px-3 py-2.5 flex flex-col gap-3">
                 {hayInactivos && (
-                    <div
-                        className="rounded-lg p-3 flex items-start gap-2"
-                        style={{
-                            backgroundColor: 'rgba(239,68,68,0.10)',
-                            border: '1px solid var(--color-danger)',
-                        }}
-                    >
-                        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-danger)' }} />
-                        <div className="text-xs leading-tight" style={{ color: 'var(--color-danger)' }}>
-                            <p className="font-bold mb-0.5">
-                                {inactivosCount} ítem(s) inactivo(s) en este carrito
-                            </p>
-                            <p className="opacity-90">
-                                No podrás cobrar hasta que los elimines del carrito o pidas al administrador reactivar el producto/presentación.
-                            </p>
-                        </div>
-                    </div>
+                    <Aviso tono="error" titulo={`${inactivosCount === 1 ? 'Hay 1 producto que ya no se vende' : `Hay ${inactivosCount} productos que ya no se venden`}`}>
+                        Quítalos del carrito o pide al administrador que los reactive.
+                    </Aviso>
                 )}
 
-                {/* Lista de items */}
                 {carrito.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center flex-1 gap-3 py-10" style={{ color: 'var(--color-text-muted)' }}>
-                        <ShoppingCart size={48} className="opacity-15" />
-                        <div className="text-center">
-                            <p className="text-sm font-medium">Carrito vacío</p>
-                            <p className="text-xs mt-0.5 opacity-70">Toca un producto para agregarlo</p>
-                        </div>
+                    <div className="flex flex-col items-center justify-center flex-1 gap-2 py-10 text-center" style={{ color: 'var(--color-text-muted)' }}>
+                        <ShoppingCart size={40} className="opacity-25" />
+                        <p className="text-[13px] font-semibold" style={{ color: 'var(--color-text)' }}>Aún no hay productos</p>
+                        <p className="text-[12px]">Búscalo arriba o tócalo en la lista para agregarlo.</p>
                     </div>
                 ) : (
-                    <div>
-                        {carrito.map(item => (
-                            <CarritoItem
-                                key={item.key}
-                                item={item}
-                                conceptos={conceptosDescuento}
-                                historial={historial[item.producto_id]}
-                                autoFocusPrecio={nuevaLineaPrecioKey === item.key}
-                                onAutoFocusPrecio={onAutoFocusPrecio}
-                                onCantidad={onCambiarCantidad}
-                                onCantidadExacta={onEstablecerCantidad}
-                                onPrecio={onCambiarPrecio}
-                                onDescuento={onAplicarDescuentoItem}
-                                onEliminar={onEliminarItem}
-                            />
-                        ))}
-                    </div>
+                    <section aria-label="Productos de la venta">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <TituloSeccion>
+                                Productos
+                                <span className="text-[12px] font-semibold tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                                    {carrito.length === 1 ? '1 línea' : `${carrito.length} líneas`} · {+unidades.toFixed(4)} und
+                                </span>
+                            </TituloSeccion>
+                            <button
+                                onClick={onLimpiarCarrito}
+                                className="text-[12px] font-semibold px-2 py-1 rounded-md transition-colors hover:bg-red-50"
+                                style={{ color: 'var(--vp-coral-ink)' }}
+                            >
+                                Vaciar
+                            </button>
+                        </div>
+                        <ul className="rounded-xl overflow-hidden [&>li:first-child]:border-t-0"
+                            style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                            {carrito.map(item => (
+                                <CarritoItem
+                                    key={item.key}
+                                    item={item}
+                                    conceptos={conceptosDescuento}
+                                    historial={historial[item.producto_id]}
+                                    autoFocusPrecio={nuevaLineaPrecioKey === item.key}
+                                    onAutoFocusPrecio={onAutoFocusPrecio}
+                                    onCantidad={onCambiarCantidad}
+                                    onCantidadExacta={onEstablecerCantidad}
+                                    onPrecio={onCambiarPrecio}
+                                    onDescuento={onAplicarDescuentoItem}
+                                    onEliminar={onEliminarItem}
+                                    pulso={pulsos[item.key]}
+                                />
+                            ))}
+                        </ul>
+                    </section>
                 )}
 
                 {carrito.length > 0 && (
@@ -2901,7 +2981,7 @@ function CarritoPanel({
                             {esCredito && (
                                 <div className="space-y-1.5">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                        <span className="text-[12px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
                                             Vence (opcional)
                                         </span>
                                         <input
@@ -2916,7 +2996,7 @@ function CarritoPanel({
                                             }}
                                         />
                                     </div>
-                                    <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                    <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
                                         El pago inicial es opcional; el saldo queda como cuenta por cobrar.
                                     </p>
                                 </div>
@@ -2936,7 +3016,7 @@ function CarritoPanel({
                             >
                                 {entregaPendiente && (
                                     <div className="space-y-2">
-                                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                        <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
                                             {envioPendiente
                                                 ? <>Si el cliente <strong>se lleva algo ahora</strong>, indícalo; el resto queda en Despachos para el envío.</>
                                                 : <>Indica cuánto <strong>se lleva ahora</strong> de cada producto; el resto queda pendiente y se registra solo en Finanzas → Anticipos.</>}
@@ -2981,7 +3061,7 @@ function CarritoPanel({
                                         {/* En un envío la fecha es la programada, arriba. */}
                                         {!envioPendiente && (
                                             <div className="flex items-center gap-2">
-                                                <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                                <span className="text-[12px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
                                                     Entrega estimada (opcional)
                                                 </span>
                                                 <input
@@ -2998,11 +3078,11 @@ function CarritoPanel({
                                             </div>
                                         )}
                                         {totalPendientes > 0 ? (
-                                            <p className="text-[11px] font-medium" style={{ color: 'var(--color-warning)' }}>
+                                            <p className="text-[12px] font-medium" style={{ color: 'var(--color-warning)' }}>
                                                 {totalPendientes} und quedarán {envioPendiente ? 'para el envío' : 'pendientes por entregar'} (no salen del stock hasta entregarse).
                                             </p>
                                         ) : (
-                                            <p className="text-[11px]" style={{ color: 'var(--color-danger)' }}>
+                                            <p className="text-[12px]" style={{ color: 'var(--color-danger)' }}>
                                                 Aún no marcaste nada como pendiente: reduce lo que "lleva" en algún producto.
                                             </p>
                                         )}
@@ -3024,11 +3104,11 @@ function CarritoPanel({
                             >
                                 {despachoAlmacen && (
                                     <div className="space-y-2">
-                                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                        <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
                                             Toda la mercadería quedará pendiente de despacho. El almacenero la verá en su bandeja y confirmará la entrega; el stock saldrá del almacén en ese momento.
                                         </p>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                            <span className="text-[12px] flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
                                                 Entrega estimada (opcional)
                                             </span>
                                             <input
@@ -3061,177 +3141,111 @@ function CarritoPanel({
                             />
                         </div>
 
-                        {/* ── Desglose ────────────────────────────────────────────
-                            Las líneas SUMAN el total: gravado + exonerado + IGV.
-
-                            Antes la primera línea decía «Subtotal» y mostraba el
-                            importe BRUTO (los precios del catálogo llevan el IGV
-                            dentro), con el IGV debajo. Leído en columna parecía una
-                            suma: «Subtotal 100.00 / IGV 15.25» daba a entender 115.25
-                            cuando lo que se iba a cobrar eran 100.00.
-
-                            Ahora se muestran las bases NETAS, que es además el mismo
-                            desglose que va impreso en el comprobante, así que la
-                            cajera puede cotejar pantalla y papel sin traducir nada. */}
-                        <div className="space-y-1 px-1 pb-1">
-                            {descuentoTotal > 0 && (
-                                <div className="flex justify-between text-xs">
-                                    <span style={{ color: 'var(--color-text-muted)' }}>Descuento aplicado</span>
-                                    <span className="font-medium" style={{ color: 'var(--color-danger)' }}>-S/ {descuentoTotal.toFixed(2)}</span>
-                                </div>
-                            )}
-                            <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                <span>Op. gravada</span>
-                                <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {baseGravada.toFixed(2)}</span>
-                            </div>
-                            {baseExonerada > 0 && (
-                                <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                    <span>Op. exonerada</span>
-                                    <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {baseExonerada.toFixed(2)}</span>
-                                </div>
-                            )}
-                            <div className="flex justify-between text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                <span>IGV ({tasaIgv.toFixed(tasaIgv % 1 === 0 ? 0 : 2)}%)</span>
-                                <span className="font-medium" style={{ color: 'var(--color-text)' }}>S/ {igv.toFixed(2)}</span>
-                            </div>
-                        </div>
                     </>
                 )}
             </div>
 
-            {/* ── Pie FIJO: estado de pago + TOTAL + Cobrar ──────────── */}
+            {/* ── Pie FIJO: estado del pago + TOTAL + Cobrar ──────────── */}
             <div
-                className="flex-shrink-0 px-3 pt-2.5 flex flex-col gap-2"
+                className="flex-shrink-0 px-3 pt-2 flex flex-col gap-2"
                 style={{
-                    borderTop: '2px solid var(--color-border)',
+                    borderTop: '1px solid var(--color-border)',
                     backgroundColor: 'var(--color-surface)',
+                    boxShadow: '0 -8px 20px -14px rgb(15 76 129 / 0.35)',
                     paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
                 }}
             >
-                {/* Estado del pago SIEMPRE visible: el cajero ve cuánto falta
-                    o cuánto es el vuelto sin buscar entre las líneas de pago. */}
-                {carrito.length > 0 && (pagos.length > 0 || esCredito || anticipoSeleccionado) && (() => {
-                    const totalPagadoMetodos = pagos.reduce((s, p) => s + p.monto, 0);
-                    const totalPagado = totalPagadoMetodos + montoAnticipoUsado;
-                    const falta  = Math.max(0, total - totalPagado);
-                    const vuelto = pagos.some(p => p.admite_vuelto) ? Math.max(0, totalPagado - total) : 0;
-                    return (
-                        <div className="flex items-center justify-between gap-2 text-xs px-1">
-                            <span style={{ color: 'var(--color-text-muted)' }}>
-                                {esCredito ? 'Pago inicial' : 'Pagado'}{' '}
-                                <span className="font-bold" style={{ color: 'var(--color-text)' }}>S/ {totalPagado.toFixed(2)}</span>
-                                {anticipoSeleccionado && (
-                                    <span style={{ color: 'var(--color-warning)' }}>
-                                        {' '}<span className="font-semibold">(anticipo S/ {montoAnticipoUsado.toFixed(2)})</span>
-                                    </span>
-                                )}
-                            </span>
-                            {esCredito ? (
-                                <span className="font-bold" style={{ color: 'var(--color-primary)' }}>
-                                    Saldo a crédito S/ {falta.toFixed(2)}
-                                </span>
-                            ) : falta > 0.009 ? (
-                                <span className="font-bold" style={{ color: 'var(--color-danger)' }}>
-                                    Falta S/ {falta.toFixed(2)}
-                                </span>
-                            ) : vuelto > 0.009 ? (
-                                <span className="font-bold" style={{ color: 'var(--color-success)' }}>
-                                    Vuelto S/ {vuelto.toFixed(2)}
-                                </span>
-                            ) : (
-                                <span className="font-bold" style={{ color: 'var(--color-success)' }}>
-                                    Cubierto ✓
-                                </span>
-                            )}
-                        </div>
-                    );
-                })()}
+                {/* Las líneas del comprobante SUMAN el total (bases netas + IGV),
+                    igual que en el papel: la cajera coteja sin traducir nada. */}
+                {carrito.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-1 text-[12px] tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                        <span>Op. gravada <strong className="font-semibold" style={{ color: 'var(--color-text)' }}>S/ {baseGravada.toFixed(2)}</strong></span>
+                        {baseExonerada > 0 && (
+                            <span>Exonerada <strong className="font-semibold" style={{ color: 'var(--color-text)' }}>S/ {baseExonerada.toFixed(2)}</strong></span>
+                        )}
+                        <span>IGV {tasaIgv.toFixed(tasaIgv % 1 === 0 ? 0 : 2)} % <strong className="font-semibold" style={{ color: 'var(--color-text)' }}>S/ {igv.toFixed(2)}</strong></span>
+                        {descuentoTotal > 0 && (
+                            <span>Descuento <strong className="font-semibold" style={{ color: 'var(--vp-amber-ink)' }}>−S/ {descuentoTotal.toFixed(2)}</strong></span>
+                        )}
+                    </div>
+                )}
 
-                {/* Total grande */}
+                {/* TOTAL + estado del pago en el mismo bloque: lo que se cobra y si ya está cubierto. */}
                 <div
-                    className="flex items-center justify-between px-4 py-2.5 rounded-xl font-bold text-lg"
+                    className="rounded-xl px-4 py-2.5 text-white"
                     style={{
-                        background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-hover))',
-                        color: '#fff',
-                        boxShadow: '0 4px 15px rgba(26,115,200,0.25)',
+                        background: 'linear-gradient(135deg, var(--vp-sky), var(--vp-navy))',
+                        boxShadow: '0 6px 16px -8px rgb(15 76 129 / 0.55)',
                     }}
                 >
-                    <span className="flex items-center gap-2">
-                        TOTAL
-                        {(esCredito || entrega !== 'completa') && (
-                            <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-white/20">
-                                {[esCredito && MODALIDADES.credito.enTotal, entrega !== 'completa' && MODALIDADES[entrega].enTotal]
-                                    .filter(Boolean).join(' · ')}
-                            </span>
-                        )}
-                    </span>
-                    <span>S/ {total.toFixed(2)}</span>
+                    <div className="flex items-center justify-between gap-3">
+                        <span className="flex items-center gap-2 text-[13px] font-bold tracking-wide">
+                            TOTAL
+                            {(esCredito || entrega !== 'completa') && (
+                                <span className="text-[12px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-white/20">
+                                    {[esCredito && MODALIDADES.credito.enTotal, entrega !== 'completa' && MODALIDADES[entrega].enTotal]
+                                        .filter(Boolean).join(' · ')}
+                                </span>
+                            )}
+                        </span>
+                        <span className="font-display text-[24px] font-extrabold tabular-nums leading-none">S/ {total.toFixed(2)}</span>
+                    </div>
+                    {carrito.length > 0 && (pagos.length > 0 || esCredito || anticipoSeleccionado) && (() => {
+                        const totalPagado = pagos.reduce((s, p) => s + p.monto, 0) + montoAnticipoUsado;
+                        const falta  = Math.max(0, total - totalPagado);
+                        const vuelto = pagos.some(p => p.admite_vuelto) ? Math.max(0, totalPagado - total) : 0;
+                        const [texto, fondo] = esCredito
+                            ? [`Saldo a crédito S/ ${falta.toFixed(2)}`, 'rgb(255 255 255 / 0.18)']
+                            : falta > 0.009
+                                ? [`Falta S/ ${falta.toFixed(2)}`, 'var(--vp-amber)']
+                                : vuelto > 0.009
+                                    ? [`Vuelto S/ ${vuelto.toFixed(2)}`, 'var(--vp-mint)']
+                                    : ['Pago completo', 'var(--vp-mint)'];
+                        const oscuro = !esCredito; // ámbar y menta llevan texto oscuro
+                        return (
+                            <div className="flex items-center justify-between gap-2 mt-1.5 pt-1.5 text-[12px]" style={{ borderTop: '1px solid rgb(255 255 255 / 0.2)' }}>
+                                <span className="tabular-nums" style={{ color: 'rgb(255 255 255 / 0.85)' }}>
+                                    {esCredito ? 'Pago inicial' : 'Pagado'} <strong className="text-white">S/ {totalPagado.toFixed(2)}</strong>
+                                    {anticipoSeleccionado && montoAnticipoUsado > 0.009 && <> · anticipo S/ {montoAnticipoUsado.toFixed(2)}</>}
+                                </span>
+                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md font-bold tabular-nums whitespace-nowrap"
+                                    style={{ backgroundColor: fondo, color: oscuro ? '#0F1923' : '#fff' }}>
+                                    {!esCredito && falta <= 0.009 && <CheckCircle2 size={13} />}
+                                    {texto}
+                                </span>
+                            </div>
+                        );
+                    })()}
                 </div>
 
-                {/* A14: banner rojo cuando el backend dice que no puede vender */}
-                {!puedeVender && razonNoVender && (
-                    <div
-                        className="flex items-start gap-2 px-3 py-2 rounded-lg text-sm font-medium border"
-                        style={{
-                            background: '#fef2f2',
-                            color: '#991b1b',
-                            borderColor: '#fecaca',
-                        }}
-                    >
-                        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-                        <span>{razonNoVender}</span>
-                    </div>
-                )}
+                {/* El POS no puede vender (sin local, almacén apagado…): dicho y sin botón engañoso. */}
+                {!puedeVender && razonNoVender && <Aviso tono="error">{razonNoVender}</Aviso>}
 
-                {/* V10: el comprobante elegido no se puede emitir con estos datos.
-                    Se avisa ACÁ (antes de cobrar) y no después de emitir mal. */}
-                {bloqueoComprobante && (
-                    <div
-                        className="flex items-start gap-2 px-3 py-2 rounded-lg text-sm font-medium border"
-                        style={{
-                            background: '#fef2f2',
-                            color: '#991b1b',
-                            borderColor: '#fecaca',
-                        }}
-                    >
-                        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                            <p>{bloqueoComprobante.motivo}</p>
-                            {bloqueoComprobante.requiereCliente && (
-                                <button
-                                    onClick={onAbrirCliente}
-                                    className="mt-0.5 text-xs font-bold underline hover:opacity-80"
-                                >
-                                    Elegir cliente
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* Botón cobrar. Si falta algo, el botón LO DICE (en ámbar) y al
-                    pulsarlo lleva al campo que falta; nada de dejar pulsar y
-                    recién ahí soltar un error. Listo → verde con el monto. */}
+                {/* Botón cobrar. Si falta algo, el botón LO DICE y al pulsarlo lleva
+                    al lugar que hay que corregir: nada de adivinar. Listo → verde. */}
                 {problemaCobro && puedeVender ? (
                     <button
                         type="button"
                         onClick={onConfirmar}
-                        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-colors"
+                        className="w-full flex items-center gap-2 h-12 px-3 rounded-xl text-[13px] font-bold text-left transition-colors hover:brightness-[0.98]"
                         style={{
-                            backgroundColor: 'color-mix(in srgb, var(--color-warning) 14%, var(--color-surface))',
-                            border: '1.5px solid var(--color-warning)',
-                            color: 'color-mix(in srgb, var(--color-warning) 70%, #000)',
+                            backgroundColor: 'color-mix(in srgb, var(--vp-amber) 16%, var(--color-surface))',
+                            border: '1.5px solid var(--vp-amber)',
+                            color: 'var(--vp-amber-ink)',
                         }}
                     >
-                        <AlertTriangle size={16} className="flex-shrink-0" />
-                        <span className="truncate">{problemaCobro}</span>
+                        <AlertTriangle size={17} className="flex-shrink-0" />
+                        <span className="flex-1 min-w-0 leading-tight line-clamp-2">{problemaCobro}</span>
+                        <span className="flex items-center gap-0.5 text-[12px] flex-shrink-0 opacity-90">
+                            Corregir <ArrowRight size={14} />
+                        </span>
                     </button>
                 ) : (
                     <Button
                         variant="success"
                         size="lg"
                         radius="lg"
-                        className="w-full !py-3 !text-base !font-bold"
+                        className="w-full !h-12 !text-[15px] !font-bold"
                         onClick={onConfirmar}
                         disabled={carrito.length === 0 || !puedeVender}
                         title={!puedeVender ? (razonNoVender ?? 'No puedes registrar ventas en este momento.') : undefined}
@@ -3244,6 +3258,40 @@ function CarritoPanel({
                 )}
             </div>
         </>
+    );
+}
+
+/**
+ * Aviso dentro del carrito, con un solo lenguaje para todo el POS:
+ *   error → no se puede seguir así (rojo).   aviso → revisa esto (ámbar).
+ *   info  → para que sepas (azul).
+ * El texto dice el problema y qué hacer; la acción, si hay, va como botón.
+ */
+function Aviso({ tono, titulo, children, accion }: {
+    tono:     'error' | 'aviso' | 'info';
+    titulo?:  string;
+    children: React.ReactNode;
+    accion?:  { label: string; onClick: () => void };
+}) {
+    const t = {
+        error: { borde: 'var(--color-danger)', fondo: 'color-mix(in srgb, var(--color-danger) 8%, var(--color-surface))', tinta: 'var(--vp-coral-ink)', Icono: AlertTriangle },
+        aviso: { borde: 'var(--vp-amber)',     fondo: 'color-mix(in srgb, var(--vp-amber) 12%, var(--color-surface))',    tinta: 'var(--vp-amber-ink)', Icono: AlertTriangle },
+        info:  { borde: 'var(--vp-sky)',       fondo: 'var(--vp-sky-light)',                                              tinta: 'var(--vp-navy)',      Icono: Info },
+    }[tono];
+    return (
+        <div role={tono === 'info' ? 'status' : 'alert'} className="flex items-start gap-2 rounded-lg px-3 py-2 text-[12px] leading-snug"
+            style={{ backgroundColor: t.fondo, border: `1px solid ${t.borde}`, color: t.tinta }}>
+            <t.Icono size={15} className="flex-shrink-0 mt-px" />
+            <div className="flex-1 min-w-0">
+                {titulo && <p className="text-[13px] font-bold">{titulo}</p>}
+                <div className={titulo ? '' : 'font-semibold'}>{children}</div>
+            </div>
+            {accion && (
+                <button type="button" onClick={accion.onClick} className="flex-shrink-0 text-[12px] font-bold underline underline-offset-2 hover:opacity-80">
+                    {accion.label}
+                </button>
+            )}
+        </div>
     );
 }
 
@@ -3264,7 +3312,7 @@ function PistaComprobante({ visible, serie, bloqueo, sobrePrimario = false }: {
     if (bloqueo) {
         return (
             <span
-                className="inline-flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap"
+                className="inline-flex items-center gap-1 text-[12px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap"
                 style={
                     sobrePrimario
                         ? { backgroundColor: '#fff', color: 'var(--color-danger)' }
@@ -3282,7 +3330,7 @@ function PistaComprobante({ visible, serie, bloqueo, sobrePrimario = false }: {
 
     return (
         <span
-            className="text-[11px] font-semibold whitespace-nowrap"
+            className="text-[12px] font-semibold whitespace-nowrap"
             style={sobrePrimario ? { color: 'rgba(255,255,255,0.9)' } : { color: 'var(--color-text-muted)' }}
             title="Serie con la que se emitirá el comprobante"
         >
@@ -3427,7 +3475,7 @@ function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onPr
                             </>
                         )}
                         {entregas.envio_sale_al_entregar && (
-                            <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                            <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
                                 {entregado
                                     ? 'Marcado como entregado: la mercadería sale del stock al cobrar, no queda en Despachos.'
                                     : 'La mercadería queda en Despachos y sale del stock cuando se confirma la entrega. Si sale ahora, marca "Entregado" en Modalidad.'}
@@ -3443,7 +3491,7 @@ function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onPr
 function FilaModalidad({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
     return (
         <div className="flex items-center gap-3">
-            <span className="w-14 flex-shrink-0 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+            <span className="w-14 flex-shrink-0 text-[12px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>
                 {etiqueta}
             </span>
             <div className="flex-1 grid grid-flow-col auto-cols-fr gap-2">{children}</div>
