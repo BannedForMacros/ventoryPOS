@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw, ZoomIn, ChevronDown, X, ArrowDownCircle, ArrowUpCircle, Coins, Landmark, TrendingUp, ArrowUpRight, ArrowDownRight, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, CheckCircle2, Lock, RefreshCw, ZoomIn, ChevronDown, X, ArrowDownCircle, ArrowUpCircle, Coins, Landmark, TrendingUp, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
@@ -391,7 +391,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                             {item.descripcion}
                                             <ZoomIn size={12} className="flex-shrink-0 opacity-50" />
                                         </p>
-                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                             {CATEGORIA_LABEL[item.categoria] ?? item.categoria}{item.es_manual ? ' · manual' : ' · automático'} · clic para detalle
                                         </p>
                                     </button>
@@ -400,7 +400,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
                                             {item.descripcion}
                                         </p>
-                                        <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                             {CATEGORIA_LABEL[item.categoria] ?? item.categoria}{item.es_manual ? ' · manual' : ' · automático'}
                                         </p>
                                     </>
@@ -638,14 +638,14 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                     return (
                         <div key={s.label} className="rounded-2xl px-4 py-3" title={s.hint}
                             style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                            <p className="text-[11px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>
                                 {s.label}
                             </p>
                             <p className="text-lg font-bold" style={{ color }}>
                                 {n === null ? '—' : `${s.signo && n > 0 ? '+' : ''}${money(n)}`}
                             </p>
                             {s.hint && (
-                                <p className="text-[10px] leading-tight mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{s.hint}</p>
+                                <p className="text-[11px] leading-tight mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{s.hint}</p>
                             )}
                         </div>
                     );
@@ -755,16 +755,9 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                 compras sin ingresar. Kardex desalineado = editaron/revirtieron
                 entradas y hay que Recalcular para que el balance lea lo real. */}
             {(alertaStock.negativos.length > 0 || alertaStock.kardex_desalineado > 0) && (
-                <div className="mb-5 rounded-2xl px-4 py-3"
-                    style={{ border: '1px solid var(--color-warning)', backgroundColor: 'color-mix(in srgb, var(--color-warning) 8%, var(--color-bg))' }}>
-                    <div className="flex items-center gap-2 mb-1">
-                        <AlertTriangle size={16} style={{ color: 'var(--color-warning)' }} />
-                        <span className="text-sm font-bold" style={{ color: 'var(--color-warning)' }}>
-                            Revisar inventario — puede estar afectando el balance
-                        </span>
-                    </div>
+                <Callout variant="warning" className="mb-5" title="Revisar inventario — puede estar afectando el balance">
                     {alertaStock.kardex_desalineado > 0 && (
-                        <p className="text-xs mb-1" style={{ color: 'var(--color-text)' }}>
+                        <p className="mb-1">
                             <strong>{alertaStock.kardex_desalineado}</strong> producto(s) con el kardex desactualizado respecto al stock real
                             (suele pasar al registrar/editar entradas tarde). El valor del stock en este balance puede estar viejo —{' '}
                             <button onClick={reconstruirStock} disabled={recalcStock}
@@ -774,7 +767,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                         </p>
                     )}
                     {alertaStock.negativos.length > 0 && (
-                        <div className="text-xs" style={{ color: 'var(--color-text)' }}>
+                        <div>
                             <span><strong>{alertaStock.negativos.length}</strong> producto(s) con <strong>stock negativo</strong> a esta fecha (restan valor fantasma):</span>
                             <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
                                 {alertaStock.negativos.slice(0, 12).map(p => (
@@ -788,7 +781,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             </div>
                         </div>
                     )}
-                </div>
+                </Callout>
             )}
 
             {/* Secciones favor / contra */}
@@ -879,7 +872,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         <div className="min-w-0">
                                             <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
                                                 {v.label}
-                                                <span className="ml-1.5 text-[10px] font-normal uppercase tracking-wide"
+                                                <span className="ml-1.5 text-[11px] font-normal"
                                                     style={{ color: 'var(--color-text-muted)' }}>
                                                     {v.seccion === 'favor' ? 'a favor' : 'en contra'}
                                                 </span>
@@ -1042,7 +1035,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                             Preserva el filtro de cajero al cambiar. */}
                         {(detalleData.subcuentas?.length ?? 0) > 1 && (
                             <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--color-text-muted)' }}>Cuenta</p>
+                                <p className="text-[11px] font-semibold mb-1" style={{ color: 'var(--color-text-muted)' }}>Cuenta</p>
                                 <div className="flex flex-wrap gap-1.5">
                                     {[{ id: null, nombre: 'Todas' }, ...detalleData.subcuentas].map((c: any) => {
                                         const activo = (detalleData?.cuentaSel ?? null) === c.id;
@@ -1088,12 +1081,12 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                                     backgroundColor: activo ? 'color-mix(in srgb, var(--color-primary) 8%, transparent)' : 'var(--color-surface)',
                                                 }}>
                                                 <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>{t.cajera}</p>
-                                                <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{t.caja} · {t.estado}</p>
+                                                <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{t.caja} · {t.estado}</p>
                                                 <p className="text-base font-bold tabular-nums mt-0.5">
-                                                    {money(t.esperado)} <span className="text-[10px] font-normal" style={{ color: 'var(--color-text-muted)' }}>en caja</span>
+                                                    {money(t.esperado)} <span className="text-[11px] font-normal" style={{ color: 'var(--color-text-muted)' }}>en caja</span>
                                                 </p>
                                                 {t.declarado !== null && (
-                                                    <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                    <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                                         contado {money(t.declarado)}
                                                         {t.diferencia !== null && Math.abs(t.diferencia) >= 0.01 && (
                                                             <span style={{ color: t.diferencia < 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
@@ -1122,7 +1115,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                             style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                                             <span className="flex items-center gap-1.5 font-medium" style={{ color: 'var(--color-text)' }}>
                                                 {c.caja}
-                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                                                <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
                                                     style={{
                                                         color: c.estado === 'abierto' ? 'var(--color-success)' : 'var(--color-text-muted)',
                                                         backgroundColor: c.estado === 'abierto'
@@ -1155,7 +1148,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                                 <ChevronDown size={13} className={`flex-shrink-0 transition-transform duration-300 ${desgloseCG ? '' : '-rotate-90'}`} />
                                                 Caja Grande (administración)
                                             </span>
-                                            <span className="block text-[10px] font-normal mt-0.5 pl-5" style={{ color: 'var(--color-text-muted)' }}>
+                                            <span className="block text-[11px] font-normal mt-0.5 pl-5" style={{ color: 'var(--color-text-muted)' }}>
                                                 {desgloseCG ? 'Minimizar desglose' : 'Ver movimientos y entregas a administración'}
                                             </span>
                                         </span>
@@ -1171,7 +1164,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         <div className="rounded-lg px-2 py-2 space-y-2"
                                             style={{ backgroundColor: 'var(--color-surface)', border: '1px dashed var(--color-border)' }}>
                                             <div className="flex items-center justify-between gap-2">
-                                                <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                                                <p className="text-[11px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>
                                                     Entregas a administración
                                                     <span className="font-normal normal-case ml-1">
                                                         · período filtrado ({entregasCG ? entregasCG.items.length : 0})
@@ -1202,7 +1195,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                                 <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--color-border)' }}>
                                                     <table className="w-full text-xs">
                                                         <thead>
-                                                            <tr className="text-[10px] font-bold uppercase tracking-wider" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
+                                                            <tr className="text-[11px] font-bold uppercase tracking-wider" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
                                                                 <th className="text-left font-bold px-2 py-1.5">Fecha</th>
                                                                 <th className="text-left font-bold px-2 py-1.5">Caja</th>
                                                                 <th className="text-left font-bold px-2 py-1.5">Cajera</th>
@@ -1242,7 +1235,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                         </span>
                                     </div>
                                     {detalleData.cajaGrande.negativo && (
-                                        <p className="text-[10px] px-2" style={{ color: 'var(--color-danger)' }}>
+                                        <p className="text-[11px] px-2" style={{ color: 'var(--color-danger)' }}>
                                             Caja Grande sale negativa: los cajones suman más que el saldo de Efectivo — revisar cierres y arrastres.
                                         </p>
                                     )}
@@ -1281,7 +1274,7 @@ export default function BalanceDiarioDetalle({ balance, gastos, salidasDia, movi
                                                 }}>
                                                 <span className="font-medium">{u.usuario}</span>
                                                 <span className="font-bold tabular-nums" style={{ color: u.total < 0 ? 'var(--color-danger)' : undefined }}>{money(u.total)}</span>
-                                                <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>({u.ops})</span>
+                                                <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>({u.ops})</span>
                                             </button>
                                         );
                                     })}

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import MarcaObligatorio, { estaLleno } from '@/Components/UI/MarcaObligatorio';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 import { useAnchoredPosition } from '@/lib/useAnchoredPosition';
@@ -112,7 +113,7 @@ export default function Select({
             {label && (
                 <label className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
                     {label}
-                    {required && <span className="ml-0.5" style={{ color: 'var(--color-danger)' }}>*</span>}
+                    {required && <MarcaObligatorio lleno={estaLleno(value)} />}
                 </label>
             )}
 

@@ -176,7 +176,7 @@ export default function CalendarioSemana({ citas, inicioSemana, colores, onAbrir
                         {dias.map((d, i) => (
                             <div key={d.iso} className="px-2 py-2 text-center"
                                 style={{ borderLeft: '1px solid color-mix(in srgb, var(--color-border) 60%, transparent)' }}>
-                                <div className="text-[10px] font-bold uppercase tracking-wider"
+                                <div className="text-[11px] font-bold uppercase tracking-wider"
                                     style={{ color: d.esHoy ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
                                     {DIAS[i]}
                                 </div>
@@ -199,7 +199,7 @@ export default function CalendarioSemana({ citas, inicioSemana, colores, onAbrir
                             {/* Columna de horas */}
                             <div className="relative">
                                 {horas.map((h, i) => (
-                                    <div key={h} className="absolute right-2 text-[10px] font-medium"
+                                    <div key={h} className="absolute right-2 text-[11px] font-medium"
                                         style={{ top: i * PX_HORA - 6, color: 'var(--color-text-muted)' }}>
                                         {String(h).padStart(2, '0')}:00
                                     </div>
@@ -271,13 +271,13 @@ export default function CalendarioSemana({ citas, inicioSemana, colores, onAbrir
                                                     la hora y el nombre van en la MISMA línea, como en
                                                     cualquier agenda de verdad. */}
                                                 {alto < 34 ? (
-                                                    <div className="text-[10px] leading-tight truncate">
+                                                    <div className="text-[11px] leading-tight truncate">
                                                         <span className="font-bold">{hhmm(new Date(c.fecha_hora))}</span>
                                                         {' '}{nombreCorto(c.cliente)}
                                                     </div>
                                                 ) : (
                                                     <>
-                                                        <div className="text-[10px] font-bold leading-tight">
+                                                        <div className="text-[11px] font-bold leading-tight">
                                                             {hhmm(new Date(c.fecha_hora))}
                                                         </div>
                                                         <div className="text-[11px] font-semibold leading-tight truncate">
@@ -286,7 +286,7 @@ export default function CalendarioSemana({ citas, inicioSemana, colores, onAbrir
                                                         {/* El profesional solo cabe si el bloque es alto:
                                                             meterlo siempre produce texto cortado. */}
                                                         {alto >= 54 && c.profesional && (
-                                                            <div className="text-[10px] leading-tight truncate flex items-center gap-0.5 opacity-80">
+                                                            <div className="text-[11px] leading-tight truncate flex items-center gap-0.5 opacity-80">
                                                                 <UserIcon size={9} />{c.profesional.name}
                                                             </div>
                                                         )}

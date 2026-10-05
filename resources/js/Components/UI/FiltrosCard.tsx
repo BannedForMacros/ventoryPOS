@@ -37,7 +37,7 @@ export default function FiltrosCard({ children, onClear, tieneFiltros, actions, 
         >
             <div className="flex items-center gap-2 mb-2.5">
                 <Filter size={13} style={{ color: 'var(--color-primary)' }} />
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+                <span className="text-[11px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>
                     Filtros
                 </span>
                 <div className="ml-auto flex items-center gap-1.5 flex-wrap">

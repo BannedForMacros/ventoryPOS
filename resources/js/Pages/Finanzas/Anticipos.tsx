@@ -520,7 +520,7 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                     <div className="text-sm leading-tight">
                         <div>{pendienteTotal(a)} und</div>
                         {a.fecha_entrega_estimada && a.estado === 'activo' && (
-                            <div className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                            <div className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                 entrega est. {new Date(a.fecha_entrega_estimada + 'T00:00:00').toLocaleDateString('es-PE')}
                             </div>
                         )}
@@ -1084,12 +1084,12 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                                     {puede?.editar && detalle.estado === 'activo' && (
                                                         <>
                                                             <button onClick={() => abrirCambiarProducto(detalle, it)} title="Cambiar producto de esta línea pendiente"
-                                                                className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-medium border transition-colors hover:bg-black/5"
+                                                                className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-medium border transition-colors hover:bg-black/5"
                                                                 style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)' }}>
                                                                 <Pencil size={10} /> Cambiar producto
                                                             </button>
                                                             <button onClick={() => abrirCancelarPendiente(detalle, it)} title="Cancelar el pendiente de esta línea"
-                                                                className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-medium border transition-colors hover:bg-black/5"
+                                                                className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-medium border transition-colors hover:bg-black/5"
                                                                 style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)' }}>
                                                                 <Ban size={10} /> Cancelar pendiente
                                                             </button>

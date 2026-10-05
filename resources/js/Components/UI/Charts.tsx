@@ -286,11 +286,11 @@ export function BarList({ data, money = true, multicolor = false, porcentaje = t
                         <div className="flex items-baseline justify-between gap-2 mb-1">
                             <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
                                 {d.label}
-                                {d.extra && <span className="ml-1.5 font-normal text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{d.extra}</span>}
+                                {d.extra && <span className="ml-1.5 font-normal text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{d.extra}</span>}
                             </span>
                             <span className="text-xs font-bold whitespace-nowrap" style={{ color: 'var(--color-text)' }}>
                                 {fmt(d.valor)}
-                                {porcentaje && <span className="ml-1 font-medium text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{pct}%</span>}
+                                {porcentaje && <span className="ml-1 font-medium text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{pct}%</span>}
                             </span>
                         </div>
                         <div className="h-2 rounded-full overflow-hidden"

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ClipboardCheck, AlertTriangle, Coins, CreditCard, Check, ShieldCheck } from 'lucide-react';
+import { ClipboardCheck, Coins, CreditCard, Check, ShieldCheck } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -221,14 +221,12 @@ export default function Consolidacion({ turnos, esperadosPorMetodo, estado, busc
             />
 
             {!requiereConsolidacion && (
-                <div className="mb-4 rounded-xl px-4 py-3 flex items-start gap-2 text-sm"
-                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-warning, #f59e0b) 12%, var(--color-bg))', color: 'var(--color-text)' }}>
-                    <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--color-warning)' }} />
+                <Callout variant="warning" className="mb-4">
                     <span>
                         La consolidación está <strong>desactivada</strong>: el balance toma el cierre de la cajera directamente.
                         Actívala en <strong>Configuración → Empresas → Consolidación de caja</strong>. Si consolidas aquí igualmente, tu conteo reemplaza al de la cajera.
                     </span>
-                </div>
+                </Callout>
             )}
 
             <FiltrosCard cols={3}>

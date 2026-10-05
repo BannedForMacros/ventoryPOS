@@ -153,7 +153,7 @@ export default function ReporteAgenda({ filas, servicios, kpis, filters, locales
                                             style={{ color: f.no_asistio > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
                                             {fmtInt(f.no_asistio)}
                                             {f.asistencia !== null && (
-                                                <span className="block text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                <span className="block text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                                     {f.asistencia}% asist.
                                                 </span>
                                             )}

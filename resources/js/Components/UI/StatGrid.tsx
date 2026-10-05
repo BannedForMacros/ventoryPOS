@@ -74,7 +74,7 @@ export default function StatGrid({ stats, cols: colsProp, size = 'md' }: StatGri
                     >
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider truncate"
+                                <p className="text-[11px] font-semibold truncate"
                                     style={{ color: 'var(--color-text-muted)' }}>
                                     {s.label}
                                 </p>

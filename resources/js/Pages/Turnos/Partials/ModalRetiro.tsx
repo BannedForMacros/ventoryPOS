@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
-import { HandCoins, Info } from 'lucide-react';
+import { HandCoins } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
+import Callout from '@/Components/UI/Callout';
 
 interface Props {
     isOpen:  boolean;
@@ -91,15 +92,13 @@ export default function ModalRetiro({ isOpen, onClose, turnoId, requiereAprobaci
                         }}
                     />
                 </div>
-                <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
-                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 6%, transparent)', color: 'var(--color-text-muted)' }}>
-                    <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
+                <Callout variant="info">
                     <span>
                         El retiro <strong>no es un gasto</strong>: el dinero pasa a custodia de administración
                         y se descuenta del efectivo esperado de tu caja.
                         {requiereAprobacion && ' Quedará pendiente de aprobación por un administrador.'}
                     </span>
-                </div>
+                </Callout>
             </div>
         </Modal>
     );

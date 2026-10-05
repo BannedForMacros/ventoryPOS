@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
-import toast from 'react-hot-toast';
 import { Plus, Trash2, AlertCircle, AlertTriangle, Wallet, UserPlus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -17,7 +16,7 @@ import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
-import { avisoError } from '@/lib/avisoError';
+import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -381,106 +380,115 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
 
     /** Lista de productos cuya suma actual no cumple el mínimo. Vacio = todo OK. */
     const violaciones = useMemo(() => {
-        const out: Array<{ nombre: string; minimo: number; actual: number }> = [];
+        const out: Array<{ productoId: number; nombre: string; minimo: number; actual: number }> = [];
         restriccionesPorProducto.forEach((r, prodId) => {
             const actual = sumaActualPorProducto.get(prodId) ?? 0;
             if (actual + 0.0001 < r.minimoBase) {
-                out.push({ nombre: r.nombre, minimo: r.minimoBase, actual });
+                out.push({ productoId: prodId, nombre: r.nombre, minimo: r.minimoBase, actual });
             }
         });
         return out;
     }, [restriccionesPorProducto, sumaActualPorProducto]);
 
-    function validar(): string[] {
-        const errs: string[] = [];
-        if (!almacenId) errs.push('Selecciona el almacén destino');
-        if (facturadaACliente && !clienteId) errs.push('Selecciona el cliente al que se facturó la compra');
+    /**
+     * Qué impide guardar AHORA, en palabras de quien registra (mismas reglas que
+     * EntradaController@update). Devuelve el PRIMER problema, en el orden de la
+     * pantalla; el botón "Guardar cambios" lo muestra y "Corregir" lleva al campo.
+     */
+    function problemaEntrada(): Problema | null {
+        const nombreDe = (d: DetalleRow, n: number) =>
+            productos.find(p => p.id === d.producto_id)?.nombre ?? `el producto #${n}`;
+        const nombreMetodo = (id: number | '') => metodosPago.find(m => m.id === id)?.nombre ?? 'este método';
 
-        pagosNuevos.forEach((p, idx) => {
-            const n = idx + 1;
+        if (!almacenId) return { texto: 'Elige el almacén destino', campo: 'almacen_id' };
+        if (!tipo)      return { texto: 'Elige el tipo de entrada', campo: 'tipo' };
+        if (!fecha)     return { texto: 'Elige la fecha de la entrada', campo: 'fecha' };
+        if (facturadaACliente && !clienteId) return { texto: 'Elige el cliente al que se facturó la compra', campo: 'cliente_id' };
+
+        if (detalles.filter(d => d.producto_id !== '').length === 0) return { texto: 'Agrega al menos un producto', campo: 'detalles' };
+        for (let i = 0; i < detalles.length; i++) {
+            const d = detalles[i];
+            if (d.producto_id === '') continue;
+            const nombre = nombreDe(d, i + 1);
+            if (!d.unidad_medida_id) return { texto: `Elige la unidad de ${nombre}`, campo: `detalles.${i}.unidad_medida_id` };
+            const qty = parseFloat(d.cantidad);
+            if (d.cantidad.trim() === '') return { texto: `Escribe la cantidad de ${nombre}`, campo: `detalles.${i}.cantidad` };
+            if (isNaN(qty) || qty <= 0) return { texto: `La cantidad de ${nombre} debe ser mayor a 0`, campo: `detalles.${i}.cantidad` };
+            const cost = parseFloat(d.precio_costo);
+            const precioTecleado = d.precio_modo === 'total' ? d.precio_total : d.precio_costo;
+            if (precioTecleado.trim() === '' || d.precio_costo === '') return { texto: `Escribe el precio de ${nombre}`, campo: `detalles.${i}.precio_costo` };
+            if (isNaN(cost) || cost < 0) return { texto: `El precio de ${nombre} no puede ser negativo`, campo: `detalles.${i}.precio_costo` };
+        }
+        // Reducir por debajo de lo ya vendido/consumido: bloquea (salvo que la
+        // empresa permita stock negativo; ahí solo se pide confirmación al guardar).
+        if (violaciones.length > 0 && !permiteStockNegativo) {
+            const v = violaciones[0];
+            const fila = detalles.findIndex(d => d.producto_id === v.productoId);
+            return {
+                texto: `${v.nombre}: no puedes bajar de ${v.minimo.toFixed(2)} (base), ya se vendió o se movió`,
+                campo: fila >= 0 ? `detalles.${fila}.cantidad` : undefined,
+            };
+        }
+
+        // Pagos YA registrados que se están editando (solo admin).
+        if (puedeEditarPagos) {
+            for (const r of editPagos) {
+                if (r.eliminar || r.esAdelanto) continue;
+                const metodo = nombreMetodo(r.metodo_pago_id);
+                const m = parseFloat(r.monto);
+                if (r.monto.trim() === '' || isNaN(m) || m < 0.01) {
+                    return { texto: `El pago registrado de ${metodo} debe ser mayor a S/ 0.00`, campo: `pagos_editados.${r.id}.monto` };
+                }
+                if (cuentasDeMetodo(r.metodo_pago_id).length > 0 && !r.cuenta_id) {
+                    return { texto: `Elige la cuenta de ${metodo} (pago registrado)`, campo: `pagos_editados.${r.id}.cuenta_id` };
+                }
+            }
+        }
+        if (montoPagado > total + 0.009) {
+            return { texto: `Lo ya pagado (${money(montoPagado)}) pasa del total de la compra ${money(total)}: ajusta o anula un pago` };
+        }
+
+        // Pagos NUEVOS.
+        for (let i = 0; i < pagosNuevos.length; i++) {
+            const p = pagosNuevos[i];
+            const n = pagosNuevos.length > 1 ? ` (pago #${i + 1})` : '';
             if (p.modo === 'efectivo') {
-                if (!p.metodo_pago_id) errs.push(`Pago nuevo #${n}: falta el método de pago`);
-                if (cuentasDeLinea(p).length > 0 && !p.cuenta_id) errs.push(`Pago nuevo #${n}: selecciona la cuenta`);
-            }
-            if (p.modo === 'adelanto') {
-                if (!p.proveedor_adelanto_id) errs.push(`Pago nuevo #${n}: selecciona el adelanto`);
-                const adelanto = adelantosDisponibles.find(a => a.id === p.proveedor_adelanto_id);
-                if (adelanto && Number(p.monto) > Number(adelanto.saldo) + 0.01) {
-                    errs.push(`Pago nuevo #${n}: el monto supera el saldo del adelanto`);
+                if (!p.metodo_pago_id) return { texto: `Elige el método de pago${n}`, campo: `pagos.${i}.metodo_pago_id` };
+                if (cuentasDeLinea(p).length > 0 && !p.cuenta_id) {
+                    return { texto: `Elige la cuenta de ${nombreMetodo(p.metodo_pago_id)}${n}`, campo: `pagos.${i}.cuenta_id` };
                 }
+            } else if (!p.proveedor_adelanto_id) {
+                return { texto: `Elige el adelanto a consumir${n}`, campo: `pagos.${i}.proveedor_adelanto_id` };
             }
+            if (p.monto.trim() === '') return { texto: `Escribe el monto del pago${n}`, campo: `pagos.${i}.monto` };
             const m = parseFloat(p.monto);
-            if (!p.monto || isNaN(m) || m <= 0) errs.push(`Pago nuevo #${n}: el monto debe ser mayor a 0`);
-        });
-        if (totalPagoNuevo > saldoActual + 0.009) {
-            errs.push(`Los pagos nuevos (S/ ${totalPagoNuevo.toFixed(2)}) superan el saldo pendiente (S/ ${saldoActual.toFixed(2)})`);
-        }
-        // Pagos ya registrados editados (no anulados, con dinero): monto válido.
-        editPagos.filter(r => !r.eliminar && !r.esAdelanto).forEach(r => {
-            const m = parseFloat(r.monto);
-            if (!r.monto || isNaN(m) || m <= 0) errs.push('Hay un pago ya registrado con monto inválido');
-            if (cuentasDeMetodo(r.metodo_pago_id).length > 0 && !r.cuenta_id) errs.push('Un pago editado requiere seleccionar la cuenta');
-        });
-        if (!tipo)      errs.push('Selecciona el tipo de entrada');
-        if (!fecha)     errs.push('Indica la fecha');
-
-        if (detalles.length === 0) {
-            errs.push('Agrega al menos un producto al detalle');
-        } else {
-            detalles.forEach((d, idx) => {
-                const n = idx + 1;
-                if (!d.producto_id)       errs.push(`Producto #${n}: falta seleccionar el producto`);
-                if (!d.unidad_medida_id)  errs.push(`Producto #${n}: falta seleccionar la unidad`);
-                const qty = parseFloat(d.cantidad);
-                if (!d.cantidad || isNaN(qty) || qty <= 0) {
-                    errs.push(`Producto #${n}: la cantidad debe ser mayor a 0`);
+            if (isNaN(m) || m < 0.01) return { texto: `El monto del pago${n} debe ser mayor a S/ 0.00`, campo: `pagos.${i}.monto` };
+            if (p.modo === 'adelanto') {
+                const adelanto = adelantosDisponibles.find(a => a.id === p.proveedor_adelanto_id);
+                if (adelanto && m > Number(adelanto.saldo) + 0.009) {
+                    return { texto: `El monto${n} no puede pasar del saldo del adelanto ${money(adelanto.saldo)}`, campo: `pagos.${i}.monto` };
                 }
-                const cost = parseFloat(d.precio_costo);
-                if (d.precio_costo === '' || isNaN(cost) || cost < 0) {
-                    errs.push(`Producto #${n}: precio de costo inválido`);
-                }
-                // Factura/comprobante siempre OPCIONAL — no bloqueamos.
-            });
+            }
         }
-        return errs;
+        if (pagosNuevos.length > 0 && totalPagoNuevo > saldoActual + 0.009) {
+            return {
+                texto: `Los pagos nuevos (${money(totalPagoNuevo)}) no pueden pasar del saldo ${money(saldoActual)}`,
+                campo: `pagos.${pagosNuevos.length - 1}.monto`,
+            };
+        }
+        return null;
     }
-
-    function mostrarErroresValidacion(errs: string[]) {
-        toast.error(
-            () => (
-                <div className="flex flex-col gap-1.5 max-w-xs">
-                    <div className="flex items-center gap-2 font-semibold text-sm">
-                        <AlertCircle size={15} />
-                        <span>Faltan datos para guardar</span>
-                    </div>
-                    <ul className="text-xs space-y-0.5 list-disc list-inside opacity-95">
-                        {errs.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
-                        {errs.length > 5 && (
-                            <li className="opacity-70 list-none">…y {errs.length - 5} más</li>
-                        )}
-                    </ul>
-                </div>
-            ),
-            { duration: 5500 }
-        );
-    }
+    const problema = problemaEntrada();
+    const { err, errs, corregir } = useProblema(problema, errors);
+    // Errores para la tabla de productos: los del servidor + el problema actual si es de una fila.
+    const erroresDetalle = { ...errors, ...(problema?.campo ? errs(problema.campo) : {}) };
 
     function submit() {
-        const errs = validar();
-        if (errs.length > 0) {
-            mostrarErroresValidacion(errs);
-            return;
-        }
-        // Bloqueo explicito si hay violaciones de stock — backend tambien valida,
-        // pero atajamos aca para evitar el roundtrip y dar mensaje accionable.
-        // Excepcion: si la empresa permite stock negativo, reducir solo ADVIERTE
-        // (el stock quedara en negativo y Stock::reconstruir replantea el kardex).
-        if (violaciones.length > 0 && !permiteStockNegativo) {
-            mostrarErroresValidacion(violaciones.map(v =>
-                `${v.nombre}: tienes ${v.actual.toFixed(2)} base, debes mantener al menos ${v.minimo.toFixed(2)} base`
-            ));
-            return;
-        }
+        // Falta algo (incluye reducir bajo lo ya vendido sin stock negativo
+        // permitido): llevar al campo en vez de enviar y esperar el rebote.
+        if (problema) { corregir(); return; }
+        // Con stock negativo permitido, reducir solo ADVIERTE (el stock quedará
+        // en negativo y Stock::reconstruir replantea el kardex).
         if (violaciones.length > 0 && permiteStockNegativo) {
             const nombres = violaciones.map(v => v.nombre).join(', ');
             if (!window.confirm(`Vas a reducir por debajo de lo ya vendido/consumido: ${nombres}. El stock quedará en NEGATIVO y el kardex se recalculará al guardar. ¿Continuar?`)) {
@@ -524,10 +532,10 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
         }, {
             onSuccess: () => setProcessing(false),
             onError:   (e) => {
+                // Lo que el servidor rechace se escribe junto a su campo (y lo que
+                // no tenga campo, en el aviso junto al botón de guardar).
                 setErrors(e);
                 setProcessing(false);
-                const first = Object.values(e)[0];
-                avisoError(first, 'Revisa los campos marcados.');
             },
         });
     }
@@ -574,9 +582,10 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {almacenes.length > 1 ? (
                             <Select label="Almacén destino" required value={almacenId}
+                                triggerAttrs={{ 'data-campo': 'almacen_id' }}
                                 onChange={v => setAlmacenId(v === '' ? '' : Number(v))}
                                 options={almacenes.map(a => ({ value: a.id, label: a.nombre }))}
-                                error={errors.almacen_id} />
+                                error={err('almacen_id')} />
                         ) : almacenes.length === 1 ? (
                             <div>
                                 <label className="text-sm font-medium block mb-1" style={{ color: 'var(--color-text)' }}>Almacén destino</label>
@@ -586,6 +595,8 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                             </div>
                         ) : null}
                         <Select label="Tipo" required value={tipo} onChange={v => setTipo(String(v))}
+                            triggerAttrs={{ 'data-campo': 'tipo' }}
+                            error={err('tipo')}
                             options={[
                                 { value: 'compra', label: 'Compra' }, { value: 'ajuste', label: 'Ajuste' },
                                 { value: 'devolucion', label: 'Devolución' }, { value: 'otro', label: 'Otro' },
@@ -610,9 +621,9 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                             </Button>
                         </div>
                         {!facturaPorItem && (
-                            <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} />
+                            <Input label="Nro. documento" value={nroDoc} maxLength={50} onChange={e => setNroDoc(e.target.value)} error={errors.numero_documento} />
                         )}
-                        <Input label="Fecha" required type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
+                        <Input label="Fecha" required type="date" data-campo="fecha" value={fecha} onChange={e => setFecha(e.target.value)} error={err('fecha')} />
                     </div>
 
                     {/* Compra cuya factura salió a NOMBRE de un cliente del negocio.
@@ -627,7 +638,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                         />
                         {facturadaACliente && (
                             <div className="flex items-end gap-2 max-w-lg">
-                                <div className="flex-1 min-w-0">
+                                <div className="flex-1 min-w-0" data-campo="cliente_id">
                                     <SearchableSelect
                                         label="Cliente facturado"
                                         required
@@ -636,7 +647,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                         value={clienteId}
                                         onChange={v => setClienteId(v === '' ? '' : Number(v))}
                                         options={listaClientes.map(c => ({ value: c.id, label: nombreCliente(c) }))}
-                                        error={errors.cliente_id}
+                                        error={err('cliente_id')}
                                     />
                                 </div>
                                 <Button type="button" variant="secondary" onClick={() => setModalCliente(true)}
@@ -716,7 +727,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                         subtotal={subtotal}
                         cantidadBase={cantidadBase}
                         facturaPorItem={facturaPorItem}
-                        errors={errors as Record<string, string>}
+                        errors={erroresDetalle}
                         total={total}
                     />
                 </section>
@@ -815,14 +826,17 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                         options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))} />
                                                     <Select label="Cuenta"
                                                         required={cuentas.length > 0}
+                                                        triggerAttrs={{ 'data-campo': `pagos_editados.${r.id}.cuenta_id` }}
                                                         placeholder={cuentas.length ? '— Elige cuenta —' : 'Se asigna sola'}
                                                         value={r.cuenta_id} disabled={disabled || cuentas.length === 0}
                                                         onChange={v => setEditPago(r.id, { cuenta_id: v === '' ? '' : Number(v) })}
-                                                        error={!r.eliminar && cuentas.length > 0 && !r.cuenta_id ? 'Elige la cuenta' : undefined}
+                                                        error={err(`pagos_editados.${r.id}.cuenta_id`) ?? (!r.eliminar && cuentas.length > 0 && !r.cuenta_id ? 'Elige la cuenta' : undefined)}
                                                         options={cuentas.map(c => ({ value: c.id, label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre }))} />
                                                     <Input label="Monto" type="number" min="0.01" step="0.01"
+                                                        data-campo={`pagos_editados.${r.id}.monto`}
                                                         value={r.monto} disabled={disabled}
-                                                        onChange={e => setEditPago(r.id, { monto: e.target.value })} />
+                                                        onChange={e => setEditPago(r.id, { monto: e.target.value })}
+                                                        error={err(`pagos_editados.${r.id}.monto`)} />
                                                 </div>
                                                 {afectaCajaEntradas && turnos.length > 0 && (
                                                     <Select label="Afecta caja a (turno)"
@@ -925,6 +939,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                 <Select
                                                     label="Adelanto disponible"
                                                     required
+                                                    triggerAttrs={{ 'data-campo': `pagos.${idx}.proveedor_adelanto_id` }}
                                                     placeholder={adelantosDisponibles.length ? '— Seleccionar adelanto —' : 'Sin adelantos'}
                                                     value={p.proveedor_adelanto_id}
                                                     onChange={v => {
@@ -942,17 +957,18 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                         label: `Adelanto #${a.id} — saldo ${money(a.saldo)}`,
                                                     }))}
                                                     disabled={adelantosDisponibles.length === 0}
-                                                    error={errors[`pagos.${idx}.proveedor_adelanto_id`]}
+                                                    error={err(`pagos.${idx}.proveedor_adelanto_id`)}
                                                 />
                                             ) : (
                                                 <Select
                                                     label="Método de pago"
                                                     required
+                                                    triggerAttrs={{ 'data-campo': `pagos.${idx}.metodo_pago_id` }}
                                                     placeholder="Seleccionar método"
                                                     value={p.metodo_pago_id}
                                                     onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: cuentaDefaultDe(v === '' ? '' : Number(v)) })}
                                                     options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
-                                                    error={errors[`pagos.${idx}.metodo_pago_id`]}
+                                                    error={err(`pagos.${idx}.metodo_pago_id`)}
                                                 />
                                             )}
                                             {p.modo === 'adelanto' ? (
@@ -965,6 +981,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                 <Select
                                                     label="Cuenta"
                                                     required={cuentas.length > 0}
+                                                    triggerAttrs={{ 'data-campo': `pagos.${idx}.cuenta_id` }}
                                                     placeholder={cuentas.length ? '— Selecciona una cuenta —' : 'Se asigna sola'}
                                                     value={p.cuenta_id}
                                                     onChange={v => setPago(p.key, { cuenta_id: v === '' ? '' : Number(v) })}
@@ -973,7 +990,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                         label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
                                                     }))}
                                                     disabled={cuentas.length === 0}
-                                                    error={cuentas.length > 0 && !p.cuenta_id ? 'Elige la cuenta' : undefined}
+                                                    error={err(`pagos.${idx}.cuenta_id`) ?? (cuentas.length > 0 && !p.cuenta_id ? 'Elige la cuenta' : undefined)}
                                                 />
                                             )}
                                             <Input
@@ -981,12 +998,15 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                                 required type="date"
                                                 value={p.fecha}
                                                 onChange={e => setPago(p.key, { fecha: e.target.value })}
+                                                error={errors[`pagos.${idx}.fecha`]}
                                             />
                                             <Input
                                                 label={`Monto (S/)${p.modo === 'adelanto' && adelantoSel ? ` · máx. ${money(adelantoSel.saldo)}` : ''}`}
                                                 required type="number" min="0.01" step="0.01"
+                                                data-campo={`pagos.${idx}.monto`}
                                                 value={p.monto}
                                                 onChange={e => setPago(p.key, { monto: e.target.value })}
+                                                error={err(`pagos.${idx}.monto`)}
                                             />
                                         </div>
                                     </div>
@@ -1025,7 +1045,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                                     Los pagos nuevos superan el saldo pendiente.
                                 </p>
                             )}
-                            {errors.pagos && <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{errors.pagos}</p>}
+                            {errors.pagos && <Callout variant="danger">{errors.pagos}</Callout>}
                         </div>
                     )}
 
@@ -1036,9 +1056,19 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                     </p>
                 </section>
 
-                <div className="flex gap-3">
+                {/* Errores del servidor que no tienen un campo visible donde mostrarse
+                    (p. ej. pagos_editados, o "pagos" cuando la sección está plegada). */}
+                <ErroresSueltos errors={errors} visibles={[
+                    'almacen_id', 'tipo', 'fecha', 'numero_documento', 'cliente_id', 'detalles', 'detalles.*', 'pagos.*',
+                    ...(saldoActual <= 0.009 && pagosNuevos.length === 0 ? [] : ['pagos']),
+                ]} />
+
+                {/* Si falta algo, el botón LO DICE y lleva al campo. */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                     <Button type="button" variant="ghost" onClick={() => router.visit(route('inventario.entradas.index'))}>Cancelar</Button>
-                    <Button type="button" loading={processing} onClick={submit}>Guardar cambios</Button>
+                    <BotonGuardar problema={problema} onGuardar={submit} onCorregir={corregir} guardando={processing}>
+                        Guardar cambios
+                    </BotonGuardar>
                 </div>
             </div>
 

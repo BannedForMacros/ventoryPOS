@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
-import toast from 'react-hot-toast';
-import { Plus, Trash2, AlertCircle, CheckCircle, Wallet, UserPlus } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, Wallet, UserPlus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -18,7 +17,7 @@ import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
-import { avisoError } from '@/lib/avisoError';
+import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -234,100 +233,84 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
     const total = detalles.reduce((sum, d) => sum + subtotal(d), 0);
 
     /**
-     * Valida el formulario en cliente ANTES de enviar al backend. La idea es que
-     * el usuario sepa exactamente qué le falta sin tener que scrollear y buscar
-     * los inputs marcados en rojo. Devuelve lista de mensajes humanos; si está
-     * vacía, todo OK.
+     * Qué impide guardar AHORA, en palabras de quien registra (mismas reglas que
+     * EntradaController@store). Devuelve el PRIMER problema, en el orden de la
+     * pantalla; el botón de guardar lo muestra y "Corregir" lleva al campo.
      */
-    function validar(): string[] {
-        const errs: string[] = [];
-        if (!almacenId) errs.push('Selecciona el almacén destino');
-        if (!tipo)      errs.push('Selecciona el tipo de entrada');
-        if (!fecha)     errs.push('Indica la fecha');
-        if (facturadaACliente && !clienteId) errs.push('Selecciona el cliente al que se facturó la compra');
+    function problemaEntrada(): Problema | null {
+        const nombreDe = (d: DetalleRow, n: number) =>
+            productos.find(p => p.id === d.producto_id)?.nombre ?? `el producto #${n}`;
 
-        if (detalles.length === 0) {
-            errs.push('Agrega al menos un producto al detalle');
-        } else {
-            detalles.forEach((d, idx) => {
-                const n = idx + 1;
-                if (!d.producto_id)       errs.push(`Producto #${n}: falta seleccionar el producto`);
-                if (!d.unidad_medida_id)  errs.push(`Producto #${n}: falta seleccionar la unidad`);
-                const qty = parseFloat(d.cantidad);
-                if (!d.cantidad || isNaN(qty) || qty <= 0) {
-                    errs.push(`Producto #${n}: la cantidad debe ser mayor a 0`);
-                }
-                const cost = parseFloat(d.precio_costo);
-                if (d.precio_costo === '' || isNaN(cost) || cost < 0) {
-                    errs.push(`Producto #${n}: precio de costo inválido`);
-                }
-                // El número de factura/comprobante es OPCIONAL siempre. Si el
-                // usuario activó el modo "por item" puede llenar las que tenga
-                // a la mano y dejar el resto en blanco — no lo bloqueamos.
-            });
+        if (almacenes.length === 0) return { texto: 'No tienes un almacén disponible para registrar entradas' };
+        if (!almacenId) return { texto: 'Elige el almacén destino', campo: 'almacen_id' };
+        if (!tipo)      return { texto: 'Elige el tipo de entrada', campo: 'tipo' };
+        if (!fecha)     return { texto: 'Elige la fecha de la entrada', campo: 'fecha' };
+        if (facturadaACliente && !clienteId) return { texto: 'Elige el cliente al que se facturó la compra', campo: 'cliente_id' };
+
+        const conProducto = detalles.filter(d => d.producto_id !== '');
+        if (conProducto.length === 0) return { texto: 'Agrega al menos un producto', campo: 'detalles' };
+        for (let i = 0; i < detalles.length; i++) {
+            const d = detalles[i];
+            if (d.producto_id === '') continue;
+            const nombre = nombreDe(d, i + 1);
+            if (!d.unidad_medida_id) return { texto: `Elige la unidad de ${nombre}`, campo: `detalles.${i}.unidad_medida_id` };
+            const qty = parseFloat(d.cantidad);
+            if (d.cantidad.trim() === '') return { texto: `Escribe la cantidad de ${nombre}`, campo: `detalles.${i}.cantidad` };
+            if (isNaN(qty) || qty <= 0) return { texto: `La cantidad de ${nombre} debe ser mayor a 0`, campo: `detalles.${i}.cantidad` };
+            const cost = parseFloat(d.precio_costo);
+            const precioTecleado = d.precio_modo === 'total' ? d.precio_total : d.precio_costo;
+            if (precioTecleado.trim() === '' || d.precio_costo === '') return { texto: `Escribe el precio de ${nombre}`, campo: `detalles.${i}.precio_costo` };
+            if (isNaN(cost) || cost < 0) return { texto: `El precio de ${nombre} no puede ser negativo`, campo: `detalles.${i}.precio_costo` };
         }
 
-        // Pagos (parcial o pagado): cada línea con método y monto; la suma
-        // debe cuadrar con el modo elegido.
+        // Pagos (parcial o pagado): cada línea con método (o adelanto), cuenta si
+        // el método tiene cuentas, y monto > 0; la suma cuadra con el modo.
         if (estadoPago !== 'pendiente') {
-            if (pagos.length === 0) {
-                errs.push('Agrega al menos una línea de pago (método y monto)');
-            }
-            pagos.forEach((p, idx) => {
-                const n = idx + 1;
+            if (pagos.length === 0) return { texto: 'Agrega una línea de pago', campo: 'pagos-agregar' };
+            for (let i = 0; i < pagos.length; i++) {
+                const p = pagos[i];
+                const n = pagos.length > 1 ? ` (pago #${i + 1})` : '';
                 if (p.modo === 'efectivo') {
-                    if (!p.metodo_pago_id) errs.push(`Pago #${n}: falta el método de pago`);
-                    if (cuentasDeLinea(p).length > 0 && !p.cuenta_id) errs.push(`Pago #${n}: selecciona la cuenta`);
+                    if (!p.metodo_pago_id) return { texto: `Elige el método de pago${n}`, campo: `pagos.${i}.metodo_pago_id` };
+                    if (cuentasDeLinea(p).length > 0 && !p.cuenta_id) {
+                        const metodo = metodosPago.find(m => m.id === p.metodo_pago_id)?.nombre ?? 'este método';
+                        return { texto: `Elige la cuenta de ${metodo}${n}`, campo: `pagos.${i}.cuenta_id` };
+                    }
+                } else {
+                    if (!p.proveedor_adelanto_id) return { texto: `Elige el adelanto a consumir${n}`, campo: `pagos.${i}.proveedor_adelanto_id` };
                 }
+                if (p.monto.trim() === '') return { texto: `Escribe el monto del pago${n}`, campo: `pagos.${i}.monto` };
+                const m = parseFloat(p.monto);
+                if (isNaN(m) || m < 0.01) return { texto: `El monto del pago${n} debe ser mayor a S/ 0.00`, campo: `pagos.${i}.monto` };
                 if (p.modo === 'adelanto') {
-                    if (!p.proveedor_adelanto_id) errs.push(`Pago #${n}: selecciona el adelanto`);
                     const adelanto = adelantosDisponibles.find(a => a.id === p.proveedor_adelanto_id);
-                    if (adelanto && Number(p.monto) > Number(adelanto.saldo) + 0.01) {
-                        errs.push(`Pago #${n}: el monto supera el saldo del adelanto`);
+                    if (adelanto && m > Number(adelanto.saldo) + 0.009) {
+                        return { texto: `El monto${n} no puede pasar del saldo del adelanto ${money(adelanto.saldo)}`, campo: `pagos.${i}.monto` };
                     }
                 }
-                const m = parseFloat(p.monto);
-                if (!p.monto || isNaN(m) || m <= 0) errs.push(`Pago #${n}: el monto debe ser mayor a 0`);
-            });
+            }
             const suma = Math.round(totalPagado * 100) / 100;
             const tot  = Math.round(total * 100) / 100;
-            if (estadoPago === 'pagado' && Math.abs(suma - tot) > 0.01) {
-                errs.push(`En "Pagado" los pagos (S/ ${suma.toFixed(2)}) deben cubrir exactamente el total (S/ ${tot.toFixed(2)}); usa "Pago parcial" si es a cuenta`);
+            const ultimo = `pagos.${pagos.length - 1}.monto`;
+            if (suma > tot + 0.009) {
+                return { texto: `Los pagos (${money(suma)}) no pueden pasar del total de la compra ${money(tot)}`, campo: ultimo };
             }
-            if (estadoPago === 'parcial') {
-                if (suma >= tot - 0.01 && tot > 0) errs.push(`El pago parcial (S/ ${suma.toFixed(2)}) cubre el total: usa "Pagado"`);
-                if (suma <= 0) errs.push('El pago parcial debe ser mayor a 0');
+            if (estadoPago === 'pagado' && Math.abs(suma - tot) > 0.01) {
+                return { texto: `En "Pagado" los pagos deben sumar ${money(tot)} (van ${money(suma)}); si es a cuenta, elige "Pago parcial"`, campo: ultimo };
+            }
+            if (estadoPago === 'parcial' && suma >= tot - 0.01 && tot > 0) {
+                return { texto: `El pago (${money(suma)}) cubre todo el total: elige "Pagado"` };
             }
         }
-        return errs;
+        return null;
     }
-
-    function mostrarErroresValidacion(errs: string[]) {
-        toast.error(
-            () => (
-                <div className="flex flex-col gap-1.5 max-w-xs">
-                    <div className="flex items-center gap-2 font-semibold text-sm">
-                        <AlertCircle size={15} />
-                        <span>Faltan datos para guardar</span>
-                    </div>
-                    <ul className="text-xs space-y-0.5 list-disc list-inside opacity-95">
-                        {errs.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
-                        {errs.length > 5 && (
-                            <li className="opacity-70 list-none">…y {errs.length - 5} más</li>
-                        )}
-                    </ul>
-                </div>
-            ),
-            { duration: 5500 }
-        );
-    }
+    const problema = problemaEntrada();
+    const { err, errs, corregir } = useProblema(problema, errors);
+    // Errores para la tabla de productos: los del servidor + el problema actual si es de una fila.
+    const erroresDetalle = { ...errors, ...(problema?.campo ? errs(problema.campo) : {}) };
 
     function intentarGuardar(confirmar: boolean) {
-        const errs = validar();
-        if (errs.length > 0) {
-            mostrarErroresValidacion(errs);
-            return;
-        }
+        if (problema) { corregir(); return; }
         // El modal de "esto mueve stock" solo aplica a la confirmación real.
         // Guardar algo que viene en camino no toca stock, así que va directo.
         if (confirmar && !enTransito) {
@@ -374,13 +357,10 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
         }, {
             onSuccess: () => setProcessing(false),
             onError: (e) => {
+                // Lo que el servidor rechace se escribe junto a su campo (y lo que
+                // no tenga campo, en el aviso de abajo, junto a los botones).
                 setErrors(e);
                 setProcessing(false);
-                // Backend rechazó algo que el client-validate no atrapó (ej: regla de
-                // negocio del controller). Le avisamos al usuario con toast para que
-                // no se quede mirando un form aparentemente exitoso.
-                const first = Object.values(e)[0];
-                avisoError(first, 'Revisa los campos marcados.');
             },
         });
     }
@@ -416,10 +396,11 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                             <Select
                                 label="Almacén destino"
                                 required
+                                triggerAttrs={{ 'data-campo': 'almacen_id' }}
                                 value={almacenId}
                                 onChange={v => setAlmacenId(v === '' ? '' : Number(v))}
                                 options={almacenes.map(a => ({ value: a.id, label: a.nombre }))}
-                                error={errors.almacen_id}
+                                error={err('almacen_id')}
                             />
                         ) : almacenes.length === 1 ? (
                             <div>
@@ -432,6 +413,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                         <Select
                             label="Tipo"
                             required
+                            triggerAttrs={{ 'data-campo': 'tipo' }}
                             value={tipo}
                             onChange={v => setTipo(String(v))}
                             options={[
@@ -440,6 +422,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                                 { value: 'devolucion', label: 'Devolución' },
                                 { value: 'otro',       label: 'Otro' },
                             ]}
+                            error={err('tipo')}
                         />
                         <div>
                             <div className="flex items-end gap-2">
@@ -466,9 +449,9 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                         {/* Nro. documento solo aparece en modo "factura única". En modo "por item"
                             cada línea del detalle aporta su número y la cabecera queda sin uno. */}
                         {!facturaPorItem && (
-                            <Input label="Nro. documento" value={nroDoc} onChange={e => setNroDoc(e.target.value)} placeholder="Ej: F001-0001234" />
+                            <Input label="Nro. documento" value={nroDoc} maxLength={50} onChange={e => setNroDoc(e.target.value)} placeholder="Ej: F001-0001234" error={errors.numero_documento} />
                         )}
-                        <Input label="Fecha" required type="date" value={fecha} onChange={e => setFecha(e.target.value)} error={errors.fecha} />
+                        <Input label="Fecha" required type="date" data-campo="fecha" value={fecha} onChange={e => setFecha(e.target.value)} error={err('fecha')} />
                     </div>
 
                     {/* Compra ya facturada pero que llega días después. Mientras esté
@@ -510,7 +493,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                         />
                         {facturadaACliente && (
                             <div className="flex items-end gap-2 max-w-lg">
-                                <div className="flex-1 min-w-0">
+                                <div className="flex-1 min-w-0" data-campo="cliente_id">
                                     <SearchableSelect
                                         label="Cliente facturado"
                                         required
@@ -519,7 +502,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                                         value={clienteId}
                                         onChange={v => setClienteId(v === '' ? '' : Number(v))}
                                         options={listaClientes.map(c => ({ value: c.id, label: nombreCliente(c) }))}
-                                        error={errors.cliente_id}
+                                        error={err('cliente_id')}
                                     />
                                 </div>
                                 <Button type="button" variant="secondary" onClick={() => setModalCliente(true)}
@@ -567,7 +550,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                         subtotal={subtotal}
                         cantidadBase={cantidadBase}
                         facturaPorItem={facturaPorItem}
-                        errors={errors as Record<string, string>}
+                        errors={erroresDetalle}
                         total={total}
                     />
                 </section>
@@ -675,6 +658,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                                                 <Select
                                                     label="Adelanto disponible"
                                                     required
+                                                    triggerAttrs={{ 'data-campo': `pagos.${idx}.proveedor_adelanto_id` }}
                                                     placeholder={adelantosDisponibles.length ? '— Seleccionar adelanto —' : 'Sin adelantos'}
                                                     value={p.proveedor_adelanto_id}
                                                     onChange={v => {
@@ -692,17 +676,18 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                                                         label: `Adelanto #${a.id} — saldo ${money(a.saldo)}`,
                                                     }))}
                                                     disabled={adelantosDisponibles.length === 0}
-                                                    error={errors[`pagos.${idx}.proveedor_adelanto_id`]}
+                                                    error={err(`pagos.${idx}.proveedor_adelanto_id`)}
                                                 />
                                             ) : (
                                                 <Select
                                                     label="Método de pago"
                                                     required
+                                                    triggerAttrs={{ 'data-campo': `pagos.${idx}.metodo_pago_id` }}
                                                     placeholder="Seleccionar método"
                                                     value={p.metodo_pago_id}
                                                     onChange={v => setPago(p.key, { metodo_pago_id: v === '' ? '' : Number(v), cuenta_id: cuentaDefaultDe(v === '' ? '' : Number(v)) })}
                                                     options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
-                                                    error={errors[`pagos.${idx}.metodo_pago_id`]}
+                                                    error={err(`pagos.${idx}.metodo_pago_id`)}
                                                 />
                                             )}
                                             {p.modo === 'adelanto' ? (
@@ -715,6 +700,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                                                 <Select
                                                     label="Cuenta"
                                                     required={cuentas.length > 0}
+                                                    triggerAttrs={{ 'data-campo': `pagos.${idx}.cuenta_id` }}
                                                     placeholder={cuentas.length ? '— Selecciona una cuenta —' : 'Se asigna sola'}
                                                     value={p.cuenta_id}
                                                     onChange={v => setPago(p.key, { cuenta_id: v === '' ? '' : Number(v) })}
@@ -723,7 +709,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                                                         label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
                                                     }))}
                                                     disabled={cuentas.length === 0}
-                                                    error={cuentas.length > 0 && !p.cuenta_id ? 'Elige la cuenta' : undefined}
+                                                    error={err(`pagos.${idx}.cuenta_id`) ?? (cuentas.length > 0 && !p.cuenta_id ? 'Elige la cuenta' : undefined)}
                                                 />
                                             )}
                                             <Input
@@ -731,12 +717,15 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                                                 required type="date"
                                                 value={p.fecha}
                                                 onChange={e => setPago(p.key, { fecha: e.target.value })}
+                                                error={errors[`pagos.${idx}.fecha`]}
                                             />
                                             <Input
                                                 label={`Monto (S/)${p.modo === 'adelanto' && adelantoSel ? ` · máx. ${money(adelantoSel.saldo)}` : ''}`}
                                                 required type="number" min="0.01" step="0.01"
+                                                data-campo={`pagos.${idx}.monto`}
                                                 value={p.monto}
                                                 onChange={e => setPago(p.key, { monto: e.target.value })}
+                                                error={err(`pagos.${idx}.monto`)}
                                             />
                                         </div>
                                     </div>
@@ -744,7 +733,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                             })}
 
                             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                                <Button type="button" variant="ghost" size="sm" onClick={() => setPagos(prev => [...prev, nuevaLinea()])}>
+                                <Button type="button" variant="ghost" size="sm" data-campo="pagos-agregar" onClick={() => setPagos(prev => [...prev, nuevaLinea()])}>
                                     <Plus size={14} className="mr-1" />Agregar otro método
                                 </Button>
                                 <div className="flex items-center gap-5 text-sm">
@@ -760,22 +749,30 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                                     </span>
                                 </div>
                             </div>
-                            {errors.pagos && <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{errors.pagos}</p>}
+                            {errors.pagos && <Callout variant="danger">{errors.pagos}</Callout>}
                         </div>
                     )}
                 </section>
 
-                {/* ── Acciones ── */}
-                <div className="flex flex-col sm:flex-row gap-3">
+                {/* Errores del servidor que no tienen un campo visible donde mostrarse. */}
+                <ErroresSueltos errors={errors} visibles={[
+                    'almacen_id', 'tipo', 'fecha', 'numero_documento', 'cliente_id', 'detalles', 'detalles.*',
+                    ...(estadoPago !== 'pendiente' ? ['pagos', 'pagos.*'] : []),
+                ]} />
+
+                {/* ── Acciones ── Si falta algo, el botón LO DICE y lleva al campo. */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                     <Button type="button" variant="ghost" onClick={() => router.visit(route('inventario.entradas.index'))}>
                         Cancelar
                     </Button>
-                    <Button type="button" variant="secondary" loading={processing} onClick={() => intentarGuardar(false)}>
-                        Guardar borrador
-                    </Button>
-                    <Button type="button" loading={processing} onClick={() => intentarGuardar(true)}>
+                    {!problema && (
+                        <Button type="button" variant="secondary" loading={processing} onClick={() => intentarGuardar(false)}>
+                            Guardar borrador
+                        </Button>
+                    )}
+                    <BotonGuardar problema={problema} onGuardar={() => intentarGuardar(true)} onCorregir={corregir} guardando={processing}>
                         {enTransito ? 'Guardar como en camino' : 'Guardar y confirmar'}
-                    </Button>
+                    </BotonGuardar>
                 </div>
             </div>
 

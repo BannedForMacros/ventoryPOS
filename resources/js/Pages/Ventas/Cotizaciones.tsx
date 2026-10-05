@@ -391,7 +391,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
             render: (c) => (
                 <div className="leading-tight">
                     <span className="font-semibold">{c.numero}</span>
-                    <div className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{fmtFecha(c.fecha)}</div>
+                    <div className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{fmtFecha(c.fecha)}</div>
                 </div>
             ),
         },
@@ -452,7 +452,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                 <div className="leading-tight">
                     <Badge variant={ESTADO_BADGE[c.estado].variant}>{ESTADO_BADGE[c.estado].label}</Badge>
                     {c.estado === 'convertida' && c.venta?.numero && (
-                        <div className="text-[10px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                        <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                             Venta {c.venta.numero}
                         </div>
                     )}
@@ -577,7 +577,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                     ]}
                 />
                 <div className="col-span-2">
-                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
                     <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
                         <input
@@ -668,7 +668,7 @@ export default function Cotizaciones({ cotizaciones, kpis, estado, q, clientes, 
                         </p>
                         <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
                             {/* Cabecera del editor (solo desktop) */}
-                            <div className="hidden md:grid grid-cols-[1fr_130px_80px_100px_100px_90px_32px] gap-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide"
+                            <div className="hidden md:grid grid-cols-[1fr_130px_80px_100px_100px_90px_32px] gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide"
                                 style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)' }}>
                                 <span>Producto</span><span>Presentación</span><span className="text-right">Cant.</span>
                                 <span className="text-right">Precio</span><span className="text-right">Desc./und</span>

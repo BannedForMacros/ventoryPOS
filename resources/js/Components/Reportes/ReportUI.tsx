@@ -37,7 +37,7 @@ export function Kpi({ icon, label, value, sub, color, subColor }: {
                 {icon}
             </div>
             <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+                <p className="text-[11px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
                 <p className="text-lg font-bold leading-tight truncate" style={{ color: 'var(--color-text)' }}>{value}</p>
                 {sub && <p className="text-[11px] truncate" style={{ color: subColor ?? 'var(--color-text-muted)' }}>{sub}</p>}
             </div>
@@ -69,7 +69,7 @@ export function ReportCard({ icon, title, badge, accent = 'var(--color-primary)'
                 )}
                 <span className="text-sm font-bold" style={{ color: 'var(--color-text)' }}>{title}</span>
                 {badge && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
                         style={{ backgroundColor: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent }}>
                         {badge}
                     </span>
@@ -84,7 +84,7 @@ export function ReportCard({ icon, title, badge, accent = 'var(--color-primary)'
 /* ── Tabla: estilos compartidos ───────────────────────────────────────── */
 export function Th({ children, right = false, className = '' }: { children?: React.ReactNode; right?: boolean; className?: string }) {
     return (
-        <th className={`px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide whitespace-nowrap ${right ? 'text-right' : 'text-left'} ${className}`}
+        <th className={`px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap ${right ? 'text-right' : 'text-left'} ${className}`}
             style={{ color: 'var(--vp-navy)' }}>
             {children}
         </th>
@@ -155,7 +155,7 @@ export function FiltrosReporte({ fechaDesde, fechaHasta, onChange, onClear, tien
             }}>
             <div className="flex items-center gap-2 mb-2.5">
                 <Filter size={13} style={{ color: 'var(--color-primary)' }} />
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>Filtros</span>
+                <span className="text-[11px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>Filtros</span>
                 <div className="ml-auto flex items-center gap-1.5 flex-wrap">
                     {rangos.map(([label, calc]) => (
                         <button key={label} onClick={() => onChange(calc())}

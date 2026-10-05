@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { ArrowDown, ArrowUp, Check, Eye, LayoutList, Printer, ReceiptText, Settings2, Sparkles, TriangleAlert, Type, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Eye, LayoutList, Printer, ReceiptText, Settings2, Sparkles, Type, UserRound } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Switch from '@/Components/UI/Switch';
@@ -12,6 +12,7 @@ import { estadoAgente, type EstadoAgente, type TicketPayload } from '@/lib/ticke
 import type { Bloque } from '@/lib/ticketBloques';
 import type { PageProps } from '@/types';
 import { avisoError } from '@/lib/avisoError';
+import Callout from '@/Components/UI/Callout';
 
 interface Seccion { clave: string; activa: boolean; }
 interface Plantilla {
@@ -334,9 +335,6 @@ function Segmento({ valor, onChange, opciones, etiqueta, ancho }: {
 
 function Aviso({ children }: { children: React.ReactNode }) {
     return (
-        <p className="mt-3 flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm"
-            style={{ backgroundColor: 'color-mix(in srgb, var(--vp-amber) 12%, var(--color-surface))', color: 'var(--vp-amber-ink)' }}>
-            <TriangleAlert size={16} className="mt-0.5 flex-shrink-0" /> <span>{children}</span>
-        </p>
+        <Callout variant="warning" className="mt-3">{children}</Callout>
     );
 }

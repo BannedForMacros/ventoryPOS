@@ -183,11 +183,11 @@ export default function ReportesAuditoria({
                                             <td className="px-3 py-2.5 text-xs">
                                                 <p className="font-medium" style={{ color: 'var(--color-text)' }}>{r.user_name ?? '—'}</p>
                                                 {r.user_email && (
-                                                    <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{r.user_email}</p>
+                                                    <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{r.user_email}</p>
                                                 )}
                                             </td>
                                             <td className="px-3 py-2.5">
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+                                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
                                                     style={{
                                                         color: colorAccion(r.accion),
                                                         backgroundColor: `color-mix(in srgb, ${colorAccion(r.accion)} 12%, transparent)`,
@@ -209,7 +209,7 @@ export default function ReportesAuditoria({
                                                         backgroundColor: 'color-mix(in srgb, var(--color-primary) 4%, var(--color-surface))',
                                                         borderTop: '1px dashed var(--color-border)',
                                                     }}>
-                                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--vp-navy)' }}>
+                                                    <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--vp-navy)' }}>
                                                         Contexto
                                                     </p>
                                                     {r.contexto && Object.keys(r.contexto).length > 0 ? (
@@ -257,7 +257,7 @@ export default function ReportesAuditoria({
                                 onClick={() => toggle(r.id)}>
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0 flex-1">
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
                                             style={{
                                                 color: colorAccion(r.accion),
                                                 backgroundColor: `color-mix(in srgb, ${colorAccion(r.accion)} 12%, transparent)`,
@@ -265,9 +265,9 @@ export default function ReportesAuditoria({
                                             {r.accion_label}
                                         </span>
                                         <p className="text-xs mt-1" style={{ color: 'var(--color-text)' }}>{r.user_name ?? '—'}</p>
-                                        <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{fechaHora(r.created_at)}</p>
+                                        <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{fechaHora(r.created_at)}</p>
                                     </div>
-                                    <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                    <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                         {r.modelo_tipo ? `${r.modelo_tipo} #${r.modelo_id ?? ''}` : ''}
                                     </span>
                                 </div>

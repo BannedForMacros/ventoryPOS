@@ -219,7 +219,7 @@ export default function ReportesProductos({
 function Dato({ label, valor }: { label: string; valor: string }) {
     return (
         <div>
-            <p className="font-bold uppercase tracking-wider text-[9px]" style={{ color: 'var(--vp-navy)' }}>{label}</p>
+            <p className="font-semibold text-[11px]" style={{ color: 'var(--vp-navy)' }}>{label}</p>
             <p style={{ color: 'var(--color-text)' }}>{valor}</p>
         </div>
     );

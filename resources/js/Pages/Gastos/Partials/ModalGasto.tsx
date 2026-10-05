@@ -5,6 +5,7 @@ import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
+import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
 import type { Gasto, GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
 
@@ -83,6 +84,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
             setForm(emptyGasto(turnoInicial, metodoPorDefecto()));
         }
         setErrors({});
+        reiniciar();
     }, [isOpen, gastoEditar?.id]);
 
     // Cuando cambia el turno activo, sincronizar turno_id (solo al crear, y solo
@@ -140,16 +142,34 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
         onClose();
     }
 
+    // Turno visible solo para el admin con el módulo de caja activo (al crear).
+    const muestraTurno = afectaCajaGastos && !editando && esTurnogasto && esAdmin && turnosAbiertos.length > 0;
+
+    /**
+     * Qué impide guardar AHORA, en palabras de la cajera (mismas reglas que
+     * Store/UpdateGastoRequest). El botón lo muestra y lleva al campo.
+     */
+    function problemaGasto(): Problema | null {
+        // Sin turno y el módulo de caja exige uno (no-admin): el backend rebota.
+        if (!editando && afectaCajaGastos && !esAdmin && !form.turno_id) {
+            return { texto: 'Abre tu turno de caja para registrar gastos' };
+        }
+        if (muestraTurno && !form.turno_id) return { texto: 'Elige el turno', campo: 'turno_id' };
+        if (!form.gasto_tipo_id) return { texto: 'Elige el tipo de gasto', campo: 'gasto_tipo_id' };
+        if (!form.gasto_concepto_id) return { texto: 'Elige el concepto', campo: 'gasto_concepto_id' };
+        if (form.monto.trim() === '') return { texto: 'Escribe el monto', campo: 'monto' };
+        const monto = Number(form.monto);
+        if (!Number.isFinite(monto) || monto < 0.01) return { texto: 'El monto debe ser mayor a S/ 0.00', campo: 'monto' };
+        if (!form.fecha) return { texto: 'Elige la fecha del gasto', campo: 'fecha' };
+        if (!editando && metodosPago.length > 0 && !form.metodo_pago_id) return { texto: 'Elige con qué se paga', campo: 'metodo_pago_id' };
+        if (faltaCuenta) return { texto: `Elige la cuenta de ${metodoSel?.nombre ?? 'este método'}`, campo: 'cuenta_metodo_pago_id' };
+        return null;
+    }
+    const problema = problemaGasto();
+    const { err, corregir, reiniciar } = useProblema(problema, errors);
+
     function submit() {
-        // Cuenta obligatoria: si el método tiene cuentas, hay que elegir una.
-        if (faltaCuenta) {
-            setErrors({ cuenta_metodo_pago_id: 'Selecciona la cuenta para este método de pago.' });
-            return;
-        }
-        if (!gastoEditar && !form.metodo_pago_id) {
-            setErrors({ metodo_pago_id: 'Selecciona un método de pago.' });
-            return;
-        }
+        if (problema) { corregir(); return; }
         setSaving(true);
         const opts = {
             onSuccess: () => { setSaving(false); handleClose(); },
@@ -171,13 +191,21 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
             footer={
                 <>
                     <Button variant="ghost" onClick={handleClose}>Cancelar</Button>
-                    <Button onClick={submit} disabled={saving}>
+                    <BotonGuardar problema={problema} onGuardar={submit} onCorregir={corregir} guardando={saving}>
                         {saving ? 'Guardando...' : (editando ? 'Guardar cambios' : 'Registrar gasto')}
-                    </Button>
+                    </BotonGuardar>
                 </>
             }
         >
             <div className="space-y-4">
+                {/* Errores del servidor sin campo visible (p. ej. turno cerrado). */}
+                <ErroresSueltos errors={errors} visibles={[
+                    ...(muestraTurno ? ['turno_id'] : []), 'gasto_tipo_id', 'gasto_concepto_id', 'monto', 'fecha',
+                    ...(metodosPago.length > 0 ? ['metodo_pago_id'] : []),
+                    ...(cuentasDelMetodo.length > 0 ? ['cuenta_metodo_pago_id'] : []),
+                    ...(!editando && !esTurnogasto && esAdmin ? ['local_id'] : []), 'comentario',
+                ]} />
+
                 {/* Badge tipo de gasto */}
                 {esTurnogasto ? (
                     <div
@@ -199,8 +227,9 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
 
                 {/* Admin: selector de turno abierto (no se cambia al editar).
                     Oculto si la empresa apagó el módulo 'gastos' (no afecta caja). */}
-                {afectaCajaGastos && !editando && esTurnogasto && esAdmin && turnosAbiertos.length > 0 && (
+                {muestraTurno && (
                     <Select
+                        triggerAttrs={{ 'data-campo': 'turno_id' }}
                         label="Turno"
                         required
                         value={form.turno_id ?? ''}
@@ -210,7 +239,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                             label: `${t.caja?.nombre ?? 'Caja'} — ${t.user?.name ?? 'Usuario'}`,
                         }))}
                         placeholder="Seleccionar turno"
-                        error={errors.turno_id}
+                        error={err('turno_id')}
                         disabled={saving}
                     />
                 )}
@@ -218,22 +247,24 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                 <Select
                     label="Tipo de gasto"
                     required
+                    triggerAttrs={{ 'data-campo': 'gasto_tipo_id' }}
                     value={form.gasto_tipo_id}
                     onChange={v => handleTipoChange(v)}
                     options={opcionesTipos}
                     placeholder="Seleccionar tipo"
-                    error={errors.gasto_tipo_id}
+                    error={err('gasto_tipo_id')}
                     disabled={saving}
                 />
 
                 <Select
                     label="Concepto"
                     required
+                    triggerAttrs={{ 'data-campo': 'gasto_concepto_id' }}
                     value={form.gasto_concepto_id}
                     onChange={v => setForm(f => ({ ...f, gasto_concepto_id: Number(v) || '' }))}
                     options={opcionesConceptos}
                     placeholder={form.gasto_tipo_id ? 'Seleccionar concepto' : 'Primero selecciona un tipo'}
-                    error={errors.gasto_concepto_id}
+                    error={err('gasto_concepto_id')}
                     disabled={saving || !form.gasto_tipo_id}
                 />
 
@@ -243,10 +274,11 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     step="0.01"
                     min="0.01"
                     required
+                    data-campo="monto"
                     value={form.monto}
                     onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
                     placeholder="0.00"
-                    error={errors.monto}
+                    error={err('monto')}
                     disabled={saving}
                 />
 
@@ -254,9 +286,10 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     label="Fecha"
                     type="date"
                     required
+                    data-campo="fecha"
                     value={form.fecha}
                     onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
-                    error={errors.fecha}
+                    error={err('fecha')}
                     disabled={saving}
                 />
 
@@ -267,11 +300,12 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                         <Select
                             label={editando ? 'Cambiar cuenta (opcional)' : 'Se paga con'}
                             required={!editando}
+                            triggerAttrs={{ 'data-campo': 'metodo_pago_id' }}
                             value={form.metodo_pago_id}
                             onChange={handleMetodoChange}
                             options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
                             placeholder={editando ? 'Mantener cuenta actual' : 'Seleccionar método de pago'}
-                            error={errors.metodo_pago_id}
+                            error={err('metodo_pago_id')}
                             disabled={saving}
                         />
                         {editando && (
@@ -286,6 +320,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     <Select
                         label="Cuenta"
                         required
+                        triggerAttrs={{ 'data-campo': 'cuenta_metodo_pago_id' }}
                         value={form.cuenta_metodo_pago_id}
                         onChange={v => setForm(f => ({ ...f, cuenta_metodo_pago_id: Number(v) || '' }))}
                         // value = id del PIVOTE cuenta_metodo_pago (lo que valida el
@@ -294,7 +329,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                             .filter(c => c.pivot?.id)
                             .map(c => ({ value: c.pivot!.id, label: c.nombre }))}
                         placeholder="— Selecciona una cuenta —"
-                        error={errors.cuenta_metodo_pago_id ?? (faltaCuenta ? 'Selecciona la cuenta de este método.' : undefined)}
+                        error={err('cuenta_metodo_pago_id')}
                         disabled={saving}
                     />
                 )}
@@ -319,6 +354,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     </label>
                     <textarea
                         rows={2}
+                        maxLength={500}
                         value={form.comentario}
                         onChange={e => setForm(f => ({ ...f, comentario: e.target.value }))}
                         disabled={saving}

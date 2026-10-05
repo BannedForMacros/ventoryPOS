@@ -1,5 +1,5 @@
 import { useForm, router } from '@inertiajs/react';
-import { Plus, Trash2, AlertCircle, PackageCheck } from 'lucide-react';
+import { Plus, Trash2, PackageCheck } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -10,6 +10,7 @@ import Switch from '@/Components/UI/Switch';
 import Tabs from '@/Components/UI/Tabs';
 import type { PageProps } from '@/types';
 import AvisoProductosParecidos from '@/Components/Catalogo/AvisoProductosParecidos';
+import Callout from '@/Components/UI/Callout';
 
 interface Categoria    { id: number; nombre: string; }
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
@@ -273,17 +274,14 @@ export default function Create({ categorias, unidades, inventarioInicial = null 
                     </div>
 
                         {errors.unidades && (
-                            <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm"
-                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-danger) 10%, transparent)', color: 'var(--color-danger)' }}>
-                                <AlertCircle size={15} />{errors.unidades}
-                            </div>
+                            <Callout variant="danger">
+                                {errors.unidades}
+                            </Callout>
                         )}
                         {baseCount !== 1 && data.unidades.length > 0 && !errors.unidades && (
-                            <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm"
-                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-warning) 10%, transparent)', color: 'var(--color-warning)' }}>
-                                <AlertCircle size={15} />
+                            <Callout variant="warning">
                                 {baseCount === 0 ? 'Debes marcar una unidad como base.' : 'Solo una unidad puede ser la base.'}
-                            </div>
+                            </Callout>
                         )}
 
                         {data.unidades.map((u, i) => (

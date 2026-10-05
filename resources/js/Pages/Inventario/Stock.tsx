@@ -223,7 +223,7 @@ export default function Stock({
                             <span className="font-mono text-xs" style={{ color: 'var(--color-text-muted)' }}>{s.producto.codigo}</span>
                         )}
                         {s.producto.categoria && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded"
+                            <span className="text-[11px] px-1.5 py-0.5 rounded"
                                 style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
                                 {s.producto.categoria.nombre}
                             </span>
@@ -417,7 +417,7 @@ export default function Stock({
             {/* ── Filtros ──────────────────────────────────────────────── */}
             <FiltrosCard cols={4} tieneFiltros={hayFiltros} onClear={limpiar}>
                 <div className="col-span-2">
-                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
                     <div className="relative">
                         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 z-10" style={{ color: 'var(--color-text-muted)' }} />
                         <Input
@@ -583,7 +583,7 @@ function Kpi({ icon, label, valor, sub, color, destacado, activo, onClick }: {
                 <span className="text-[11px] font-semibold uppercase tracking-wide truncate">{label}</span>
             </div>
             <span className="text-lg font-bold leading-none" style={{ color: 'var(--color-text)' }}>{valor}</span>
-            {sub && <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{sub}</span>}
+            {sub && <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{sub}</span>}
         </button>
     );
 }

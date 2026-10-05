@@ -29,6 +29,8 @@ interface Props {
     // En crédito el pago inicial es opcional: se puede quitar el único pago.
     esCredito?:     boolean;
     onChange:       (pagos: LineaPago[]) => void;
+    /** Versión fija del pie del carrito: sin caja ni título, todo en pocas filas. */
+    compacto?:      boolean;
 }
 
 function uid() { return Math.random().toString(36).slice(2); }
@@ -94,7 +96,7 @@ const inputStyle = {
     '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
 } as React.CSSProperties;
 
-export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0, esCredito = false, onChange }: Props) {
+export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0, esCredito = false, onChange, compacto = false }: Props) {
     const porCobrar = r2(Math.max(0, total - anticipoMonto));
 
     // Pago dividido: una tarjeta por método, cada una con su monto. Al agregar
@@ -231,14 +233,37 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
     const usados      = new Set(pagos.map(p => p.metodo_pago_id));
     const disponibles = metodosPago.filter(m => !usados.has(m.id));
 
+    const puedeDividir = !cubreAnticipo && pagos.length > 0 && metodosPago.length > 1;
+    const botonDividir = puedeDividir && (
+        <button
+            type="button"
+            onClick={dividido ? volverAUnMetodo : empezarDivision}
+            title={dividido ? 'Volver a pagar con un solo método' : 'Pagar con 2 o más métodos'}
+            className="flex items-center gap-1 text-[12px] font-semibold px-1.5 py-0.5 rounded-md hover:opacity-80"
+            style={{ color: 'var(--color-primary)' }}
+        >
+            {dividido ? <><X size={12} /> Un solo método</> : <><Split size={12} /> {compacto ? 'Dividir' : 'Pagar con 2 o más métodos'}</>}
+        </button>
+    );
+
     return (
         <div
-            className="flex flex-col gap-2 rounded-xl p-2.5"
-            style={{
+            className={`flex flex-col ${compacto ? 'gap-1.5' : 'gap-2 rounded-xl p-2.5'}`}
+            style={compacto ? undefined : {
                 backgroundColor: 'var(--vp-sky-light)',
                 border: '1px solid color-mix(in srgb, var(--vp-sky) 18%, transparent)',
             }}
         >
+            {compacto ? (
+                // Pie del carrito: sin caja. La etiqueta solo cuando dice algo
+                // (crédito o varios métodos); si no, "Dividir" va junto a los métodos.
+                (esCredito || dividido) && <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>
+                        {esCredito ? 'Pago inicial (opcional)' : dividido ? 'Pago con varios métodos' : 'Cómo paga'}
+                    </span>
+                    {botonDividir}
+                </div>
+            ) : (
             <div className="flex items-center justify-between gap-2">
                 <h3 className="flex items-center gap-2 text-[13px] font-bold" style={{ color: 'var(--vp-navy)' }}>
                     <span className="h-3.5 w-1 rounded-full flex-shrink-0" style={{ background: 'linear-gradient(180deg, var(--vp-sky), var(--vp-mint))' }} />
@@ -255,6 +280,7 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
                     </button>
                 )}
             </div>
+            )}
 
             {anticipoMonto > 0.009 && (
                 <div
@@ -287,6 +313,7 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
                                 inputRef={el => { refs.current[pago.key] = el; }}
                                 onCambio={patch => actualizar(pago.key, patch)}
                                 onQuitar={esCredito ? () => onChange([]) : undefined}
+                                accesorio={compacto && !esCredito ? botonDividir : null}
                             />
                         )}
                     </>
@@ -363,13 +390,15 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
 }
 
 /** Botones de método (un solo método): toque = elegir. */
-function FilaMetodos({ metodos, elegido, onElegir }: {
+function FilaMetodos({ metodos, elegido, onElegir, extra }: {
     metodos:  MetodoPagoConCuentas[];
     elegido:  number | null;
     onElegir: (m: MetodoPagoConCuentas) => void;
+    /** Algo al final de la fila (p. ej. "Dividir" en el pie del carrito). */
+    extra?:   React.ReactNode;
 }) {
     return (
-        <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Método de pago">
+        <div className="flex flex-wrap items-center gap-1" role="radiogroup" aria-label="Método de pago">
             {metodos.map((m, i) => {
                 const { Icono, color } = estiloDe(m);
                 const activo = m.id === elegido;
@@ -394,6 +423,7 @@ function FilaMetodos({ metodos, elegido, onElegir }: {
                     </button>
                 );
             })}
+            {extra && <span className="ml-auto">{extra}</span>}
         </div>
     );
 }
@@ -403,7 +433,9 @@ function FilaMetodos({ metodos, elegido, onElegir }: {
  * tiene varias) y el N.º de operación. Etiquetas a la izquierda alineadas, así
  * se ve de un vistazo dónde se escribe cada cosa.
  */
-function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = false, placeholder = '0.00', inputRef, onCambio, onQuitar }: {
+function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = false, placeholder = '0.00', inputRef, onCambio, onQuitar, accesorio }: {
+    /** Algo al final de la fila del monto (p. ej. "Dividir" en el pie del carrito). */
+    accesorio?:   React.ReactNode;
     pago:         LineaPago;
     automatico?:  boolean;
     metodo?:      MetodoPagoConCuentas;
@@ -453,6 +485,7 @@ function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = fa
                         </span>
                     )}
                 </div>
+                {accesorio}
                 {onQuitar && (
                     <button
                         type="button"

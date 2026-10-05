@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { router } from '@inertiajs/react';
-import { AlertTriangle, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import type { MetodoPago, Turno } from '@/types';
+import Callout from '@/Components/UI/Callout';
 
 const DENOMINACIONES_PEN = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1];
 
@@ -262,15 +263,11 @@ export default function ModalCerrarTurno({ isOpen, onClose, turno, metodosPago }
                     </div>
 
                     {/* ── Advertencia cierre irreversible ── */}
-                    <div
-                        className="flex items-start gap-2 rounded-xl px-4 py-3 text-sm"
-                        style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}
-                    >
-                        <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
+                    <Callout variant="danger">
                         <p style={{ color: 'var(--color-text)' }}>
                             Esta acción es <strong>irreversible</strong>. Una vez cerrado el turno no podrá reabrirse.
                         </p>
-                    </div>
+                    </Callout>
 
                     {/* ── Observación ── */}
                     <div>

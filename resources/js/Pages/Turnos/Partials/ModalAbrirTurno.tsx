@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
-import { Info } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import type { Caja } from '@/types';
+import Callout from '@/Components/UI/Callout';
 
 interface AperturaSugerida {
     monto:   number;
@@ -181,21 +181,14 @@ export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, con
                                 }}
                                 error={errors.monto_apertura}
                             />
-                            <div
-                                className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
-                                style={{
-                                    backgroundColor: 'color-mix(in srgb, var(--color-success) 8%, transparent)',
-                                    color: 'var(--color-text-muted)',
-                                }}
-                            >
-                                <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-success)' }} />
+                            <Callout variant="success">
                                 <span>
                                     {sugerida.origen === 'arrastre'
                                         ? <>Apertura sugerida por <strong>arrastre</strong>: {sugerida.detalle}.</>
                                         : <>Apertura por <strong>fondo fijo</strong> de esta caja.</>}
                                     {' '}El arrastre es fijo; solo puedes sumar fondos adicionales. El cambio quedará auditado.
                                 </span>
-                            </div>
+                            </Callout>
                         </div>
                     ) : (
                         <Input
@@ -225,13 +218,9 @@ export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, con
                         error={errors.correlativo_inicial}
                         disabled={saving}
                     />
-                    <div
-                        className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
-                        style={{ backgroundColor: 'rgba(59,130,246,0.06)', color: 'var(--color-text-muted)' }}
-                    >
-                        <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
+                    <Callout variant="info">
                         Las ventas de este turno empezarán en ese número (ej. 1001 → V-1001, V-1002…). Si se deja vacío, empiezan en V-0001.
-                    </div>
+                    </Callout>
                 </div>
 
                 {usaCajaChica && (
@@ -247,13 +236,9 @@ export default function ModalAbrirTurno({ isOpen, onClose, cajasDisponibles, con
                             error={errors.monto_caja_chica}
                             disabled={saving}
                         />
-                        <div
-                            className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
-                            style={{ backgroundColor: 'rgba(59,130,246,0.06)', color: 'var(--color-text-muted)' }}
-                        >
-                            <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
+                        <Callout variant="info">
                             Este monto es independiente del dinero de ventas y no se incluye en el arqueo de cierre.
-                        </div>
+                        </Callout>
                     </div>
                 )}
 

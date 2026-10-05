@@ -1,4 +1,5 @@
-import React, { useId } from 'react';
+import React, { useId, useState } from 'react';
+import MarcaObligatorio, { estaLleno } from '@/Components/UI/MarcaObligatorio';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
     label?: string;
@@ -6,8 +7,11 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
     hint?: string;
 }
 
-export default function Input({ label, error, hint, required, className = '', onWheel, ...props }: InputProps) {
+export default function Input({ label, error, hint, required, className = '', onWheel, onChange, ...props }: InputProps) {
     const inputId = useId();
+    // Para la marca de obligatorio: valor controlado, o lo último tecleado si no lo es.
+    const [tecleado, setTecleado] = useState(props.defaultValue != null ? String(props.defaultValue) : '');
+    const lleno = estaLleno(props.value !== undefined ? props.value : tecleado);
 
     // Fix UX clasico de <input type="number">: cuando el cursor esta sobre el
     // input y el usuario hace scroll de pagina, el browser incrementa/decrementa
@@ -31,7 +35,7 @@ export default function Input({ label, error, hint, required, className = '', on
                     style={{ color: error ? 'var(--color-danger)' : 'var(--color-text)' }}
                 >
                     {label}
-                    {required && <span className="ml-1 text-red-500">*</span>}
+                    {required && <MarcaObligatorio lleno={lleno} />}
                 </label>
             )}
 
@@ -54,6 +58,7 @@ export default function Input({ label, error, hint, required, className = '', on
                     }}
                     required={required}
                     {...props}
+                    onChange={e => { setTecleado(e.target.value); onChange?.(e); }}
                     onWheel={handleWheel}
                 />
             </div>

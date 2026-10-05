@@ -235,7 +235,7 @@ function DetalleVenta({ v }: { v: VentaTicket }) {
 function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
     return (
         <div>
-            <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            <p className="font-semibold text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
             <p className={`text-sm ${mono ? 'font-mono' : ''}`} style={{ color: 'var(--color-text)' }}>{value}</p>
         </div>
     );

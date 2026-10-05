@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, RotateCcw, CalendarClock, Scale } from 'lucide-react';
+import { Plus, Eye, Ban, Coins, CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, RotateCcw, CalendarClock, Scale, ArchiveRestore } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -13,6 +13,7 @@ import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
+import BotonGuardar, { type Problema } from '@/Components/UI/BotonGuardar';
 import Checkbox from '@/Components/UI/Checkbox';
 import StatGrid from '@/Components/UI/StatGrid';
 import Timeline from '@/Components/UI/Timeline';
@@ -68,6 +69,12 @@ interface TerceroProveedor { id: number; tipo_documento?: string | null; numero_
 interface AnticipoCliente { id: number; cliente_id: number; fecha: string; saldo: string; }
 interface VentaCompensable { id: number; numero: string | null; cliente_id: number | null; total: string; monto_pagado: string; saldo_pendiente: string; }
 interface CompraCompensable { id: number; correlativo: string | null; numero_documento: string | null; proveedor: string | null; proveedor_id: number | null; total: string; monto_pagado: string; }
+
+interface DeudaEliminada {
+    auditoria_id: number; deuda_id: number; nombre: string; direccion: string | null;
+    monto_original: number; saldo: number; fecha_inicio: string | null; motivo: string | null;
+    eliminada_por: string | null; eliminada_el: string | null; restaurable: boolean;
+}
 
 interface Paginado<T> { data: T[]; total: number; }
 
@@ -135,6 +142,12 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         turno_afecta: '' as number | '',
     });
     const [motivo, setMotivo]             = useState('');
+    // Qué pasa con el dinero al eliminar (se muestra ANTES de confirmar).
+    const [impacto, setImpacto] = useState<{ movimientos: { fecha: string; cuenta: string; descripcion: string | null; efecto: number }[]; cantidad_pagos: number } | null>(null);
+    // Papelera: deudas eliminadas que se pueden devolver tal cual.
+    const [papelera, setPapelera]       = useState<DeudaEliminada[] | null>(null);
+    const [verPapelera, setVerPapelera] = useState(false);
+    const [restaurando, setRestaurando] = useState<DeudaEliminada | null>(null);
     const [verEliminados, setVerEliminados] = useState(false);
     const [movimientosExtra, setMovimientosExtra] = useState<Pago[]>([]);
     const [cargandoMovimientos, setCargandoMovimientos] = useState(false);
@@ -250,6 +263,88 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             onSuccess: () => { setEliminando(null); setMotivo(''); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         } as any);
+    }
+
+    // Al abrir "Eliminar", traer qué asientos de caja/banco se van a deshacer.
+    useEffect(() => {
+        setImpacto(null);
+        if (!eliminando) return;
+        axios.get(route('finanzas.deudas.impacto-eliminar', eliminando.id))
+            .then(r => setImpacto(r.data))
+            .catch(() => setImpacto({ movimientos: [], cantidad_pagos: 0 }));
+    }, [eliminando]);
+
+    function abrirPapelera() {
+        setVerPapelera(true);
+        setPapelera(null);
+        axios.get<DeudaEliminada[]>(route('finanzas.deudas.eliminadas'))
+            .then(r => setPapelera(r.data))
+            .catch(() => { setPapelera([]); toast.error('No se pudo cargar la lista de deudas eliminadas.'); });
+    }
+
+    function submitRestaurar() {
+        if (!restaurando) return;
+        setSaving(true);
+        router.post(route('finanzas.deudas.restaurar', restaurando.auditoria_id), { motivo: motivo.trim() } as any, {
+            onSuccess: () => { setRestaurando(null); setVerPapelera(false); setMotivo(''); setSaving(false); },
+            onError:   (errs: any) => { setErrors(errs); setSaving(false); },
+        });
+    }
+
+    /** Lleva al campo que hay que corregir (contenedor marcado con data-campo). */
+    const irACampo = (campo: string) => () => {
+        const el = document.querySelector<HTMLElement>(`[data-campo="${campo}"] input, [data-campo="${campo}"] button, [data-campo="${campo}"] select`);
+        el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        el?.focus();
+    };
+
+    /** Lo que impide guardar la deuda nueva, en palabras de quien la registra. */
+    function problemaNuevo(): Problema | null {
+        if (!form.nombre.trim()) return { texto: 'Escribe a quién se le debe o quién nos debe', resolver: irACampo('nombre') };
+        const monto = Number(form.monto_original);
+        if (!form.monto_original || !(monto >= 0.01)) return { texto: 'Escribe el monto (mayor a S/ 0.00)', resolver: irACampo('monto') };
+        if (!form.fecha_inicio) return { texto: 'Indica la fecha de inicio', resolver: irACampo('fecha') };
+        if (form.fecha_vencimiento && form.fecha_vencimiento < form.fecha_inicio) {
+            return { texto: 'El vencimiento no puede ser antes de la fecha de inicio', resolver: irACampo('vencimiento') };
+        }
+        if (form.registrar_caja) {
+            if (!form.metodo_pago_id) {
+                return { texto: form.direccion === 'por_pagar' ? 'Elige cómo entró el dinero' : 'Elige cómo salió el dinero', resolver: irACampo('pago') };
+            }
+            if (!form.cuenta_id && cuentasDelMetodo(form.metodo_pago_id).length > 0) {
+                return { texto: 'Elige la cuenta del dinero', resolver: irACampo('pago') };
+            }
+        }
+        return null;
+    }
+
+    /** Lo que impide guardar el movimiento (cuota / incremento). */
+    function problemaPago(): Problema | null {
+        if (!pagando) return null;
+        const monto = Number(formPago.monto);
+        if (!formPago.monto || !(monto >= 0.01)) return { texto: 'Escribe el monto del movimiento', resolver: irACampo('pago-monto') };
+        if (!formPago.fecha) return { texto: 'Indica la fecha', resolver: irACampo('pago-fecha') };
+        if (cruceModo) {
+            if (!cruceRefId) return { texto: 'Elige con qué se cruza', resolver: irACampo('pago-cruce') };
+            if (topeCruce !== null && monto > topeCruce + 0.001) {
+                return { texto: `El monto no puede pasar de ${money(topeCruce)}`, resolver: irACampo('pago-monto') };
+            }
+            return null;
+        }
+        if (formPago.tipo === 'amortizacion' && monto > Number(pagando.saldo) + 0.001) {
+            return { texto: `El monto no puede pasar del saldo (${money(pagando.saldo)})`, resolver: irACampo('pago-monto') };
+        }
+        if (!formPago.metodo_pago_id) return { texto: 'Elige cómo se pagó', resolver: irACampo('pago-metodo') };
+        if (!formPago.cuenta_id && cuentasDelMetodo(formPago.metodo_pago_id).length > 0) {
+            return { texto: 'Elige la cuenta', resolver: irACampo('pago-metodo') };
+        }
+        return null;
+    }
+
+    /** Cuentas vinculadas a un método (si tiene alguna, la cuenta es obligatoria, como en el servidor). */
+    function cuentasDelMetodo(metodoId: string | number): { id: number }[] {
+        const m = (metodosPago as { id: number; cuentas?: { id: number }[] }[]).find(x => String(x.id) === String(metodoId));
+        return m?.cuentas ?? [];
     }
 
     function submitReactivar() {
@@ -534,6 +629,11 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 subtitle="Deudas bancarias, personales, al personal y préstamos otorgados"
                 actions={
                     <div className="flex items-center gap-2">
+                        {puede.eliminar && (
+                            <Button variant="ghost" onClick={abrirPapelera} title="Deudas eliminadas: puedes restaurarlas">
+                                <ArchiveRestore size={15} className="mr-1 flex-shrink-0" />Eliminadas
+                            </Button>
+                        )}
                         {puede.compensar && (
                             <Button variant="secondary" onClick={abrirCompensar}>
                                 <Scale size={15} className="mr-1 flex-shrink-0" />Compensar
@@ -592,7 +692,9 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setModalNuevo(false)}>Cancelar</Button>
-                        <Button onClick={submitNuevo} disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</Button>
+                        <BotonGuardar problema={problemaNuevo()} onGuardar={submitNuevo} onCorregir={() => problemaNuevo()?.resolver?.()} guardando={saving}>
+                            Guardar
+                        </BotonGuardar>
                     </>
                 }
             >
@@ -617,11 +719,13 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                         onChange={v => setForm(f => ({ ...f, tipo: String(v) }))}
                         error={errors.tipo}
                     />
-                    <Input label="Nombre / descripción" required placeholder='Ej: "Deuda BCP 1 - 7630", "Jeiner Herrera"'
-                        value={form.nombre}
-                        onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
-                        error={errors.nombre}
-                    />
+                    <div data-campo="nombre">
+                        <Input label="Nombre / descripción" required placeholder='Ej: "Deuda BCP 1 - 7630", "Jeiner Herrera"'
+                            value={form.nombre}
+                            onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
+                            error={errors.nombre}
+                        />
+                    </div>
                     {/* Vínculo OPCIONAL con un tercero registrado: habilita cruces
                         (anticipos, CxC, CxP) y el estado de cuenta. Si no se elige,
                         la deuda funciona igual que siempre con el nombre libre. */}
@@ -642,13 +746,19 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                         hint="Vincularla permite cruzarla con sus anticipos, ventas al crédito o compras, y verla en su Estado de Cuenta."
                     />
                     <div className="grid grid-cols-2 gap-3">
-                        <Input label="Monto" required type="number" min="0.01" step="0.01" value={form.monto_original}
-                            onChange={e => setForm(f => ({ ...f, monto_original: e.target.value }))} error={errors.monto_original} />
-                        <Input label="Fecha de inicio" required type="date" value={form.fecha_inicio}
-                            onChange={e => setForm(f => ({ ...f, fecha_inicio: e.target.value }))} error={errors.fecha_inicio} />
+                        <div data-campo="monto">
+                            <Input label="Monto" required type="number" min="0.01" step="0.01" value={form.monto_original}
+                                onChange={e => setForm(f => ({ ...f, monto_original: e.target.value }))} error={errors.monto_original} />
+                        </div>
+                        <div data-campo="fecha">
+                            <Input label="Fecha de inicio" required type="date" value={form.fecha_inicio}
+                                onChange={e => setForm(f => ({ ...f, fecha_inicio: e.target.value }))} error={errors.fecha_inicio} />
+                        </div>
                     </div>
-                    <Input label="Fecha de vencimiento (opcional)" type="date" value={form.fecha_vencimiento}
-                        onChange={e => setForm(f => ({ ...f, fecha_vencimiento: e.target.value }))} error={errors.fecha_vencimiento} />
+                    <div data-campo="vencimiento">
+                        <Input label="Fecha de vencimiento (opcional)" type="date" value={form.fecha_vencimiento}
+                            onChange={e => setForm(f => ({ ...f, fecha_vencimiento: e.target.value }))} error={errors.fecha_vencimiento} />
+                    </div>
                     <Input label="Observación" value={form.observacion}
                         onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} />
 
@@ -667,7 +777,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                 : 'Desactivado: solo se registra la deuda, sin mover caja (préstamo histórico ya gastado).'}
                         />
                         {form.registrar_caja && (
-                            <div className="space-y-3">
+                            <div className="space-y-3" data-campo="pago">
                                 <PagoForm
                                     value={{
                                         metodo_pago_id: form.metodo_pago_id,
@@ -754,13 +864,9 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setPagando(null)}>Cancelar</Button>
-                        <Button onClick={submitPago}
-                            disabled={saving
-                                || (cruceModo !== '' && (!cruceRefId || !formPago.monto
-                                    || Number(formPago.monto) <= 0
-                                    || (topeCruce !== null && Number(formPago.monto) > topeCruce + 0.009)))}>
-                            {saving ? 'Guardando...' : cruceModo !== '' ? 'Registrar (sin mover caja)' : 'Registrar'}
-                        </Button>
+                        <BotonGuardar problema={problemaPago()} onGuardar={submitPago} onCorregir={() => problemaPago()?.resolver?.()} guardando={saving}>
+                            {cruceModo !== '' ? 'Registrar (sin mover caja)' : 'Registrar'}
+                        </BotonGuardar>
                     </>
                 }
             >
@@ -793,7 +899,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                         )}
 
                         {cruceModo !== '' ? (
-                            <div className="space-y-3">
+                            <div className="space-y-3" data-campo="pago-cruce">
                                 {cruceModo === 'anticipo' && (
                                     <SearchableSelect label="Anticipo a consumir" required
                                         placeholder="— Seleccionar anticipo —"
@@ -843,12 +949,12 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                 )}
 
                                 <div className="grid grid-cols-2 gap-3">
-                                    <Input label="Fecha" required type="date" value={formPago.fecha}
-                                        onChange={e => setFormPago(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
-                                    <Input label="Monto" required type="number" min="0.01" step="0.01"
+                                    <div data-campo="pago-fecha"><Input label="Fecha" required type="date" value={formPago.fecha}
+                                        onChange={e => setFormPago(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} /></div>
+                                    <div data-campo="pago-monto"><Input label="Monto" required type="number" min="0.01" step="0.01"
                                         max={topeCruce ?? Number(pagando.saldo)}
                                         value={formPago.monto}
-                                        onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                                        onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} /></div>
                                 </div>
                                 {topeCruce !== null && (
                                     <Callout variant="info" title={`Máximo: ${money(topeCruce)} (el menor de los dos saldos)`}>
@@ -861,11 +967,12 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                         ) : (
                             <>
                                 <div className="grid grid-cols-2 gap-3">
-                                    <Input label="Fecha" required type="date" value={formPago.fecha}
-                                        onChange={e => setFormPago(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
-                                    <Input label="Monto" required type="number" min="0.01" step="0.01" value={formPago.monto}
-                                        onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
+                                    <div data-campo="pago-fecha"><Input label="Fecha" required type="date" value={formPago.fecha}
+                                        onChange={e => setFormPago(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} /></div>
+                                    <div data-campo="pago-monto"><Input label="Monto" required type="number" min="0.01" step="0.01" value={formPago.monto}
+                                        onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))} error={errors.monto} /></div>
                                 </div>
+                                <div data-campo="pago-metodo">
                                 <PagoForm
                                     value={{
                                         metodo_pago_id: formPago.metodo_pago_id,
@@ -885,6 +992,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                     showReferencia={false}
                                     labels={{ observacion: 'Observación' }}
                                 />
+                                </div>
                                 <AfectaCajaSelect
                                     modulo="deuda"
                                     turnos={turnos}
@@ -1159,6 +1267,68 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                 )}
             </Modal>
 
+            {/* Papelera: deudas eliminadas */}
+            <Modal isOpen={verPapelera} onClose={() => setVerPapelera(false)} title="Deudas eliminadas" size="lg">
+                {papelera === null ? (
+                    <p className="text-sm py-6 text-center" style={{ color: 'var(--color-text-muted)' }}>Cargando…</p>
+                ) : papelera.length === 0 ? (
+                    <p className="text-sm py-6 text-center" style={{ color: 'var(--color-text-muted)' }}>No hay deudas eliminadas.</p>
+                ) : (
+                    <ul className="divide-y rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)', borderColor: 'var(--color-border)' }}>
+                        {papelera.map(d => (
+                            <li key={d.auditoria_id} className="flex items-center gap-3 px-3.5 py-2.5" style={{ borderColor: 'var(--color-border)' }}>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>{d.nombre}</p>
+                                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                        {d.direccion === 'por_cobrar' ? 'Nos debían' : 'Debíamos'} {money(d.monto_original)}
+                                        {d.fecha_inicio && <> · desde {new Date(d.fecha_inicio + 'T00:00:00').toLocaleDateString('es-PE')}</>}
+                                        {' · '}eliminada el {d.eliminada_el}{d.eliminada_por ? ` por ${d.eliminada_por}` : ''}
+                                    </p>
+                                    {d.motivo && <p className="text-xs italic truncate" style={{ color: 'var(--color-text-muted)' }}>Motivo: {d.motivo}</p>}
+                                </div>
+                                {d.restaurable ? (
+                                    <Button variant="secondary" size="sm" onClick={() => { setErrors({}); setMotivo(''); setRestaurando(d); }}>
+                                        <RotateCcw size={14} className="mr-1" />Restaurar
+                                    </Button>
+                                ) : (
+                                    <span className="text-xs text-right max-w-[11rem]" style={{ color: 'var(--color-text-muted)' }}
+                                        title="Se eliminó antes de que existiera la papelera: no hay respaldo para devolverla sola.">
+                                        Sin respaldo: regístrala de nuevo
+                                    </span>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </Modal>
+
+            {/* Confirmar restauración */}
+            <Modal isOpen={restaurando !== null} onClose={() => setRestaurando(null)}
+                title={restaurando ? `Restaurar — ${restaurando.nombre}` : ''} size="md"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setRestaurando(null)}>Cancelar</Button>
+                        <Button onClick={submitRestaurar} disabled={saving || motivo.trim().length < 5}>
+                            {saving ? 'Restaurando...' : 'Sí, restaurar'}
+                        </Button>
+                    </>
+                }
+            >
+                {restaurando && (
+                    <div className="space-y-3">
+                        <Callout variant="info">
+                            Vuelve exactamente como estaba: el mismo saldo, sus cuotas y su dinero en las mismas cuentas, con sus fechas originales.
+                            Los balances ya cerrados de esas fechas lo mostrarán como cambio posterior al cierre.
+                        </Callout>
+                        <Input label="Motivo (mínimo 5 caracteres)" required value={motivo}
+                            onChange={e => setMotivo(e.target.value)}
+                            placeholder="Ej.: se eliminó la deuda equivocada"
+                            error={errors.motivo}
+                        />
+                    </div>
+                )}
+            </Modal>
+
             {/* Modal eliminar deuda */}
             <Modal isOpen={eliminando !== null} onClose={() => setEliminando(null)}
                 title={eliminando ? `Eliminar deuda — ${eliminando.nombre}` : ''} size="md"
@@ -1173,8 +1343,28 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
             >
                 {eliminando && (
                     <div className="space-y-3">
-                        <Callout variant="warning">
-                            Se revertirán los movimientos de tesorería de sus cuotas.
+                        {/* Qué pasa con el dinero, con cuenta y fecha: para no borrar la fila equivocada. */}
+                        <Callout variant="danger" title={`Vas a eliminar "${eliminando.nombre}" por ${money(eliminando.monto_original)}`}>
+                            {impacto === null ? (
+                                <span style={{ color: 'var(--color-text-muted)' }}>Revisando su dinero…</span>
+                            ) : impacto.movimientos.length === 0 ? (
+                                <>No movió dinero en caja ni bancos: solo se borra el registro.</>
+                            ) : (
+                                <>
+                                    <p className="mb-1">Estos movimientos de dinero se deshacen, con su fecha original:</p>
+                                    <ul className="space-y-0.5">
+                                        {impacto.movimientos.map((m, i) => (
+                                            <li key={i} className="flex items-baseline justify-between gap-3 tabular-nums">
+                                                <span className="min-w-0 truncate">{m.cuenta} · {new Date(m.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</span>
+                                                <strong className="whitespace-nowrap">{m.efecto < 0 ? '−' : '+'}{money(Math.abs(m.efecto))}</strong>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </>
+                            )}
+                        </Callout>
+                        <Callout variant="info">
+                            Si te equivocas, la puedes devolver tal cual desde <strong>Eliminadas</strong>, con su dinero y sus fechas.
                         </Callout>
                         <Input label="Motivo (mínimo 5 caracteres)" required value={motivo}
                             onChange={e => setMotivo(e.target.value)}

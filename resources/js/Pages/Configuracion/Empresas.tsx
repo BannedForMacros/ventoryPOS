@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { Loader2, Search } from 'lucide-react';
+import { Building2, Loader2, Receipt, Search, ShoppingCart, Wallet, Warehouse } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -146,12 +146,75 @@ const emptyForm: FormData = {
     ticket_lineas_extra: '',
 };
 
+
+type TabEmpresa = 'datos' | 'venta' | 'caja' | 'inventario' | 'ticket';
+
+/** Campos de cada pestaña: si el servidor devuelve un error, se salta a su pestaña. */
+const CAMPOS_POR_TAB: Record<TabEmpresa, string[]> = {
+    datos: ["activo", "direccion", "email", "logo", "nombre_comercial", "razon_social", "ruc", "telefono"],
+    venta: ["agenda_recordatorio_plantilla", "cajera_puede_anular", "cajera_puede_editar", "dias_max_devolucion", "permite_devoluciones", "permite_duplicar_items_venta", "pos_fecha_emision_factura", "pos_permite_credito", "pos_permite_pendiente_entrega", "requiere_aprobacion_devolucion", "restock_default", "tasa_igv", "usa_despacho_almacen", "venta_edicion_con_contador", "venta_edicion_minutos"],
+    caja: ["afecta_caja_config", "apertura_editable", "cierre_pregunta_destino", "fondos_iniciales_en_declaracion", "modo_apertura_caja", "modo_cierre_caja", "modo_turno", "requiere_consolidacion_caja", "retiro_requiere_aprobacion", "turno_cierre_automatico", "usa_caja_grande", "usa_fondos_iniciales", "usa_planilla_caja", "usa_retiros_caja", "venta_correlativo_alcance"],
+    inventario: ["cierre_precarga_stock", "descuenta_stock_en_venta", "modo_almacen", "modo_cierre_inventario", "permite_stock_negativo", "usa_mercaderia_transito", "vende_mercaderia_transito"],
+    ticket: ["ticket_cliente_celular", "ticket_cliente_direccion", "ticket_lineas_extra", "ticket_logo_escala", "ticket_mostrar_caja", "ticket_mostrar_cajero", "ticket_mostrar_igv", "ticket_mostrar_igv_cierre", "ticket_mostrar_ruc", "ticket_pie"],
+};
+
+const TABS_EMPRESA: { key: TabEmpresa; label: string; ayuda: string; Icono: typeof Building2 }[] = [
+    { key: 'datos',      label: 'Datos de la empresa', ayuda: 'RUC, dirección, logo', Icono: Building2 },
+    { key: 'venta',      label: 'Venta y POS',         ayuda: 'POS, IGV, devoluciones', Icono: ShoppingCart },
+    { key: 'caja',       label: 'Caja y turnos',       ayuda: 'Turnos, cierres, efectivo', Icono: Wallet },
+    { key: 'inventario', label: 'Inventario',          ayuda: 'Almacén, stock, cierres', Icono: Warehouse },
+    { key: 'ticket',     label: 'Ticket',              ayuda: 'Lo que sale impreso', Icono: Receipt },
+];
+
+/** Navegación lateral del modal de empresa. Marca en rojo las pestañas con errores. */
+function TabsEmpresa({ tab, onTab, errores }: { tab: TabEmpresa; onTab: (t: TabEmpresa) => void; errores: Record<TabEmpresa, number> }) {
+    return (
+        <nav aria-label="Secciones de la configuración" className="w-52 flex-shrink-0 self-start sticky top-0 flex flex-col gap-1">
+            {TABS_EMPRESA.map(({ key, label, ayuda, Icono }) => {
+                const activo = tab === key;
+                return (
+                    <button key={key} type="button" onClick={() => onTab(key)} aria-current={activo ? 'page' : undefined}
+                        className="flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors"
+                        style={{
+                            backgroundColor: activo ? 'color-mix(in srgb, var(--color-primary) 10%, var(--color-surface))' : 'transparent',
+                            color: activo ? 'var(--vp-navy)' : 'var(--color-text)',
+                        }}>
+                        <Icono size={17} className="flex-shrink-0 mt-0.5" style={{ color: activo ? 'var(--color-primary)' : 'var(--color-text-muted)' }} />
+                        <span className="flex-1 min-w-0">
+                            <span className="block text-sm font-semibold leading-tight">{label}</span>
+                            <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{ayuda}</span>
+                        </span>
+                        {errores[key] > 0 && (
+                            <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold flex items-center justify-center text-white"
+                                style={{ backgroundColor: 'var(--color-danger)' }} title="Hay datos por corregir aquí">
+                                {errores[key]}
+                            </span>
+                        )}
+                    </button>
+                );
+            })}
+        </nav>
+    );
+}
+
 export default function Empresas({ empresas }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalOpen, setModalOpen] = useState(false);
     const [editing, setEditing] = useState<Empresa | null>(null);
 
     const { data, setData, post, transform, processing, errors, reset } = useForm<FormData>(emptyForm);
+
+    // Pestaña del modal. Si el servidor devuelve errores en otra, se salta a ella.
+    const [tab, setTab] = useState<TabEmpresa>('datos');
+    const erroresPorTab = Object.fromEntries(
+        TABS_EMPRESA.map(t => [t.key, Object.keys(errors).filter(e => CAMPOS_POR_TAB[t.key].includes(e.split('.')[0])).length]),
+    ) as Record<TabEmpresa, number>;
+    useEffect(() => {
+        if (Object.keys(errors).length === 0 || erroresPorTab[tab] > 0) return;
+        const conError = TABS_EMPRESA.find(t => erroresPorTab[t.key] > 0);
+        if (conError) setTab(conError.key);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [errors]);
 
     // Consulta SUNAT (Decolecta): razón social y dirección fiscal del RUC, para
     // que lo impreso en boletas y facturas sea exactamente lo registrado.
@@ -182,6 +245,7 @@ export default function Empresas({ empresas }: Props) {
 
     function openEdit(emp: Empresa) {
         setEditing(emp);
+        setTab('datos');
         setData({
             razon_social: emp.razon_social,
             nombre_comercial: emp.nombre_comercial ?? '',
@@ -319,8 +383,8 @@ export default function Empresas({ empresas }: Props) {
             <Modal
                 isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
-                title="Editar Empresa"
-                size="lg"
+                title="Editar empresa"
+                size="5xl"
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
@@ -330,7 +394,13 @@ export default function Empresas({ empresas }: Props) {
                     </>
                 }
             >
-                <form onSubmit={submit} className="space-y-4">
+                <div className="flex gap-5 min-h-[60vh]">
+                    <TabsEmpresa tab={tab} onTab={setTab} errores={erroresPorTab} />
+                    <form onSubmit={submit} className="flex-1 min-w-0 space-y-4">
+                    {/* Pestañas: antes eran 18 secciones en una sola columna. */}
+                    {tab === 'datos' && (
+                        <div className="space-y-4 [&>div:first-child]:border-t-0 [&>div:first-child]:pt-0">
+
                     <div className="grid grid-cols-2 gap-4">
                         <Input label="Razón Social" required value={data.razon_social} onChange={e => setData('razon_social', e.target.value)} error={errors.razon_social} />
                         <Input label="Nombre Comercial" value={data.nombre_comercial} onChange={e => setData('nombre_comercial', e.target.value)} error={errors.nombre_comercial} />
@@ -373,7 +443,7 @@ export default function Empresas({ empresas }: Props) {
                                     style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)' }}
                                 />
                             ) : (
-                                <div className="h-16 w-16 rounded-lg border flex items-center justify-center text-[10px] text-center"
+                                <div className="h-16 w-16 rounded-lg border flex items-center justify-center text-[11px] text-center"
                                     style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg)' }}>
                                     Sin logo
                                 </div>
@@ -397,80 +467,18 @@ export default function Empresas({ empresas }: Props) {
                             </div>
                         </div>
                     </div>
-                    <div>
-                        <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
-                            Modo de almacén <span style={{ color: 'var(--color-danger)' }}>*</span>
-                        </p>
-                        <div className="flex flex-col gap-2">
-                            {([
-                                {
-                                    value: 'simple' as const,
-                                    label: 'Simple',
-                                    hint: 'Un solo almacén central actúa como bodega y punto de venta. Ideal para negocios con una sola ubicación.',
-                                },
-                                {
-                                    value: 'central_y_local' as const,
-                                    label: 'Central y local',
-                                    hint: 'Almacén central para compras/entradas y almacenes por local para ventas. Requiere transferencias entre almacenes.',
-                                },
-                            ]).map(opt => (
-                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        name="modo_almacen"
-                                        checked={data.modo_almacen === opt.value}
-                                        onChange={() => setData('modo_almacen', opt.value)}
-                                        className="mt-0.5 accent-[var(--color-primary)]"
-                                    />
-                                    <span>
-                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
-                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
-                                    </span>
-                                </label>
-                            ))}
+                    <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text)' }}>
+                        <Checkbox
+                            name="activo"
+                            checked={data.activo}
+                            onChange={e => setData('activo', e.target.checked)}
+                        />
+                        Empresa activa
+                    </label>
                         </div>
-                        {errors.modo_almacen && (
-                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_almacen}</p>
-                        )}
-                    </div>
-
-                    {/* ── Sección: Stock ── */}
-                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
-                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Stock</p>
-
-                        <label className="flex items-start gap-2 cursor-pointer">
-                            <Checkbox
-                                checked={data.descuenta_stock_en_venta}
-                                onChange={e => setData('descuenta_stock_en_venta', e.target.checked)}
-                            />
-                            <span>
-                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Descontar stock al vender</span>
-                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Si está activo, cada venta descuenta el stock del producto. Cada local y cada producto puede sobrescribir esta configuración.
-                                </span>
-                            </span>
-                        </label>
-                        {errors.descuenta_stock_en_venta && (
-                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.descuenta_stock_en_venta}</p>
-                        )}
-
-                        <label className="flex items-start gap-2 cursor-pointer mt-3">
-                            <Checkbox
-                                checked={data.permite_stock_negativo}
-                                onChange={e => setData('permite_stock_negativo', e.target.checked)}
-                            />
-                            <span>
-                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Permitir vender con stock negativo</span>
-                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Si está activo, el POS deja vender aunque no alcance el stock: el saldo queda en negativo y al cerrar la caja se avisa qué productos quedaron así. Si está inactivo, la venta se bloquea cuando el stock no alcanza.
-                                </span>
-                            </span>
-                        </label>
-                        {errors.permite_stock_negativo && (
-                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.permite_stock_negativo}</p>
-                        )}
-                    </div>
-
+                    )}
+                    {tab === 'venta' && (
+                        <div className="space-y-4 [&>div:first-child]:border-t-0 [&>div:first-child]:pt-0">
                     {/* ── Sección: Punto de venta (POS) ── */}
                     <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
                         <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Punto de venta (POS)</p>
@@ -592,6 +600,140 @@ export default function Empresas({ empresas }: Props) {
                         </div>
                     )}
 
+                    {/* ── Sección: Devoluciones ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Devoluciones</p>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox checked={data.permite_devoluciones} onChange={e => setData('permite_devoluciones', e.target.checked)} />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Permite devoluciones</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, los cajeros pueden registrar devoluciones de ventas.
+                                </span>
+                            </span>
+                        </label>
+
+                        {data.permite_devoluciones && (
+                            <>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>
+                                            Días máximos para devolver (0 = sin límite)
+                                        </label>
+                                        <input type="number" min="0" max="365"
+                                            value={data.dias_max_devolucion}
+                                            onChange={e => setData('dias_max_devolucion', e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full rounded-xl border px-3 py-2 text-sm"
+                                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                                    </div>
+                                </div>
+
+                                <label className="flex items-start gap-2 cursor-pointer">
+                                    <Checkbox checked={data.requiere_aprobacion_devolucion} onChange={e => setData('requiere_aprobacion_devolucion', e.target.checked)} />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Requiere aprobación de administrador</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                            Si está activo, las devoluciones quedan en estado "pendiente" hasta que un admin las apruebe.
+                                        </span>
+                                    </span>
+                                </label>
+
+                                <label className="flex items-start gap-2 cursor-pointer">
+                                    <Checkbox checked={data.restock_default} onChange={e => setData('restock_default', e.target.checked)} />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Restock automático por defecto</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                            Por defecto, los productos devueltos vuelven al stock. El cajero puede sobrescribir por línea.
+                                        </span>
+                                    </span>
+                                </label>
+                            </>
+                        )}
+                    </div>
+
+                    {/* ── Sección: Ventas ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Ventas</p>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.cajera_puede_editar}
+                                onChange={e => {
+                                    setData('cajera_puede_editar', e.target.checked);
+                                    if (!e.target.checked) {
+                                        // Si desactiva la edición, podemos mantener
+                                        // el contador desactivado visualmente.
+                                        setData('venta_edicion_con_contador', false);
+                                    }
+                                }}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cajera puede editar ventas</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si se desactiva, la cajera no verá el botón Editar. El administrador siempre puede editar.
+                                </span>
+                            </span>
+                        </label>
+
+                        {data.cajera_puede_editar && (
+                            <label className="flex items-start gap-2 cursor-pointer pl-6">
+                                <Checkbox
+                                    checked={data.venta_edicion_con_contador}
+                                    onChange={e => setData('venta_edicion_con_contador', e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Limitar edición por tiempo (contador)</span>
+                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        Si está activo, la cajera solo podrá editar dentro de los minutos indicados. Si se desactiva, el botón Editar siempre estará visible.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
+
+                        {data.cajera_puede_editar && data.venta_edicion_con_contador && (
+                            <div className="pl-6">
+                                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                                    Minutos para editar una venta
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        max={120}
+                                        step={1}
+                                        value={data.venta_edicion_minutos}
+                                        onChange={e => setData('venta_edicion_minutos', e.target.value === '' ? '' : Number(e.target.value))}
+                                        className="w-28"
+                                    />
+                                    <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                        minutos
+                                    </span>
+                                </div>
+                                {errors.venta_edicion_minutos && (
+                                    <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.venta_edicion_minutos}</p>
+                                )}
+                            </div>
+                        )}
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.cajera_puede_anular}
+                                onChange={e => setData('cajera_puede_anular', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cajera puede anular ventas</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si se desactiva, solo un administrador podrá anular ventas. Si está activo, la cajera puede anular dentro del plazo configurado; fuera de él requiere código de admin.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+
+                        </div>
+                    )}
+                    {tab === 'caja' && (
+                        <div className="space-y-4 [&>div:first-child]:border-t-0 [&>div:first-child]:pt-0">
                     {/* ── Sección: Turnos y caja (opt-in) ──
                         Va ANTES del cierre de caja a propósito: si el negocio no
                         usa caja, todo lo de abajo deja de importarle. */}
@@ -705,100 +847,6 @@ export default function Empresas({ empresas }: Props) {
                         )}
                     </div>
 
-                    {/* ── Sección: Cierre de inventario ── */}
-                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
-                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
-                            Cierre de inventario <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(por turno)</span>
-                        </p>
-                        <div className="flex flex-col gap-2">
-                            {([
-                                { value: 'por_venta' as const, label: 'Por venta', hint: 'El stock se descuenta automáticamente con cada venta. Sin declaración al cerrar turno.' },
-                                { value: 'declarado' as const, label: 'Declarado', hint: 'Al cerrar turno se exige un cierre de inventario confirmado: el cajero declara stock real y se registran diferencias.' },
-                            ]).map(opt => (
-                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        name="modo_cierre_inventario"
-                                        checked={data.modo_cierre_inventario === opt.value}
-                                        onChange={() => setData('modo_cierre_inventario', opt.value)}
-                                        className="mt-0.5 accent-[var(--color-primary)]"
-                                    />
-                                    <span>
-                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
-                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
-                                    </span>
-                                </label>
-                            ))}
-                        </div>
-                        {errors.modo_cierre_inventario && (
-                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_cierre_inventario}</p>
-                        )}
-
-                        {/* Modo de carga del formulario de cierre */}
-                        <label className="flex items-start gap-2 cursor-pointer mt-4">
-                            <Checkbox checked={data.cierre_precarga_stock} onChange={e => setData('cierre_precarga_stock', e.target.checked)} />
-                            <span>
-                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cierre lógico (precargar stock del sistema)</span>
-                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Activado: al cerrar inventario cada producto viene cargado con el stock del sistema; corriges solo los que difieren (parcial).
-                                    Desactivado: todos salen vacíos y debes declarar la cantidad de todos los productos (conteo total).
-                                </span>
-                            </span>
-                        </label>
-                    </div>
-
-                    {/* ── Sección: Devoluciones ── */}
-                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Devoluciones</p>
-
-                        <label className="flex items-start gap-2 cursor-pointer">
-                            <Checkbox checked={data.permite_devoluciones} onChange={e => setData('permite_devoluciones', e.target.checked)} />
-                            <span>
-                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Permite devoluciones</span>
-                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Si está activo, los cajeros pueden registrar devoluciones de ventas.
-                                </span>
-                            </span>
-                        </label>
-
-                        {data.permite_devoluciones && (
-                            <>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="text-xs font-medium block mb-1" style={{ color: 'var(--color-text)' }}>
-                                            Días máximos para devolver (0 = sin límite)
-                                        </label>
-                                        <input type="number" min="0" max="365"
-                                            value={data.dias_max_devolucion}
-                                            onChange={e => setData('dias_max_devolucion', e.target.value === '' ? '' : Number(e.target.value))}
-                                            className="w-full rounded-xl border px-3 py-2 text-sm"
-                                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
-                                    </div>
-                                </div>
-
-                                <label className="flex items-start gap-2 cursor-pointer">
-                                    <Checkbox checked={data.requiere_aprobacion_devolucion} onChange={e => setData('requiere_aprobacion_devolucion', e.target.checked)} />
-                                    <span>
-                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Requiere aprobación de administrador</span>
-                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                            Si está activo, las devoluciones quedan en estado "pendiente" hasta que un admin las apruebe.
-                                        </span>
-                                    </span>
-                                </label>
-
-                                <label className="flex items-start gap-2 cursor-pointer">
-                                    <Checkbox checked={data.restock_default} onChange={e => setData('restock_default', e.target.checked)} />
-                                    <span>
-                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Restock automático por defecto</span>
-                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                            Por defecto, los productos devueltos vuelven al stock. El cajero puede sobrescribir por línea.
-                                        </span>
-                                    </span>
-                                </label>
-                            </>
-                        )}
-                    </div>
-
                     {/* ── Sección: Fondos iniciales ── */}
                     <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
                         <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Fondos iniciales (caja chica)</p>
@@ -830,84 +878,6 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </label>
                         )}
-                    </div>
-
-                    {/* ── Sección: Ventas ── */}
-                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Ventas</p>
-
-                        <label className="flex items-start gap-2 cursor-pointer">
-                            <Checkbox
-                                checked={data.cajera_puede_editar}
-                                onChange={e => {
-                                    setData('cajera_puede_editar', e.target.checked);
-                                    if (!e.target.checked) {
-                                        // Si desactiva la edición, podemos mantener
-                                        // el contador desactivado visualmente.
-                                        setData('venta_edicion_con_contador', false);
-                                    }
-                                }}
-                            />
-                            <span>
-                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cajera puede editar ventas</span>
-                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Si se desactiva, la cajera no verá el botón Editar. El administrador siempre puede editar.
-                                </span>
-                            </span>
-                        </label>
-
-                        {data.cajera_puede_editar && (
-                            <label className="flex items-start gap-2 cursor-pointer pl-6">
-                                <Checkbox
-                                    checked={data.venta_edicion_con_contador}
-                                    onChange={e => setData('venta_edicion_con_contador', e.target.checked)}
-                                />
-                                <span>
-                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Limitar edición por tiempo (contador)</span>
-                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                        Si está activo, la cajera solo podrá editar dentro de los minutos indicados. Si se desactiva, el botón Editar siempre estará visible.
-                                    </span>
-                                </span>
-                            </label>
-                        )}
-
-                        {data.cajera_puede_editar && data.venta_edicion_con_contador && (
-                            <div className="pl-6">
-                                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
-                                    Minutos para editar una venta
-                                </label>
-                                <div className="flex items-center gap-3">
-                                    <Input
-                                        type="number"
-                                        min={1}
-                                        max={120}
-                                        step={1}
-                                        value={data.venta_edicion_minutos}
-                                        onChange={e => setData('venta_edicion_minutos', e.target.value === '' ? '' : Number(e.target.value))}
-                                        className="w-28"
-                                    />
-                                    <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                                        minutos
-                                    </span>
-                                </div>
-                                {errors.venta_edicion_minutos && (
-                                    <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.venta_edicion_minutos}</p>
-                                )}
-                            </div>
-                        )}
-
-                        <label className="flex items-start gap-2 cursor-pointer">
-                            <Checkbox
-                                checked={data.cajera_puede_anular}
-                                onChange={e => setData('cajera_puede_anular', e.target.checked)}
-                            />
-                            <span>
-                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cajera puede anular ventas</span>
-                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Si se desactiva, solo un administrador podrá anular ventas. Si está activo, la cajera puede anular dentro del plazo configurado; fuera de él requiere código de admin.
-                                </span>
-                            </span>
-                        </label>
                     </div>
 
                     {/* ── Sección: Manejo de efectivo ── */}
@@ -1025,6 +995,179 @@ export default function Empresas({ empresas }: Props) {
                         </label>
                     </div>
 
+                    {/* ── Sección: "Afecta caja" por módulo (opt-in) ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Afecta caja por módulo</p>
+                        <p className="text-xs -mt-2" style={{ color: 'var(--color-text-muted)' }}>
+                            Controla en qué módulos aparece el selector "Afecta caja a (turno)". Si lo apagas, ese
+                            módulo deja de descontar/sumar al efectivo esperado de la caja y el selector desaparece.
+                        </p>
+
+                        {Object.entries(editing?.afecta_caja ?? {}).map(([key, meta]) => (
+                            <label key={key} className={`flex items-start gap-2 ${meta.disponible ? 'cursor-pointer' : 'opacity-60'}`}>
+                                <Checkbox
+                                    checked={data.afecta_caja_config[key]?.activo ?? meta.activo}
+                                    disabled={!meta.disponible}
+                                    onChange={e => setData('afecta_caja_config', {
+                                        ...data.afecta_caja_config,
+                                        [key]: { activo: e.target.checked },
+                                    })}
+                                />
+                                <span>
+                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                                        {meta.label}
+                                        {!meta.disponible && (
+                                            <Badge className="ml-2" variant="primary">Próximamente</Badge>
+                                        )}
+                                    </span>
+                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        {meta.disponible
+                                            ? 'El movimiento en efectivo de este módulo puede afectar la caja de un turno.'
+                                            : 'Aún usa su selector propio; pronto se controlará desde aquí.'}
+                                    </span>
+                                </span>
+                            </label>
+                        ))}
+                    </div>
+
+                    {/* ── Sección: Consolidación de caja ── */}
+                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Consolidación de caja</p>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.requiere_consolidacion_caja}
+                                onChange={e => setData('requiere_consolidacion_caja', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Requiere consolidación de caja para el balance diario</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, tras el cierre de la cajera un supervisor debe contar el efectivo (Finanzas → Consolidación de caja) y SU conteo es el que asienta el sobrante/faltante en tesorería y alimenta el balance. Si está inactivo, el conteo de la cajera al cierre es el que manda.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+
+                        </div>
+                    )}
+                    {tab === 'inventario' && (
+                        <div className="space-y-4 [&>div:first-child]:border-t-0 [&>div:first-child]:pt-0">
+                    <div>
+                        <p className="text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
+                            Modo de almacén <span style={{ color: 'var(--color-danger)' }}>*</span>
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            {([
+                                {
+                                    value: 'simple' as const,
+                                    label: 'Simple',
+                                    hint: 'Un solo almacén central actúa como bodega y punto de venta. Ideal para negocios con una sola ubicación.',
+                                },
+                                {
+                                    value: 'central_y_local' as const,
+                                    label: 'Central y local',
+                                    hint: 'Almacén central para compras/entradas y almacenes por local para ventas. Requiere transferencias entre almacenes.',
+                                },
+                            ]).map(opt => (
+                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="modo_almacen"
+                                        checked={data.modo_almacen === opt.value}
+                                        onChange={() => setData('modo_almacen', opt.value)}
+                                        className="mt-0.5 accent-[var(--color-primary)]"
+                                    />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        {errors.modo_almacen && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_almacen}</p>
+                        )}
+                    </div>
+
+                    {/* ── Sección: Stock ── */}
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Stock</p>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.descuenta_stock_en_venta}
+                                onChange={e => setData('descuenta_stock_en_venta', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Descontar stock al vender</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, cada venta descuenta el stock del producto. Cada local y cada producto puede sobrescribir esta configuración.
+                                </span>
+                            </span>
+                        </label>
+                        {errors.descuenta_stock_en_venta && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.descuenta_stock_en_venta}</p>
+                        )}
+
+                        <label className="flex items-start gap-2 cursor-pointer mt-3">
+                            <Checkbox
+                                checked={data.permite_stock_negativo}
+                                onChange={e => setData('permite_stock_negativo', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Permitir vender con stock negativo</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Si está activo, el POS deja vender aunque no alcance el stock: el saldo queda en negativo y al cerrar la caja se avisa qué productos quedaron así. Si está inactivo, la venta se bloquea cuando el stock no alcanza.
+                                </span>
+                            </span>
+                        </label>
+                        {errors.permite_stock_negativo && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.permite_stock_negativo}</p>
+                        )}
+                    </div>
+
+                    {/* ── Sección: Cierre de inventario ── */}
+                    <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
+                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>
+                            Cierre de inventario <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(por turno)</span>
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            {([
+                                { value: 'por_venta' as const, label: 'Por venta', hint: 'El stock se descuenta automáticamente con cada venta. Sin declaración al cerrar turno.' },
+                                { value: 'declarado' as const, label: 'Declarado', hint: 'Al cerrar turno se exige un cierre de inventario confirmado: el cajero declara stock real y se registran diferencias.' },
+                            ]).map(opt => (
+                                <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="modo_cierre_inventario"
+                                        checked={data.modo_cierre_inventario === opt.value}
+                                        onChange={() => setData('modo_cierre_inventario', opt.value)}
+                                        className="mt-0.5 accent-[var(--color-primary)]"
+                                    />
+                                    <span>
+                                        <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                        <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        {errors.modo_cierre_inventario && (
+                            <p className="mt-1 text-xs" style={{ color: 'var(--color-danger)' }}>{errors.modo_cierre_inventario}</p>
+                        )}
+
+                        {/* Modo de carga del formulario de cierre */}
+                        <label className="flex items-start gap-2 cursor-pointer mt-4">
+                            <Checkbox checked={data.cierre_precarga_stock} onChange={e => setData('cierre_precarga_stock', e.target.checked)} />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cierre lógico (precargar stock del sistema)</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    Activado: al cerrar inventario cada producto viene cargado con el stock del sistema; corriges solo los que difieren (parcial).
+                                    Desactivado: todos salen vacíos y debes declarar la cantidad de todos los productos (conteo total).
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+
                     {/* ── Sección: Mercadería en tránsito (opt-in) ── */}
                     <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
                         <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Mercadería en tránsito</p>
@@ -1065,41 +1208,10 @@ export default function Empresas({ empresas }: Props) {
                         )}
                     </div>
 
-                    {/* ── Sección: "Afecta caja" por módulo (opt-in) ── */}
-                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Afecta caja por módulo</p>
-                        <p className="text-xs -mt-2" style={{ color: 'var(--color-text-muted)' }}>
-                            Controla en qué módulos aparece el selector "Afecta caja a (turno)". Si lo apagas, ese
-                            módulo deja de descontar/sumar al efectivo esperado de la caja y el selector desaparece.
-                        </p>
-
-                        {Object.entries(editing?.afecta_caja ?? {}).map(([key, meta]) => (
-                            <label key={key} className={`flex items-start gap-2 ${meta.disponible ? 'cursor-pointer' : 'opacity-60'}`}>
-                                <Checkbox
-                                    checked={data.afecta_caja_config[key]?.activo ?? meta.activo}
-                                    disabled={!meta.disponible}
-                                    onChange={e => setData('afecta_caja_config', {
-                                        ...data.afecta_caja_config,
-                                        [key]: { activo: e.target.checked },
-                                    })}
-                                />
-                                <span>
-                                    <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                                        {meta.label}
-                                        {!meta.disponible && (
-                                            <Badge className="ml-2" variant="primary">Próximamente</Badge>
-                                        )}
-                                    </span>
-                                    <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                        {meta.disponible
-                                            ? 'El movimiento en efectivo de este módulo puede afectar la caja de un turno.'
-                                            : 'Aún usa su selector propio; pronto se controlará desde aquí.'}
-                                    </span>
-                                </span>
-                            </label>
-                        ))}
-                    </div>
-
+                        </div>
+                    )}
+                    {tab === 'ticket' && (
+                        <div className="space-y-4 [&>div:first-child]:border-t-0 [&>div:first-child]:pt-0">
                     {/* ── Sección: Ticket de venta (plantilla de impresión) ── */}
                     <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
                         <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Ticket de venta</p>
@@ -1246,33 +1358,10 @@ export default function Empresas({ empresas }: Props) {
                         </div>
                     </div>
 
-                    {/* ── Sección: Consolidación de caja ── */}
-                    <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Consolidación de caja</p>
-
-                        <label className="flex items-start gap-2 cursor-pointer">
-                            <Checkbox
-                                checked={data.requiere_consolidacion_caja}
-                                onChange={e => setData('requiere_consolidacion_caja', e.target.checked)}
-                            />
-                            <span>
-                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Requiere consolidación de caja para el balance diario</span>
-                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Si está activo, tras el cierre de la cajera un supervisor debe contar el efectivo (Finanzas → Consolidación de caja) y SU conteo es el que asienta el sobrante/faltante en tesorería y alimenta el balance. Si está inactivo, el conteo de la cajera al cierre es el que manda.
-                                </span>
-                            </span>
-                        </label>
-                    </div>
-
-                    <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text)' }}>
-                        <Checkbox
-                            name="activo"
-                            checked={data.activo}
-                            onChange={e => setData('activo', e.target.checked)}
-                        />
-                        Empresa activa
-                    </label>
-                </form>
+                        </div>
+                    )}
+                    </form>
+                </div>
             </Modal>
         </AppLayout>
     );

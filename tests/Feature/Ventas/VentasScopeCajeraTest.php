@@ -85,7 +85,7 @@ it('la cajera solo ve sus ventas de hoy', function () {
         );
 });
 
-it('el admin ve todas las ventas de la empresa (sin límite de hoy ni de usuario)', function () {
+it('el admin ve las ventas de todos; por defecto las de hoy, y otros días eligiendo fechas', function () {
     $turnoCajera = $this->env->abrirTurno($this->cajera);
     ventaDe($this->cajera, $turnoCajera);
     $vAyer = ventaDe($this->cajera, $turnoCajera);
@@ -94,10 +94,27 @@ it('el admin ve todas las ventas de la empresa (sin límite de hoy ni de usuario
     $turnoAdmin = $this->env->abrirTurno($this->env->admin);
     ventaDe($this->env->admin, $turnoAdmin);
 
+    // Por defecto, HOY: la de hoy de la cajera + la del admin (la de ayer no).
     $this->actingAs($this->env->admin)
         ->get(route('ventas.index'))
         ->assertInertia(fn (Assert $p) => $p
             ->component('Ventas/Index')
+            ->has('ventas.data', 2)
+        );
+
+    // Eligiendo el rango, ve también la de ayer (de cualquier usuario).
+    $this->actingAs($this->env->admin)
+        ->get(route('ventas.index', ['fecha_desde' => now()->subDay()->toDateString(), 'fecha_hasta' => now()->toDateString()]))
+        ->assertInertia(fn (Assert $p) => $p
+            ->component('Ventas/Index')
             ->has('ventas.data', 3) // 2 cajera (hoy + ayer) + 1 admin
+        );
+
+    // Buscando algo puntual no se limita a hoy.
+    $this->actingAs($this->env->admin)
+        ->get(route('ventas.index', ['q' => $vAyer->numero]))
+        ->assertInertia(fn (Assert $p) => $p
+            ->component('Ventas/Index')
+            ->where('ventas.data.0.id', $vAyer->id)
         );
 });

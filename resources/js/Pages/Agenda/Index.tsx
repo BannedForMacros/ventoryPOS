@@ -318,7 +318,7 @@ export default function AgendaIndex({
                                             <div className="text-xs" style={{ color: colores.text }}>
                                                 hasta {horaFin.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
                                             </div>
-                                            <div className="text-[10px] mt-0.5" style={{ color: colores.text }}>
+                                            <div className="text-[11px] mt-0.5" style={{ color: colores.text }}>
                                                 {cita.duracion_min} min
                                             </div>
                                         </div>

@@ -8,6 +8,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import type { PageProps } from '@/types';
 import { hoyLocal } from '@/lib/fechas';
+import Callout from '@/Components/UI/Callout';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -110,10 +111,9 @@ export default function TransferenciaCreate({ almacenesOrigen, almacenesDestino,
                     <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
                         Datos de la transferencia
                     </h2>
-                    <div className="rounded-xl px-4 py-3 text-sm"
-                        style={{ backgroundColor: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', color: 'var(--color-text)' }}>
+                    <Callout variant="info">
                         Las transferencias mueven stock <strong>del almacén central a un almacén local</strong>. Esa salida del central es la entrada del local.
-                    </div>
+                    </Callout>
                     <div className="grid grid-cols-2 gap-4">
                         {origenFijo ? (
                             <div>

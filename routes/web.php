@@ -570,6 +570,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/activas', [DeudaController::class, 'activas'])->name('deudas.activas');
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/{deuda}/movimientos', [DeudaController::class, 'movimientos'])->name('deudas.movimientos');
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/exportar', [DeudaController::class, 'exportar'])->name('deudas.exportar');
+        Route::middleware('permiso:finanzas.deudas,eliminar')->get('deudas/eliminadas', [DeudaController::class, 'eliminadas'])->name('deudas.eliminadas');
+        Route::middleware('permiso:finanzas.deudas,eliminar')->get('deudas/{deuda}/impacto-eliminar', [DeudaController::class, 'impactoEliminar'])->name('deudas.impacto-eliminar');
+        Route::middleware('permiso:finanzas.deudas,eliminar')->post('deudas/eliminadas/{auditoria}/restaurar', [DeudaController::class, 'restaurar'])->whereNumber('auditoria')->name('deudas.restaurar');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/compensar', [DeudaController::class, 'compensar'])->name('deudas.compensar');
         Route::middleware('permiso:finanzas.deudas,editar')->put('deudas/pagos/{pago}', [DeudaController::class, 'editarPago'])->name('deudas.pagos.update');
         Route::middleware('permiso:finanzas.deudas,crear')->post('deudas', [DeudaController::class, 'store'])->name('deudas.store');

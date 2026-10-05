@@ -17,6 +17,7 @@ import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import PagoForm from '@/Components/PagoForm';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
 import Timeline from '@/Components/UI/Timeline';
+import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
 import type { PageProps } from '@/types';
 
 interface Abono {
@@ -199,6 +200,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
 
     function abrirEditarAbono(a: Abono) {
         setErrors({});
+        valEditar.reiniciar();
         setFormAbono({
             monto:          String(Number(a.monto)),
             fecha:          a.fecha.slice(0, 10),
@@ -212,6 +214,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
 
     function submitEditarAbono() {
         if (!editandoAbono) return;
+        if (problemaEd) { valEditar.corregir(); return; }
         setSaving(true);
         router.put(route('finanzas.cxc.abonos.update', editandoAbono.id), {
             monto:          formAbono.monto,
@@ -228,6 +231,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
 
     function submitAnularAbono() {
         if (!anulandoAbono) return;
+        if (problemaAnular) { valAnular.corregir(); return; }
         setSaving(true);
         router.delete(route('finanzas.cxc.abonos.destroy', anulandoAbono.id), {
             data: { motivo: motivoAnular.trim() },
@@ -235,6 +239,80 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         } as any);
     }
+
+    // ── Validación en pantalla (mismas reglas que el backend) ──────────────
+    // Cada función devuelve el PRIMER problema que impide guardar, en palabras
+    // de la cajera; el botón lo muestra en ámbar y "Corregir" lleva al campo.
+
+    /** Método elegido que tiene cuentas vinculadas → la cuenta es obligatoria. */
+    const metodoConCuentas = (mid: string) => {
+        const m = metodosPago.find(x => String(x.id) === String(mid));
+        return m && (m.cuentas?.length ?? 0) > 0 ? m : null;
+    };
+
+    /** Monto: escrito, > 0 y ≤ tope. `que` = cómo se llama ese monto para la cajera. */
+    function problemaMonto(valor: string, tope: number, campo: string, que: string, detalleTope: string): Problema | null {
+        if (valor.trim() === '') return { texto: `Escribe ${que}`, campo };
+        const n = Number(valor);
+        if (!Number.isFinite(n) || n < 0.01) return { texto: 'El monto debe ser mayor a S/ 0.00', campo };
+        if (n > tope + 0.009) return { texto: `El monto no puede pasar ${detalleTope} ${money(tope)}`, campo };
+        return null;
+    }
+
+    /** Método + cuenta de un pago con dinero (PagoForm envuelto en data-campo="pago-…"). */
+    function problemaMetodo(metodoId: string, cuentaId: string, contenedor: string, que = 'Elige el método de pago'): Problema | null {
+        if (!metodoId) return { texto: que, campo: 'metodo_pago_id', foco: { campo: contenedor, indice: 0 } };
+        const m = metodoConCuentas(metodoId);
+        if (m && !cuentaId) return { texto: `Elige la cuenta de ${m.nombre}`, campo: 'cuenta_id', foco: { campo: contenedor, indice: 1 } };
+        return null;
+    }
+
+    function problemaAbono(): Problema | null {
+        if (!abonando) return null;
+        if (usarAnticipo) {
+            if (!anticipoId) return { texto: 'Elige el anticipo a consumir', campo: 'cliente_anticipo_id' };
+            const pm = problemaMonto(montoAnticipo, topeAnticipo, 'monto', 'cuánto tomas del anticipo',
+                anticipoSaldo < saldoVenta ? 'del saldo del anticipo' : 'del saldo de la venta');
+            if (pm) return pm;
+            if (!form.fecha) return { texto: 'Elige la fecha del cobro', campo: 'fecha' };
+            if (pagoAdicional) {
+                const pa = problemaMonto(montoAdicional, Math.max(0, Math.round((saldoVenta - tomaAnticipo) * 100) / 100),
+                    'monto_adicional', 'el monto del pago adicional', 'de lo que falta:');
+                if (pa) return pa;
+                const pmet = problemaMetodo(form.metodo_pago_id, form.cuenta_id, 'pago-adicional', 'Elige el método del pago adicional');
+                if (pmet) return pmet;
+            }
+            return null;
+        }
+        if (compensarActivo) {
+            if (!compensarEntradaId) return { texto: 'Elige la compra contra la que compensas', campo: 'entrada_id' };
+            const pm = problemaMonto(form.monto, topeCompensar, 'monto', 'el monto a compensar', 'del menor de los dos saldos:');
+            if (pm) return pm;
+            if (!form.fecha) return { texto: 'Elige la fecha', campo: 'fecha' };
+            return null;
+        }
+        const pm = problemaMonto(form.monto, saldoVenta, 'monto', 'el monto del abono', 'del saldo');
+        if (pm) return pm;
+        if (!form.fecha) return { texto: 'Elige la fecha del abono', campo: 'fecha' };
+        return problemaMetodo(form.metodo_pago_id, form.cuenta_id, 'pago-abono');
+    }
+    const problemaAb = problemaAbono();
+    const valAbono   = useProblema(problemaAb, errors);
+
+    function problemaEditarAbono(): Problema | null {
+        if (!editandoAbono) return null;
+        const pm = problemaMonto(formAbono.monto, topeEditar, 'monto', 'el monto del abono', 'del máximo permitido');
+        if (pm) return pm;
+        if (!formAbono.fecha) return { texto: 'Elige la fecha del abono', campo: 'fecha' };
+        return problemaMetodo(formAbono.metodo_pago_id, formAbono.cuenta_id, 'pago-editar-abono');
+    }
+    const problemaEd = problemaEditarAbono();
+    const valEditar  = useProblema(problemaEd, errors);
+
+    const problemaAnular: Problema | null = motivoAnular.trim().length < 5
+        ? { texto: motivoAnular.trim() === '' ? 'Escribe el motivo de la anulación' : 'El motivo debe tener al menos 5 letras', campo: 'motivo' }
+        : null;
+    const valAnular = useProblema(problemaAnular, errors);
 
     // La búsqueda server-side y la paginación las maneja el componente Table
     // (debounce 500 ms + loading interno + botones de páginas del servidor).
@@ -247,6 +325,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
     function abrirAbono(v: VentaCxc) {
         setAbonando(v);
         setErrors({});
+        valAbono.reiniciar();
         setCompensarActivo(false);
         setCompensarEntradaId('');
         setUsarAnticipo(false);
@@ -263,6 +342,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
 
     function submitAbono() {
         if (!abonando) return;
+        if (problemaAb) { valAbono.corregir(); return; }
         setSaving(true);
         if (usarAnticipo) {
             // Cobro del anticipo (sin caja) + pago adicional opcional (sí entra a caja).
@@ -432,25 +512,24 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAbonando(null)}>Cancelar</Button>
-                        <Button onClick={submitAbono}
-                            disabled={saving
-                                || (usarAnticipo
-                                    ? (!anticipoId || tomaAnticipo <= 0 || tomaAnticipo > topeAnticipo + 0.009
-                                        || totalCobro > saldoVenta + 0.009
-                                        || (pagoAdicional && (adicional <= 0 || !form.metodo_pago_id)))
-                                    : (form.monto === '' || Number(form.monto) <= 0
-                                        || Number(form.monto) > (compensarActivo ? topeCompensar : saldoVenta) + 0.009
-                                        || (compensarActivo && !compensarEntradaId)))}>
+                        <BotonGuardar problema={problemaAb} onGuardar={submitAbono} onCorregir={valAbono.corregir} guardando={saving}>
                             {saving ? 'Guardando...'
                                 : usarAnticipo ? `Cobrar ${money(totalCobro)}`
                                 : compensarActivo ? 'Compensar'
                                 : 'Registrar abono'}
-                        </Button>
+                        </BotonGuardar>
                     </>
                 }
             >
                 {abonando && (
                     <div className="space-y-4">
+                        {/* Errores del servidor sin campo visible en el modo actual. */}
+                        <ErroresSueltos errors={errors} visibles={[
+                            'monto', 'fecha', 'observacion',
+                            ...(usarAnticipo
+                                ? ['cliente_anticipo_id', ...(pagoAdicional ? ['monto_adicional', 'metodo_pago_id', 'cuenta_id', 'referencia', 'turno_id'] : [])]
+                                : compensarActivo ? ['entrada_id'] : ['metodo_pago_id', 'cuenta_id', 'referencia', 'turno_id']),
+                        ].filter(k => !(k === 'cliente_anticipo_id' && anticiposDelCliente.length <= 1))} />
                         <StatGrid stats={[
                             { label: 'Total', valor: money(abonando.total) },
                             { label: 'Pagado', valor: money(abonando.monto_pagado), color: 'success' },
@@ -462,16 +541,18 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                 para que la cajera no vea dos montos y se confunda. */}
                             {!usarAnticipo && (
                                 <Input label="Monto del abono" required type="number" min="0.01" step="0.01"
-                                    max={Number(abonando.saldo_pendiente)}
+                                    max={compensarActivo ? topeCompensar : Number(abonando.saldo_pendiente)}
+                                    data-campo="monto"
                                     value={form.monto}
                                     onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
-                                    error={errors.monto}
+                                    error={valAbono.err('monto')}
                                 />
                             )}
                             <Input label="Fecha" required type="date"
+                                data-campo="fecha"
                                 value={form.fecha}
                                 onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
-                                error={errors.fecha}
+                                error={valAbono.err('fecha')}
                             />
                         </div>
 
@@ -530,6 +611,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                             <div className="space-y-3">
                                 {anticiposDelCliente.length > 1 && (
                                     <Select label="Anticipo a consumir" required
+                                        triggerAttrs={{ 'data-campo': 'cliente_anticipo_id' }}
                                         options={anticiposDelCliente.map(a => ({
                                             value: String(a.id),
                                             label: `Anticipo #${a.id} — ${new Date(a.fecha.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE')} — saldo ${money(a.saldo)}`,
@@ -545,7 +627,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                             setErrors({});
                                         }}
                                         placeholder="— Seleccionar —"
-                                        error={errors.cliente_anticipo_id}
+                                        error={valAbono.err('cliente_anticipo_id')}
                                     />
                                 )}
 
@@ -566,9 +648,10 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
 
                                         <Input label="Monto a tomar del anticipo (S/)" required type="number" min="0.01" step="0.01"
                                             max={topeAnticipo}
+                                            data-campo="monto"
                                             value={montoAnticipo}
                                             onChange={e => setMontoAnticipo(e.target.value)}
-                                            error={errors.monto}
+                                            error={valAbono.err('monto')}
                                             hint={`Máximo ${money(topeAnticipo)} (saldo del anticipo: ${money(anticipoSaldo)})`}
                                         />
                                         {tomaAnticipo > topeAnticipo + 0.009 && (
@@ -599,10 +682,12 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                             <div className="space-y-3 rounded-xl p-3" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
                                                 <Input label="Monto adicional (S/)" required type="number" min="0.01" step="0.01"
                                                     max={Math.max(0, Math.round((saldoVenta - tomaAnticipo) * 100) / 100)}
+                                                    data-campo="monto_adicional"
                                                     value={montoAdicional}
                                                     onChange={e => setMontoAdicional(e.target.value)}
-                                                    error={errors.monto_adicional}
+                                                    error={valAbono.err('monto_adicional')}
                                                 />
+                                                <div data-campo="pago-adicional">
                                                 <PagoForm
                                                     value={{
                                                         metodo_pago_id: form.metodo_pago_id,
@@ -617,10 +702,11 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                                     }))}
                                                     metodosPago={metodosPago}
                                                     cuentas={cuentas}
-                                                    errors={errors}
+                                                    errors={{ ...errors, ...valAbono.errs('metodo_pago_id', 'cuenta_id') }}
                                                     required={true}
                                                     showObservacion={false}
                                                 />
+                                                </div>
                                                 <AfectaCajaSelect
                                                     modulo="cxc" modo="libre" formato="largo"
                                                     label="El pago adicional afecta caja a (turno)"
@@ -694,6 +780,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
 
                         {usarAnticipo ? null : compensarActivo ? (
                             <div className="space-y-3">
+                                <div data-campo="entrada_id">
                                 <SearchableSelect
                                     label="Compra contra la que se compensa"
                                     required
@@ -714,8 +801,9 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                         value: c.id,
                                         label: `${c.correlativo ?? c.numero_documento ?? `#${c.id}`} — ${nombreProveedorCompra(c)} — saldo ${money(saldoCompra(c))}${esMismoRuc(c) ? ' · mismo RUC' : ''}`,
                                     }))}
-                                    error={errors.entrada_id}
+                                    error={valAbono.err('entrada_id')}
                                 />
+                                </div>
                                 {compraSeleccionada && (
                                     <Callout variant="info" title={`Máximo compensable: ${money(topeCompensar)}`}>
                                         Se registrará un abono en esta venta y un pago en la compra {compraSeleccionada.correlativo ?? compraSeleccionada.numero_documento ?? ''} por el mismo monto, <strong>sin ningún movimiento de caja</strong>. Ambos saldos bajan a la vez.
@@ -728,6 +816,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                             </div>
                         ) : (
                             <>
+                                <div data-campo="pago-abono">
                                 <PagoForm
                                     value={{
                                         metodo_pago_id: form.metodo_pago_id,
@@ -742,10 +831,11 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                     }))}
                                     metodosPago={metodosPago}
                                     cuentas={cuentas}
-                                    errors={errors}
+                                    errors={{ ...errors, ...valAbono.errs('metodo_pago_id', 'cuenta_id') }}
                                     required={true}
                                     showObservacion={false}
                                 />
+                                </div>
                                 <Input label="Observación"
                                     value={form.observacion}
                                     onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))}
@@ -846,7 +936,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                                     <tr key={it.id} style={{ borderTop: '1px solid var(--color-border)' }}>
                                                         <td className="py-1.5">
                                                             <span className="font-medium" style={{ color: 'var(--color-text)' }}>{it.producto_nombre}</span>
-                                                            <span className="block text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{it.unidad_nombre}</span>
+                                                            <span className="block text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{it.unidad_nombre}</span>
                                                         </td>
                                                         <td className="text-right" style={{ color: 'var(--color-text)' }}>{Number(it.cantidad)}</td>
                                                         <td className="text-right" style={{ color: 'var(--color-text)' }}>{money(it.precio_unitario)}</td>
@@ -950,7 +1040,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                                                 </button>
                                                             )}
                                                             {puede.eliminar && (
-                                                                <button onClick={() => { setErrors({}); setMotivoAnular(''); setAnulandoAbono(a); }}
+                                                                <button onClick={() => { setErrors({}); valAnular.reiniciar(); setMotivoAnular(''); setAnulandoAbono(a); }}
                                                                     className="p-1.5 rounded-lg hover:bg-black/5" title="Anular abono"
                                                                     style={{ color: 'var(--color-danger)' }}>
                                                                     <Trash2 size={14} />
@@ -1002,29 +1092,30 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setEditandoAbono(null)}>Cancelar</Button>
-                        <Button onClick={submitEditarAbono}
-                            disabled={saving || formAbono.monto === '' || Number(formAbono.monto) <= 0
-                                || Number(formAbono.monto) > topeEditar + 0.009}>
+                        <BotonGuardar problema={problemaEd} onGuardar={submitEditarAbono} onCorregir={valEditar.corregir} guardando={saving}>
                             {saving ? 'Guardando...' : 'Guardar cambios'}
-                        </Button>
+                        </BotonGuardar>
                     </>
                 }
             >
                 {editandoAbono && (
                     <div className="space-y-4">
+                        <ErroresSueltos errors={errors} visibles={['monto', 'fecha', 'metodo_pago_id', 'cuenta_id', 'referencia', 'observacion']} />
                         <Callout variant="info">
                             Al guardar, el ingreso en tesorería se revierte y se vuelve a asentar con los datos nuevos; el saldo pendiente de la venta se recalcula.
                         </Callout>
                         <div className="grid grid-cols-2 gap-3">
                             <Input label="Monto" required type="number" min="0.01" step="0.01"
                                 max={topeEditar}
+                                data-campo="monto"
                                 value={formAbono.monto}
                                 onChange={e => setFormAbono(f => ({ ...f, monto: e.target.value }))}
-                                error={errors.monto}
+                                error={valEditar.err('monto')}
                             />
                             <Input label="Fecha" required type="date" value={formAbono.fecha}
+                                data-campo="fecha"
                                 onChange={e => setFormAbono(f => ({ ...f, fecha: e.target.value }))}
-                                error={errors.fecha}
+                                error={valEditar.err('fecha')}
                             />
                         </div>
                         {/* Validación en vivo del tope */}
@@ -1037,6 +1128,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                                 )
                                 : <Callout variant="info" title="Máximo permitido" aside={money(topeEditar)} />
                         )}
+                        <div data-campo="pago-editar-abono">
                         <PagoForm
                             value={{
                                 metodo_pago_id: formAbono.metodo_pago_id,
@@ -1053,9 +1145,10 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                             }))}
                             metodosPago={metodosPago}
                             cuentas={cuentas}
-                            errors={errors}
+                            errors={{ ...errors, ...valEditar.errs('metodo_pago_id', 'cuenta_id') }}
                             required={true}
                         />
+                        </div>
                     </div>
                 )}
             </Modal>
@@ -1066,9 +1159,9 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAnulandoAbono(null)}>Cancelar</Button>
-                        <Button variant="danger" onClick={submitAnularAbono} disabled={saving || motivoAnular.trim().length < 5}>
+                        <BotonGuardar variant="danger" problema={problemaAnular} onGuardar={submitAnularAbono} onCorregir={valAnular.corregir} guardando={saving}>
                             {saving ? 'Anulando...' : 'Sí, anular abono'}
-                        </Button>
+                        </BotonGuardar>
                     </>
                 }
             >
@@ -1077,10 +1170,12 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                         <Callout variant="warning">
                             Se revierte el ingreso en tesorería y la venta recupera su saldo pendiente.
                         </Callout>
+                        <ErroresSueltos errors={errors} visibles={['motivo']} />
                         <Input label="Motivo (mínimo 5 caracteres)" required value={motivoAnular}
+                            data-campo="motivo" maxLength={500}
                             onChange={e => setMotivoAnular(e.target.value)}
                             placeholder="Ej.: se registró doble / monto equivocado"
-                            error={errors.motivo}
+                            error={valAnular.err('motivo')}
                         />
                     </div>
                 )}
@@ -1093,7 +1188,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
 function Dato({ label, valor, capitalize }: { label: string; valor: string; capitalize?: boolean }) {
     return (
         <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
             <p className={`text-sm truncate ${capitalize ? 'capitalize' : ''}`} style={{ color: 'var(--color-text)' }}>{valor}</p>
         </div>
     );

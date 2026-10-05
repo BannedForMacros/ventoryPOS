@@ -348,7 +348,7 @@ export default function ModalModificarPedido({ isOpen, onClose, ventaId }: Props
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
                                         {['Producto', 'Pendiente', 'Nuevo pendiente', 'Precio (editable)', 'Importe', ''].map(h => (
-                                            <th key={h} className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{h}</th>
+                                            <th key={h} className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{h}</th>
                                         ))}
                                     </tr>
                                 </thead>
@@ -383,7 +383,7 @@ export default function ModalModificarPedido({ isOpen, onClose, ventaId }: Props
                                                         onChange={e => setPrecios(c => ({ ...c, [p.id]: e.target.value }))} error={errors[`items.${idx}.precio_unitario`]} />
                                                     {p.modificable && Math.abs(p.precio_hoy - precio) > 0.005 && (
                                                         <button type="button" onClick={() => setPrecios(c => ({ ...c, [p.id]: String(p.precio_hoy) }))}
-                                                            className="mt-1 inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-medium border transition-colors hover:bg-black/5"
+                                                            className="mt-1 inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-medium border transition-colors hover:bg-black/5"
                                                             style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)' }}
                                                             title="Usar el precio de hoy para lo que queda pendiente">
                                                             hoy {money(p.precio_hoy)} · usar

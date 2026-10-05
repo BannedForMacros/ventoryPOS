@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
-import { Info, Pencil } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
+import Callout from '@/Components/UI/Callout';
 
 interface Props {
     isOpen:                     boolean;
@@ -72,13 +73,9 @@ export default function ModalEditarApertura({
         >
             <div className="space-y-4">
                 {!editable && (
-                    <div
-                        className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
-                        style={{ backgroundColor: 'rgba(239,68,68,0.06)', color: 'var(--color-danger)' }}
-                    >
-                        <Info size={13} className="mt-0.5 flex-shrink-0" />
+                    <Callout variant="danger">
                         La empresa no permite editar el monto de apertura. Si hay un error, comunicalo con un administrador.
-                    </div>
+                    </Callout>
                 )}
 
                 <Input
@@ -106,13 +103,9 @@ export default function ModalEditarApertura({
                     disabled={saving || !editable}
                 />
 
-                <div
-                    className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
-                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-success) 8%, transparent)', color: 'var(--color-text-muted)' }}
-                >
-                    <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-success)' }} />
+                <Callout variant="success">
                     Arrastre calculado: <strong>S/ {arrastreCalculado}</strong> = total menos fondos adicionales.
-                </div>
+                </Callout>
 
                 <div>
                     <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
@@ -145,13 +138,9 @@ export default function ModalEditarApertura({
                     )}
                 </div>
 
-                <div
-                    className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
-                    style={{ backgroundColor: 'rgba(59,130,246,0.06)', color: 'var(--color-text-muted)' }}
-                >
-                    <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
+                <Callout variant="info">
                     Este cambio afecta el monto esperado al cierre y queda registrado en auditoria.
-                </div>
+                </Callout>
             </div>
         </Modal>
     );

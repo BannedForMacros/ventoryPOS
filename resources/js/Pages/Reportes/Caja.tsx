@@ -401,7 +401,7 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
                 <div className={`grid gap-4 ${t.retiros.length > 0 ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
                     {/* Apertura / cierre */}
                     <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--vp-navy)' }}>Turno</p>
+                        <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--vp-navy)' }}>Turno</p>
                         <div className="space-y-1 text-[11px]" style={{ color: 'var(--color-text)' }}>
                             <p>Abrió: <b>{t.user?.name ?? '—'}</b> · {fechaHora(t.fecha_apertura)}</p>
                             {t.fecha_cierre && (
@@ -435,7 +435,7 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
 
                     {/* Arqueo por método */}
                     <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--vp-navy)' }}>
+                        <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--vp-navy)' }}>
                             Declarado por método
                         </p>
                         {t.arqueo_metodos.length === 0 ? (
@@ -457,7 +457,7 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
 
                     {/* Gastos del turno */}
                     <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--vp-navy)' }}>
+                        <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--vp-navy)' }}>
                             Gastos del turno {t.gastos_total > 0 && <span style={{ color: 'var(--color-danger)' }}>({fmtS(t.gastos_total)})</span>}
                         </p>
                         {t.gastos.length === 0 ? (
@@ -478,7 +478,7 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
                     {/* Retiros de efectivo (sangrías / entrega a administración) */}
                     {t.retiros.length > 0 && (
                         <div>
-                            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--vp-navy)' }}>
+                            <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--vp-navy)' }}>
                                 Retiros de efectivo <span style={{ color: 'var(--vp-navy)' }}>({fmtS(t.retiros_total)})</span>
                             </p>
                             <div className="space-y-1">
@@ -492,7 +492,7 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
                                         <div className="flex items-center gap-1.5 mt-0.5">
                                             <span style={{ color: 'var(--color-text-muted)' }}>{r.usuario}</span>
                                             {r.momento === 'cierre' && (
-                                                <span className="text-[9px] font-bold px-1.5 py-px rounded-full"
+                                                <span className="text-[11px] font-bold px-1.5 py-px rounded-full"
                                                     style={{
                                                         color: 'var(--color-primary)',
                                                         backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
@@ -501,7 +501,7 @@ function DetalleTurno({ turno: t, colSpan }: { turno: TurnoRow; colSpan: number 
                                                 </span>
                                             )}
                                             {r.estado === 'registrado' && (
-                                                <span className="text-[9px] font-bold px-1.5 py-px rounded-full"
+                                                <span className="text-[11px] font-bold px-1.5 py-px rounded-full"
                                                     style={{
                                                         color: 'var(--color-warning)',
                                                         backgroundColor: 'color-mix(in srgb, var(--color-warning) 14%, transparent)',

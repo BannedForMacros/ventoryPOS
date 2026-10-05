@@ -613,19 +613,33 @@ class VentaController extends Controller
 
     // ── Ventas (historial) ─────────────────────────────────────────────────────
 
+    /**
+     * Rango de fechas del historial. Por defecto, HOY (para todos).
+     *
+     * Excepciones, porque ahí se busca algo puntual sin importar el día: si se
+     * escribió una búsqueda (n.º de venta, cliente, monto) o se eligió un turno,
+     * no se limita a hoy. Las fechas que se elijan siempre mandan.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function rangoFechas(Request $request, string $q): array
+    {
+        $buscaAlgo = $q !== '' || $request->filled('turno_id');
+        $hoy       = $buscaAlgo ? null : now()->toDateString();
+
+        return [$request->fecha_desde ?: $hoy, $request->fecha_hasta ?: $hoy];
+    }
+
     public function index(Request $request)
     {
         $user    = $request->user();
         $esAdmin = $user->rol->es_admin;
 
-        // La cajera (no admin) se limita a SUS ventas y por defecto a las de HOY.
-        // El admin ve todo el historial de la empresa/local. Si la cajera cambia
-        // el rango de fechas, sigue viendo solo lo suyo.
-        $hoy         = now()->toDateString();
-        $fechaDesde  = $request->fecha_desde ?: (!$esAdmin ? $hoy : null);
-        $fechaHasta  = $request->fecha_hasta ?: (!$esAdmin ? $hoy : null);
-
+        // Todos entran viendo las ventas de HOY (traer todo el historial era una
+        // lista eterna). La cajera además solo ve las suyas. Para ver otros días
+        // se cambian las fechas. ver rangoFechas().
         $q = trim((string) $request->input('q', ''));
+        [$fechaDesde, $fechaHasta] = $this->rangoFechas($request, $q);
 
         // Con el módulo apagado (o sin migrar) NO se toca `venta_comprobantes`:
         // `/ventas` es la pantalla más usada del POS y no puede caerse por un
@@ -721,10 +735,9 @@ class VentaController extends Controller
         $user    = $request->user();
         $esAdmin = $user->rol->es_admin;
 
-        $hoy        = now()->toDateString();
-        $fechaDesde = $request->fecha_desde ?: (!$esAdmin ? $hoy : null);
-        $fechaHasta = $request->fecha_hasta ?: (!$esAdmin ? $hoy : null);
         $q          = trim((string) $request->input('q', ''));
+        // Mismo rango que la pantalla: el Excel baja lo que se ve.
+        [$fechaDesde, $fechaHasta] = $this->rangoFechas($request, $q);
 
         $conCpe = $this->comprobantesDisponibles($user->empresa_id);
 

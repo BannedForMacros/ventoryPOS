@@ -10,6 +10,7 @@ import { ColorPaletteProvider } from '@/Components/ColorPaletteProvider';
 // este import y el <ColorPaletteEditor /> del final del layout.
 // import ColorPaletteEditor from '@/Components/ColorPaletteEditor';
 import RouterLoadingOverlay from '@/Components/RouterLoadingOverlay';
+import { organizarMenu, type ItemMenu } from '@/lib/menu';
 import AgenteConfigModal from '@/Components/AgenteConfigModal';
 
 interface AppLayoutProps {
@@ -19,50 +20,50 @@ interface AppLayoutProps {
 
 const SIDEBAR_STORAGE_KEY = 'macsoft_sidebar_open';
 
-function SidebarItem({ item, onNavigate }: { item: ModuloMenu; onNavigate: () => void }) {
+function SidebarItem({ item, onNavigate }: { item: ItemMenu; onNavigate: () => void }) {
     const { url } = usePage();
-    const hasChildren = item.hijos && item.hijos.length > 0;
+    const hasChildren = item.hijos.length > 0;
     const isActive = item.ruta ? url.startsWith(item.ruta) : false;
-    const isChildActive = item.hijos?.some(h => h.ruta && url.startsWith(h.ruta)) ?? false;
+    const isChildActive = item.hijos.some(h => h.ruta && url.startsWith(h.ruta));
     const [expanded, setExpanded] = useState(isChildActive);
+
+    // Mismo alto y tamaño para todo: el activo se distingue por fondo e ícono menta.
+    const base = 'group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 hover:bg-[var(--sidebar-item-hover)]';
+    const icono = (activo: boolean) => item.icono && (
+        <DynamicIcon name={item.icono} size={17} className="flex-shrink-0"
+            style={{ color: activo ? 'var(--sidebar-accent)' : undefined, opacity: activo ? 1 : 0.85 }} />
+    );
 
     if (hasChildren) {
         return (
             <div>
                 <button
                     onClick={() => setExpanded(e => !e)}
-                    className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200"
-                    style={{
-                        color: isChildActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
-                        backgroundColor: isChildActive ? 'var(--sidebar-item-active)' : 'transparent',
-                    }}
+                    aria-expanded={expanded}
+                    className={base}
+                    style={{ color: isChildActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)' }}
                 >
-                    {item.icono && (
-                        <DynamicIcon
-                            name={item.icono}
-                            size={18}
-                            className="flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
-                        />
-                    )}
+                    {icono(isChildActive)}
                     <span className="flex-1 text-left">{item.nombre}</span>
-                    <span
-                        className="transition-transform duration-300 ease-out"
-                        style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-                    >
-                        <ChevronRight size={14} />
-                    </span>
+                    <ChevronRight size={14} className="transition-transform duration-200" style={{ transform: expanded ? 'rotate(90deg)' : 'none', opacity: 0.7 }} />
                 </button>
                 <div
-                    className="overflow-hidden transition-all duration-300 ease-in-out"
-                    style={{
-                        maxHeight: expanded ? '600px' : '0px',
-                        opacity: expanded ? 1 : 0,
-                    }}
+                    className="grid transition-[grid-template-rows] duration-200 ease-out"
+                    style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
                 >
-                    <div className="ml-4 mt-1 space-y-0.5 border-l pl-3" style={{ borderColor: 'var(--sidebar-border)' }}>
-                        {item.hijos!.map(child => (
-                            <SidebarItem key={child.id} item={child} onNavigate={onNavigate} />
-                        ))}
+                    <div className="overflow-hidden">
+                        <div className="ml-[22px] mt-0.5 mb-1 border-l pl-2.5 space-y-px" style={{ borderColor: 'var(--sidebar-border)' }}>
+                            {item.hijos.map(child => (
+                                <React.Fragment key={child.id}>
+                                    {child.subtitulo && (
+                                        <p className="px-2.5 pt-2 pb-0.5 text-[11px] font-semibold" style={{ color: 'var(--sidebar-text)', opacity: 0.6 }}>
+                                            {child.subtitulo}
+                                        </p>
+                                    )}
+                                    <SidebarItem item={child} onNavigate={onNavigate} />
+                                </React.Fragment>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -73,20 +74,15 @@ function SidebarItem({ item, onNavigate }: { item: ModuloMenu; onNavigate: () =>
         <Link
             href={item.ruta ?? '#'}
             onClick={onNavigate}
-            className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200"
+            aria-current={isActive ? 'page' : undefined}
+            className={base}
             style={{
                 color: isActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
-                backgroundColor: isActive ? 'var(--sidebar-item-active)' : 'transparent',
+                backgroundColor: isActive ? 'var(--sidebar-item-active)' : undefined,
             }}
         >
-            {item.icono && (
-                <DynamicIcon
-                    name={item.icono}
-                    size={18}
-                    className="flex-shrink-0 transition-transform duration-200 group-hover:scale-110"
-                />
-            )}
-            <span>{item.nombre}</span>
+            {icono(isActive)}
+            <span className="truncate">{item.nombre}</span>
         </Link>
     );
 }
@@ -132,9 +128,20 @@ function Sidebar({
             </div>
 
             {/* Nav */}
-            <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
-                {modules.map(mod => (
-                    <SidebarItem key={mod.id} item={mod} onNavigate={onClose} />
+            <nav className="flex-1 overflow-y-auto px-3 py-2" aria-label="Menú principal">
+                {organizarMenu(modules).map((sec, i) => (
+                    <div key={sec.titulo ?? i} className={i ? 'mt-3' : ''}>
+                        {sec.titulo && (
+                            <p className="px-3 pb-1 text-[11px] font-semibold" style={{ color: 'var(--sidebar-text)', opacity: 0.6 }}>
+                                {sec.titulo}
+                            </p>
+                        )}
+                        <div className="space-y-px">
+                            {sec.items.map(mod => (
+                                <SidebarItem key={mod.id} item={mod} onNavigate={onClose} />
+                            ))}
+                        </div>
+                    </div>
                 ))}
             </nav>
 

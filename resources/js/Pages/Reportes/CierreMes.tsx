@@ -184,7 +184,7 @@ export default function ReportesCierreMes({
                         { label: 'Gastos', monto: kpis.gastos, signo: '−', color: 'var(--color-danger)' },
                     ].map(x => (
                         <div key={x.label}>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>{x.label}</p>
+                            <p className="text-[11px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>{x.label}</p>
                             <p className="font-bold tabular-nums" style={{ color: x.color }}>
                                 {x.signo && <span className="mr-0.5">{x.signo}</span>}{fmtS(x.monto)}
                             </p>
@@ -378,7 +378,7 @@ export default function ReportesCierreMes({
                             />
                             {gastos_por_cuenta.length > 0 && (
                                 <div className="mt-3 pt-3" style={{ borderTop: '1px dashed var(--color-border)' }}>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
                                         Pagado desde
                                     </p>
                                     <div className="flex flex-wrap gap-1.5">
@@ -418,7 +418,7 @@ export default function ReportesCierreMes({
                                         <tr key={p.nombre} style={zebra(i)}>
                                             <td className="px-3 py-2 font-medium" style={{ color: 'var(--color-text)' }}>
                                                 {p.nombre}
-                                                <span className="block text-[10px] font-normal" style={{ color: 'var(--color-text-muted)' }}>{p.count} compras</span>
+                                                <span className="block text-[11px] font-normal" style={{ color: 'var(--color-text-muted)' }}>{p.count} compras</span>
                                             </td>
                                             <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--color-text)' }}>{fmtS(p.total)}</td>
                                             <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--color-success)' }}>{fmtS(p.pagado)}</td>
@@ -446,7 +446,7 @@ export default function ReportesCierreMes({
                     ].map(x => (
                         <div key={x.label} className="rounded-xl px-3.5 py-3"
                             style={{ backgroundColor: `color-mix(in srgb, ${x.color} 8%, var(--color-surface))`, border: `1px solid color-mix(in srgb, ${x.color} 20%, var(--color-border))` }}>
-                            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>{x.label}</p>
+                            <p className="text-[11px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>{x.label}</p>
                             <p className="text-lg font-extrabold tabular-nums" style={{ color: x.color }}>{x.valor}</p>
                             <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{x.nota}</p>
                         </div>

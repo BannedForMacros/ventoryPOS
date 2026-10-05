@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import MarcaObligatorio, { estaLleno } from '@/Components/UI/MarcaObligatorio';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check, Search, X } from 'lucide-react';
 import { useAnchoredPosition } from '@/lib/useAnchoredPosition';
@@ -197,7 +198,7 @@ export default function SearchableSelect({
             {label && (
                 <label className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
                     {label}
-                    {required && <span className="ml-0.5" style={{ color: 'var(--color-danger)' }}>*</span>}
+                    {required && <MarcaObligatorio lleno={estaLleno(value)} />}
                 </label>
             )}
 
@@ -360,7 +361,7 @@ export default function SearchableSelect({
                         {/* Footer con contador (solo si hay filtro activo y hay resultados) */}
                         {query && filtered.length > 0 && (
                             <div
-                                className="px-3 py-1.5 text-[10px] border-t"
+                                className="px-3 py-1.5 text-[11px] border-t"
                                 style={{
                                     borderColor: 'var(--color-border)',
                                     color: 'var(--color-text-muted)',

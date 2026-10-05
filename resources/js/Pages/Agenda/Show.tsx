@@ -254,7 +254,7 @@ export default function AgendaShow({ cita, agendaConfig, recordatorio }: Props) 
                                             <td className="px-3 py-2 font-medium" style={{ color: 'var(--color-text)' }}>
                                                 {it.producto.nombre}
                                                 {it.producto.tipo === 'servicio' && (
-                                                    <span className="ml-1.5 text-[10px] uppercase tracking-wide opacity-60">Servicio</span>
+                                                    <span className="font-semibold ml-1.5 text-[11px] opacity-60">Servicio</span>
                                                 )}
                                             </td>
                                             <td className="px-3 py-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>

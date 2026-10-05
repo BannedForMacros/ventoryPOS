@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { FileText, Link2, Unlink, Activity, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { FileText, Link2, Unlink, Activity, ShieldCheck } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -299,16 +299,11 @@ export default function FacturacionElectronica({ empresa, instalado, emisorUrl, 
 
                     {/* La guarda del RUC, explicada ANTES de que falle. Es la que
                         impide emitir a nombre de otro contribuyente. */}
-                    <Callout variant="info" className="mt-4">
-                        <div className="flex items-start gap-2">
-                            <TriangleAlert size={14} className="flex-shrink-0 mt-0.5" />
-                            <span>
-                                El código tiene que ser de la empresa con <b>RUC {empresa.ruc}</b>. Si
-                                pertenece a otro contribuyente, la conexión se rechaza y no se guarda
-                                nada: emitir con ese token pondría el RUC equivocado en comprobantes
-                                que no se pueden deshacer.
-                            </span>
-                        </div>
+                    <Callout variant="warning" className="mt-4">
+                        El código tiene que ser de la empresa con <b>RUC {empresa.ruc}</b>. Si
+                        pertenece a otro contribuyente, la conexión se rechaza y no se guarda
+                        nada: emitir con ese token pondría el RUC equivocado en comprobantes
+                        que no se pueden deshacer.
                     </Callout>
                 </div>
             </div>

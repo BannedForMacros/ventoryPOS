@@ -795,9 +795,14 @@ class DeudaController extends Controller
     }
 
     /**
-     * Elimina una deuda POR COMPLETO (registro erróneo/duplicado): revierte
-     * los asientos de tesorería de todos sus movimientos y borra el registro.
-     * Queda snapshot completo en auditoría.
+     * Elimina una deuda (registro erróneo/duplicado): revierte los asientos de
+     * tesorería de todos sus movimientos y borra el registro.
+     *
+     * Antes de borrar guarda un RESPALDO completo en la auditoría (las filas tal
+     * cual: deuda, movimientos y asientos de caja/banco con su cuenta). Con eso
+     * "Restaurar" la devuelve idéntica, con el mismo id. Sin respaldo no se
+     * borra: una eliminación sin vuelta atrás fue lo que costó el préstamo de
+     * HYC (17/09).
      */
     public function destroy(Request $request, Deuda $deuda)
     {
@@ -810,8 +815,9 @@ class DeudaController extends Controller
 
         DB::transaction(function () use ($deuda, $user, $data) {
             $deuda->loadMissing('pagos');
+            $respaldo = $this->respaldoDe($deuda);
 
-            AuditoriaService::log('deuda.eliminada', $deuda, [
+            $log = AuditoriaService::log('deuda.eliminada', $deuda, [
                 'motivo'   => $data['motivo'],
                 'snapshot' => [
                     'nombre'         => $deuda->nombre,
@@ -828,7 +834,11 @@ class DeudaController extends Controller
                         'monto' => (float) $p->monto,
                     ])->all(),
                 ],
+                'respaldo' => $respaldo,
             ], $user);
+
+            // La auditoría nunca bloquea... salvo aquí: sin respaldo no hay restaurar.
+            abort_if(!$log, 500, 'No se pudo guardar el respaldo de la deuda; no se eliminó. Intenta de nuevo.');
 
             // Revertir el dinero de cada movimiento en tesorería.
             foreach ($deuda->pagos as $pago) {
@@ -842,7 +852,147 @@ class DeudaController extends Controller
             $deuda->delete();
         });
 
-        return back()->with('success', 'Deuda eliminada: los movimientos de tesorería asociados se revirtieron.');
+        return back()->with('success', 'Deuda eliminada y su dinero revertido. Si fue un error, la puedes restaurar desde "Eliminadas".');
+    }
+
+    /**
+     * Qué pasa con el dinero si se elimina esta deuda: cada asiento de
+     * tesorería que se revierte, por cuenta. Lo muestra el modal ANTES de
+     * eliminar, para que nadie borre la fila equivocada a ciegas.
+     */
+    public function impactoEliminar(Request $request, Deuda $deuda)
+    {
+        abort_if($deuda->empresa_id !== $request->user()->empresa_id, 403);
+
+        $movs = $this->movimientosTesoreria($deuda)
+            ->leftJoin('cuentas as c', 'c.id', '=', 'm.cuenta_id')
+            ->orderBy('m.fecha')->orderBy('m.id')
+            ->get(['m.fecha', 'm.tipo', 'm.monto', 'm.descripcion', 'c.nombre as cuenta']);
+
+        return response()->json([
+            // Al eliminar, cada asiento se deshace: un ingreso SALE de la cuenta.
+            'movimientos' => $movs->map(fn ($m) => [
+                'fecha'       => substr((string) $m->fecha, 0, 10),
+                'cuenta'      => $m->cuenta ?? 'Cuenta eliminada',
+                'descripcion' => $m->descripcion,
+                'efecto'      => round(($m->tipo === 'ingreso' ? -1 : 1) * (float) $m->monto, 2),
+            ])->values(),
+            'cantidad_pagos' => $deuda->pagos()->count(),
+        ]);
+    }
+
+    /**
+     * Deudas eliminadas (la papelera): sale de la auditoría, la última
+     * eliminación de cada deuda que hoy no existe.
+     */
+    public function eliminadas(Request $request)
+    {
+        $empresaId = $request->user()->empresa_id;
+
+        $logs = \App\Models\Auditoria::deEmpresa($empresaId)
+            ->where('accion', 'deuda.eliminada')
+            ->orderByDesc('id')
+            ->limit(300)
+            ->get()
+            ->unique('modelo_id');
+
+        $vivas = Deuda::where('empresa_id', $empresaId)->whereIn('id', $logs->pluck('modelo_id')->filter())->pluck('id')->all();
+
+        return response()->json($logs
+            ->reject(fn ($l) => in_array($l->modelo_id, $vivas))
+            ->map(function ($l) {
+                $ctx  = $l->contexto ?? [];
+                $snap = $ctx['snapshot'] ?? [];
+                return [
+                    'auditoria_id'   => $l->id,
+                    'deuda_id'       => $l->modelo_id,
+                    'nombre'         => $snap['nombre'] ?? "Deuda #{$l->modelo_id}",
+                    'direccion'      => $snap['direccion'] ?? null,
+                    'monto_original' => (float) ($snap['monto_original'] ?? 0),
+                    'saldo'          => (float) ($snap['saldo'] ?? 0),
+                    'fecha_inicio'   => $snap['fecha_inicio'] ?? null,
+                    'motivo'         => $ctx['motivo'] ?? null,
+                    'eliminada_por'  => $l->user_name,
+                    'eliminada_el'   => $l->created_at?->format('d/m/Y H:i'),
+                    // Las eliminadas antes de que existiera el respaldo no se pueden devolver solas.
+                    'restaurable'    => !empty($ctx['respaldo']['deuda']),
+                ];
+            })
+            ->values());
+    }
+
+    /**
+     * Devuelve una deuda eliminada exactamente como estaba: mismas filas y
+     * mismo id (deuda, movimientos y asientos de caja/banco). El dinero vuelve
+     * a sus cuentas con sus fechas originales.
+     */
+    public function restaurar(Request $request, int $auditoria)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'motivo' => ['required', 'string', 'min:5', 'max:500'],
+        ]);
+
+        $log = \App\Models\Auditoria::deEmpresa($user->empresa_id)
+            ->where('accion', 'deuda.eliminada')
+            ->findOrFail($auditoria);
+
+        $respaldo = ($log->contexto ?? [])['respaldo'] ?? null;
+        abort_if(empty($respaldo['deuda']), 422, 'Esta deuda se eliminó antes de que existiera la papelera: no hay respaldo para devolverla sola. Regístrala de nuevo.');
+
+        $fila = $respaldo['deuda'];
+        abort_if((int) $fila['empresa_id'] !== (int) $user->empresa_id, 403);
+        abort_if(DB::table('deudas')->where('id', $fila['id'])->exists(), 422, 'Esta deuda ya fue restaurada.');
+
+        // El dinero vuelve a sus cuentas: tienen que seguir existiendo.
+        $cuentas = collect($respaldo['movimientos'] ?? [])->pluck('cuenta_id')->filter()->unique();
+        $faltan  = $cuentas->diff(DB::table('cuentas')->whereIn('id', $cuentas)->pluck('id'));
+        abort_if($faltan->isNotEmpty(), 422, 'Una de las cuentas de esta deuda ya no existe; no se puede devolver el dinero a su lugar.');
+
+        DB::transaction(function () use ($respaldo) {
+            DB::table('deudas')->insert($respaldo['deuda']);
+            foreach ($respaldo['pagos'] ?? [] as $p) {
+                DB::table('deuda_pagos')->insert($p);
+            }
+            foreach ($respaldo['movimientos'] ?? [] as $m) {
+                DB::table('cuenta_movimientos')->insert($m);
+            }
+        });
+
+        $deuda = Deuda::find($fila['id']);
+        AuditoriaService::log('deuda.restaurada', $deuda, [
+            'motivo'       => $data['motivo'],
+            'auditoria_id' => $log->id,
+            'nombre'       => $deuda?->nombre,
+            'monto'        => (float) ($deuda?->monto_original ?? 0),
+        ], $user);
+
+        return back()->with('success', "Deuda \"{$deuda?->nombre}\" restaurada: su dinero volvió a las cuentas con sus fechas originales.");
+    }
+
+    /** Asientos de tesorería de la deuda: su desembolso y los de cada movimiento. */
+    private function movimientosTesoreria(Deuda $deuda)
+    {
+        $pagoIds = DB::table('deuda_pagos')->where('deuda_id', $deuda->id)->pluck('id');
+
+        return DB::table('cuenta_movimientos as m')
+            ->where('m.empresa_id', $deuda->empresa_id)
+            ->where(fn ($q) => $q
+                ->where(fn ($w) => $w->where('m.ref_tipo', 'deuda')->where('m.ref_id', $deuda->id))
+                ->orWhere(fn ($w) => $w->where('m.ref_tipo', 'deuda_pago')->whereIn('m.ref_id', $pagoIds)));
+    }
+
+    /** Filas tal cual, para restaurar sin perder nada (ni los movimientos ya anulados). */
+    private function respaldoDe(Deuda $deuda): array
+    {
+        $comoArray = fn ($rows) => $rows->map(fn ($r) => (array) $r)->values()->all();
+
+        return [
+            'deuda'       => (array) DB::table('deudas')->where('id', $deuda->id)->first(),
+            'pagos'       => $comoArray(DB::table('deuda_pagos')->where('deuda_id', $deuda->id)->orderBy('id')->get()),
+            'movimientos' => $comoArray($this->movimientosTesoreria($deuda)->orderBy('m.id')->get(['m.*'])),
+        ];
     }
 
     /**

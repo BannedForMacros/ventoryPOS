@@ -21,6 +21,7 @@ import {
 import type { ComprobanteElectronico, Local, PageProps, Venta } from '@/types';
 import Select from '@/Components/UI/Select';
 import { useTiempoReal } from '@/lib/useTiempoReal';
+import Callout from '@/Components/UI/Callout';
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
@@ -312,7 +313,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 }
             >
                 <div className="col-span-2">
-                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
                     <div className="relative">
                         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
                         <input
@@ -327,7 +328,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 </div>
 
                 <div>
-                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Estado</label>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Estado</label>
                     <Select ariaLabel="Estado" value={local.estado ?? ''} onChange={v => set('estado', String(v))}
                         options={[
                             { value: '', label: 'Todos' },
@@ -337,19 +338,19 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 </div>
 
                 <div>
-                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Desde</label>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Desde</label>
                     <input type="date" value={local.fecha_desde ?? ''} onChange={e => set('fecha_desde', e.target.value)} className={inputCls} style={inputStyle} />
                 </div>
 
                 <div>
-                    <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Hasta</label>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Hasta</label>
                     <input type="date" value={local.fecha_hasta ?? ''} onChange={e => set('fecha_hasta', e.target.value)} className={inputCls} style={inputStyle} />
                 </div>
 
                 {/* Filtro por turno: clave para el admin (ya no ve todo mezclado). */}
                 {esAdmin && turnos.length > 0 && (
                     <div>
-                        <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Turno</label>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Turno</label>
                         <Select ariaLabel="Turno" value={String(local.turno_id ?? '')} onChange={v => set('turno_id', String(v))}
                             options={[{ value: '', label: 'Todos los turnos' }, ...turnos.map(t => ({ value: String(t.id), label: turnoLabel(t) }))]} />
                     </div>
@@ -357,7 +358,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
 
                 {esAdmin && locales.length > 1 && (
                     <div>
-                        <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Local</label>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Local</label>
                         <Select ariaLabel="Local" value={String(local.local_id ?? '')} onChange={v => set('local_id', String(v))}
                             options={[{ value: '', label: 'Todos los locales' }, ...locales.map(l => ({ value: String(l.id), label: l.nombre }))]} />
                     </div>
@@ -397,7 +398,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     <div className="text-xs">
                                         {new Date(v.fecha_venta).toLocaleDateString('es-PE')}
                                     </div>
-                                    <div className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                    <div className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                         {new Date(v.fecha_venta).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
                                     </div>
                                 </td>
@@ -411,7 +412,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                         {etiquetaComprobante(v.tipo_comprobante as any)}
                                     </span>
                                     {v.numero_comprobante && (
-                                        <span className="block text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                        <span className="block text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                                             {v.numero_comprobante}
                                         </span>
                                     )}
@@ -579,7 +580,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                         )}
                                     </div>
                                 )}
-                                <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                     {new Date(v.fecha_venta).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
                                 </p>
                             </div>
@@ -700,13 +701,11 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
             >
                 {anular && (
                     <div className="space-y-3">
-                        <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
-                            style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
+                        <Callout variant="danger">
                             <p style={{ color: 'var(--color-text)' }}>
                                 Anular revierte el stock y el dinero de esta venta. Es una acción irreversible.
                             </p>
-                        </div>
+                        </Callout>
 
                         <div>
                             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
@@ -804,7 +803,7 @@ function SelloComprobante({ ce }: { ce: ComprobanteElectronico | null }) {
                     <AlertTriangle size={11} className="flex-shrink-0" />
                     <span className="font-mono text-[11px] font-bold">{numero}</span>
                 </span>
-                <span className="text-[10px] font-semibold leading-tight" style={{ color: 'var(--color-danger)' }}>
+                <span className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--color-danger)' }}>
                     {meta.label}
                 </span>
             </div>
@@ -994,7 +993,7 @@ function ChipsPago({ metodos, esCredito, debe }: { metodos: string[]; esCredito:
         <div className="flex flex-wrap items-center gap-1">
             {metodos.map(m => (
                 <span key={m}
-                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                    className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
                     style={{
                         color: 'var(--color-primary)',
                         backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
@@ -1004,7 +1003,7 @@ function ChipsPago({ metodos, esCredito, debe }: { metodos: string[]; esCredito:
             ))}
             {esCredito && (
                 <span
-                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                    className="text-[11px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
                     style={{
                         color: '#b45309',
                         backgroundColor: 'rgba(234,179,8,0.14)',
@@ -1166,7 +1165,7 @@ function Card({ icon, label, valor, sub, color, destacado, onClick }: {
             </div>
             <span className="text-lg font-bold leading-none" style={{ color: 'var(--color-text)' }}>{valor}</span>
             {/* Sin truncate: en un reporte no puede aparecer "..." cortando montos. */}
-            {sub && <span className="text-[10px] leading-tight" style={{ color: 'var(--color-text-muted)' }}>{sub}</span>}
+            {sub && <span className="text-[11px] leading-tight" style={{ color: 'var(--color-text-muted)' }}>{sub}</span>}
         </button>
     );
 }

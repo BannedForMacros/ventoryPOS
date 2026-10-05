@@ -21,7 +21,13 @@ class PagoCuenta
         if (! $metodoId) {
             return false;
         }
-        return DB::table('cuenta_metodo_pago')->where('metodo_pago_id', $metodoId)->exists();
+        // Solo cuentas ACTIVAS: si el método solo tiene cuentas desactivadas, la
+        // pantalla no ofrece ninguna y exigirla haría imposible guardar.
+        return DB::table('cuenta_metodo_pago as cmp')
+            ->join('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
+            ->where('cmp.metodo_pago_id', $metodoId)
+            ->where('c.activo', true)
+            ->exists();
     }
 
     /**
@@ -37,9 +43,11 @@ class PagoCuenta
         if (empty($ids)) {
             return [];
         }
-        return DB::table('cuenta_metodo_pago')
-            ->whereIn('metodo_pago_id', $ids)
-            ->pluck('metodo_pago_id')
+        return DB::table('cuenta_metodo_pago as cmp')
+            ->join('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
+            ->whereIn('cmp.metodo_pago_id', $ids)
+            ->where('c.activo', true)
+            ->pluck('cmp.metodo_pago_id')
             ->flip()
             ->all();
     }

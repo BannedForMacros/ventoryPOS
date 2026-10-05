@@ -360,7 +360,7 @@ function DetalleDevolucion({ devolucion: d, colSpan }: { devolucion: DevolucionR
                 }}>
                 <div className="grid md:grid-cols-[1fr_280px] gap-4">
                     <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--vp-navy)' }}>
+                        <p className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--vp-navy)' }}>
                             Productos devueltos ({detalles.length})
                         </p>
                         <table className="w-full text-[11px]">
@@ -388,7 +388,7 @@ function DetalleDevolucion({ devolucion: d, colSpan }: { devolucion: DevolucionR
                                         <td className="py-1.5 text-right font-semibold" style={{ color: 'var(--color-text)' }}>{fmtS(parseFloat(det.subtotal))}</td>
                                         <td className="py-1.5 text-center">
                                             {det.estado_producto ? (
-                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                                <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full"
                                                     style={{
                                                         color: ESTADO_PRODUCTO_COLOR[det.estado_producto] ?? 'var(--color-text-muted)',
                                                         backgroundColor: `color-mix(in srgb, ${ESTADO_PRODUCTO_COLOR[det.estado_producto] ?? 'var(--color-text-muted)'} 12%, transparent)`,
@@ -413,7 +413,7 @@ function DetalleDevolucion({ devolucion: d, colSpan }: { devolucion: DevolucionR
                     <div className="space-y-2">
                         {(d.user_aprobacion || d.fecha_aprobacion) && (
                             <div>
-                                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--vp-navy)' }}>Aprobación</p>
+                                <p className="text-[11px] font-semibold mb-1" style={{ color: 'var(--vp-navy)' }}>Aprobación</p>
                                 <p className="text-[11px]" style={{ color: 'var(--color-text)' }}>
                                     {d.user_aprobacion?.name ?? '—'}
                                     {d.fecha_aprobacion && <span style={{ color: 'var(--color-text-muted)' }}> · {fechaHora(d.fecha_aprobacion)}</span>}
@@ -425,7 +425,7 @@ function DetalleDevolucion({ devolucion: d, colSpan }: { devolucion: DevolucionR
                         )}
                         {pagos.length > 0 && (
                             <div>
-                                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--vp-navy)' }}>Reembolsos</p>
+                                <p className="text-[11px] font-semibold mb-1" style={{ color: 'var(--vp-navy)' }}>Reembolsos</p>
                                 <div className="space-y-1">
                                     {pagos.map(p => (
                                         <div key={p.id} className="flex items-center justify-between text-[11px] rounded-lg px-2 py-1.5"

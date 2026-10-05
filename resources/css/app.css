@@ -28,3 +28,39 @@
 @media (prefers-reduced-motion: reduce) {
     .vp-fade-up, .vp-linea-nueva { animation: none; }
 }
+
+/* Campo obligatorio aún vacío: un punto ámbar que late. Al llenarlo se
+   vuelve un check verde (MarcaObligatorio.tsx). */
+.vp-req {
+    position: relative;
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-left: 6px;
+    border-radius: 9999px;
+    background: var(--vp-amber);
+    vertical-align: middle;
+    transform: translateY(-1px);
+}
+.vp-req::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--vp-amber);
+    animation: vp-req-latido 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes vp-req-latido {
+    0%        { transform: scale(1);   opacity: 0.7; }
+    70%, 100% { transform: scale(2.8); opacity: 0; }
+}
+.vp-req-ok {
+    animation: vp-req-ok 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes vp-req-ok {
+    from { transform: scale(0.4); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .vp-req::after, .vp-req-ok { animation: none; }
+}

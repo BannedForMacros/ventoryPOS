@@ -167,6 +167,7 @@ export default function DetalleProductos({
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--color-text-muted)' }} />
                 <input
                     ref={buscadorRef}
+                    data-campo="detalles"
                     type="text"
                     value={q}
                     onChange={e => { setQ(e.target.value); setAbierto(true); }}
@@ -213,7 +214,7 @@ export default function DetalleProductos({
                                             {p.codigo && <span className="block text-[11px] font-mono" style={{ color: 'var(--color-text-muted)' }}>{p.codigo}</span>}
                                         </span>
                                         {yaEsta && (
-                                            <span className="flex-shrink-0 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
+                                            <span className="flex-shrink-0 text-[11px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
                                                 {facturaPorItem ? 'agregar otra línea' : 'ya en la lista'}
                                             </span>
                                         )}
@@ -225,7 +226,7 @@ export default function DetalleProductos({
                 )}
             </div>
 
-            {errors.detalles && <p className="text-sm" style={{ color: 'var(--color-danger)' }}>{errors.detalles}</p>}
+            {errors.detalles && <p className="text-[13px] font-medium whitespace-pre-line" style={{ color: 'var(--color-danger)' }}>{errors.detalles}</p>}
 
             {/* ── Lista ─────────────────────────────────────────────────── */}
             {filas.filter(d => d.producto_id !== '').length === 0 ? (
@@ -256,6 +257,11 @@ export default function DetalleProductos({
                         const unidad = unidades.find(u => u.unidad_medida_id === d.unidad_medida_id);
                         const factor = parseFloat(d.factor_conversion) || 1;
                         const err = (campo: string) => errors[`detalles.${i}.${campo}`];
+                        // Mensajes de esta fila (validación en pantalla o del servidor),
+                        // escritos debajo de la fila — no solo el borde en rojo.
+                        // (La unidad con selector ya escribe su propio error debajo.)
+                        const mensajesFila = ['producto_id', ...(unidades.length > 1 ? [] : ['unidad_medida_id']), 'cantidad', 'factor_conversion', 'precio_costo', 'numero_documento']
+                            .map(err).filter((m): m is string => !!m);
                         return (
                             <div
                                 key={i}
@@ -277,6 +283,7 @@ export default function DetalleProductos({
                                 <div>
                                     {unidades.length > 1 ? (
                                         <Select
+                                            triggerAttrs={{ 'data-campo': `detalles.${i}.unidad_medida_id` }}
                                             value={d.unidad_medida_id}
                                             onChange={v => setDetalle(i, 'unidad_medida_id', Number(v))}
                                             options={unidades.map(u => ({
@@ -289,7 +296,7 @@ export default function DetalleProductos({
                                         <span className="text-sm" style={{ color: 'var(--color-text)' }}>{unidad?.unidad_medida?.abreviatura ?? 'UND'}</span>
                                     )}
                                     {factor !== 1 && (
-                                        <p className="mt-0.5 text-[10px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                                        <p className="mt-0.5 text-[11px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
                                             = {cantidadBase(d).toLocaleString('es-PE', { maximumFractionDigits: 4 })} base
                                         </p>
                                     )}
@@ -298,6 +305,7 @@ export default function DetalleProductos({
                                 {/* Cantidad */}
                                 <input
                                     data-entrada-cant={i}
+                                    data-campo={`detalles.${i}.cantidad`}
                                     type="number" min="0" step="any" inputMode="decimal"
                                     value={d.cantidad}
                                     onChange={e => setDetalle(i, 'cantidad', e.target.value)}
@@ -309,7 +317,7 @@ export default function DetalleProductos({
 
                                 {/* Precio: P.U. / Total + monto, en una sola línea */}
                                 <div className="col-span-2 md:col-span-1 flex items-center gap-1">
-                                    <div className="inline-flex flex-shrink-0 rounded-md border overflow-hidden text-[10px] font-bold leading-none" style={{ borderColor: 'var(--color-border)' }}>
+                                    <div className="inline-flex flex-shrink-0 rounded-md border overflow-hidden text-[11px] font-bold leading-none" style={{ borderColor: 'var(--color-border)' }}>
                                         {(['total', 'unitario'] as const).map(m => (
                                             <button key={m} type="button" tabIndex={-1} onClick={() => setPrecioModo(i, m)}
                                                 title={m === 'unitario' ? 'Precio por unidad' : 'Lo pagado por toda la línea'}
@@ -325,6 +333,7 @@ export default function DetalleProductos({
                                     <div className="flex-1 min-w-0">
                                         <input
                                             data-entrada-precio={i}
+                                            data-campo={`detalles.${i}.precio_costo`}
                                             type="number" min="0" inputMode="decimal"
                                             step={d.precio_modo === 'total' ? '0.01' : '0.0001'}
                                             value={d.precio_modo === 'total' ? d.precio_total : d.precio_costo}
@@ -335,7 +344,7 @@ export default function DetalleProductos({
                                             style={{ borderColor: err('precio_costo') ? 'var(--color-danger)' : 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}
                                         />
                                         {d.precio_modo === 'total' && d.precio_costo !== '' && (
-                                            <p className="mt-0.5 text-[10px] font-mono text-right" style={{ color: 'var(--color-text-muted)' }}>= S/ {d.precio_costo} c/u</p>
+                                            <p className="mt-0.5 text-[11px] font-mono text-right" style={{ color: 'var(--color-text-muted)' }}>= S/ {d.precio_costo} c/u</p>
                                         )}
                                     </div>
                                 </div>
@@ -359,6 +368,12 @@ export default function DetalleProductos({
                                     className="justify-self-end rounded-md p-1 transition-colors hover:bg-red-50" style={{ color: 'var(--color-text-muted)' }}>
                                     <Trash2 size={15} />
                                 </button>
+
+                                {mensajesFila.length > 0 && (
+                                    <p className="col-span-full text-[12px] font-medium" style={{ color: 'var(--color-danger)' }}>
+                                        {[...new Set(mensajesFila)].join(' · ')}
+                                    </p>
+                                )}
                             </div>
                         );
                     })}

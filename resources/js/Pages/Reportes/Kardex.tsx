@@ -275,7 +275,7 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
                     <thead>
                         <tr style={{ backgroundColor: 'var(--color-bg)', borderBottom: '2px solid var(--color-border)' }}>
                             {['Fecha', 'Tipo', 'Documento', ...(mostrarSelector ? ['Almacén'] : []), 'Producto', 'Entra', 'Sale', 'Costo unit.', 'Costo prom.', 'Saldo', 'Saldo valor.', 'Usuario'].map((h, i) => (
-                                <th key={h} className={`px-3 py-2.5 text-[10px] font-bold uppercase tracking-wide ${i >= 4 + (mostrarSelector ? 1 : 0) ? 'text-right' : 'text-left'}`}
+                                <th key={h} className={`px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide ${i >= 4 + (mostrarSelector ? 1 : 0) ? 'text-right' : 'text-left'}`}
                                     style={{ color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
                                     {h}
                                 </th>
@@ -293,7 +293,7 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
                                     style={{ borderBottom: '1px solid var(--color-border)', cursor: clic ? 'pointer' : 'default' }}>
                                     <td className="px-3 py-2 text-xs whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{m.fecha ?? '—'}</td>
                                     <td className="px-3 py-2">
-                                        <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
+                                        <span className="inline-block text-[11px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap"
                                               style={{
                                                   backgroundColor: `color-mix(in srgb, var(--color-${up ? 'success' : 'danger'}) 14%, transparent)`,
                                                   color: `var(--color-${up ? 'success' : 'danger'})`,
@@ -419,7 +419,7 @@ export default function ReporteKardex({ movimientos, kpis, almacenes, mostrarSel
                             <thead>
                                 <tr style={{ backgroundColor: 'var(--color-bg)', borderBottom: '2px solid var(--color-border)' }}>
                                     {['Día', 'Entró', 'Salió', 'Stock al cierre', 'Valorizado'].map((h, i) => (
-                                        <th key={h} className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${i === 0 ? 'text-left' : 'text-right'}`}
+                                        <th key={h} className={`px-3 py-2 text-[11px] font-bold uppercase tracking-wide ${i === 0 ? 'text-left' : 'text-right'}`}
                                             style={{ color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                                     ))}
                                 </tr>
@@ -597,7 +597,7 @@ function DetalleVenta({ v }: { v: VentaTicket }) {
 function MetaKardex({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
     return (
         <div>
-            <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            <p className="font-semibold text-[11px]" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
             <p className={`text-sm ${mono ? 'font-mono' : ''}`} style={{ color: 'var(--color-text)' }}>{value}</p>
         </div>
     );
@@ -614,7 +614,7 @@ function KpiCard({ icon, label, value, color }: {
                 {icon}
             </div>
             <div className="min-w-0">
-                <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+                <p className="text-[11px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
                 <p className="text-base font-bold" style={{ color: 'var(--color-text)' }}>{value}</p>
             </div>
         </div>
@@ -624,7 +624,7 @@ function KpiCard({ icon, label, value, color }: {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <div>
-            <label className="text-[10px] font-medium uppercase mb-1 block" style={{ color: 'var(--color-text-muted)' }}>{label}</label>
+            <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>{label}</label>
             {children}
         </div>
     );

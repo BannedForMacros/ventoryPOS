@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { router } from '@inertiajs/react';
-import { Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -8,6 +8,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Badge from '@/Components/UI/Badge';
 import type { PageProps } from '@/types';
+import Callout from '@/Components/UI/Callout';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -144,13 +145,11 @@ export default function TransferenciaEdit({ transferencia: t, almacenesOrigen, a
 
             <div className="space-y-6 max-w-5xl">
                 {(t.estado === 'enviada' || t.estado === 'recibida') && (
-                    <div className="flex items-start gap-2 rounded-xl px-4 py-3 text-sm"
-                        style={{ backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}>
-                        <AlertTriangle size={16} className="mt-0.5" style={{ color: '#b45309' }} />
+                    <Callout variant="warning">
                         <div style={{ color: 'var(--color-text)' }}>
                             <strong>Atención:</strong> al guardar, el sistema revierte los movimientos de stock previos y los reaplica con los nuevos valores. Si no hay stock suficiente en el origen, la operación será rechazada.
                         </div>
-                    </div>
+                    </Callout>
                 )}
 
                 <section className="rounded-2xl border p-6 space-y-4"

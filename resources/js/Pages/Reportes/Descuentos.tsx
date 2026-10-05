@@ -181,7 +181,7 @@ export default function ReportesDescuentos({
                                         {(log.concepto as { nombre?: string } | undefined)?.nombre ?? '—'}
                                     </td>
                                     <td className="px-3 py-2.5">
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
                                             style={log.venta_item_id ? {
                                                 color: 'var(--color-primary)',
                                                 backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
@@ -197,7 +197,7 @@ export default function ReportesDescuentos({
                                     </td>
                                     <td className="px-3 py-2.5">
                                         {log.requeria_aprobacion ? (
-                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
                                                 style={{
                                                     color: 'var(--color-warning)',
                                                     backgroundColor: 'color-mix(in srgb, var(--color-warning) 14%, transparent)',
@@ -237,7 +237,7 @@ export default function ReportesDescuentos({
                                 <div className="min-w-0 flex-1">
                                     <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
                                         {(log.concepto as { nombre?: string } | undefined)?.nombre ?? '—'}
-                                        <span className="ml-1.5 text-[10px] font-bold" style={{ color: log.venta_item_id ? 'var(--color-primary)' : '#8b5cf6' }}>
+                                        <span className="ml-1.5 text-[11px] font-bold" style={{ color: log.venta_item_id ? 'var(--color-primary)' : '#8b5cf6' }}>
                                             {log.venta_item_id ? 'Línea' : 'Global'}
                                         </span>
                                     </p>

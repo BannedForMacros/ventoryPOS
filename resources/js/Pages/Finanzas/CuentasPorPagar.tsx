@@ -15,6 +15,7 @@ import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import StatGrid from '@/Components/UI/StatGrid';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
+import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
 import type { PageProps } from '@/types';
 
 interface Pago {
@@ -136,6 +137,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
     function abrirEditarPago(p: Pago) {
         setErrors({});
+        valEditar.reiniciar();
         setFormPago({
             monto:          String(Number(p.monto)),
             fecha:          p.fecha.slice(0, 10),
@@ -151,6 +153,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
     function submitEditarPago() {
         if (!editandoPago) return;
+        if (problemaEd) { valEditar.corregir(); return; }
         setSaving(true);
         const esAdelantoPago = !!editandoPago.proveedor_adelanto_id;
         router.put(route('finanzas.cxp.pagos.update', editandoPago.id), {
@@ -170,6 +173,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
     function submitAnularPago() {
         if (!anulandoPago) return;
+        if (problemaAnular) { valAnular.corregir(); return; }
         setSaving(true);
         router.delete(route('finanzas.cxp.pagos.destroy', anulandoPago.id), {
             data: { motivo: motivoAnular.trim() },
@@ -230,9 +234,80 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
         return []; // electronico sin cuenta vinculada: se crea sola con el nombre del metodo
     }
 
+    // ── Validación en pantalla (mismas reglas que el backend) ──────────────
+    // El PRIMER problema que impide guardar, en palabras de la cajera; el botón
+    // lo muestra en ámbar y "Corregir" lleva al campo.
+
+    /** Método elegido que tiene cuentas vinculadas → la cuenta es obligatoria. */
+    const metodoConCuentas = (mid: string) => {
+        const m = metodosPago.find(x => String(x.id) === String(mid));
+        return m && (m.cuentas?.length ?? 0) > 0 ? m : null;
+    };
+
+    function problemaMonto(valor: string, tope: number, que: string, detalleTope: string): Problema | null {
+        if (valor.trim() === '') return { texto: `Escribe ${que}`, campo: 'monto' };
+        const n = Number(valor);
+        if (!Number.isFinite(n) || n < 0.01) return { texto: 'El monto debe ser mayor a S/ 0.00', campo: 'monto' };
+        if (n > tope + 0.009) return { texto: `El monto no puede pasar ${detalleTope} ${money(tope)}`, campo: 'monto' };
+        return null;
+    }
+
+    function problemaMetodo(metodoId: string, cuentaId: string): Problema | null {
+        if (!metodoId) return { texto: 'Elige el método de pago', campo: 'metodo_pago_id' };
+        const m = metodoConCuentas(metodoId);
+        if (m && !cuentaId) return { texto: `Elige la cuenta de ${m.nombre}`, campo: 'cuenta_id' };
+        return null;
+    }
+
+    function problemaPago(): Problema | null {
+        if (!abonando) return null;
+        if (usarCompensacion) {
+            if (!compensarVentaId) return { texto: 'Elige la venta al crédito contra la que compensas', campo: 'venta_id' };
+            return problemaMonto(form.monto, topeMonto, 'el monto a compensar', 'del menor de los dos saldos:')
+                ?? (!form.fecha ? { texto: 'Elige la fecha', campo: 'fecha' } : null);
+        }
+        if (usarAdelanto) {
+            if (!form.proveedor_adelanto_id) return { texto: 'Elige el adelanto a consumir', campo: 'proveedor_adelanto_id' };
+            const pm = problemaMonto(form.monto, topeMonto, 'el monto del pago',
+                adelantoSel && Number(adelantoSel.saldo) < saldoCompra ? 'del saldo del adelanto' : 'del saldo');
+            if (pm) return pm;
+            return !form.fecha ? { texto: 'Elige la fecha del pago', campo: 'fecha' } : null;
+        }
+        const pm = problemaMonto(form.monto, saldoCompra, 'el monto del pago', 'del saldo');
+        if (pm) return pm;
+        if (!form.fecha) return { texto: 'Elige la fecha del pago', campo: 'fecha' };
+        return problemaMetodo(form.metodo_pago_id, form.cuenta_id);
+    }
+    const problemaAb = problemaPago();
+    const valPago    = useProblema(problemaAb, errors);
+
+    /** Tope al editar: saldo actual de la compra + lo que ya aporta este pago (igual que el backend). */
+    const topeEditar = detalle && editandoPago
+        ? Math.round((saldoDe(detalle) + Number(editandoPago.monto)) * 100) / 100
+        : Number.POSITIVE_INFINITY;
+
+    function problemaEditarPago(): Problema | null {
+        if (!editandoPago) return null;
+        if (!editandoPago.proveedor_adelanto_id) {
+            const pm = problemaMonto(formPago.monto, topeEditar, 'el monto del pago', 'del máximo permitido');
+            if (pm) return pm;
+        }
+        if (!formPago.fecha) return { texto: 'Elige la fecha del pago', campo: 'fecha' };
+        if (!editandoPago.proveedor_adelanto_id) return problemaMetodo(formPago.metodo_pago_id, formPago.cuenta_id);
+        return null;
+    }
+    const problemaEd = problemaEditarPago();
+    const valEditar  = useProblema(problemaEd, errors);
+
+    const problemaAnular: Problema | null = motivoAnular.trim().length < 5
+        ? { texto: motivoAnular.trim() === '' ? 'Escribe el motivo de la anulación' : 'El motivo debe tener al menos 5 letras', campo: 'motivo' }
+        : null;
+    const valAnular = useProblema(problemaAnular, errors);
+
     function abrirAbono(e: EntradaCxp) {
         setAbonando(e);
         setErrors({});
+        valPago.reiniciar();
         setUsarAdelanto(false);
         setUsarCompensacion(false);
         setCompensarVentaId('');
@@ -244,14 +319,12 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
     function submitAbono() {
         if (!abonando) return;
+        // Falta algo: llevar al campo en vez de enviar y esperar el rebote.
+        if (problemaAb) { valPago.corregir(); return; }
 
         // Compensación: el pago no sale como dinero — se cancela contra una
         // venta al crédito del tercero. Mismo endpoint que usa CxC.
         if (usarCompensacion) {
-            if (!compensarVentaId) {
-                setErrors({ venta_id: 'Selecciona la venta al crédito contra la que compensas.' });
-                return;
-            }
             setSaving(true);
             router.post(route('finanzas.compensaciones.cxc-cxp'), {
                 venta_id:    compensarVentaId,
@@ -264,20 +337,6 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                 onError:   (errs: any) => { setErrors(errs); setSaving(false); },
             });
             return;
-        }
-
-        // Validación en el front: el backend rebota con "El adelanto no tiene
-        // saldo suficiente" y el error caía debajo de un monto que el propio
-        // sistema había precargado — se leía como "no se puede pagar así".
-        if (usarAdelanto) {
-            if (!form.proveedor_adelanto_id) {
-                setErrors({ proveedor_adelanto_id: 'Selecciona el adelanto que vas a consumir.' });
-                return;
-            }
-            if (adelantoSel && Number(form.monto) > Number(adelantoSel.saldo) + 0.01) {
-                setErrors({ monto: `Este adelanto solo tiene ${money(adelantoSel.saldo)} de saldo. Baja el monto y registra el resto como un segundo pago.` });
-                return;
-            }
         }
 
         setSaving(true);
@@ -436,21 +495,21 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAbonando(null)}>Cancelar</Button>
-                        <Button onClick={submitAbono}
-                            disabled={saving || form.monto === '' || Number(form.monto) <= 0
-                                || (abonando !== null && Number(form.monto) > saldoDe(abonando) + 0.009)
-                                || (usarCompensacion
-                                    ? (!compensarVentaId || Number(form.monto) > topeMonto + 0.009)
-                                    : ((!usarAdelanto && !form.metodo_pago_id)
-                                        || (usarAdelanto && !form.proveedor_adelanto_id)
-                                        || (!!adelantoSel && Number(form.monto) > Number(adelantoSel.saldo) + 0.009)))}>
+                        <BotonGuardar problema={problemaAb} onGuardar={submitAbono} onCorregir={valPago.corregir} guardando={saving}>
                             {saving ? 'Guardando...' : usarCompensacion ? 'Compensar' : 'Registrar pago'}
-                        </Button>
+                        </BotonGuardar>
                     </>
                 }
             >
                 {abonando && (
                     <div className="space-y-4">
+                        {/* Errores del servidor sin campo visible en el modo actual. */}
+                        <ErroresSueltos errors={errors} visibles={[
+                            'monto', 'fecha', 'observacion',
+                            ...(usarCompensacion ? ['venta_id']
+                                : usarAdelanto ? ['proveedor_adelanto_id', 'referencia', 'turno_id']
+                                : ['metodo_pago_id', 'cuenta_id', 'referencia', 'turno_id']),
+                        ]} />
                         <StatGrid stats={[
                             { label: 'Total compra', valor: money(abonando.total) },
                             { label: 'Pagado', valor: money(abonando.monto_pagado), color: 'success' },
@@ -459,15 +518,17 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                         <div className="grid grid-cols-2 gap-3">
                             <Input label="Monto del pago" required type="number" min="0.01" step="0.01"
                                 max={topeMonto}
+                                data-campo="monto"
                                 value={form.monto}
                                 onChange={e => setForm(f => ({ ...f, monto: e.target.value }))}
-                                error={errors.monto}
+                                error={valPago.err('monto')}
                                 hint={adelantoSel ? `Tope del adelanto #${adelantoSel.id}: ${money(adelantoSel.saldo)}` : undefined}
                             />
                             <Input label="Fecha" required type="date"
+                                data-campo="fecha"
                                 value={form.fecha}
                                 onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
-                                error={errors.fecha}
+                                error={valPago.err('fecha')}
                             />
                         </div>
 
@@ -535,6 +596,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
                         {usarCompensacion && (
                             <div className="space-y-3">
+                                <div data-campo="venta_id">
                                 <SearchableSelect
                                     label="Venta al crédito contra la que se compensa"
                                     required
@@ -555,8 +617,9 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                         value: v.id,
                                         label: `${v.numero ?? `#${v.id}`} — ${nombreClienteVenta(v)} — saldo ${money(v.saldo_pendiente)}${esMismoRucVenta(v) ? ' · mismo RUC' : ''}`,
                                     }))}
-                                    error={errors.venta_id}
+                                    error={valPago.err('venta_id')}
                                 />
+                                </div>
                                 {ventaCompensarSel && (
                                     <Callout variant="info" title={`Máximo compensable: ${money(topeMonto)}`}>
                                         Se registrará un pago en esta compra y un abono en la venta {ventaCompensarSel.numero ?? ''} por el mismo monto, <strong>sin ningún movimiento de caja</strong>. Ambos saldos bajan a la vez.
@@ -595,6 +658,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
 
                         {usarCompensacion ? null : usarAdelanto ? (
                             <Select label="Adelanto a consumir" required
+                                triggerAttrs={{ 'data-campo': 'proveedor_adelanto_id' }}
                                 options={adelantosDisponibles.map(a => ({ value: String(a.id), label: `Adelanto #${a.id} — saldo ${money(a.saldo)}` }))}
                                 value={form.proveedor_adelanto_id}
                                 onChange={v => {
@@ -609,11 +673,12 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                     }));
                                 }}
                                 placeholder="— Seleccionar —"
-                                error={errors.proveedor_adelanto_id}
+                                error={valPago.err('proveedor_adelanto_id')}
                             />
                         ) : (
                             <>
                                 <Select label="Método de pago" required
+                                    triggerAttrs={{ 'data-campo': 'metodo_pago_id' }}
                                     options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                                     value={form.metodo_pago_id}
                                     onChange={v => {
@@ -621,23 +686,25 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                         setForm(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' }));
                                     }}
                                     placeholder="— Seleccionar —"
-                                    error={errors.metodo_pago_id}
+                                    error={valPago.err('metodo_pago_id')}
                                 />
                                 {cuentasDeMetodo(form.metodo_pago_id).length > 0 ? (
                                     <Select label="Cuenta origen"
+                                        required={!!metodoConCuentas(form.metodo_pago_id)}
+                                        triggerAttrs={{ 'data-campo': 'cuenta_id' }}
                                         options={cuentasDeMetodo(form.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
                                         value={form.cuenta_id}
                                         onChange={v => setForm(f => ({ ...f, cuenta_id: String(v) }))}
                                         placeholder="— Seleccionar —"
                                         hint={form.metodo_pago_id ? 'Solo las cuentas vinculadas al método elegido' : undefined}
-                                        error={errors.cuenta_id}
+                                        error={valPago.err('cuenta_id')}
                                     />
-                                ) : (
+                                ) : form.metodo_pago_id ? (
                                     <Callout variant="info">
-                                        El dinero se registrara en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
-                                        que el sistema crea y vincula automaticamente a este metodo. Puedes editarla luego en Configuracion → Cuentas.
+                                        El dinero se registrará en la cuenta <strong>«{metodosPago.find(x => String(x.id) === form.metodo_pago_id)?.nombre}»</strong>,
+                                        que el sistema crea y vincula automáticamente a este método. Puedes editarla luego en Configuración → Cuentas.
                                     </Callout>
-                                )}
+                                ) : null}
                             </>
                         )}
 
@@ -753,7 +820,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                             {/* Solo OBSERVAR: qué caja afectó este pago (si afectó alguna).
                                                 Para cambiarlo se edita el pago con el lápiz. */}
                                             {p.turno?.caja?.nombre && (
-                                                <p className="text-[10px] inline-flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
+                                                <p className="text-[11px] inline-flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
                                                     <Banknote size={11} /> Afectó caja: {p.turno.caja.nombre}
                                                 </p>
                                             )}
@@ -771,7 +838,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                                         <Pencil size={14} />
                                                     </button>
                                                 )}
-                                                <button onClick={() => { setErrors({}); setMotivoAnular(''); setAnulandoPago(p); }}
+                                                <button onClick={() => { setErrors({}); valAnular.reiniciar(); setMotivoAnular(''); setAnulandoPago(p); }}
                                                     className="p-1.5 rounded-lg hover:bg-black/5" title="Anular pago"
                                                     style={{ color: 'var(--color-danger)' }}>
                                                     <Trash2 size={14} />
@@ -797,12 +864,18 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setEditandoPago(null)}>Cancelar</Button>
-                        <Button onClick={submitEditarPago} disabled={saving || !!(editandoPago && !editandoPago.proveedor_adelanto_id && !formPago.metodo_pago_id)}>{saving ? 'Guardando...' : 'Guardar cambios'}</Button>
+                        <BotonGuardar problema={problemaEd} onGuardar={submitEditarPago} onCorregir={valEditar.corregir} guardando={saving}>
+                            {saving ? 'Guardando...' : 'Guardar cambios'}
+                        </BotonGuardar>
                     </>
                 }
             >
                 {editandoPago && (
                     <div className="space-y-4">
+                        <ErroresSueltos errors={errors} visibles={[
+                            'fecha', 'referencia', 'observacion',
+                            ...(editandoPago.proveedor_adelanto_id ? [] : ['monto', 'metodo_pago_id', 'cuenta_id']),
+                        ]} />
                         {editandoPago.proveedor_adelanto_id ? (
                             <Callout variant="warning">
                                 Este pago consumió el adelanto #{editandoPago.proveedor_adelanto_id}: su <strong>monto no se edita</strong> (anúlalo y regístralo de nuevo si el monto está mal). Puedes corregir fecha, referencia y observación.
@@ -814,19 +887,25 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                         )}
                         <div className="grid grid-cols-2 gap-3">
                             <Input label="Monto" required type="number" min="0.01" step="0.01"
+                                max={Number.isFinite(topeEditar) ? topeEditar : undefined}
+                                data-campo="monto"
                                 value={formPago.monto}
                                 disabled={!!editandoPago.proveedor_adelanto_id}
                                 onChange={e => setFormPago(f => ({ ...f, monto: e.target.value }))}
-                                error={errors.monto}
+                                error={valEditar.err('monto')}
+                                hint={!editandoPago.proveedor_adelanto_id && Number.isFinite(topeEditar)
+                                    ? `Máximo ${money(topeEditar)} (saldo + monto actual del pago)` : undefined}
                             />
                             <Input label="Fecha" required type="date" value={formPago.fecha}
+                                data-campo="fecha"
                                 onChange={e => setFormPago(f => ({ ...f, fecha: e.target.value }))}
-                                error={errors.fecha}
+                                error={valEditar.err('fecha')}
                             />
                         </div>
                         {!editandoPago.proveedor_adelanto_id && (
                             <>
                                 <Select label="Método de pago" required
+                                    triggerAttrs={{ 'data-campo': 'metodo_pago_id' }}
                                     options={metodosPago.map(m => ({ value: String(m.id), label: m.nombre }))}
                                     value={formPago.metodo_pago_id}
                                     onChange={v => {
@@ -834,15 +913,17 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                         setFormPago(f => ({ ...f, metodo_pago_id: String(v), cuenta_id: cts.length === 1 ? String(cts[0].id) : '' }));
                                     }}
                                     placeholder="— Seleccionar —"
-                                    error={errors.metodo_pago_id}
+                                    error={valEditar.err('metodo_pago_id')}
                                 />
                                 {cuentasDeMetodo(formPago.metodo_pago_id).length > 0 && (
                                     <Select label="Cuenta origen"
+                                        required={!!metodoConCuentas(formPago.metodo_pago_id)}
+                                        triggerAttrs={{ 'data-campo': 'cuenta_id' }}
                                         options={cuentasDeMetodo(formPago.metodo_pago_id).map(c => ({ value: String(c.id), label: c.nombre }))}
                                         value={formPago.cuenta_id}
                                         onChange={v => setFormPago(f => ({ ...f, cuenta_id: String(v) }))}
                                         placeholder="— Seleccionar —"
-                                        error={errors.cuenta_id}
+                                        error={valEditar.err('cuenta_id')}
                                     />
                                 )}
                             </>
@@ -873,9 +954,9 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAnulandoPago(null)}>Cancelar</Button>
-                        <Button variant="danger" onClick={submitAnularPago} disabled={saving || motivoAnular.trim().length < 5}>
+                        <BotonGuardar variant="danger" problema={problemaAnular} onGuardar={submitAnularPago} onCorregir={valAnular.corregir} guardando={saving}>
                             {saving ? 'Anulando...' : 'Sí, anular pago'}
-                        </Button>
+                        </BotonGuardar>
                     </>
                 }
             >
@@ -886,10 +967,12 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
                                 ? <>El monto volverá como saldo del <strong>adelanto #{anulandoPago.proveedor_adelanto_id}</strong> y la compra quedará con más saldo pendiente.</>
                                 : <>Se revierte el egreso en tesorería (el dinero "vuelve" a la cuenta) y la compra queda con más saldo pendiente.</>}
                         </Callout>
+                        <ErroresSueltos errors={errors} visibles={['motivo']} />
                         <Input label="Motivo (mínimo 5 caracteres)" required value={motivoAnular}
+                            data-campo="motivo" maxLength={500}
                             onChange={e => setMotivoAnular(e.target.value)}
                             placeholder="Ej.: se registró doble / monto equivocado"
-                            error={errors.motivo}
+                            error={valAnular.err('motivo')}
                         />
                     </div>
                 )}

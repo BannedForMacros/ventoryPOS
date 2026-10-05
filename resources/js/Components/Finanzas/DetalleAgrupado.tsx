@@ -185,7 +185,7 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                     {cards.map((c, i) => (
                         <div key={i} className="rounded-xl px-4 py-3"
                             style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: 'var(--color-text-muted)' }}>
+                            <p className="text-[11px] font-semibold truncate" style={{ color: 'var(--color-text-muted)' }}>
                                 {c.label}
                             </p>
                             <p className={`font-bold truncate ${c.esTexto ? 'text-sm mt-1' : 'text-xl'}`} style={{ color: cardColor(c.color) }}>
@@ -311,7 +311,7 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                         style={{ backgroundColor: 'color-mix(in srgb, var(--color-surface) 60%, var(--color-bg))', borderTop: '1px dashed var(--color-border)' }}>
                                         <table className="w-full text-sm">
                                             <thead>
-                                                <tr className="text-[10px] font-bold uppercase tracking-wider"
+                                                <tr className="text-[11px] font-bold uppercase tracking-wider"
                                                     style={{ color: 'var(--color-text-muted)' }}>
                                                     {cols.map(c => (
                                                         <th key={c.campo} className="text-left font-bold px-3 py-1.5 first:pl-10">{c.label}</th>
@@ -380,7 +380,7 @@ export default function DetalleAgrupado({ cards, grupos, itemCols, montoLabel = 
                                                                     <div className="mx-3 mb-2 ml-14 rounded-lg px-3 py-1.5 space-y-1"
                                                                         style={{ backgroundColor: 'var(--color-bg)', border: '1px dashed var(--color-border)' }}>
                                                                         {/* Cabecera de columnas del historial */}
-                                                                        <div className="grid grid-cols-[78px_1fr_minmax(90px,auto)_96px] gap-2 text-[10px] font-bold uppercase tracking-wider pb-1"
+                                                                        <div className="grid grid-cols-[78px_1fr_minmax(90px,auto)_96px] gap-2 text-[11px] font-bold uppercase tracking-wider pb-1"
                                                                             style={{ color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)' }}>
                                                                             <span>Fecha</span>
                                                                             <span>Detalle</span>

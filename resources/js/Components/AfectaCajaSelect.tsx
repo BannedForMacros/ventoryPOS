@@ -1,7 +1,7 @@
 import { usePage } from '@inertiajs/react';
-import { AlertTriangle } from 'lucide-react';
 import Select from '@/Components/UI/Select';
 import type { PageProps } from '@/types';
+import Callout from '@/Components/UI/Callout';
 
 /** Turno abierto tal como lo sirven los índices (campos mínimos). */
 export interface TurnoLite {
@@ -111,11 +111,9 @@ export default function AfectaCajaSelect({
     // Admin o sin turno propio: sin turnos abiertos no hay caja que afectar.
     if (turnos.length === 0) {
         return (
-            <div className="flex items-start gap-2 rounded-xl px-4 py-3 text-sm"
-                style={{ backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}>
-                <AlertTriangle size={16} className="mt-0.5" style={{ color: '#b45309' }} />
+            <Callout variant="warning">
                 <span>No hay turnos abiertos. Se registrará sin afectar ninguna caja.</span>
-            </div>
+            </Callout>
         );
     }
 

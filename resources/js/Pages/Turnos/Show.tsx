@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
-    AlertTriangle, ArrowLeft, HandCoins, Lock, Package, Pencil, RotateCcw, Search,
+    ArrowLeft, HandCoins, Lock, Package, Pencil, RotateCcw, Search,
     ShoppingCart, TrendingDown, Wallet, Scale, X,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
@@ -14,6 +14,7 @@ import ModalEditarApertura from './Partials/ModalEditarApertura';
 import ReporteCajaTurno from './Partials/ReporteCajaTurno';
 import type { PageProps, Turno, TurnoRetiro } from '@/types';
 import { useTiempoReal } from '@/lib/useTiempoReal';
+import Callout from '@/Components/UI/Callout';
 
 /** Lo que entró por un medio de pago en el turno. */
 interface Cobro { metodo_pago_id: number; nombre: string; es_efectivo: boolean; total: number; }
@@ -309,16 +310,12 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin, co
                 }
             >
                 <div className="space-y-3">
-                    <div
-                        className="flex items-start gap-2 rounded-xl px-4 py-3 text-sm"
-                        style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}
-                    >
-                        <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
+                    <Callout variant="danger">
                         <p style={{ color: 'var(--color-text)' }}>
                             Se eliminará el arqueo de cierre y se anulará el cierre de inventario asociado.
                             El cajero podrá registrar ventas y gastos nuevamente hasta que se vuelva a cerrar.
                         </p>
-                    </div>
+                    </Callout>
 
                     {/* A8: motivo obligatorio para auditoria */}
                     <div>

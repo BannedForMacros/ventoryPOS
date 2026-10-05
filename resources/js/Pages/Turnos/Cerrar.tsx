@@ -8,6 +8,7 @@ import { fmtS, plural } from '@/Components/Reportes/ReportUI';
 import { imprimirCierreAuto } from './Partials/imprimirCierre';
 import AvisoStockNegativo, { type ProductoStockNegativo } from './Partials/AvisoStockNegativo';
 import type { MetodoPago, ModoCierreCaja, ModoCierreInventario, Turno } from '@/types';
+import Callout from '@/Components/UI/Callout';
 
 interface CierreInventarioRef {
     id: number;
@@ -463,13 +464,12 @@ export default function CerrarTurno({ turno, cobrosPorMetodo, productosStockNega
                 }
             >
                 <div className="space-y-3">
-                    <div className="flex items-start gap-2">
-                        <AlertTriangle size={18} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
-                        <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+                    <Callout variant="danger">
+                        <p>
                             Durante este turno vendiste los siguientes productos y su stock quedó
                             <strong> en negativo</strong>. ¿Deseas cerrar la caja de todas formas?
                         </p>
-                    </div>
+                    </Callout>
                     <ul className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
                         {(productosStockNegativo ?? []).map((p, i) => (
                             <li key={p.producto_id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm"

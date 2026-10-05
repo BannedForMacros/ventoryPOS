@@ -169,7 +169,7 @@ export default function CambiosCierreModal({ fecha, onClose }: { fecha: string |
                                             <span className="col-span-5 flex items-center gap-1.5 font-medium" style={{ color: 'var(--color-text)' }}>
                                                 <ChevronDown size={14} className={`transition-transform ${abierta ? '' : '-rotate-90'}`} />
                                                 {CATEGORIA_NOMBRE[c.categoria] ?? c.categoria}
-                                                <span className="text-[10px] font-normal uppercase" style={{ color: 'var(--color-text-muted)' }}>
+                                                <span className="text-[11px] font-normal" style={{ color: 'var(--color-text-muted)' }}>
                                                     {c.seccion === 'favor' ? 'a favor' : 'en contra'}
                                                 </span>
                                             </span>
@@ -257,7 +257,7 @@ function Resumen({ label, valor, color, destacado }: { label: string; valor: str
                 border: `1px solid ${destacado ? 'var(--color-primary)' : 'var(--color-border)'}`,
                 backgroundColor: 'var(--color-surface)',
             }}>
-            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
+            <p className="text-[11px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
             <p className="text-lg font-bold tabular-nums" style={{ color: color ?? 'var(--color-text)' }}>{valor}</p>
         </div>
     );

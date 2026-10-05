@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     ArrowLeft, XCircle, Receipt, User, ShoppingBag,
     CreditCard, Percent, Calendar, Store, UserCheck, Printer,
-    FileCheck2, Download, RefreshCw, KeyRound, AlertTriangle, FileText, PackageOpen, History, Undo2,
+    FileCheck2, Download, RefreshCw, KeyRound, FileText, PackageOpen, History, Undo2,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
@@ -661,13 +661,11 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                 }
             >
                 <div className="space-y-3">
-                    <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
-                        style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                        <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--color-danger)' }} />
+                    <Callout variant="danger">
                         <p style={{ color: 'var(--color-text)' }}>
                             Anular revierte el stock y el dinero de esta venta. Es una acción irreversible.
                         </p>
-                    </div>
+                    </Callout>
 
                     <div>
                         <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
@@ -863,7 +861,7 @@ function BloqueComprobanteElectronico({ ventaId, inicial }: {
                 )}
 
                 {ce.hash_cpe && (
-                    <p className="text-[10px] font-mono break-all" style={{ color: 'var(--color-text-muted)' }}>
+                    <p className="text-[11px] font-mono break-all" style={{ color: 'var(--color-text-muted)' }}>
                         Hash: {ce.hash_cpe}
                     </p>
                 )}

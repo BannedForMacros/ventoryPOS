@@ -225,7 +225,7 @@ export default function DescuentosPlanilla({ descuentos, porTrabajador, estado, 
                                 {t.nombre ?? '—'}
                             </p>
                             <p className="text-base font-bold" style={{ color: 'var(--color-danger)' }}>{money(t.total)}</p>
-                            <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>pendiente de descontar</p>
+                            <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>pendiente de descontar</p>
                         </div>
                     ))}
                 </div>

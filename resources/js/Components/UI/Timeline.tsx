@@ -37,7 +37,7 @@ export default function Timeline({ items, emptyMessage = 'Sin movimientos regist
     return (
         <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
             {/* Cabecera de columnas */}
-            <div className={`grid ${gridCols} gap-2 items-center px-3 py-2 text-[10px] font-bold uppercase tracking-wider`}
+            <div className={`grid ${gridCols} gap-2 items-center px-3 py-2 text-[11px] font-bold uppercase tracking-wider`}
                 style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)' }}>
                 <span />
                 <span>Fecha</span>

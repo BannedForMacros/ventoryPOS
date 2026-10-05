@@ -231,6 +231,7 @@ class CambiosCierreService
             'adelanto_proveedor.anulado'  => [['adelanto_proveedor', 'efectivo', 'cuenta_bancaria'], 'Adelanto anulado', 'proveedor_adelantos', 'fecha', null],
             'deuda.editada'               => [['deuda', 'personal', 'prestamo_otorgado'], 'Deuda editada', 'deudas', 'fecha_inicio', 'nombre'],
             'deuda.anulada'               => [['deuda', 'personal', 'prestamo_otorgado'], 'Deuda anulada', 'deudas', 'fecha_inicio', 'nombre'],
+            'deuda.restaurada'            => [['deuda', 'personal', 'prestamo_otorgado'], 'Deuda eliminada y restaurada', 'deudas', 'fecha_inicio', 'nombre'],
             'ajuste_inventario.anulado'   => [['stock'], 'Ajuste de inventario anulado', 'ajustes_inventario', 'fecha', 'numero'],
             'gasto.editado'               => [['efectivo', 'cuenta_bancaria'], 'Gasto editado', 'gastos', 'fecha', null],
             'devolucion.anulada'          => [['stock', 'efectivo', 'cuenta_bancaria'], 'Devolución anulada', 'devoluciones', 'fecha', null],

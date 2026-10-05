@@ -1596,6 +1596,10 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         nuevaLineaPrecioKey,
         onAutoFocusPrecio:     () => setNuevaLineaPrecioKey(null),
         pulsos,
+        // Resumen de las opciones de la venta (pie del carrito) y si deben verse
+        // abiertas: un envío tiene datos que llenar (ruta, fecha, dirección).
+        resumenEntrega:        entregas ? comoFrase(tipoEntrega === 'envio' ? entregas.texto_envio : entregas.texto_recojo) : null,
+        forzarOpciones:        esEnvio,
     };
 
     /*
@@ -2105,136 +2109,92 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             <div className="flex flex-row-reverse flex-1 overflow-hidden relative">
                 {/* ── Panel izquierdo: productos ──────────────────────── */}
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    {/* Header de productos + buscador + categorías */}
-                    <div className="px-3 sm:px-4 py-3 flex flex-col gap-2.5 flex-shrink-0" style={{ backgroundColor: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }}>
+                    {/* Buscador + UNA sola fila de filtros. Antes había una cabecera
+                        "Productos 40", pestañas Todo/Productos/Servicios y además
+                        chips "Todos/categorías": dos filtros que decían lo mismo. */}
+                    <div className="px-3 sm:px-4 pt-3 pb-2.5 flex flex-col gap-2 flex-shrink-0" style={{ backgroundColor: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }}>
                         <div className="flex items-center gap-2">
-                            <Package size={16} style={{ color: 'var(--color-primary)' }} />
-                            <span className="font-bold text-sm" style={{ color: 'var(--color-text)' }}>
-                                Productos
-                            </span>
-                            <span
-                                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                                style={{
-                                    backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
-                                    color: 'var(--color-primary)',
-                                }}
-                            >
-                                {productosFiltrados.length}
-                            </span>
-                            {/* Refrescar catálogo (sin perder el carrito): útil cuando
-                                se crea un producto en otra pestaña. */}
+                            <div className="relative flex-1 min-w-0">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
+                                <input
+                                    type="search"
+                                    inputMode="search"
+                                    enterKeyHint="search"
+                                    value={busqueda}
+                                    onChange={e => setBusqueda(e.target.value)}
+                                    onKeyDown={onBusquedaKeyDown}
+                                    ref={buscadorRef}
+                                    placeholder="Busca por nombre o código, o escanea (Enter agrega)"
+                                    aria-label="Buscar producto"
+                                    autoFocus
+                                    autoComplete="off"
+                                    className="w-full h-10 pl-10 pr-9 text-sm border rounded-xl focus:outline-none focus:ring-2"
+                                    style={{
+                                        borderColor: 'var(--color-border)',
+                                        backgroundColor: 'var(--color-bg)',
+                                        color: 'var(--color-text)',
+                                        '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
+                                    } as React.CSSProperties}
+                                />
+                                {busqueda && (
+                                    <button
+                                        onClick={() => setBusqueda('')}
+                                        aria-label="Borrar búsqueda"
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-black/5"
+                                        style={{ color: 'var(--color-text-muted)' }}
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
+                            </div>
+                            {/* Refrescar catálogo sin perder el carrito (p. ej. tras crear un producto en otra pestaña). */}
                             <button
                                 onClick={refrescarCatalogo}
                                 disabled={refrescando}
                                 title="Actualizar lista de productos"
                                 aria-label="Actualizar lista de productos"
-                                className="ml-auto flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg transition-colors hover:bg-black/5 active:bg-black/10 disabled:opacity-60"
-                                style={{ color: 'var(--color-text-muted)' }}
+                                className="flex items-center justify-center h-10 w-10 flex-shrink-0 rounded-xl border transition-colors hover:bg-black/5 disabled:opacity-60"
+                                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}
                             >
-                                <RefreshCw size={13} className={refrescando ? 'animate-spin' : ''} />
-                                <span className="hidden sm:inline">{refrescando ? 'Actualizando…' : 'Actualizar'}</span>
+                                <RefreshCw size={15} className={refrescando ? 'animate-spin' : ''} />
                             </button>
                             {puedeCrearProducto && (
                                 <button
                                     onClick={() => { setNombreNuevoProducto(''); setModalNuevoProducto(true); }}
                                     title="Crear un producto y agregarlo al carrito"
-                                    className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors hover:brightness-95"
+                                    className="flex items-center gap-1 h-10 px-3 flex-shrink-0 rounded-xl text-[13px] font-semibold transition-colors hover:brightness-95"
                                     style={{ color: 'var(--color-primary)', backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)' }}
                                 >
-                                    <Plus size={13} /> <span>Nuevo producto</span>
+                                    <Plus size={15} /> <span className="hidden sm:inline">Nuevo</span>
                                 </button>
                             )}
                         </div>
 
-                        <div className="relative">
-                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
-                            <input
-                                type="search"
-                                inputMode="search"
-                                enterKeyHint="search"
-                                value={busqueda}
-                                onChange={e => setBusqueda(e.target.value)}
-                                onKeyDown={onBusquedaKeyDown}
-                                ref={buscadorRef}
-                                placeholder="Buscar por nombre o código (Enter agrega)..."
-                                autoFocus
-                                autoComplete="off"
-                                className="w-full pl-10 pr-3 py-2.5 text-sm border rounded-xl focus:outline-none focus:ring-2"
-                                style={{
-                                    borderColor: 'var(--color-border)',
-                                    backgroundColor: 'var(--color-bg)',
-                                    color: 'var(--color-text)',
-                                    '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
-                                } as React.CSSProperties}
-                            />
-                            {busqueda && (
-                                <button
-                                    onClick={() => setBusqueda('')}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-black/5"
-                                    style={{ color: 'var(--color-text-muted)' }}
-                                >
-                                    <X size={14} />
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Pestañas Productos / Servicios. Solo si hay servicios
-                            que separar; con búsqueda activa se atenúan porque en
-                            ese momento se busca en todo el catálogo. */}
-                        {hayServicios && (
-                            <div
-                                className="flex gap-1 p-1 rounded-xl transition-opacity"
-                                style={{ backgroundColor: 'var(--color-bg)', opacity: busqueda ? 0.5 : 1 }}
-                            >
-                                {([
-                                    { val: null,        label: 'Todo',      icon: Layers },
-                                    { val: 'producto',  label: 'Productos', icon: Package },
-                                    { val: 'servicio',  label: 'Servicios', icon: Wrench },
-                                ] as const).map(({ val, label, icon: Icono }) => (
+                        {/* Un solo filtro: Todo · Servicios (si hay) · categorías.
+                            Con búsqueda activa se atenúa: se busca en todo el catálogo. */}
+                        {(categorias.length > 0 || hayServicios) && (
+                            <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide transition-opacity" style={{ opacity: busqueda ? 0.5 : 1 }}>
+                                {[
+                                    { key: 'todo', label: 'Todo', activo: !categoriaActiva && !tipoActivo, Icono: Layers as LucideIcon | null,
+                                      elegir: () => { setCategoriaActiva(null); setTipoActivo(null); } },
+                                    ...(hayServicios ? [{ key: 'servicios', label: 'Servicios', activo: tipoActivo === 'servicio', Icono: Wrench as LucideIcon | null,
+                                      elegir: () => { setCategoriaActiva(null); setTipoActivo(tipoActivo === 'servicio' ? null : 'servicio'); } }] : []),
+                                    ...categorias.map(cat => ({ key: `c-${cat}`, label: cat, activo: categoriaActiva === cat, Icono: null as LucideIcon | null,
+                                      elegir: () => { setTipoActivo(null); setCategoriaActiva(cat === categoriaActiva ? null : cat); } })),
+                                ].map(({ key, label, activo, Icono, elegir }) => (
                                     <button
-                                        key={label}
-                                        onClick={() => setTipoActivo(val)}
-                                        className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-all"
+                                        key={key}
+                                        onClick={elegir}
+                                        aria-pressed={activo}
+                                        className="flex-shrink-0 flex items-center gap-1 h-8 text-[13px] font-medium px-3 rounded-full transition-colors whitespace-nowrap"
                                         style={{
-                                            backgroundColor: tipoActivo === val ? 'var(--color-surface)' : 'transparent',
-                                            color: tipoActivo === val ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                                            boxShadow: tipoActivo === val ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                                            backgroundColor: activo ? 'var(--color-primary)' : 'var(--color-bg)',
+                                            color: activo ? '#fff' : 'var(--color-text-muted)',
+                                            border: `1px solid ${activo ? 'var(--color-primary)' : 'var(--color-border)'}`,
                                         }}
                                     >
-                                        <Icono size={13} />
+                                        {Icono && <Icono size={13} />}
                                         {label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Chips de categorías */}
-                        {categorias.length > 0 && (
-                            <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide">
-                                <button
-                                    onClick={() => setCategoriaActiva(null)}
-                                    className="flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-full transition-all whitespace-nowrap"
-                                    style={{
-                                        backgroundColor: !categoriaActiva ? 'var(--color-primary)' : 'var(--color-bg)',
-                                        color: !categoriaActiva ? '#fff' : 'var(--color-text-muted)',
-                                        border: `1px solid ${!categoriaActiva ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                    }}
-                                >
-                                    <Layers size={11} className="inline mr-1" />
-                                    Todos
-                                </button>
-                                {categorias.map(cat => (
-                                    <button
-                                        key={cat}
-                                        onClick={() => setCategoriaActiva(cat === categoriaActiva ? null : cat)}
-                                        className="flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-full transition-all whitespace-nowrap"
-                                        style={{
-                                            backgroundColor: categoriaActiva === cat ? 'var(--color-primary)' : 'var(--color-bg)',
-                                            color: categoriaActiva === cat ? '#fff' : 'var(--color-text-muted)',
-                                            border: `1px solid ${categoriaActiva === cat ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                                        }}
-                                    >
-                                        {cat}
                                     </button>
                                 ))}
                             </div>
@@ -2796,6 +2756,10 @@ interface CarritoPanelProps {
     slotComprobante?: React.ReactNode;
     // Línea recién agregada → se ilumina (ver CarritoItem).
     pulsos: Record<string, number>;
+    // "Recojo en tienda" / "Puesto en obra" (null si la empresa no usa entregas).
+    resumenEntrega: string | null;
+    // Las opciones se muestran abiertas sí o sí (envío con datos por llenar).
+    forzarOpciones: boolean;
 }
 
 function CarritoPanel({
@@ -2813,8 +2777,24 @@ function CarritoPanel({
     usaDespachoAlmacen, envioPendiente, envioSaleAlEntregar, slotEntrega,
     nuevaLineaPrecioKey, onAutoFocusPrecio,
     anticipoSeleccionado, montoAnticipoUsado,
-    slotComprobante, pulsos,
+    slotComprobante, pulsos, resumenEntrega, forzarOpciones,
 }: CarritoPanelProps) {
+    // Opciones de la venta (recojo/envío, crédito, por entregar, despacho): casi
+    // siempre quedan en su valor normal, así que van RESUMIDAS en una línea del
+    // pie con "Cambiar". Se abren al pedirlo o si hay datos que llenar.
+    const [verOpciones, setVerOpciones] = useState(false);
+    const opcionesRef = useRef<HTMLDivElement | null>(null);
+    const hayModalidad = permitirCredito || permitirPendiente || usaDespachoAlmacen || envioSaleAlEntregar;
+    const hayOpciones  = hayModalidad || !!slotEntrega;
+    const mostrarOpciones = verOpciones || forzarOpciones;
+    useEffect(() => {
+        if (verOpciones) opcionesRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, [verOpciones]);
+    const especiales = [
+        esCredito && MODALIDADES.credito,
+        entrega !== 'completa' && MODALIDADES[entrega],
+    ].filter(Boolean) as (typeof MODALIDADES)[keyof typeof MODALIDADES][];
+
     const hayInactivos = inactivosCount > 0;
 
     const clienteNombre = cliente
@@ -2951,23 +2931,30 @@ function CarritoPanel({
                             onChange={onSetDescuento}
                         />
 
-                        {/* Modalidad: por defecto contado. Crédito / Por entregar /
-                            Despacho son botones que se RELLENAN de su color al activarse
-                            (son excluyentes: activar uno apaga el otro; tocar el activo
-                            vuelve a contado). Solo si la empresa usa alguna. */}
-                        {slotEntrega}
-
-                        {(permitirCredito || permitirPendiente || usaDespachoAlmacen || envioSaleAlEntregar) && (
-                            <ModalidadVenta
-                                esCredito={esCredito}
-                                onCredito={onSetEsCredito}
-                                entrega={entrega}
-                                onEntrega={onElegirEntrega}
-                                credito={permitirCredito}
-                                pendiente={permitirPendiente || envioSaleAlEntregar}
-                                despacho={usaDespachoAlmacen}
-                                envio={envioSaleAlEntregar}
-                            />
+                        {/* Opciones de la venta: se abren desde "Cambiar" en el pie. */}
+                        {hayOpciones && mostrarOpciones && (
+                            <div ref={opcionesRef} className="flex flex-col gap-3 scroll-mt-2">
+                                {slotEntrega}
+                                {hayModalidad && (
+                                    <ModalidadVenta
+                                        esCredito={esCredito}
+                                        onCredito={onSetEsCredito}
+                                        entrega={entrega}
+                                        onEntrega={onElegirEntrega}
+                                        credito={permitirCredito}
+                                        pendiente={permitirPendiente || envioSaleAlEntregar}
+                                        despacho={usaDespachoAlmacen}
+                                        envio={envioSaleAlEntregar}
+                                    />
+                                )}
+                                {verOpciones && !forzarOpciones && (
+                                    <button type="button" onClick={() => setVerOpciones(false)}
+                                        className="self-end text-[12px] font-semibold px-2 py-1 rounded-md hover:bg-black/5"
+                                        style={{ color: 'var(--color-primary)' }}>
+                                        Listo
+                                    </button>
+                                )}
+                            </div>
                         )}
 
                         {/* F1 — Venta a crédito: detalle, solo si está marcada */}
@@ -3128,26 +3115,13 @@ function CarritoPanel({
                             </div>
                         )}
 
-                        {/* Pagos */}
-                        <div>
-                            {/* El título "¿Cómo paga?" y el botón Dividir viven dentro del panel. */}
-                            <PanelPago
-                                pagos={pagos}
-                                metodosPago={metodosPago}
-                                total={total}
-                                anticipoMonto={montoAnticipoUsado}
-                                esCredito={esCredito}
-                                onChange={onSetPagos}
-                            />
-                        </div>
-
                     </>
                 )}
             </div>
 
-            {/* ── Pie FIJO: estado del pago + TOTAL + Cobrar ──────────── */}
+            {/* ── Pie FIJO: opciones + cómo paga + TOTAL + Cobrar ─────── */}
             <div
-                className="flex-shrink-0 px-3 pt-2 flex flex-col gap-2"
+                className="flex-shrink-0 px-3 pt-2 flex flex-col gap-2 max-h-[72%] overflow-y-auto"
                 style={{
                     borderTop: '1px solid var(--color-border)',
                     backgroundColor: 'var(--color-surface)',
@@ -3155,19 +3129,44 @@ function CarritoPanel({
                     paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
                 }}
             >
-                {/* Las líneas del comprobante SUMAN el total (bases netas + IGV),
-                    igual que en el papel: la cajera coteja sin traducir nada. */}
-                {carrito.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-1 text-[12px] tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
-                        <span>Op. gravada <strong className="font-semibold" style={{ color: 'var(--color-text)' }}>S/ {baseGravada.toFixed(2)}</strong></span>
-                        {baseExonerada > 0 && (
-                            <span>Exonerada <strong className="font-semibold" style={{ color: 'var(--color-text)' }}>S/ {baseExonerada.toFixed(2)}</strong></span>
-                        )}
-                        <span>IGV {tasaIgv.toFixed(tasaIgv % 1 === 0 ? 0 : 2)} % <strong className="font-semibold" style={{ color: 'var(--color-text)' }}>S/ {igv.toFixed(2)}</strong></span>
-                        {descuentoTotal > 0 && (
-                            <span>Descuento <strong className="font-semibold" style={{ color: 'var(--vp-amber-ink)' }}>−S/ {descuentoTotal.toFixed(2)}</strong></span>
+                {/* Opciones de la venta, resumidas: lo normal en gris, lo especial
+                    (crédito, por entregar, despacho) con su color. */}
+                {carrito.length > 0 && hayOpciones && (
+                    <div className="flex items-center gap-2 px-1 min-h-[28px]">
+                        <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5 text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
+                            {resumenEntrega && <span className="font-medium">{resumenEntrega}</span>}
+                            {especiales.length === 0 ? (
+                                <span>{resumenEntrega ? '· ' : ''}Contado, se lleva todo</span>
+                            ) : especiales.map(m => (
+                                <span key={m.label} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold"
+                                    style={{ backgroundColor: m.fondo, color: m.texto }}>
+                                    <m.Icono size={12} /> {m.label}
+                                </span>
+                            ))}
+                        </div>
+                        {!forzarOpciones && (
+                            <button type="button" onClick={() => setVerOpciones(v => !v)} aria-expanded={verOpciones}
+                                className="flex items-center gap-0.5 flex-shrink-0 text-[12px] font-semibold px-2 py-1 rounded-md hover:bg-black/5"
+                                style={{ color: 'var(--color-primary)' }}>
+                                {verOpciones ? 'Ocultar' : 'Cambiar'}
+                                <ChevronDown size={14} className={`transition-transform ${verOpciones ? 'rotate-180' : ''}`} />
+                            </button>
                         )}
                     </div>
+                )}
+
+                {/* Cómo paga: SIEMPRE a la vista, pegado al total. Antes quedaba
+                    al fondo del scroll y con 3 productos ya no se veía. */}
+                {carrito.length > 0 && (
+                    <PanelPago
+                        compacto
+                        pagos={pagos}
+                        metodosPago={metodosPago}
+                        total={total}
+                        anticipoMonto={montoAnticipoUsado}
+                        esCredito={esCredito}
+                        onChange={onSetPagos}
+                    />
                 )}
 
                 {/* TOTAL + estado del pago en el mismo bloque: lo que se cobra y si ya está cubierto. */}
@@ -3179,12 +3178,23 @@ function CarritoPanel({
                     }}
                 >
                     <div className="flex items-center justify-between gap-3">
-                        <span className="flex items-center gap-2 text-[13px] font-bold tracking-wide">
-                            TOTAL
-                            {(esCredito || entrega !== 'completa') && (
-                                <span className="text-[12px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-white/20">
-                                    {[esCredito && MODALIDADES.credito.enTotal, entrega !== 'completa' && MODALIDADES[entrega].enTotal]
-                                        .filter(Boolean).join(' · ')}
+                        <span className="min-w-0">
+                            <span className="flex items-center gap-2 text-[13px] font-bold tracking-wide">
+                                TOTAL
+                                {(esCredito || entrega !== 'completa') && (
+                                    <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-white/20">
+                                        {[esCredito && MODALIDADES.credito.enTotal, entrega !== 'completa' && MODALIDADES[entrega].enTotal]
+                                            .filter(Boolean).join(' · ')}
+                                    </span>
+                                )}
+                            </span>
+                            {/* Las bases SUMAN el total, igual que en el comprobante impreso. */}
+                            {carrito.length > 0 && (
+                                <span className="block text-[11px] tabular-nums mt-0.5" style={{ color: 'rgb(255 255 255 / 0.78)' }}>
+                                    Op. gravada {baseGravada.toFixed(2)}
+                                    {baseExonerada > 0 && <> · Exonerada {baseExonerada.toFixed(2)}</>}
+                                    {' · '}IGV {igv.toFixed(2)}
+                                    {descuentoTotal > 0 && <> · Dcto −{descuentoTotal.toFixed(2)}</>}
                                 </span>
                             )}
                         </span>
@@ -3194,6 +3204,8 @@ function CarritoPanel({
                         const totalPagado = pagos.reduce((s, p) => s + p.monto, 0) + montoAnticipoUsado;
                         const falta  = Math.max(0, total - totalPagado);
                         const vuelto = pagos.some(p => p.admite_vuelto) ? Math.max(0, totalPagado - total) : 0;
+                        // Pago exacto sin nada especial: no hay nada que decir (ahorra una fila).
+                        if (!esCredito && !anticipoSeleccionado && falta <= 0.009 && vuelto <= 0.009) return null;
                         const [texto, fondo] = esCredito
                             ? [`Saldo a crédito S/ ${falta.toFixed(2)}`, 'rgb(255 255 255 / 0.18)']
                             : falta > 0.009

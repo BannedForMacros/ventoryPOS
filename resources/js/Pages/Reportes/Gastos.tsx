@@ -191,7 +191,7 @@ export default function ReportesGastos({
             <ReportCard icon={<Receipt size={14} />} title="Detalle de gastos" badge={fmtInt(gastos.total)}
                 accent={viendoEliminados ? 'var(--color-warning)' : 'var(--color-primary)'}
                 actions={viendoEliminados ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
                         style={{ color: 'var(--color-warning)', backgroundColor: 'color-mix(in srgb, var(--color-warning) 14%, transparent)' }}>
                         Viendo eliminados — no cuentan en los totales
                     </span>
@@ -220,7 +220,7 @@ export default function ReportesGastos({
                                             <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: 'var(--color-text)' }}>
                                                 {soloFecha(g.fecha)}
                                                 {eliminado && (
-                                                    <span className="block text-[10px]" style={{ color: 'var(--color-warning)' }}>
+                                                    <span className="block text-[11px]" style={{ color: 'var(--color-warning)' }}>
                                                         eliminado {fechaHora(g.deleted_at as string)}
                                                     </span>
                                                 )}
@@ -233,7 +233,7 @@ export default function ReportesGastos({
                                             <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--color-text)' }}>{g.user?.name ?? '—'}</td>
                                             <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--color-text-muted)' }}>{g.local?.nombre ?? '—'}</td>
                                             <td className="px-3 py-2.5">
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
                                                     style={g.turno_id ? {
                                                         color: 'var(--color-primary)',
                                                         backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
@@ -289,7 +289,7 @@ export default function ReportesGastos({
                                             {g.tipo?.nombre ?? '—'} · {soloFecha(g.fecha)} · {g.user?.name ?? '—'}
                                         </p>
                                         {eliminado && (
-                                            <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-warning)' }}>
+                                            <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-warning)' }}>
                                                 eliminado {fechaHora(g.deleted_at as string)}
                                             </p>
                                         )}
@@ -298,7 +298,7 @@ export default function ReportesGastos({
                                         <p className="font-bold text-sm" style={{ color: eliminado ? 'var(--color-text-muted)' : 'var(--color-danger)' }}>
                                             {fmtS(parseFloat(g.monto))}
                                         </p>
-                                        <span className="text-[10px] font-bold" style={{ color: 'var(--color-text-muted)' }}>
+                                        <span className="text-[11px] font-bold" style={{ color: 'var(--color-text-muted)' }}>
                                             {g.turno_id ? 'Turno' : 'Admin'}
                                         </span>
                                     </div>
