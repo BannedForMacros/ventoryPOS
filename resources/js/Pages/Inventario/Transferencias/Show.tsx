@@ -86,6 +86,8 @@ export default function TransferenciaShow({ transferencia: t }: Props) {
             observacion_recepcion: obsRecepcion,
         }, {
             onSuccess: () => setRecibirOpen(false),
+            // P. ej. "no se puede recibir más de lo enviado" o "ya fue recibida".
+            onError: (errs) => { const m = Object.values(errs)[0]; if (m) toast.error(String(m)); },
         });
     }
 
@@ -259,7 +261,7 @@ export default function TransferenciaShow({ transferencia: t }: Props) {
                 }>
                 <div className="space-y-4">
                     <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-                        Declara las cantidades realmente recibidas. Si difieren de lo enviado, se registrará la diferencia (pérdida/ganancia en tránsito).
+                        Declara las cantidades realmente recibidas. Si llegó menos de lo enviado, se registrará la diferencia como pérdida en tránsito. No se puede recibir más de lo enviado.
                     </p>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -279,7 +281,7 @@ export default function TransferenciaShow({ transferencia: t }: Props) {
                                         </td>
                                         <td className="py-2 px-2 text-right tabular-nums">{parseFloat(d.cantidad_enviada).toFixed(2)}</td>
                                         <td className="py-2 px-2 w-32">
-                                            <input type="number" step="0.0001" min="0"
+                                            <input type="number" step="0.0001" min="0" max={d.cantidad_enviada}
                                                 value={cantidades[d.id]}
                                                 onChange={e => setCantidades({ ...cantidades, [d.id]: e.target.value })}
                                                 className="w-full rounded-lg border px-2 py-1 text-sm text-right"

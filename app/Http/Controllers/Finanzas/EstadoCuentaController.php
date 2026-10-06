@@ -139,12 +139,9 @@ class EstadoCuentaController extends Controller
             }
 
             // Anticipos: el cliente pagó algo que aún no se lleva → se le debe.
-            $anticipos = DB::table('cliente_anticipos')
-                ->where('empresa_id', $empresaId)
-                ->where('cliente_id', $t['cliente_id'])
-                ->where('estado', 'activo')
-                ->where('saldo', '>', 0)
-                ->get(['id', 'fecha', 'monto', 'saldo', 'tipo_valorizacion', 'venta_id']);
+            // Mismo valor que el resumen y el balance: material al precio
+            // congelado de sus unidades pendientes, aunque su saldo esté en 0.
+            $anticipos = $this->estadoCuenta->anticiposVivos($empresaId, (int) $t['cliente_id']);
 
             foreach ($anticipos as $a) {
                 $esMaterial = $a->tipo_valorizacion === 'material';
@@ -156,7 +153,7 @@ class EstadoCuentaController extends Controller
                     'detalle'   => $esMaterial
                         ? 'Pagado y pendiente de entregar, al precio congelado de la venta'
                         : 'Dinero a favor del cliente',
-                    'monto'     => -round((float) $a->saldo, 2),
+                    'monto'     => -round((float) $a->valor, 2),
                     'variant'   => 'warning',
                     // Si nació de una venta POS/migrada, el clic abre esa venta.
                     'ref_tipo'  => $a->venta_id ? 'venta' : null,
@@ -168,9 +165,10 @@ class EstadoCuentaController extends Controller
         // ── Lado proveedor ───────────────────────────────────────────────────
         $entradas = collect();
         if ($t['proveedor_id'] || $t['sin_identificar']) {
+            // Recibidas o en tránsito (Entrada::comprometido), como CxP y el balance.
             $q = DB::table('entradas')
                 ->where('empresa_id', $empresaId)
-                ->where('estado', 'confirmado')
+                ->whereIn('estado', ['confirmado', 'en_transito'])
                 ->whereRaw('COALESCE(total, 0) - COALESCE(monto_pagado, 0) > 0');
 
             if ($t['proveedor_id']) {

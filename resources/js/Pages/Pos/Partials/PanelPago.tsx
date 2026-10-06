@@ -31,6 +31,8 @@ interface Props {
     onChange:       (pagos: LineaPago[]) => void;
     /** Versión fija del pie del carrito: sin caja ni título, todo en pocas filas. */
     compacto?:      boolean;
+    /** Símbolo de la moneda de la venta ("S/" o "US$"). */
+    simbolo?:       string;
 }
 
 function uid() { return Math.random().toString(36).slice(2); }
@@ -43,7 +45,7 @@ function cuentasDe(metodo?: MetodoPagoConCuentas): Cuenta[] {
 
 /** Cuenta por defecto: si el método tiene EXACTAMENTE 1 cuenta, se autoselecciona
  *  (su id de pivote); si tiene 2+ queda null → el usuario debe elegir. */
-function cuentaDefaultDe(metodo?: MetodoPagoConCuentas): number | null {
+export function cuentaDefaultDe(metodo?: MetodoPagoConCuentas): number | null {
     const cts = cuentasDe(metodo);
     return cts.length === 1 ? cts[0].pivot!.id : null;
 }
@@ -96,7 +98,7 @@ const inputStyle = {
     '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
 } as React.CSSProperties;
 
-export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0, esCredito = false, onChange, compacto = false }: Props) {
+export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0, esCredito = false, onChange, compacto = false, simbolo = 'S/' }: Props) {
     const porCobrar = r2(Math.max(0, total - anticipoMonto));
 
     // Pago dividido: una tarjeta por método, cada una con su monto. Al agregar
@@ -196,10 +198,12 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
 
     function empezarDivision() {
         setModoDividir(true);
-        // El primer método queda en blanco para escribir cuánto paga con él;
-        // el siguiente método que se agregue recibe el resto.
+        // Lo escrito en el primer método NO se borra: queda (hasta el total; en
+        // un pago dividido no hay vuelto) y seleccionado, así basta teclear el
+        // nuevo monto. El siguiente método que se agregue recibe el resto.
         if (pagos[0]) {
-            onChange([{ ...pagos[0], monto: 0 }]);
+            const monto = r2(Math.min(pagos[0].monto, porCobrar));
+            onChange([{ ...pagos[0], monto }]);
             setEnfocar(pagos[0].key);
         }
     }
@@ -291,7 +295,7 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
                     <p className="flex-1 text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
                         {cubreAnticipo ? 'El anticipo cubre toda la venta' : 'Anticipo de cliente'}
                     </p>
-                    <span className="text-xs font-bold" style={{ color: 'var(--color-warning)' }}>S/ {anticipoMonto.toFixed(2)}</span>
+                    <span className="text-xs font-bold" style={{ color: 'var(--color-warning)' }}>{simbolo} {anticipoMonto.toFixed(2)}</span>
                 </div>
             )}
 
@@ -314,6 +318,7 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
                                 onCambio={patch => actualizar(pago.key, patch)}
                                 onQuitar={esCredito ? () => onChange([]) : undefined}
                                 accesorio={compacto && !esCredito ? botonDividir : null}
+                                simbolo={simbolo}
                             />
                         )}
                     </>
@@ -341,6 +346,7 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
                                     placeholder={i === 0 && pago.monto === 0 ? '¿Cuánto?' : '0.00'}
                                     onCambio={patch => actualizar(pago.key, patch)}
                                     onQuitar={pagos.length > 1 ? () => quitar(pago.key) : undefined}
+                                    simbolo={simbolo}
                                 />
                             </div>
                         );
@@ -377,9 +383,9 @@ export default function PanelPago({ pagos, metodosPago, total, anticipoMonto = 0
                                 : { backgroundColor: 'color-mix(in srgb, var(--color-success) 10%, var(--color-surface))', color: 'var(--color-success)' }}
                         >
                             {falta > 0.009 ? (
-                                <><span>Falta asignar</span><span>S/ {falta.toFixed(2)}</span></>
+                                <><span>Falta asignar</span><span>{simbolo} {falta.toFixed(2)}</span></>
                             ) : (
-                                <><span className="flex items-center gap-1"><Check size={13} /> Pagos completos</span><span>S/ {asignado.toFixed(2)}</span></>
+                                <><span className="flex items-center gap-1"><Check size={13} /> Pagos completos</span><span>{simbolo} {asignado.toFixed(2)}</span></>
                             )}
                         </div>
                     )}
@@ -410,7 +416,7 @@ function FilaMetodos({ metodos, elegido, onElegir, extra }: {
                         aria-checked={activo}
                         data-metodo-pago={i === 0 ? '' : undefined}
                         onClick={() => onElegir(m)}
-                        className="flex items-center gap-1 h-8 px-2 rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                        className="flex items-center gap-1 h-8 bajo:h-7 px-2 rounded-lg text-xs font-semibold transition-colors active:scale-95"
                         style={{
                             border: `${activo ? 2 : 1}px solid ${activo ? color : 'transparent'}`,
                             backgroundColor: activo ? `color-mix(in srgb, ${color} 14%, #fff)` : 'var(--color-surface)',
@@ -433,7 +439,8 @@ function FilaMetodos({ metodos, elegido, onElegir, extra }: {
  * tiene varias) y el N.º de operación. Etiquetas a la izquierda alineadas, así
  * se ve de un vistazo dónde se escribe cada cosa.
  */
-function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = false, placeholder = '0.00', inputRef, onCambio, onQuitar, accesorio }: {
+function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = false, placeholder = '0.00', inputRef, onCambio, onQuitar, accesorio, simbolo = 'S/' }: {
+    simbolo?:     string;
     /** Algo al final de la fila del monto (p. ej. "Dividir" en el pie del carrito). */
     accesorio?:   React.ReactNode;
     pago:         LineaPago;
@@ -460,7 +467,7 @@ function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = fa
                     <span className="truncate">{etiqueta}</span>
                 </span>
                 <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: 'var(--color-text-muted)' }}>S/</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: 'var(--color-text-muted)' }}>{simbolo}</span>
                     <input
                         ref={inputRef}
                         type="number"
@@ -472,7 +479,7 @@ function DetallePago({ pago, metodo, etiqueta, conIcono = false, automatico = fa
                         onChange={e => onCambio({ monto: parseFloat(e.target.value) || 0 })}
                         onFocus={e => e.target.select()}
                         placeholder={placeholder}
-                        className={`w-full h-10 pl-8 ${automatico ? 'pr-14' : 'pr-3'} text-lg text-right tabular-nums border rounded-lg focus:outline-none focus:ring-2 font-bold`}
+                        className={`w-full h-10 bajo:h-9 pl-8 ${automatico ? 'pr-14' : 'pr-3'} text-lg text-right tabular-nums border rounded-lg focus:outline-none focus:ring-2 font-bold`}
                         style={{ ...inputStyle, backgroundColor: '#fff', color: 'var(--vp-navy)' }}
                     />
                     {automatico && (

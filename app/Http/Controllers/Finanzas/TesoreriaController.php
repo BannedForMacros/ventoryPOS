@@ -140,7 +140,7 @@ class TesoreriaController extends Controller
 
         $data = $request->validate([
             'cuenta_id'  => ['required', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
-            'fecha'      => ['required', 'date'],
+            'fecha'      => ['required', 'date', new \App\Rules\NoFutura],
             'saldo_real' => ['required', 'numeric', 'min:0'],
             'motivo'     => ['required', 'string', 'min:5', 'max:250'],
         ]);
@@ -167,7 +167,7 @@ class TesoreriaController extends Controller
 
         $data = $request->validate([
             'cuenta_id'   => ['required', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id)],
-            'fecha'       => ['required', 'date'],
+            'fecha'       => ['required', 'date', new \App\Rules\NoFutura],
             'tipo'        => ['required', Rule::in(['ingreso', 'egreso'])],
             'monto'       => ['required', 'numeric', 'min:0.01'],
             'descripcion' => ['required', 'string', 'min:5', 'max:250'],

@@ -101,6 +101,13 @@ class AnticipoClienteController extends Controller
             // para que el frontend no tenga que replicar la valorización.
             ->through(function (ClienteAnticipo $a) {
                 $a->setAttribute('valor_pasivo', $a->estado === 'activo' ? $a->valorPasivo() : 0.0);
+                // Consumos hechos desde otro módulo (CxC, deuda, POS): la UI no
+                // ofrece editarlos/anularlos aquí.
+                $a->aplicaciones->each(function (ClienteAnticipoAplicacion $ap) use ($a) {
+                    $ap->setRelation('anticipo', $a);
+                    $ap->setAttribute('origen_externo', $ap->origenExterno());
+                    $ap->unsetRelation('anticipo');
+                });
                 return $a;
             });
 
@@ -245,7 +252,7 @@ class AnticipoClienteController extends Controller
 
         $data = $request->validate([
             'cliente_id'        => ['required', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id)->where('activo', true)],
-            'fecha'             => ['required', 'date'],
+            'fecha'             => ['required', 'date', new \App\Rules\NoFutura],
             'monto'             => ['required', 'numeric', 'min:0.01'],
             'metodo_pago_id'    => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'         => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
@@ -331,16 +338,31 @@ class AnticipoClienteController extends Controller
             ]);
         }
 
+        // Un vale de devolución o un saldo a favor por modificar un pedido NO
+        // entró como dinero nuevo (la plata ya estaba en la venta): no tiene
+        // asiento propio. Editar "reasentando" crearía un ingreso fantasma.
+        $esValeOSaldoAFavor = $anticipo->devolucion_id || $anticipo->venta_origen_id;
+        $tieneAsiento = \App\Models\CuentaMovimiento::where('empresa_id', $anticipo->empresa_id)
+            ->where('ref_tipo', 'cliente_anticipo')->where('ref_id', $anticipo->id)->exists();
+
         $data = $request->validate([
             'cliente_id'     => ['required', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id)->where('activo', true)],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             'monto'          => ['required', 'numeric', 'min:0.01'],
-            'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            'metodo_pago_id' => [$tieneAsiento ? 'required' : 'nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'observacion'    => ['nullable', 'string', 'max:500'],
             // "Afecta caja a:" — turno de cuya caja entra el dinero. null = "Sin turno".
             'turno_id'       => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
+
+        if ($esValeOSaldoAFavor && abs((float) $data['monto'] - (float) $anticipo->monto) > 0.009) {
+            throw ValidationException::withMessages([
+                'monto' => $anticipo->devolucion_id
+                    ? 'Este saldo a favor es el vale de una devolución: su monto sale de la devolución y no se edita. Si está mal, anula la devolución y regístrala de nuevo.'
+                    : 'Este saldo a favor nació al modificar un pedido: su monto sale de esa modificación y no se edita aquí.',
+            ]);
+        }
 
         $turnoId = $request->has('turno_id')
             ? AfectaCaja::resolverTurno($user, 'anticipos', $data['turno_id'] ?? null, 'libre')
@@ -350,6 +372,27 @@ class AnticipoClienteController extends Controller
             'monto' => (float) $anticipo->monto,
             'fecha' => $anticipo->fecha->toDateString(),
         ];
+
+        // Sin asiento (vale, saldo a favor o registro antiguo) solo cambian los
+        // datos descriptivos: ni método, ni cuenta, ni turno (no entró dinero a
+        // ninguna caja), y la tesorería no se toca.
+        if (!$tieneAsiento) {
+            $anticipo->update([
+                'cliente_id'  => $data['cliente_id'],
+                'fecha'       => $data['fecha'],
+                'monto'       => $data['monto'],
+                'saldo'       => $data['monto'],
+                'observacion' => $data['observacion'] ?? null,
+            ]);
+
+            AuditoriaService::log('anticipo_cliente.editado', $anticipo, [
+                'antes'      => $antes,
+                'despues'    => ['monto' => (float) $data['monto'], 'fecha' => $data['fecha']],
+                'sin_asiento' => true,
+            ], $user);
+
+            return back()->with('success', 'Anticipo actualizado (no movió caja: es un saldo a favor sin dinero nuevo).');
+        }
 
         DB::transaction(function () use ($anticipo, $user, $data, $turnoId) {
             $anticipo->update($data + [
@@ -409,7 +452,7 @@ class AnticipoClienteController extends Controller
         $esMaterial = $anticipo->tipo_valorizacion === 'material';
 
         $data = $request->validate([
-            'fecha'        => ['required', 'date'],
+            'fecha'        => ['required', 'date', new \App\Rules\NoFutura],
             // En material el monto se CALCULA (prorrata del anticipo), no se digita.
             'monto'        => [$esMaterial ? 'nullable' : 'required', 'numeric', 'min:0.01'],
             'cantidad'     => [$esMaterial ? 'required' : 'nullable', 'numeric', 'min:0.0001'],
@@ -422,40 +465,45 @@ class AnticipoClienteController extends Controller
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
         ]);
 
-        // ── Calcular cobertura y excedente ──────────────────────────────
-        if ($esMaterial) {
-            $anticipo->loadMissing('producto');
-            $pendiente     = (float) $anticipo->cantidad_pendiente;
-            $entregada     = (float) $data['cantidad'];
-            $cantCubierta  = min($entregada, $pendiente);
-            $excesoCant    = round(max(0, $entregada - $pendiente), 4);
-            $precioDia     = (float) ($anticipo->producto?->precio_venta ?? 0);
-            $excesoMonto   = round($excesoCant * $precioDia, 2);
-            // El saldo (dinero) baja a prorrata del anticipo original:
-            // (monto / cantidad) = soles anticipados por unidad.
-            $montoAplicado = (float) $anticipo->cantidad > 0
-                ? min(round($cantCubierta * ((float) $anticipo->monto / (float) $anticipo->cantidad), 2), (float) $anticipo->saldo)
-                : (float) $anticipo->saldo;
-        } else {
-            $valorEntrega  = (float) $data['monto'];
-            $saldo         = (float) $anticipo->saldo;
-            $montoAplicado = min($valorEntrega, $saldo);
-            $cantCubierta  = null;
-            $excesoCant    = 0.0;
-            $excesoMonto   = round(max(0, $valorEntrega - $saldo), 2);
-        }
+        // Todo se calcula con el anticipo BLOQUEADO: dos entregas a la vez sobre
+        // el mismo saldo no pueden pasar ambas la validación.
+        [$excesoMonto] = DB::transaction(function () use ($anticipo, $user, $data, $esMaterial) {
+            $anticipo = ClienteAnticipo::whereKey($anticipo->id)->lockForUpdate()->first();
+            abort_unless($anticipo && $anticipo->estado === 'activo', 422, 'El anticipo no está activo.');
 
-        // Exceso sin confirmación → se pregunta, no se registra.
-        if ($excesoMonto > 0.009 && !($data['exceso_a_cxc'] ?? false)) {
-            $detalle = $esMaterial
-                ? "Estás entregando {$excesoCant} und más de lo anticipado (S/ " . number_format($excesoMonto, 2) . ' al precio de hoy).'
-                : 'La entrega excede el saldo del anticipo por S/ ' . number_format($excesoMonto, 2) . '.';
-            throw ValidationException::withMessages([
-                'exceso' => $detalle . ' Confirma si el excedente se registra como cuenta por cobrar del cliente.',
-            ]);
-        }
+            // ── Calcular cobertura y excedente ──────────────────────────────
+            if ($esMaterial) {
+                $anticipo->loadMissing('producto');
+                $pendiente     = (float) $anticipo->cantidad_pendiente;
+                $entregada     = (float) $data['cantidad'];
+                $cantCubierta  = min($entregada, $pendiente);
+                $excesoCant    = round(max(0, $entregada - $pendiente), 4);
+                $precioDia     = (float) ($anticipo->producto?->precio_venta ?? 0);
+                $excesoMonto   = round($excesoCant * $precioDia, 2);
+                // El saldo (dinero) baja a prorrata del anticipo original:
+                // (monto / cantidad) = soles anticipados por unidad.
+                $montoAplicado = (float) $anticipo->cantidad > 0
+                    ? min(round($cantCubierta * ((float) $anticipo->monto / (float) $anticipo->cantidad), 2), (float) $anticipo->saldo)
+                    : (float) $anticipo->saldo;
+            } else {
+                $valorEntrega  = (float) $data['monto'];
+                $saldo         = (float) $anticipo->saldo;
+                $montoAplicado = min($valorEntrega, $saldo);
+                $cantCubierta  = null;
+                $excesoCant    = 0.0;
+                $excesoMonto   = round(max(0, $valorEntrega - $saldo), 2);
+            }
 
-        DB::transaction(function () use ($anticipo, $user, $data, $esMaterial, $cantCubierta, $excesoCant, $excesoMonto, $montoAplicado) {
+            // Exceso sin confirmación → se pregunta, no se registra.
+            if ($excesoMonto > 0.009 && !($data['exceso_a_cxc'] ?? false)) {
+                $detalle = $esMaterial
+                    ? "Estás entregando {$excesoCant} und más de lo anticipado (S/ " . number_format($excesoMonto, 2) . ' al precio de hoy).'
+                    : 'La entrega excede el saldo del anticipo por S/ ' . number_format($excesoMonto, 2) . '.';
+                throw ValidationException::withMessages([
+                    'exceso' => $detalle . ' Confirma si el excedente se registra como cuenta por cobrar del cliente.',
+                ]);
+            }
+
             $obs = $data['observacion'] ?? null;
             if ($excesoMonto > 0.009) {
                 $obs = trim(($obs ? $obs . ' · ' : '')
@@ -513,15 +561,20 @@ class AnticipoClienteController extends Controller
 
             // ── Excedente confirmado → deuda por cobrar del cliente ─────
             // (mismo patrón que "JHON ASTONITAS" del Excel: línea a favor en
-            // el balance). NO mueve tesorería: salió mercadería, no dinero.
+            // el balance). En MATERIAL no mueve tesorería (salió mercadería);
+            // en DINERO el excedente también salió de la caja: se asienta como
+            // el desembolso de esa deuda (ref 'deuda'), así anularla/eliminarla
+            // lo revierte junto.
             if ($excesoMonto > 0.009) {
                 $anticipo->loadMissing('cliente');
                 $nombre = $anticipo->cliente?->razon_social
                     ?? trim(($anticipo->cliente?->nombres ?? '') . ' ' . ($anticipo->cliente?->apellidos ?? ''));
 
-                \App\Models\Deuda::create([
+                $deudaExceso = \App\Models\Deuda::create([
                     'empresa_id'     => $user->empresa_id,
                     'user_id'        => $user->id,
+                    // Vinculada al cliente: aparece en su estado de cuenta y admite cruces.
+                    'cliente_id'     => $anticipo->cliente_id,
                     'direccion'      => 'por_cobrar',
                     'tipo'           => 'personal',
                     'nombre'         => mb_substr("{$nombre} — excedente despacho anticipo #{$anticipo->id}", 0, 150),
@@ -533,6 +586,22 @@ class AnticipoClienteController extends Controller
                         ? "Despacho de {$excesoCant} und por encima de lo anticipado, valorizado a precio del día."
                         : 'Entrega por encima del saldo del anticipo.',
                 ]);
+
+                if (!$esMaterial) {
+                    $this->tesoreria->registrar(
+                        $user->empresa_id,
+                        $data['cuenta_id']
+                            ?? ($data['metodo_pago_id'] ? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id']) : null)
+                            ?? $anticipo->cuenta_id,
+                        $user,
+                        $data['fecha'],
+                        'egreso',
+                        $excesoMonto,
+                        "Excedente de la entrega {$aplicacion->numero} del anticipo #{$anticipo->id} (por cobrar al cliente)",
+                        'deuda',
+                        $deudaExceso->id,
+                    );
+                }
             }
 
             AuditoriaService::log('anticipo_cliente.aplicado', $anticipo, [
@@ -542,6 +611,8 @@ class AnticipoClienteController extends Controller
                 'exceso_cant'  => $excesoCant,
                 'saldo'        => (float) $anticipo->saldo,
             ], $user);
+
+            return [$excesoMonto];
         });
 
         return back()->with('success', $excesoMonto > 0.009
@@ -560,7 +631,7 @@ class AnticipoClienteController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'fecha'            => ['required', 'date'],
+            'fecha'            => ['required', 'date', new \App\Rules\NoFutura],
             'items'            => ['required', 'array', 'min:1'],
             'items.*.id'       => ['required', 'integer'],
             'items.*.cantidad' => ['required', 'numeric', 'min:0'],
@@ -701,7 +772,7 @@ class AnticipoClienteController extends Controller
         $data = $request->validate([
             'cantidad'       => ['required', 'numeric', 'min:0.0001'],
             'motivo'         => ['required', 'string', 'min:5', 'max:500'],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             'observacion'    => ['nullable', 'string', 'max:500'],
             'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
@@ -898,7 +969,7 @@ class AnticipoClienteController extends Controller
             // eligen, cae en la cuenta original del anticipo y la fecha de hoy.
             'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
-            'fecha'          => ['nullable', 'date'],
+            'fecha'          => ['nullable', 'date', new \App\Rules\NoFutura],
         ]);
 
         // Un pendiente nacido de una venta POS no se "anula" aquí: su dinero
@@ -913,17 +984,39 @@ class AnticipoClienteController extends Controller
             ]);
         }
 
+        // Anular = "este anticipo nunca existió" y revierte su ingreso COMPLETO.
+        // Si ya se consumió (entregas, cobros de créditos o deudas, pagos en el
+        // POS), esos consumos quedarían pagados con dinero inexistente. Mismo
+        // criterio que los adelantos a proveedores.
+        if ($data['accion'] === 'anulado' && $anticipo->aplicaciones()->exists()) {
+            throw ValidationException::withMessages([
+                'accion' => 'Este anticipo ya se usó (tiene entregas o cobros registrados): no se puede anular como registro erróneo. Marca como devuelto el saldo restante, o anula primero sus consumos.',
+            ]);
+        }
+
         DB::transaction(function () use ($anticipo, $user, $data) {
+            // Respaldo de los asientos que se revierten: "Reactivar" devuelve
+            // exactamente esos (y nada, si nunca hubo dinero: vales, saldos a favor).
+            $movimientos = $data['accion'] === 'anulado'
+                ? \App\Models\CuentaMovimiento::where('empresa_id', $anticipo->empresa_id)
+                    ->where('ref_tipo', 'cliente_anticipo')->where('ref_id', $anticipo->id)
+                    ->orderBy('id')->get()
+                    ->map(fn ($m) => collect($m->getAttributes())->all())->values()->all()
+                : [];
+
             $anticipo->update(['estado' => $data['accion']]);
 
             // F7 — Tesorería: si se devuelve el dinero, egreso por el saldo
             // restante; si fue un registro erróneo, se revierte el ingreso.
             if ($data['accion'] === 'devuelto') {
                 // El dinero sale de la caja del turno que el usuario tenga
-                // abierto al registrar la devolución. Si no tiene ninguno
-                // (admin fuera de turno), caemos al turno donde entró el dinero,
-                // que es la caja más probable de la que se devuelve.
-                $turnoDevolucionId = Turno::turnoActivoDelUsuario($user->id)?->id ?? $anticipo->turno_id;
+                // abierto al registrar la devolución (si "Afecta caja" está
+                // activo para anticipos). Sin turno propio (admin fuera de
+                // turno) no se imputa a ninguna caja: la cajera que recibió el
+                // anticipo no entregó ese dinero.
+                $turnoDevolucionId = AfectaCaja::resolverTurno(
+                    $user, 'anticipos', Turno::turnoActivoDelUsuario($user->id)?->id, 'libre',
+                );
 
                 // El dinero sale por la cuenta elegida (o la resuelta del método);
                 // si no se indicó nada, por la cuenta original del anticipo.
@@ -945,15 +1038,22 @@ class AnticipoClienteController extends Controller
                 );
 
                 $anticipo->update(['turno_devolucion_id' => $turnoDevolucionId]);
+
+                AuditoriaService::log('anticipo_cliente.devuelto', $anticipo, [
+                    'motivo' => $data['motivo'],
+                    'saldo'  => (float) $anticipo->saldo,
+                ], $user);
             } else {
+                $log = AuditoriaService::log('anticipo_cliente.anulado', $anticipo, [
+                    'motivo'                 => $data['motivo'],
+                    'saldo'                  => (float) $anticipo->saldo,
+                    'movimientos_revertidos' => $movimientos,
+                ], $user);
+                abort_if(!$log && !empty($movimientos), 500, 'No se pudo guardar el respaldo de su dinero; no se anuló. Intenta de nuevo.');
+
                 $this->tesoreria->revertir('cliente_anticipo', $anticipo->id);
             }
         });
-
-        AuditoriaService::log('anticipo_cliente.' . $data['accion'], $anticipo, [
-            'motivo' => $data['motivo'],
-            'saldo'  => (float) $anticipo->saldo,
-        ], $user);
 
         return back()->with('success', $data['accion'] === 'devuelto' ? 'Anticipo marcado como devuelto.' : 'Anticipo anulado.');
     }
@@ -983,7 +1083,7 @@ class AnticipoClienteController extends Controller
     {
         $data = $request->validate([
             'monto'          => ['required', 'numeric', 'min:0.01'],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             'observacion'    => ['nullable', 'string', 'max:500'],
             'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
@@ -1041,7 +1141,7 @@ class AnticipoClienteController extends Controller
     private function editarEntregaMaterial(Request $request, ClienteAnticipoAplicacion $entrega, ClienteAnticipo $anticipo, $user)
     {
         $data = $request->validate([
-            'fecha'       => ['required', 'date'],
+            'fecha'       => ['required', 'date', new \App\Rules\NoFutura],
             'observacion' => ['nullable', 'string', 'max:500'],
             'items'       => ['present', 'array'],
             'items.*.id'       => ['required', 'integer'],
@@ -1246,6 +1346,12 @@ class AnticipoClienteController extends Controller
         abort_if($anticipo === null, 404);
         abort_unless(in_array($anticipo->estado, ['activo', 'aplicado'], true), 422,
             'El anticipo no admite editar sus entregas en su estado actual.');
+        $entrega->setRelation('anticipo', $anticipo);
+        if ($origen = $entrega->origenExterno()) {
+            throw ValidationException::withMessages([
+                'entrega' => "Este consumo del anticipo se registró desde {$origen}. Se anula o corrige desde ese módulo: así se revierten los dos lados juntos.",
+            ]);
+        }
         if ($entrega->observacion && str_contains($entrega->observacion, 'Excedente a CxC')) {
             throw ValidationException::withMessages([
                 'entrega' => 'Esta entrega generó una cuenta por cobrar por excedente. Revísala y ajústala manualmente en Cuentas por cobrar.',
@@ -1307,25 +1413,53 @@ class AnticipoClienteController extends Controller
 
         $data = $request->validate(['motivo' => ['required', 'string', 'min:5', 'max:500']]);
 
+        // Un vale/saldo a favor cuyo origen se anuló (la devolución o la venta)
+        // ya no existe: reactivarlo daría un saldo que nadie respalda.
+        if ($anticipo->devolucion_id && $anticipo->devolucion?->estado === 'anulada') {
+            throw ValidationException::withMessages([
+                'anticipo' => 'Este vale nació de una devolución que se anuló: no se puede reactivar.',
+            ]);
+        }
+        if ($anticipo->venta_origen_id && $anticipo->ventaOrigen?->estado === 'anulada') {
+            throw ValidationException::withMessages([
+                'anticipo' => 'Este saldo a favor nació de una venta que se anuló: no se puede reactivar.',
+            ]);
+        }
+
         $estadoPrevio = $anticipo->estado;
 
         DB::transaction(function () use ($anticipo, $user, $estadoPrevio) {
             if ($estadoPrevio === 'anulado') {
-                // El ingreso original fue revertido al anular: re-asentarlo.
-                $anticipo->load('cliente');
-                $nombre = $anticipo->cliente?->razon_social
-                    ?? trim(($anticipo->cliente?->nombres ?? '') . ' ' . ($anticipo->cliente?->apellidos ?? ''));
-                $this->tesoreria->registrar(
-                    $user->empresa_id,
-                    $anticipo->cuenta_id ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $anticipo->metodo_pago_id),
-                    $user,
-                    $anticipo->fecha->toDateString(),
-                    'ingreso',
-                    (float) $anticipo->monto,
-                    "Anticipo de cliente — {$nombre} [reactivado]",
-                    'cliente_anticipo',
-                    $anticipo->id,
-                );
+                // Devolver EXACTAMENTE lo que se revirtió al anular (respaldo en la
+                // auditoría). Un vale o saldo a favor nunca tuvo asiento: nada.
+                $log = \App\Models\Auditoria::deEmpresa($anticipo->empresa_id)
+                    ->where('accion', 'anticipo_cliente.anulado')->where('modelo_id', $anticipo->id)
+                    ->orderByDesc('id')->first();
+                $contexto = $log?->contexto ?? [];
+
+                if (array_key_exists('movimientos_revertidos', $contexto)) {
+                    foreach ($contexto['movimientos_revertidos'] as $m) {
+                        if (DB::table('cuenta_movimientos')->where('id', $m['id'])->exists()) continue;
+                        DB::table('cuenta_movimientos')->insert($m);
+                    }
+                } elseif (!$anticipo->devolucion_id && !$anticipo->venta_origen_id) {
+                    // Anulaciones antiguas (sin respaldo): el ingreso original se
+                    // revirtió al anular; se re-asienta como antes.
+                    $anticipo->load('cliente');
+                    $nombre = $anticipo->cliente?->razon_social
+                        ?? trim(($anticipo->cliente?->nombres ?? '') . ' ' . ($anticipo->cliente?->apellidos ?? ''));
+                    $this->tesoreria->registrar(
+                        $user->empresa_id,
+                        $anticipo->cuenta_id ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $anticipo->metodo_pago_id),
+                        $user,
+                        $anticipo->fecha->toDateString(),
+                        'ingreso',
+                        (float) $anticipo->monto,
+                        "Anticipo de cliente — {$nombre} [reactivado]",
+                        'cliente_anticipo',
+                        $anticipo->id,
+                    );
+                }
             } else {
                 // La devolución generó un egreso: revertirlo y olvidar el
                 // turno de devolución, porque el anticipo vuelve a estar vivo.

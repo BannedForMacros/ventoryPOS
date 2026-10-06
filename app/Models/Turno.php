@@ -70,7 +70,7 @@ class Turno extends Model
      * fondos iniciales se incluyen en la declaración, el cajero al final cuenta también
      * los billetes que estaban como caja chica, así que el sistema espera ver ese monto.
      */
-    public function calcularMontoEsperado(): float
+    public function desgloseEsperado(): array
     {
         // Gastos del turno pagados con EFECTIVO: solo estos descuentan el cajón.
         // Si el gasto no tiene cuenta_id, se asume efectivo (compatibilidad con
@@ -149,12 +149,13 @@ class Turno extends Model
 
         // Cancelaciones de pendiente de anticipo pagadas EN EFECTIVO desde
         // esta caja: el billete sale del cajón y el sistema no debe esperarlo.
+        // Se imputa al turno GUARDADO en la cancelación (el que eligió "Afecta
+        // caja"), no al turno abierto de quien la registró: un admin que cancela
+        // desde su oficina no saca billetes del cajón de la cajera.
         $cancelacionPendienteEfectivo = (float) \App\Models\CuentaMovimiento::where('empresa_id', $this->empresa_id)
             ->where('tipo', 'egreso')
             ->where('ref_tipo', 'anticipo_cancelacion')
-            ->where('user_id', $this->user_id)
-            ->where('created_at', '>=', $this->fecha_apertura)
-            ->when($this->fecha_cierre, fn ($q) => $q->where('created_at', '<=', $this->fecha_cierre))
+            ->whereIn('ref_id', $this->cancelacionesAnticipo()->select('id'))
             ->whereHas('cuenta', fn ($c) => $c->where('es_efectivo', true))
             ->sum('monto');
 
@@ -221,20 +222,46 @@ class Turno extends Model
         $fondos       = (float) $this->monto_caja_chica;
         $sumaFondos   = $this->fondosEntranEnDeclaracion();
 
-        return $apertura
-             + $ventasEfectivo
-             + $abonosEfectivo
-             + $anticiposEfectivo
-             + $deudaIngreso
-             - $gastosEfectivo
-             - $reembolsosEfectivo
-             - $comprasEfectivo
-             - $retirosEfectivo
-             - $adelantosProveedorEfectivo
-             - $deudaEgreso
-             - $devolucionAnticipoEfectivo
-             - $cancelacionPendienteEfectivo
-             + ($sumaFondos ? $fondos : 0.0);
+        // Desglose por concepto: lo que suma y lo que resta al cajón. La pantalla
+        // de cierre lo pinta tal cual, así el texto siempre cuadra con el total.
+        $entradas = [
+            ['concepto' => 'Ventas en efectivo',             'monto' => $ventasEfectivo],
+            ['concepto' => 'Cobros de créditos',             'monto' => $abonosEfectivo],
+            ['concepto' => 'Anticipos de clientes',          'monto' => $anticiposEfectivo],
+            ['concepto' => 'Préstamos recibidos',            'monto' => $deudaIngreso],
+            ['concepto' => 'Caja chica',                     'monto' => $sumaFondos ? $fondos : 0.0],
+        ];
+        $salidas = [
+            ['concepto' => 'Gastos',                         'monto' => $gastosEfectivo],
+            ['concepto' => 'Devoluciones de ventas',         'monto' => $reembolsosEfectivo],
+            ['concepto' => 'Pagos de compras',               'monto' => $comprasEfectivo],
+            ['concepto' => 'Retiros de efectivo',            'monto' => $retirosEfectivo],
+            ['concepto' => 'Adelantos a proveedores',        'monto' => $adelantosProveedorEfectivo],
+            ['concepto' => 'Pagos de deudas',                'monto' => $deudaEgreso],
+            ['concepto' => 'Devoluciones de anticipos',      'monto' => $devolucionAnticipoEfectivo],
+            ['concepto' => 'Cancelaciones de pendientes',    'monto' => $cancelacionPendienteEfectivo],
+        ];
+
+        $limpiar = fn (array $filas) => array_values(array_map(
+            fn ($f) => ['concepto' => $f['concepto'], 'monto' => round((float) $f['monto'], 2)],
+            array_filter($filas, fn ($f) => abs((float) $f['monto']) >= 0.005),
+        ));
+
+        $esperado = $apertura
+            + array_sum(array_column($entradas, 'monto'))
+            - array_sum(array_column($salidas, 'monto'));
+
+        return [
+            'apertura' => round($apertura, 2),
+            'entradas' => $limpiar($entradas),
+            'salidas'  => $limpiar($salidas),
+            'esperado' => $esperado,
+        ];
+    }
+
+    public function calcularMontoEsperado(): float
+    {
+        return $this->desgloseEsperado()['esperado'];
     }
 
     /**
@@ -324,6 +351,17 @@ class Turno extends Model
                 ?? $ultimo->monto_cierre_declarado
                 ?? $ultimo->monto_cierre_esperado;
             if ($monto === null) return null;
+
+            // Si la caja chica del turno anterior se contó en su declaración, el
+            // arrastre ya la trae dentro; como el turno nuevo la vuelve a declarar
+            // aparte (monto_caja_chica), se descuenta aquí para no contarla dos veces.
+            $cajaChicaPrevia = (float) $ultimo->monto_caja_chica;
+            $local = $caja->local ?? Local::find($caja->local_id);
+            if ($cajaChicaPrevia > 0.009 && $caja->caja_chica_activa && $local
+                && $ultimo->fondosEntranEnDeclaracion()
+                && app(\App\Services\ConfiguracionOperacionService::class)->usaFondosIniciales($local)) {
+                $monto = max(0.0, round((float) $monto - $cajaChicaPrevia, 2));
+            }
 
             return [
                 'monto'   => (float) $monto,
@@ -479,7 +517,9 @@ class Turno extends Model
 
     public static function turnoActivoDelUsuario(int $userId): ?self
     {
-        return static::where('user_id', $userId)->where('estado', 'abierto')->first();
+        // Si por un descuido quedaran dos abiertos, manda el más reciente.
+        return static::where('user_id', $userId)->where('estado', 'abierto')
+            ->orderByDesc('fecha_apertura')->orderByDesc('id')->first();
     }
 
     /**

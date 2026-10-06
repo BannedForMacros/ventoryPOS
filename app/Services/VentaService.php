@@ -22,6 +22,9 @@ use Illuminate\Validation\ValidationException;
 
 class VentaService
 {
+    /** Ventana en que una boleta/factura sin fila de comprobante se da por "en cola". */
+    private const MINUTOS_EN_COLA = 10;
+
     public function __construct(
         private LocalScopeService $scope,
         private ConfiguracionOperacionService $config,
@@ -121,7 +124,11 @@ class VentaService
             while ($venta === null) {
                 $intentos++;
                 try {
-                    $venta = Venta::create([
+                    // Savepoint propio: en Postgres un INSERT fallido deja abortada
+                    // la transacción entera y el reintento de abajo reventaba con
+                    // "current transaction is aborted". Con la transacción anidada
+                    // solo se deshace este intento.
+                    $venta = DB::transaction(fn () => Venta::create([
                         'empresa_id'            => $user->empresa_id,
                         'local_id'              => $turno->local_id,
                         'turno_id'              => $turno->id,
@@ -155,7 +162,7 @@ class VentaService
                         'fecha_emision'         => ($data['tipo_comprobante'] ?? null) === 'factura'
                             ? ($data['fecha_emision'] ?? null)
                             : null,
-                    ]);
+                    ]));
                 } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
                     // Caso idempotency_key: si la venta original ya existe con el
                     // mismo key, devolverla en lugar de seguir intentando.
@@ -347,8 +354,11 @@ class VentaService
                 'venta_item_id'         => null,
                 'descuento_concepto_id' => $data['descuento_concepto_id'],
                 'user_id'               => $user->id,
-                'cliente_id'            => $data['cliente_id'] ?? null,
-                'monto_descuento'       => $data['descuento_total'],
+                // El cliente resuelto (General si no se eligió): la columna no admite null.
+                'cliente_id'            => $clienteId,
+                // En soles, como el descuento por línea: en una venta en USD el
+                // payload viene en dólares.
+                'monto_descuento'       => round((float) $data['descuento_total'] * $factor, 2),
                 'requeria_aprobacion'   => false,
                 'notificacion_enviada'  => false,
             ]);
@@ -359,14 +369,27 @@ class VentaService
         $venta->calcularTotales();
         $venta->refresh();
 
-        // Pagos (vuelto global asignado al primer método que admite vuelto).
+        // ── Anticipo de efectivo aplicado a la venta ──────────────────────
+        // El dinero ya entró a caja cuando se creó el anticipo; aquí solo se
+        // descuenta el saldo y se vincula la aplicación a esta venta. No se
+        // registra ingreso de tesorería nuevo.
+        // El anticipo cubre PRIMERO (mismo orden que el POS): los pagos cubren
+        // lo que falta y todo lo que sobre es vuelto. Antes se aplicaba al final
+        // sin descontarlo de los pagos y el sobrante quedaba como efectivo
+        // fantasma en caja.
+        $idsAnticipo = collect((array) ($data['anticipo_ids'] ?? []))
+            ->push($data['anticipo_id'] ?? null)
+            ->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+        $montoAnticipo = $idsAnticipo ? $this->aplicarAnticiposAVenta($venta, $idsAnticipo, $user) : 0.0;
+
+        // Pagos (vuelto global repartido entre los métodos que admiten vuelto).
         $pagos     = $data['pagos'] ?? [];
         $metodoIds = collect($pagos)->pluck('metodo_pago_id')->unique()->all();
         $metodos   = \App\Models\MetodoPago::whereIn('id', $metodoIds)->get()->keyBy('id');
 
         $totalPagado    = collect($pagos)->sum(fn($p) => round((float) $p['monto'] * $factor, 2));
-        $vueltoGlobal   = max(0, round($totalPagado - (float) $venta->total, 2));
-        $vueltoAsignado = false;
+        $vueltoGlobal   = max(0, round($totalPagado + $montoAnticipo - (float) $venta->total, 2));
+        $vueltoPorDar   = $vueltoGlobal;
 
         foreach ($pagos as $pagoData) {
             $montoOrig    = (float) $pagoData['monto'];
@@ -374,10 +397,12 @@ class VentaService
             $metodo       = $metodos->get($pagoData['metodo_pago_id']);
             $admiteVuelto = (bool) ($metodo?->admite_vuelto);
 
+            // Nunca más vuelto que lo recibido con ese método: si no alcanza,
+            // el resto sale del siguiente que admita vuelto.
             $vuelto = 0.0;
-            if (!$vueltoAsignado && $admiteVuelto && $vueltoGlobal > 0) {
-                $vuelto         = $vueltoGlobal;
-                $vueltoAsignado = true;
+            if ($admiteVuelto && $vueltoPorDar > 0.009) {
+                $vuelto       = round(min($vueltoPorDar, $monto), 2);
+                $vueltoPorDar = round($vueltoPorDar - $vuelto, 2);
             }
 
             VentaPago::create([
@@ -418,15 +443,6 @@ class VentaService
         // Pagado 0 / saldo completo y "reaparecía" como crédito, con la transferencia
         // del abono sobrando en caja. (En creación no hay abonos → suma 0, sin efecto.)
         $abonosPrevios   = round((float) $venta->abonos()->sum('monto'), 2);
-
-        // ── Anticipo de efectivo aplicado a la venta ──────────────────────
-        // El dinero ya entró a caja cuando se creó el anticipo; aquí solo se
-        // descuenta el saldo y se vincula la aplicación a esta venta. No se
-        // registra ingreso de tesorería nuevo.
-        $idsAnticipo = collect((array) ($data['anticipo_ids'] ?? []))
-            ->push($data['anticipo_id'] ?? null)
-            ->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
-        $montoAnticipo = $idsAnticipo ? $this->aplicarAnticiposAVenta($venta, $idsAnticipo, $user) : 0.0;
 
         $montoPagadoReal = round($totalPagado - $vueltoGlobal + $abonosPrevios + $montoAnticipo, 2);
         $venta->update([
@@ -616,7 +632,7 @@ class VentaService
             // Revertir anticipos de efectito aplicados a esta venta antes de
             // recalcular: así el saldo queda disponible y se re-aplica según
             // el nuevo payload (si viene anticipo_id).
-            $this->revertirAnticiposDeVenta($venta, $user);
+            $this->revertirAnticiposDeVenta($venta, $user, incluirCobrosCxc: false);
 
             // Pendiente por entregar en edición:
             //  - Si aún NO hay entregas, el anticipo vinculado se ANULA y se
@@ -827,8 +843,24 @@ class VentaService
         $this->bloquearSiTieneComprobanteEmitido($venta); // V14
 
         DB::transaction(function () use ($venta, $user, $motivo) {
-            if ($venta->estado === 'anulada') {
+            // Releer con bloqueo: dos anulaciones simultáneas (doble clic, dos
+            // pestañas) llegaban las dos con la venta "completada" en memoria y
+            // devolvían el stock y el dinero dos veces.
+            $fresca = Venta::whereKey($venta->id)->lockForUpdate()->first();
+            if (!$fresca || $fresca->estado === 'anulada') {
                 throw new \RuntimeException('La venta ya está anulada.');
+            }
+            $venta->setRawAttributes($fresca->getAttributes(), true);
+            $venta->unsetRelation('items');
+
+            // Una devolución ya devolvió parte del stock y del dinero: anular la
+            // venta encima lo devolvería otra vez.
+            $devolucion = \App\Models\Devolucion::where('venta_id', $venta->id)
+                ->whereIn('estado', ['pendiente', 'aprobada', 'completada'])
+                ->first(['numero']);
+            if ($devolucion) {
+                abort(422, 'Esta venta tiene la devolución ' . ($devolucion->numero ?: 'registrada')
+                    . '. Anula primero la devolución y luego la venta.');
             }
 
             $venta->loadMissing('local');
@@ -894,14 +926,25 @@ class VentaService
 
             // F7 — Revertir los ingresos de tesorería de esta venta y sus abonos.
             $this->tesoreria->revertir('venta', $venta->id);
-            foreach ($venta->abonos()->pluck('id') as $abonoId) {
-                $this->tesoreria->revertir('venta_abono', (int) $abonoId);
+            foreach ($venta->abonos()->get(['id', 'compensacion_grupo_id']) as $abono) {
+                $this->tesoreria->revertir('venta_abono', (int) $abono->id);
+
+                // Un abono COMPENSADO no movió dinero: su contraparte (el pago de
+                // una compra o el movimiento de una deuda) quedaría pagada con
+                // una venta que ya no existe. Se revierte en pareja, igual que al
+                // anular el abono desde Cuentas por cobrar.
+                if ($abono->compensacion_grupo_id) {
+                    app(CompensacionCxcCxpService::class)
+                        ->revertirContraparteDesdeVenta($abono->compensacion_grupo_id, $user);
+                }
             }
 
             // Revertir anticipos de efectivo aplicados a esta venta: se borra la
             // aplicación y se restaura el saldo del anticipo para que quede
             // disponible nuevamente.
             $this->revertirAnticiposDeVenta($venta, $user);
+
+            $this->liberarOrigenesDeVenta($venta, $user);
 
             \App\Services\AuditoriaService::log('venta.anulada', $venta, [
                 'numero'           => $venta->numero,
@@ -912,6 +955,36 @@ class VentaService
                 'motivo'           => $motivo,
             ], $user);
         });
+    }
+
+    /**
+     * La cotización convertida y la cita completada con esta venta vuelven a
+     * quedar cobrables: si no, apuntan a una venta anulada y el POS ya no deja
+     * cobrarlas de nuevo.
+     */
+    private function liberarOrigenesDeVenta(Venta $venta, User $user): void
+    {
+        foreach (\App\Models\Cotizacion::where('venta_id', $venta->id)->get() as $cotizacion) {
+            $cotizacion->update(['venta_id' => null, 'estado' => \App\Models\Cotizacion::ESTADO_ACEPTADA]);
+            \App\Services\AuditoriaService::log('cotizacion.liberada', $cotizacion, [
+                'numero'   => $cotizacion->numero,
+                'venta_id' => $venta->id,
+                'motivo'   => "Anulación de la venta {$venta->numero}",
+            ], $user);
+        }
+
+        foreach (\App\Models\Cita::where('venta_id', $venta->id)->get() as $cita) {
+            $cita->update([
+                'venta_id'      => null,
+                'estado'        => \App\Models\Cita::ESTADO_CONFIRMADA,
+                'completada_at' => null,
+            ]);
+            \App\Services\AuditoriaService::log('cita.liberada', $cita, [
+                'numero'   => $cita->numero,
+                'venta_id' => $venta->id,
+                'motivo'   => "Anulación de la venta {$venta->numero}",
+            ], $user);
+        }
     }
 
     /**
@@ -945,10 +1018,14 @@ class VentaService
      * Al anular una venta, las aplicaciones de anticipo de efectito vinculadas a ella
      * se eliminan y el saldo del anticipo se restaura, quedando disponible de nuevo.
      */
-    private function revertirAnticiposDeVenta(Venta $venta, User $user): void
+    private function revertirAnticiposDeVenta(Venta $venta, User $user, bool $incluirCobrosCxc = true): void
     {
+        // Un cobro de crédito con anticipo (CxC) también deja una aplicación con
+        // venta_id, enlazada a su abono. Al EDITAR el abono sigue vigente, así
+        // que esa aplicación no se toca; al anular, sí se devuelve.
         $aplicaciones = ClienteAnticipoAplicacion::where('venta_id', $venta->id)
             ->whereHas('anticipo', fn ($q) => $q->where('tipo_valorizacion', 'monto'))
+            ->when(!$incluirCobrosCxc, fn ($q) => $q->whereNull('venta_abono_id'))
             ->with('anticipo')
             ->get();
 
@@ -1056,6 +1133,29 @@ class VentaService
             return 'El comprobante de esta venta se está enviando a SUNAT en este momento. '
                 . 'Espera a que termine (menos de un minuto) y vuelve a intentarlo: si sale aceptado, '
                 . 'la corrección será por Nota de Crédito.';
+        }
+
+        // ── Comprobante todavía en cola ──────────────────────────────────────
+        //
+        // La fila del comprobante la crea el job al tomar la venta. Con la cola
+        // atrasada, una boleta/factura recién cobrada aún no tiene fila y la
+        // guarda de arriba no veía nada: se anulaba y el job la emitía igual
+        // después. Solo cuenta para ventas posteriores a la conexión con el
+        // emisor (las de antes nunca se van a emitir) y RECIENTES: un job que
+        // tras 10 minutos no creó su fila ya no va a llegar (emisión pausada al
+        // venderse, cola caída). Sin ese tope la venta quedaba bloqueada para
+        // siempre y la única salida era emitirla con "Reintentar".
+        if (!$ce && $venta->estado === 'completada'
+            && in_array($venta->tipo_comprobante, ['boleta', 'factura'], true)
+            && $venta->created_at && $venta->created_at->gt(now()->subMinutes(self::MINUTOS_EN_COLA))) {
+            $facturacion = app(FacturacionEmpresa::class);
+            if ($facturacion->activa((int) $venta->empresa_id)) {
+                $conectado = $facturacion->conexion((int) $venta->empresa_id)?->conectado_at;
+                if (!$conectado || $venta->created_at->gte($conectado)) {
+                    return 'El comprobante de esta venta todavía está en cola para enviarse a SUNAT. '
+                        . 'Espera un momento y vuelve a intentarlo: si sale aceptado, la corrección será por Nota de Crédito.';
+                }
+            }
         }
 
         // ── Guías de remisión ────────────────────────────────────────────────

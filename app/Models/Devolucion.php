@@ -101,6 +101,85 @@ class Devolucion extends Model
         return in_array($this->nota_credito_estado, self::NC_SIN_CERRAR, true);
     }
 
+    /**
+     * Estados de la NC con los que la devolución ya NO se puede anular: la nota
+     * está emitida o va camino de SUNAT. Anular aquí dejaría el stock y el dinero
+     * revertidos mientras SUNAT ve acreditado el importe (o lo verá en minutos).
+     * `fallida` no está: esa nota nunca llegó a existir.
+     */
+    public const NC_BLOQUEAN_ANULACION = [self::NC_EMITIDA, self::NC_PENDIENTE, self::NC_ESPERANDO];
+
+    /**
+     * Proporción del bruto que sobrevive al descuento GLOBAL de la venta.
+     *
+     * Es el MISMO reparto que hace el comprobante (VentaAComprobante) y la nota de
+     * crédito (EmitirNotaCreditoElectronica): `ventas.descuento_total` se prorratea
+     * por el bruto de cada línea. Sin esto la devolución reembolsaba el precio de
+     * lista: sobre una venta de S/ 100 con S/ 10 de descuento, devolver todo
+     * sacaba S/ 100 de caja cuando el cliente pagó S/ 90.
+     *
+     * No lanza: un descuento incoherente (mayor que el bruto) se trata como
+     * descuento total. La NC conserva su propia guarda y se niega a emitir.
+     */
+    public static function factorDescuentoGlobal(Venta $venta): float
+    {
+        $descuento = round((float) $venta->descuento_total, 2);
+        if ($descuento <= 0) {
+            return 1.0;
+        }
+
+        $venta->loadMissing('items');
+        $bruto = 0.0;
+        foreach ($venta->items as $item) {
+            $bruto += ((float) $item->precio_unitario - (float) $item->descuento_item) * (float) $item->cantidad;
+        }
+
+        if ($bruto <= 0) {
+            return 1.0;
+        }
+
+        return max(0.0, 1 - ($descuento / $bruto));
+    }
+
+    /**
+     * Importe neto de unas líneas devueltas: Σ subtotal bruto × factor del
+     * descuento global, redondeado UNA vez al final (igual que el `total` que la
+     * nota de crédito manda a FacturaMac).
+     *
+     * @param iterable<float> $subtotalesBrutos (precio − descuento_item) × cantidad
+     */
+    public static function montoNeto(iterable $subtotalesBrutos, float $factor): float
+    {
+        $suma = 0.0;
+        foreach ($subtotalesBrutos as $s) {
+            $suma += round((float) $s, 2) * $factor;
+        }
+
+        return round($suma, 2);
+    }
+
+    /**
+     * Cuánto de un importe devuelto se descuenta de la cuenta por cobrar de la
+     * venta y cuánto queda para reembolsar (dinero o vale).
+     *
+     * Una venta al crédito con saldo pendiente: lo devuelto cancela PRIMERO la
+     * deuda del cliente. Solo lo que exceda lo que ya pagó se le reembolsa. Antes
+     * se le devolvía el importe entero y la CxC seguía viva: se le pagaba por una
+     * mercadería que todavía debía.
+     *
+     * @return array{cxc: float, reembolso: float}
+     */
+    public static function repartoContraCxc(Venta $venta, float $monto): array
+    {
+        $saldo = ($venta->es_credito && $venta->estado === 'completada')
+            ? max(0.0, round((float) $venta->saldo_pendiente, 2))
+            : 0.0;
+
+        $cxc = round(min($monto, $saldo), 2);
+
+        return ['cxc' => $cxc, 'reembolso' => round(max(0.0, $monto - $cxc), 2)];
+    }
+
     public function empresa(): BelongsTo        { return $this->belongsTo(Empresa::class); }
     public function local(): BelongsTo          { return $this->belongsTo(Local::class); }
     public function turno(): BelongsTo          { return $this->belongsTo(Turno::class); }
@@ -176,7 +255,32 @@ class Devolucion extends Model
         }
 
         DB::transaction(function () {
+            // La venta se BLOQUEA: entre registrar la devolución y aprobarla pudo
+            // anularse, y su saldo por cobrar es lo que se va a tocar más abajo.
+            $venta = Venta::whereKey($this->venta_id)->lockForUpdate()->first();
+            if (!$venta || $venta->estado !== 'completada') {
+                throw new LogicException('La venta de esta devolución ya no está vigente (fue anulada). Rechaza la devolución.');
+            }
+            $this->setRelation('venta', $venta);
+
             $this->loadMissing(['detalles.producto', 'detalles.motivo', 'venta.local']);
+
+            // Venta al crédito: lo devuelto cancela PRIMERO la deuda del cliente.
+            // Solo el resto (lo que ya había pagado) se reembolsa o va al vale.
+            $reparto = self::repartoContraCxc($venta, (float) $this->monto_devolucion);
+
+            if ($reparto['cxc'] > 0.009 && in_array($this->forma_reembolso, ['efectivo', 'mismo_metodo'], true)) {
+                $this->loadMissing('pagos');
+                $pagado = round((float) $this->pagos->sum('monto'), 2);
+                if (abs($pagado - $reparto['reembolso']) > 0.01) {
+                    throw new LogicException(sprintf(
+                        'El saldo por cobrar de la venta cambió desde que se registró la devolución: ahora se '
+                        . 'descuentan S/ %.2f de su deuda y solo corresponde reembolsar S/ %.2f (la devolución '
+                        . 'registró S/ %.2f). Rechaza esta devolución y regístrala de nuevo.',
+                        $reparto['cxc'], $reparto['reembolso'], $pagado,
+                    ));
+                }
+            }
 
             $almacenId = $this->resolverAlmacenLocal();
 
@@ -203,27 +307,43 @@ class Devolucion extends Model
             // ya entró con la venta original, aquí solo cambia de "venta" a
             // "saldo a favor del cliente". Antes esto era solo una etiqueta y
             // el vale vivía en la memoria de la cajera.
-            if ($this->forma_reembolso === 'vale_credito' && (float) $this->monto_devolucion > 0.009) {
-                $this->loadMissing('venta');
+            //
+            // Venta al crédito: la parte que cancela la deuda viaja por el MISMO
+            // camino que "cobrar CxC con anticipo" (abono sin dinero enlazado a un
+            // anticipo): así la CxC, el balance y la anulación del abono ya saben
+            // tratarla, y la devolución queda trazada (anticipo.devolucion_id →
+            // abono.cliente_anticipo_id). Por eso el anticipo existe aunque la
+            // forma no sea vale: nace y se consume en el acto.
+            $montoAnticipo = $this->forma_reembolso === 'vale_credito'
+                ? (float) $this->monto_devolucion
+                : $reparto['cxc'];
+
+            if ($montoAnticipo > 0.009) {
                 $anticipo = ClienteAnticipo::create([
                     'empresa_id'        => $this->empresa_id,
-                    'cliente_id'        => $this->venta->cliente_id,
+                    'cliente_id'        => $venta->cliente_id,
                     'user_id'           => $this->user_id,
                     'devolucion_id'     => $this->id,
                     'fecha'             => now()->toDateString(),
-                    'monto'             => (float) $this->monto_devolucion,
-                    'saldo'             => (float) $this->monto_devolucion,
+                    'monto'             => $montoAnticipo,
+                    'saldo'             => $montoAnticipo,
                     'tipo_valorizacion' => 'monto',
                     'estado'            => 'activo',
-                    'observacion'       => "Vale por devolución {$this->numero} — venta {$this->venta?->numero}",
+                    'observacion'       => $this->forma_reembolso === 'vale_credito'
+                        ? "Vale por devolución {$this->numero} — venta {$venta->numero}"
+                        : "Crédito por devolución {$this->numero} — descontado de la deuda de la venta {$venta->numero}",
                 ]);
 
                 \App\Services\AuditoriaService::log('anticipo_cliente.creado', $anticipo, [
-                    'origen'        => 'devolucion_vale_credito',
+                    'origen'        => $this->forma_reembolso === 'vale_credito' ? 'devolucion_vale_credito' : 'devolucion_credito_cxc',
                     'devolucion_id' => $this->id,
                     'venta_id'      => $this->venta_id,
-                    'monto'         => (float) $this->monto_devolucion,
+                    'monto'         => $montoAnticipo,
                 ], auth()->user());
+
+                if ($reparto['cxc'] > 0.009) {
+                    $this->aplicarContraCxc($venta, $anticipo, $reparto['cxc']);
+                }
             }
 
             // F7 — Tesorería: si el reembolso devuelve dinero (efectivo o al
@@ -251,33 +371,131 @@ class Devolucion extends Model
         });
     }
 
+    /**
+     * Descuenta `$monto` de la cuenta por cobrar de la venta consumiendo el
+     * anticipo de la devolución. Espejo exacto del cobro de CxC con anticipo
+     * (CuentasPorCobrarController::abonar): abono SIN tesorería —no entra dinero—
+     * más la aplicación del anticipo enlazada al abono.
+     */
+    protected function aplicarContraCxc(Venta $venta, ClienteAnticipo $anticipo, float $monto): void
+    {
+        $fecha = now()->toDateString();
+
+        $abono = VentaAbono::create([
+            'venta_id'            => $venta->id,
+            'user_id'             => $this->user_id,
+            'fecha'               => $fecha,
+            'monto'               => $monto,
+            'observacion'         => "Descontado por la devolución {$this->numero} (anticipo #{$anticipo->id}).",
+            'cliente_anticipo_id' => $anticipo->id,
+        ]);
+
+        $anticipo->aplicaciones()->create([
+            'empresa_id'     => $venta->empresa_id,
+            'numero'         => ClienteAnticipoAplicacion::generarNumero($venta->empresa_id),
+            'venta_id'       => $venta->id,
+            'venta_abono_id' => $abono->id,
+            'user_id'        => $this->user_id,
+            'fecha'          => $fecha,
+            'monto'          => $monto,
+            'observacion'    => "Devolución {$this->numero} — descontada de la deuda de la venta {$venta->numero}",
+        ]);
+
+        $saldoAnticipo = round((float) $anticipo->saldo - $monto, 2);
+        $anticipo->update([
+            'saldo'  => max(0, $saldoAnticipo),
+            'estado' => $saldoAnticipo <= 0.01 ? 'aplicado' : 'activo',
+        ]);
+
+        $pagado = round((float) $venta->monto_pagado + $monto, 2);
+        $venta->update([
+            'monto_pagado'    => $pagado,
+            'saldo_pendiente' => max(0, round((float) $venta->total - $pagado, 2)),
+        ]);
+
+        \App\Services\AuditoriaService::log('cxc.abono_por_devolucion', $venta, [
+            'numero'        => $venta->numero,
+            'devolucion_id' => $this->id,
+            'anticipo_id'   => $anticipo->id,
+            'monto'         => $monto,
+            'saldo'         => (float) $venta->saldo_pendiente,
+        ], auth()->user());
+    }
+
     public function anular(): void
     {
         if ($this->esAnulada()) return;
+
+        // Una nota de crédito emitida (o camino de SUNAT) ya acreditó el importe
+        // ante SUNAT. Anular la devolución devolvería el stock y el dinero a como
+        // estaban mientras el documento fiscal sigue diciendo que se devolvió: el
+        // descuadre solo se corrige con otro comprobante.
+        if (in_array($this->nota_credito_estado, self::NC_BLOQUEAN_ANULACION, true)) {
+            throw new LogicException($this->nota_credito_estado === self::NC_EMITIDA
+                ? 'No se puede anular: esta devolución ya tiene su nota de crédito '
+                    . ($this->nota_credito_numero ? "{$this->nota_credito_numero} " : '')
+                    . 'emitida ante SUNAT. Si fue un error, regularízalo con un nuevo comprobante (venta) por lo devuelto.'
+                : 'No se puede anular: la nota de crédito de esta devolución ya está en camino a SUNAT. '
+                    . 'Espera a que se emita y regularízalo con un nuevo comprobante por lo devuelto.');
+        }
 
         // Si el vale ya se gastó (total o parcialmente) no se puede anular la
         // devolución: el cliente ya usó ese crédito. Chequeo ANTES de la
         // transacción para dar un mensaje claro sin efectos a medias.
         $vale = $this->valeAnticipo()->first();
-        if ($vale && $vale->estado === 'activo' && (float) $vale->saldo < (float) $vale->monto - 0.009) {
+
+        // Lo que la PROPIA devolución consumió del anticipo para bajar la deuda de
+        // su venta al crédito no es "uso" del cliente: se revierte aquí mismo.
+        $abonosPropios = $vale
+            ? VentaAbono::where('cliente_anticipo_id', $vale->id)->where('venta_id', $this->venta_id)->get()
+            : collect();
+        $consumoPropio = round((float) $abonosPropios->sum('monto'), 2);
+        $usadoPorCliente = $vale
+            ? round((float) $vale->monto - (float) $vale->saldo - $consumoPropio, 2)
+            : 0.0;
+
+        if ($vale && $vale->estado === 'activo' && $usadoPorCliente > 0.009) {
             throw new LogicException(
                 "No se puede anular: el vale de esta devolución ya fue usado en parte "
                 . '(quedan S/ ' . number_format((float) $vale->saldo, 2) . ' de S/ ' . number_format((float) $vale->monto, 2) . '). '
                 . 'Anula primero los consumos del anticipo en Finanzas → Anticipos.'
             );
         }
-        if ($vale && $vale->estado === 'aplicado') {
+        if ($vale && $vale->estado === 'aplicado' && $usadoPorCliente > 0.009) {
             throw new LogicException(
                 'No se puede anular: el vale de esta devolución ya fue consumido por completo. '
                 . 'Anula primero los consumos del anticipo en Finanzas → Anticipos.'
             );
         }
 
-        DB::transaction(function () use ($vale) {
+        DB::transaction(function () use ($vale, $abonosPropios) {
             $estadoPrevio = $this->estado;
 
-            // El vale sin usar se anula junto con la devolución.
-            if ($vale && $vale->estado === 'activo') {
+            // La deuda que la devolución descontó vuelve a la venta.
+            if ($abonosPropios->isNotEmpty()) {
+                $venta = Venta::whereKey($this->venta_id)->lockForUpdate()->first();
+                foreach ($abonosPropios as $abono) {
+                    ClienteAnticipoAplicacion::where('venta_abono_id', $abono->id)->delete();
+                    if ($venta) {
+                        $pagado = max(0, round((float) $venta->monto_pagado - (float) $abono->monto, 2));
+                        $venta->update([
+                            'monto_pagado'    => $pagado,
+                            'saldo_pendiente' => max(0, round((float) $venta->total - $pagado, 2)),
+                        ]);
+                    }
+                    \App\Services\AuditoriaService::log('cxc.abono_anulado', $venta ?? $this, [
+                        'abono_id'      => $abono->id,
+                        'monto'         => (float) $abono->monto,
+                        'motivo'        => "Anulación de la devolución {$this->numero}",
+                        'devolucion_id' => $this->id,
+                        'saldo'         => (float) ($venta?->saldo_pendiente ?? 0),
+                    ]);
+                    $abono->delete();
+                }
+            }
+
+            // El vale sin usar (o solo consumido por esta devolución) se anula junto con ella.
+            if ($vale && in_array($vale->estado, ['activo', 'aplicado'], true)) {
                 $vale->update(['estado' => 'anulado']);
                 \App\Services\AuditoriaService::log('anticipo_cliente.anulado', $vale, [
                     'origen'        => 'devolucion_anulada',

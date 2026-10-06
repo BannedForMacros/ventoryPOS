@@ -102,10 +102,11 @@ interface Props extends PageProps {
     turnos: TurnoLite[];
 }
 
-import { hoyLocal } from '@/lib/fechas';
+import { hoyLocal, esFutura } from '@/lib/fechas';
+import { soles } from '@/lib/dinero';
 
 const hoy = () => hoyLocal();
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+const money = (v: unknown) => soles(v);
 // Normaliza fechas del backend ("2026-07-04" o "2026-07-04T00:00:00.000000Z")
 const fdate = (s: string) => new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE');
 const nombreProveedor = (e: EntradaCxp) =>
@@ -264,18 +265,19 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
         if (usarCompensacion) {
             if (!compensarVentaId) return { texto: 'Elige la venta al crédito contra la que compensas', campo: 'venta_id' };
             return problemaMonto(form.monto, topeMonto, 'el monto a compensar', 'del menor de los dos saldos:')
-                ?? (!form.fecha ? { texto: 'Elige la fecha', campo: 'fecha' } : null);
+                ?? (!form.fecha ? { texto: 'Elige la fecha', campo: 'fecha' } : esFutura(form.fecha) ? { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' } : null);
         }
         if (usarAdelanto) {
             if (!form.proveedor_adelanto_id) return { texto: 'Elige el adelanto a consumir', campo: 'proveedor_adelanto_id' };
             const pm = problemaMonto(form.monto, topeMonto, 'el monto del pago',
                 adelantoSel && Number(adelantoSel.saldo) < saldoCompra ? 'del saldo del adelanto' : 'del saldo');
             if (pm) return pm;
-            return !form.fecha ? { texto: 'Elige la fecha del pago', campo: 'fecha' } : null;
+            return !form.fecha ? { texto: 'Elige la fecha del pago', campo: 'fecha' } : esFutura(form.fecha) ? { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' } : null;
         }
         const pm = problemaMonto(form.monto, saldoCompra, 'el monto del pago', 'del saldo');
         if (pm) return pm;
         if (!form.fecha) return { texto: 'Elige la fecha del pago', campo: 'fecha' };
+        if (esFutura(form.fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
         return problemaMetodo(form.metodo_pago_id, form.cuenta_id);
     }
     const problemaAb = problemaPago();
@@ -293,6 +295,7 @@ export default function CuentasPorPagar({ entradas, totalPendiente, kpis, esAdmi
             if (pm) return pm;
         }
         if (!formPago.fecha) return { texto: 'Elige la fecha del pago', campo: 'fecha' };
+        if (esFutura(formPago.fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
         if (!editandoPago.proveedor_adelanto_id) return problemaMetodo(formPago.metodo_pago_id, formPago.cuenta_id);
         return null;
     }

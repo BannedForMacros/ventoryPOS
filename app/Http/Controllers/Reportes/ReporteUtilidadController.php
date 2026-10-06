@@ -73,11 +73,14 @@ class ReporteUtilidadController extends Controller
     {
         $u = $this->utilidad;
         $vendido = $u->items($empresa, $desde, $hasta, $localId)
-            ->selectRaw('vi.producto_id, vi.cantidad as cantidad, vi.subtotal as ventas,
+            // Unidades en la unidad BASE (sumar presentaciones distintas —caja
+            // y unidad— daba un número sin sentido) y ventas netas del
+            // descuento global prorrateado (así la tabla cuadra con el resumen).
+            ->selectRaw('vi.producto_id, vi.cantidad_base as cantidad, ' . UtilidadService::lineaNeta('vi') . ' as ventas,
                          vi.cantidad_base * (' . $u->costo() . ') as costo');
 
         $devuelto = $u->devoluciones($empresa, $desde, $hasta, $localId)
-            ->selectRaw("vi.producto_id, -dd.cantidad as cantidad, -({$u->devuelto()}) as ventas,
+            ->selectRaw("vi.producto_id, -dd.cantidad_base as cantidad, -({$u->devuelto()}) as ventas,
                          -({$u->recuperado()}) as costo");
 
         $agregado = DB::query()

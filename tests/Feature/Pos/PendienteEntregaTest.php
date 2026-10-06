@@ -96,7 +96,7 @@ it('entrega parcial con fecha: baja el pendiente, descuenta stock y deja el rest
 
     // Primera entrega: "solo te doy 4, lo demás lo dejamos", con fecha propia.
     $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
-        'fecha' => now()->addDay()->toDateString(),
+        'fecha' => now()->subDays(2)->toDateString(),
         'items' => [['id' => $item->id, 'cantidad' => 4]],
     ])->assertSessionHasNoErrors();
 
@@ -107,12 +107,12 @@ it('entrega parcial con fecha: baja el pendiente, descuenta stock y deja el rest
     expect((float) Stock::where('producto_id', $fierro->id)->first()->cantidad)->toBe(43.0); // 47 - 4
 
     $aplicacion = $anticipo->aplicaciones()->with('items')->first();
-    expect($aplicacion->fecha->toDateString())->toBe(now()->addDay()->toDateString());
+    expect($aplicacion->fecha->toDateString())->toBe(now()->subDays(2)->toDateString());
     expect($aplicacion->items)->toHaveCount(1);
 
     // Segunda entrega: los 3 restantes → anticipo saldado.
     $this->post(route('finanzas.anticipos.aplicar', $anticipo), [
-        'fecha' => now()->addDays(5)->toDateString(),
+        'fecha' => now()->subDay()->toDateString(),
         'items' => [['id' => $item->id, 'cantidad' => 3]],
     ])->assertSessionHasNoErrors();
 

@@ -24,6 +24,7 @@ import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import { hoyLocal } from '@/lib/fechas';
 import type { PageProps, Cliente } from '@/types';
 import { useTiempoReal } from '@/lib/useTiempoReal';
+import { soles } from '@/lib/dinero';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -108,7 +109,7 @@ interface Props extends PageProps {
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const hoy = () => hoyLocal();
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+const money = (v: unknown) => soles(v);
 const fmtFecha = (f?: string | null) =>
     f ? new Date(f + 'T00:00:00').toLocaleDateString('es-PE') : '—';
 const nombreCliente = (c?: ClienteLite | null) =>

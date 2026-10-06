@@ -7,6 +7,7 @@ use App\Models\Categoria;
 use App\Models\Venta;
 use App\Models\VentaItem;
 use App\Services\LocalScopeService;
+use App\Services\UtilidadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -35,9 +36,12 @@ class ReporteProductoController extends Controller
             ->select(
                 'venta_items.producto_id',
                 DB::raw('MIN(venta_items.producto_nombre) as producto_nombre'),
-                DB::raw('SUM(venta_items.cantidad) as cantidad_total'),
-                DB::raw('SUM(venta_items.subtotal) as monto_total'),
-                DB::raw('SUM(venta_items.descuento_item * venta_items.cantidad) as descuento_total'),
+                // Cantidad en unidad BASE (no mezcla presentaciones) y monto neto
+                // del descuento global prorrateado (lo que de verdad se cobró).
+                DB::raw('SUM(venta_items.cantidad_base) as cantidad_total'),
+                DB::raw('SUM(' . UtilidadService::lineaNeta('venta_items') . ') as monto_total'),
+                DB::raw('SUM(venta_items.descuento_item * venta_items.cantidad + venta_items.subtotal - '
+                    . UtilidadService::lineaNeta('venta_items') . ') as descuento_total'),
                 DB::raw('COUNT(DISTINCT venta_items.venta_id) as ventas_distintas'),
                 DB::raw('AVG(venta_items.precio_unitario) as precio_promedio'),
                 DB::raw("STRING_AGG(DISTINCT venta_items.unidad_nombre, ', ') as unidades"),
@@ -93,8 +97,8 @@ class ReporteProductoController extends Controller
         $porCategoria = VentaItem::query()
             ->select(
                 DB::raw("COALESCE(MIN(categorias.nombre), 'Sin categoría') as categoria"),
-                DB::raw('SUM(venta_items.subtotal) as total'),
-                DB::raw('SUM(venta_items.cantidad) as cantidad'),
+                DB::raw('SUM(' . UtilidadService::lineaNeta('venta_items') . ') as total'),
+                DB::raw('SUM(venta_items.cantidad_base) as cantidad'),
             )
             ->leftJoin('productos', 'productos.id', '=', 'venta_items.producto_id')
             ->leftJoin('categorias', 'categorias.id', '=', 'productos.categoria_id')
@@ -112,8 +116,8 @@ class ReporteProductoController extends Controller
             ->select(
                 'producto_id',
                 DB::raw('MIN(producto_nombre) as producto_nombre'),
-                DB::raw('SUM(subtotal) as total'),
-                DB::raw('SUM(cantidad) as cantidad'),
+                DB::raw('SUM(' . UtilidadService::lineaNeta('venta_items') . ') as total'),
+                DB::raw('SUM(cantidad_base) as cantidad'),
             )
             ->whereIn('venta_id', $ventasIds)
             ->groupBy('producto_id')

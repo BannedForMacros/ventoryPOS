@@ -267,10 +267,10 @@ export default function AgendaShow({ cita, agendaConfig, recordatorio }: Props) 
                                                 {it.duracion_min}
                                             </td>
                                             <td className="px-3 py-2 text-right" style={{ color: 'var(--color-text)' }}>
-                                                S/. {Number(it.precio_estimado).toFixed(2)}
+                                                S/ {Number(it.precio_estimado).toFixed(2)}
                                             </td>
                                             <td className="px-3 py-2 text-right font-semibold" style={{ color: 'var(--color-text)' }}>
-                                                S/. {(Number(it.precio_estimado) * Number(it.cantidad)).toFixed(2)}
+                                                S/ {(Number(it.precio_estimado) * Number(it.cantidad)).toFixed(2)}
                                             </td>
                                         </tr>
                                     ))}
@@ -280,7 +280,7 @@ export default function AgendaShow({ cita, agendaConfig, recordatorio }: Props) 
                                         <td colSpan={5} className="px-3 py-2 text-right text-xs font-semibold uppercase"
                                             style={{ color: 'var(--color-text-muted)' }}>Total estimado</td>
                                         <td className="px-3 py-2 text-right text-base font-bold" style={{ color: 'var(--color-primary)' }}>
-                                            S/. {totalEstimado.toFixed(2)}
+                                            S/ {totalEstimado.toFixed(2)}
                                         </td>
                                     </tr>
                                 </tfoot>
@@ -354,7 +354,7 @@ export default function AgendaShow({ cita, agendaConfig, recordatorio }: Props) 
                             </h3>
                             <Link href={route('ventas.show', cita.venta.id)}>
                                 <Button variant="success" className="w-full">
-                                    {cita.venta.numero} · S/. {Number(cita.venta.total).toFixed(2)}
+                                    {cita.venta.numero} · S/ {Number(cita.venta.total).toFixed(2)}
                                 </Button>
                             </Link>
                         </div>

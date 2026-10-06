@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
  * patrimonio queda igual. Solo hay pérdida real cuando la mercadería vuelve
  * dañada (sin restock): se devuelve el dinero pero su costo no se recupera.
  * Solo cuentan devoluciones COMPLETADAS (ya movieron dinero y mercadería);
- * "sin reembolso" no resta dinero.
+ * "sin reembolso" no resta dinero, salvo la deuda (CxC) que canceló.
  *
  * El costo es el CONGELADO al vender (CostoVentaService::sql). Todo con IGV,
  * igual que el balance diario.
@@ -193,16 +193,44 @@ class UtilidadService
             ->when($localId, fn ($q, $v) => $q->where('d.local_id', $v));
     }
 
+    /**
+     * Lo que REALMENTE se cobró por una línea de venta: su subtotal menos su
+     * parte del descuento GLOBAL de la venta (descuento_total), prorrateado por
+     * el subtotal de cada línea. Σ líneas = total de la venta (como en
+     * Venta::calcularTotales), así una tabla por producto suma lo mismo que las
+     * ventas del período. `$vi` es el alias (o tabla) de venta_items.
+     */
+    public static function lineaNeta(string $vi = 'vi'): string
+    {
+        return "({$vi}.subtotal * (1 - COALESCE((SELECT vd.descuento_total
+                    / NULLIF((SELECT SUM(vx.subtotal) FROM venta_items vx WHERE vx.venta_id = vd.id), 0)
+                FROM ventas vd WHERE vd.id = {$vi}.venta_id AND vd.descuento_total > 0), 0)))";
+    }
+
     /** Costo por unidad base de cada línea: regla única. */
     public function costo(): string
     {
         return CostoVentaService::sql('vi', 'p');
     }
 
-    /** Dinero devuelto por una línea de devolución (0 si fue sin reembolso). */
+    /**
+     * Venta que deshace una línea de devolución: su parte del monto REAL de la
+     * devolución, prorrateado por el subtotal bruto de cada línea.
+     *
+     *  - Con reembolso (dinero, vale o cambio): `monto_devolucion`, que ya trae el
+     *    descuento global de la venta (dd.subtotal es el bruto: restarlo bajaba
+     *    la utilidad en la parte del descuento).
+     *  - Sin reembolso: solo lo que canceló de la CxC de una venta al crédito
+     *    (abonos vivos del anticipo de la devolución). Esa venta ya no se va a
+     *    cobrar; sin restarla la utilidad quedaba inflada. Al contado da 0.
+     */
     public function devuelto(): string
     {
-        return "CASE WHEN d.forma_reembolso <> 'sin_reembolso' THEN dd.subtotal ELSE 0 END";
+        return "(dd.subtotal * (CASE WHEN d.forma_reembolso <> 'sin_reembolso' THEN d.monto_devolucion
+                    ELSE COALESCE((SELECT SUM(va.monto) FROM venta_abonos va
+                        JOIN cliente_anticipos ca ON ca.id = va.cliente_anticipo_id
+                        WHERE ca.devolucion_id = d.id), 0) END)
+                / NULLIF((SELECT SUM(dx.subtotal) FROM devoluciones_detalle dx WHERE dx.devolucion_id = d.id), 0))";
     }
 
     /** Costo de lo que volvió al stock en una línea de devolución. */

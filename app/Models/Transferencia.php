@@ -79,14 +79,20 @@ class Transferencia extends Model
      */
     public function enviar(int $userId, ?string $observacion = null): void
     {
-        if ($this->esEnviada() || $this->esRecibida()) {
-            throw new LogicException('La transferencia ya fue enviada.');
-        }
-        if ($this->esAnulada()) {
-            throw new LogicException('No se puede enviar una transferencia anulada.');
-        }
-
         DB::transaction(function () use ($userId, $observacion) {
+            // Doble clic / dos pestañas: se bloquea la fila y se revisa el estado
+            // REAL dentro de la transacción. Sin esto, dos envíos simultáneos
+            // descontaban el stock del origen dos veces.
+            $this->bloquearYRefrescarEstado();
+
+            if ($this->esEnviada() || $this->esRecibida()) {
+                throw new LogicException('La transferencia ya fue enviada.');
+            }
+            if ($this->esAnulada()) {
+                throw new LogicException('No se puede enviar una transferencia anulada.');
+            }
+
+            $this->load('detalles.producto');
             $this->validarStockOrigen();
 
             foreach ($this->detalles as $d) {
@@ -121,11 +127,18 @@ class Transferencia extends Model
      */
     public function recibir(array $cantidadesPorDetalle, int $userId, ?string $observacion = null): void
     {
-        if (!$this->esEnviada()) {
-            throw new LogicException('Solo se pueden recibir transferencias en estado enviada.');
-        }
-
         DB::transaction(function () use ($cantidadesPorDetalle, $userId, $observacion) {
+            // Mismo resguardo que enviar(): dos recepciones simultáneas sumaban
+            // la mercadería dos veces al destino.
+            $this->bloquearYRefrescarEstado();
+
+            if (!$this->esEnviada()) {
+                throw new LogicException($this->esRecibida()
+                    ? 'La transferencia ya fue recibida.'
+                    : 'Solo se pueden recibir transferencias en estado enviada.');
+            }
+
+            $this->load('detalles');
             foreach ($this->detalles as $d) {
                 $cantRecibida = (float) ($cantidadesPorDetalle[$d->id] ?? $d->cantidad_enviada);
                 $cantBaseRecibida = round($cantRecibida * (float) $d->factor_conversion, 4);
@@ -267,6 +280,19 @@ class Transferencia extends Model
                     ],
                 );
             }
+        }
+    }
+
+    /**
+     * Bloquea la fila de la transferencia hasta que termine la transacción y
+     * trae su estado actual de la base (el objeto en memoria puede estar viejo).
+     */
+    private function bloquearYRefrescarEstado(): void
+    {
+        $fila = static::whereKey($this->getKey())->lockForUpdate()->first(['id', 'estado']);
+        if ($fila) {
+            $this->estado = $fila->estado;
+            $this->syncOriginalAttribute('estado');
         }
     }
 

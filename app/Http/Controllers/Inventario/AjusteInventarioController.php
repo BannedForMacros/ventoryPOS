@@ -81,12 +81,18 @@ class AjusteInventarioController extends Controller
             'producto_id' => ['required', 'integer', Rule::exists('productos', 'id')->where('empresa_id', $user->empresa_id)],
             'tipo'        => ['required', Rule::in(['ingreso', 'salida'])],
             'cantidad'    => ['required', 'numeric', 'gt:0'],
-            'fecha'       => ['required', 'date'],
+            'fecha'       => ['required', 'date', new \App\Rules\NoFutura],
             'motivo'      => ['required', 'string', 'min:3', 'max:255'],
         ]);
 
         $almacen = Almacen::findOrFail($data['almacen_id']);
         abort_unless($this->scope->puedeAccederAlmacen($user, $almacen), 403);
+
+        // Fechado en o antes del inventario inicial no tendría efecto: el kardex
+        // solo cuenta lo posterior al corte y el ajuste se perdía sin aviso.
+        app(\App\Services\KardexService::class)->exigirPosteriorAApertura(
+            $almacen->id, [(int) $data['producto_id']], $data['fecha'], 'fecha', 'Este ajuste',
+        );
 
         $ajuste = DB::transaction(function () use ($data, $user) {
             $ajuste = AjusteInventario::create([

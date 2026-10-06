@@ -7,6 +7,7 @@ import {
 import AppLayout from '@/Layouts/AppLayout';
 import { etiquetaComprobante } from '@/lib/comprobanteElectronico';
 import type { PageProps } from '@/types';
+import { soles } from '@/lib/dinero';
 
 interface MetodoRow { nombre: string; tipo: string; total: string; }
 interface TurnoStats {
@@ -38,8 +39,7 @@ interface Props extends PageProps {
     ultimasVentas: UltimaVentaRow[];
 }
 
-const sol = (n: number | string) =>
-    `S/. ${Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const sol = (n: number | string) => soles(n);
 
 const fechaCorta = (iso: string) => {
     const d = new Date(iso);

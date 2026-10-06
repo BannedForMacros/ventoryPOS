@@ -80,6 +80,18 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin, co
         router.post(route('turnos.retiros.aprobar', retiro.id), {}, { preserveScroll: true });
     }
 
+    /** Rechazar un retiro pendiente: el efectivo vuelve al esperado del cajón. */
+    function rechazarRetiro(retiro: TurnoRetiro) {
+        if (!window.confirm(`¿Rechazar el retiro de ${fmtS(num(retiro.monto))}? El efectivo vuelve a contarse en el cajón.`)) return;
+        router.post(route('turnos.retiros.rechazar', retiro.id), {}, {
+            preserveScroll: true,
+            onError: (errs: Record<string, string>) => {
+                const msj = Object.values(errs)[0];
+                if (msj) toast.error(msj);
+            },
+        });
+    }
+
     function reabrir() {
         if (!motivoValido) {
             toast.error('El motivo es obligatorio (mínimo 10 caracteres).');
@@ -91,6 +103,10 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin, co
             onSuccess: () => {
                 setModalReabrir(false);
                 setMotivoReabrir('');
+            },
+            onError: (errs: Record<string, string>) => {
+                const msj = Object.values(errs)[0];
+                if (msj) toast.error(msj);
             },
         });
     }
@@ -273,9 +289,14 @@ export default function TurnoShow({ turno, totalVentas, totalGastos, esAdmin, co
                                             {r.estado === 'aprobado' ? (
                                                 <span className="text-xs font-semibold" style={{ color: 'var(--vp-mint-ink)' }}>aprobado</span>
                                             ) : esAdmin ? (
-                                                <button onClick={() => aprobarRetiro(r)} className="text-xs font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>
-                                                    Aprobar
-                                                </button>
+                                                <span className="inline-flex gap-2">
+                                                    <button onClick={() => aprobarRetiro(r)} className="text-xs font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>
+                                                        Aprobar
+                                                    </button>
+                                                    <button onClick={() => rechazarRetiro(r)} className="text-xs font-semibold hover:underline" style={{ color: 'var(--color-danger)' }}>
+                                                        Rechazar
+                                                    </button>
+                                                </span>
                                             ) : (
                                                 <span className="text-xs font-semibold" style={{ color: 'var(--vp-amber-ink)' }}>falta aprobar</span>
                                             )}

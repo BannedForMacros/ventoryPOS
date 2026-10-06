@@ -13,6 +13,7 @@ import PagoForm, { MetodoPagoOption, CuentaOption } from '@/Components/PagoForm'
 import AfectaCajaSelect, { TurnoLite } from '@/Components/AfectaCajaSelect';
 import { calcularTotalVenta, redondear2 } from '@/lib/totalesVenta';
 import { avisoError } from '@/lib/avisoError';
+import { soles } from '@/lib/dinero';
 
 /**
  * Modificar el pedido PENDIENTE POR ENTREGAR de una venta días después.
@@ -75,7 +76,7 @@ interface Props {
     ventaId: number | null;
 }
 
-const money = (v: number) => `S/ ${v.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (v: unknown) => soles(v);
 const r2 = redondear2;
 const r4 = (x: number) => Math.round((x + Number.EPSILON) * 10000) / 10000;
 const num = (s: string | number) => { const n = parseFloat(String(s)); return Number.isFinite(n) ? n : 0; };

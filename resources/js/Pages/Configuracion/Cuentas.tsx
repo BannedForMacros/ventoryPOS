@@ -249,7 +249,7 @@ export default function Cuentas({ cuentas }: Props) {
                 }
             >
                 <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-                    La cuenta será marcada como inactiva. Las asignaciones a métodos de pago se mantendrán.
+                    La cuenta será marcada como inactiva y dejará de aparecer en el balance. Solo se puede desactivar con saldo cero: si aún tiene dinero, primero trasládalo a otra cuenta. Las asignaciones a métodos de pago se mantendrán.
                 </p>
             </Modal>
         </AppLayout>

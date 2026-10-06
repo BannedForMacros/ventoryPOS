@@ -115,7 +115,30 @@ class DespachoController extends Controller
             abort(403, 'No tienes acceso a despachos de otro local.');
         }
 
-        $this->entregas->aplicarEntregaMaterial($anticipo, $request->all(), $user);
+        // Validado antes de tocar nada: sin esto, un POST sin fecha o sin ítems
+        // reventaba con un 500 dentro del servicio.
+        $data = $request->validate([
+            'fecha'            => ['required', 'date', new \App\Rules\NoFutura],
+            'items'            => ['required', 'array', 'min:1'],
+            'items.*.id'       => ['required', 'integer'],
+            'items.*.cantidad' => ['required', 'numeric', 'min:0'],
+            'observacion'      => ['nullable', 'string', 'max:500'],
+            'imprimir'         => ['nullable', 'boolean'],
+        ], [
+            'fecha.required'            => 'Indica la fecha de la entrega.',
+            'fecha.date'                => 'La fecha de la entrega no es válida.',
+            'items.required'            => 'Indica qué productos se entregan.',
+            'items.array'               => 'Indica qué productos se entregan.',
+            'items.min'                 => 'Indica qué productos se entregan.',
+            'items.*.id.required'       => 'Falta el producto de una de las líneas.',
+            'items.*.id.integer'        => 'Una de las líneas no es válida.',
+            'items.*.cantidad.required' => 'Indica la cantidad a entregar de cada producto (0 si no se entrega).',
+            'items.*.cantidad.numeric'  => 'La cantidad a entregar debe ser un número.',
+            'items.*.cantidad.min'      => 'La cantidad a entregar no puede ser negativa.',
+            'observacion.max'           => 'La observación no puede pasar de 500 caracteres.',
+        ]);
+
+        $this->entregas->aplicarEntregaMaterial($anticipo, $data, $user);
 
         $entregaId = $anticipo->aplicaciones()->latest('id')->value('id');
 

@@ -9,6 +9,7 @@ import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import CambiosCierreModal from '@/Components/Finanzas/CambiosCierreModal';
 import type { PageProps } from '@/types';
+import { soles } from '@/lib/dinero';
 
 interface Balance extends Record<string, unknown> {
     id: number;
@@ -30,7 +31,7 @@ interface Props extends PageProps {
     hoy: string;
 }
 
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+const money = (v: unknown) => soles(v);
 const signed = (v: unknown) => {
     const n = Number(v ?? 0);
     return (

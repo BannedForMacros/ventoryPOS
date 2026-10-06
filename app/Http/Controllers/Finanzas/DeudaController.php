@@ -230,7 +230,7 @@ class DeudaController extends Controller
         $data = $request->validate([
             'deuda_por_pagar_id'  => ['required', 'integer', 'exists:deudas,id'],
             'deuda_por_cobrar_id' => ['required', 'integer', 'exists:deudas,id'],
-            'fecha'               => ['required', 'date'],
+            'fecha'               => ['required', 'date', new \App\Rules\NoFutura],
             'monto'               => ['required', 'numeric', 'min:0.01'],
             'observacion'         => ['nullable', 'string', 'max:500'],
         ]);
@@ -279,6 +279,20 @@ class DeudaController extends Controller
         $monto = $montoSolicitado;
 
         DB::transaction(function () use ($user, $porPagar, $porCobrar, $data, $monto, $grupoId, $observacion) {
+            // Releer ambas deudas con bloqueo (en orden de id, sin interbloqueos)
+            // y revalidar el máximo: dos compensaciones a la vez no pueden
+            // pasar ambas el tope.
+            $bloqueadas = Deuda::whereIn('id', [$porPagar->id, $porCobrar->id])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $porPagar   = $bloqueadas[$porPagar->id];
+            $porCobrar  = $bloqueadas[$porCobrar->id];
+            abort_unless($porPagar->estado === 'activa' && $porCobrar->estado === 'activa', 422, 'Una de las deudas ya no está activa.');
+            $maximo = min((float) $porPagar->saldo, (float) $porCobrar->saldo);
+            if ($monto > $maximo + 0.001) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'monto' => 'El monto no puede superar el saldo menor (máximo S/ ' . number_format($maximo, 2) . ', recién actualizado).',
+                ]);
+            }
+
             $porPagar->pagos()->create([
                 'user_id'               => $user->id,
                 'fecha'                 => $data['fecha'],
@@ -326,7 +340,7 @@ class DeudaController extends Controller
             'cliente_id'        => ['nullable', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id), 'prohibits:proveedor_id'],
             'proveedor_id'      => ['nullable', 'integer', Rule::exists('proveedores', 'id')->where('empresa_id', $user->empresa_id)],
             'monto_original'    => ['required', 'numeric', 'min:0.01'],
-            'fecha_inicio'      => ['required', 'date'],
+            'fecha_inicio'      => ['required', 'date', new \App\Rules\NoFutura],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
             'observacion'       => ['nullable', 'string', 'max:500'],
             // Desembolso opcional: mover el dinero en tesorería al crear la deuda.
@@ -421,7 +435,7 @@ class DeudaController extends Controller
 
         $rules = [
             'tipo'           => ['required', Rule::in(['amortizacion', 'incremento'])],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             'monto'          => ['required', 'numeric', 'min:0.01'],
             'metodo_pago_id' => [$esCruce ? 'nullable' : 'required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
@@ -496,6 +510,8 @@ class DeudaController extends Controller
             abort_unless($deuda->cliente_id, 422, 'La deuda no está vinculada a un cliente.');
 
             DB::transaction(function () use ($deuda, $data, $user, $monto) {
+                $deuda = $this->bloquearDeudaParaAmortizar($deuda, $monto);
+
                 $anticipo = \App\Models\ClienteAnticipo::where('id', $data['cliente_anticipo_id'])
                     ->where('empresa_id', $user->empresa_id)
                     ->where('cliente_id', $deuda->cliente_id)
@@ -565,7 +581,18 @@ class DeudaController extends Controller
                 ]);
             }
 
-            DB::transaction(fn () => $comp->compensarDeudaConVenta($deuda, $venta, $monto, $data['fecha'], $data['observacion'] ?? null, $user));
+            DB::transaction(function () use ($comp, $deuda, $venta, $monto, $data, $user) {
+                $deuda = $this->bloquearDeudaParaAmortizar($deuda, $monto);
+                $venta = \App\Models\Venta::whereKey($venta->id)->lockForUpdate()->firstOrFail();
+                abort_unless($venta->es_credito && $venta->estado === 'completada', 422, 'La venta no es una venta a crédito activa.');
+                if ($monto > (float) $venta->saldo_pendiente + 0.009) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'monto' => 'La venta solo tiene S/ ' . number_format((float) $venta->saldo_pendiente, 2) . ' de saldo (recién actualizado).',
+                    ]);
+                }
+
+                $comp->compensarDeudaConVenta($deuda, $venta, $monto, $data['fecha'], $data['observacion'] ?? null, $user);
+            });
 
             return back()->with('success', 'Deuda compensada contra la venta al crédito (sin mover caja).');
         }
@@ -586,9 +613,36 @@ class DeudaController extends Controller
             ]);
         }
 
-        DB::transaction(fn () => $comp->compensarDeudaConEntrada($deuda, $entrada, $monto, $data['fecha'], $data['observacion'] ?? null, $user));
+        DB::transaction(function () use ($comp, $deuda, $entrada, $monto, $data, $user) {
+            $deuda   = $this->bloquearDeudaParaAmortizar($deuda, $monto);
+            $entrada = \App\Models\Entrada::whereKey($entrada->id)->lockForUpdate()->firstOrFail();
+            if ($monto > $entrada->saldoPendiente() + 0.009) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'monto' => 'La compra solo tiene S/ ' . number_format($entrada->saldoPendiente(), 2) . ' de saldo (recién actualizado).',
+                ]);
+            }
+
+            $comp->compensarDeudaConEntrada($deuda, $entrada, $monto, $data['fecha'], $data['observacion'] ?? null, $user);
+        });
 
         return back()->with('success', 'Deuda compensada contra la compra (sin mover caja).');
+    }
+
+    /**
+     * Relee la deuda con bloqueo (dentro de la transacción) y revalida que siga
+     * activa y que la amortización no supere su saldo de ESE momento.
+     */
+    private function bloquearDeudaParaAmortizar(Deuda $deuda, float $monto): Deuda
+    {
+        $deuda = Deuda::whereKey($deuda->id)->lockForUpdate()->firstOrFail();
+        abort_unless($deuda->estado === 'activa', 422, 'La deuda no está activa.');
+        if ($monto > (float) $deuda->saldo + 0.009) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'monto' => 'El monto supera el saldo actual de la deuda (S/ ' . number_format((float) $deuda->saldo, 2) . '). Puede que otro usuario acabe de registrar un movimiento.',
+            ]);
+        }
+
+        return $deuda;
     }
 
     /**
@@ -606,15 +660,20 @@ class DeudaController extends Controller
         // desalinearía a la contraparte. Se anula (revierte ambos lados) y se rehace.
         abort_if($pago->esCruce(), 422,
             'Este movimiento cruza con otro módulo (anticipo/venta/compra): no se edita. Anúlalo — revierte ambos lados — y regístralo de nuevo.');
+        // Una compensación entre dos deudas tampoco: su pareja quedaría desalineada
+        // (y convertirla en cuota inventaría un movimiento de caja).
+        abort_if($pago->tipo === 'compensacion', 422,
+            'Este movimiento es una compensación con otra deuda: no se edita. Elimínalo — revierte las dos deudas — y vuelve a compensar.');
 
         // Límite para amortizaciones: no puede hacer que el saldo quede negativo.
+        // Las compensaciones también bajan el saldo (igual que en recalcularSaldo).
         $incrementosOtros = (float) $deuda->pagos()->where('tipo', 'incremento')->where('id', '!=', $pago->id)->sum('monto');
-        $amortizacionesOtros = (float) $deuda->pagos()->where('tipo', 'amortizacion')->where('id', '!=', $pago->id)->sum('monto');
+        $amortizacionesOtros = (float) $deuda->pagos()->whereIn('tipo', ['amortizacion', 'compensacion'])->where('id', '!=', $pago->id)->sum('monto');
         $maxAmortizacion = max(0, (float) $deuda->monto_original + $incrementosOtros - $amortizacionesOtros);
 
         $rules = [
             'tipo'           => ['required', Rule::in(['amortizacion', 'incremento'])],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             'monto'          => ['required', 'numeric', 'min:0.01'],
             'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
@@ -689,14 +748,49 @@ class DeudaController extends Controller
             'motivo' => ['required', 'string', 'min:5', 'max:500'],
         ]);
 
-        $deuda->update(['estado' => 'anulada']);
+        // Un cruce (anticipo, venta, compra u otra deuda) movió saldos de OTRO
+        // módulo: anular solo esta mitad los dejaría descuadrados.
+        $cruces = $deuda->pagos()->get()->filter(fn (DeudaPago $p) => $p->esCruce() || $p->tipo === 'compensacion');
+        abort_if($cruces->isNotEmpty(), 422, 'Esta deuda tiene cruces o compensaciones con otros documentos: anúlalos primero desde sus movimientos.');
 
-        AuditoriaService::log('deuda.anulada', $deuda, [
-            'motivo' => $data['motivo'],
-            'saldo'  => (float) $deuda->saldo,
-        ], $user);
+        DB::transaction(function () use ($deuda, $user, $data) {
+            // Bloquear y re-chequear: con un doble clic la segunda petición
+            // llegaba con la deuda aún 'activa' en memoria y dejaba otro log
+            // "anulada" sin asientos; reactivar tomaba ese y el dinero no volvía.
+            $deuda = Deuda::whereKey($deuda->id)->lockForUpdate()->firstOrFail();
+            abort_unless($deuda->estado === 'activa', 422, 'La deuda no está activa.');
 
-        return back()->with('success', 'Deuda anulada.');
+            // Anular deshace TODO su dinero (desembolso y cuotas): si no, la deuda
+            // sale del balance pero su plata se queda en las cuentas e infla el
+            // patrimonio. Los asientos se guardan para que "Reactivar" los devuelva.
+            $movimientos = $this->movimientosTesoreria($deuda)->orderBy('m.id')->get(['m.*'])
+                ->map(fn ($r) => (array) $r)->values()->all();
+
+            $log = AuditoriaService::log('deuda.anulada', $deuda, [
+                'motivo'                => $data['motivo'],
+                'saldo'                 => (float) $deuda->saldo,
+                'movimientos_revertidos' => $movimientos,
+            ], $user);
+            abort_if(!$log, 500, 'No se pudo guardar el respaldo de su dinero; no se anuló. Intenta de nuevo.');
+
+            $this->tesoreria->revertir('deuda', $deuda->id);
+            foreach ($deuda->pagos()->pluck('id') as $pagoId) {
+                $this->tesoreria->revertir('deuda_pago', $pagoId);
+            }
+
+            $deuda->update(['estado' => 'anulada']);
+        });
+
+        return back()->with('success', 'Deuda anulada: su dinero se retiró de las cuentas. Si fue un error, reactívala y vuelve tal cual.');
+    }
+
+    /**
+     * Qué pasa con el dinero si se anula esta deuda (lo mismo que al eliminar,
+     * pero se conserva el registro). Lo muestra el modal antes de confirmar.
+     */
+    public function impactoAnular(Request $request, Deuda $deuda)
+    {
+        return $this->impactoEliminar($request, $deuda);
     }
 
     /**
@@ -721,7 +815,7 @@ class DeudaController extends Controller
             'cliente_id'        => ['nullable', 'integer', Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id), 'prohibits:proveedor_id'],
             'proveedor_id'      => ['nullable', 'integer', Rule::exists('proveedores', 'id')->where('empresa_id', $user->empresa_id)],
             'monto_original'    => ['required', 'numeric', 'min:0.01', 'gte:' . max(0.01, $amortizadoNeto)],
-            'fecha_inicio'      => ['required', 'date'],
+            'fecha_inicio'      => ['required', 'date', new \App\Rules\NoFutura],
             'fecha_vencimiento' => ['nullable', 'date', 'after_or_equal:fecha_inicio'],
             'observacion'       => ['nullable', 'string', 'max:500'],
         ], [
@@ -782,16 +876,42 @@ class DeudaController extends Controller
             'motivo' => ['required', 'string', 'min:5', 'max:500'],
         ]);
 
-        $deuda->update([
-            'estado' => (float) $deuda->saldo <= 0.01 ? 'pagada' : 'activa',
-        ]);
+        DB::transaction(function () use ($deuda, $user, $data) {
+            // Bloquear y re-chequear: un doble envío no repone dos veces.
+            $deuda = Deuda::whereKey($deuda->id)->lockForUpdate()->firstOrFail();
+            abort_unless($deuda->estado === 'anulada', 422, 'Solo se pueden reactivar deudas anuladas.');
 
-        AuditoriaService::log('deuda.reactivada', $deuda, [
-            'motivo' => $data['motivo'],
-            'saldo'  => (float) $deuda->saldo,
-        ], $user);
+            // Devuelve el dinero que se retiró al anular (las anulaciones de
+            // antes del 04/10/2026 no lo retiraban: no hay nada que devolver).
+            $log = \App\Models\Auditoria::deEmpresa($deuda->empresa_id)
+                ->where('accion', 'deuda.anulada')->where('modelo_id', $deuda->id)
+                ->orderByDesc('id')->first();
+            $devueltos = 0;
+            foreach (($log?->contexto ?? [])['movimientos_revertidos'] ?? [] as $m) {
+                // No revivir el dinero de una cuota que se eliminó mientras estaba anulada.
+                if ($m['ref_tipo'] === 'deuda_pago'
+                    && ! DB::table('deuda_pagos')->where('id', $m['ref_id'])->whereNull('deleted_at')->exists()) {
+                    continue;
+                }
+                if (DB::table('cuenta_movimientos')->where('id', $m['id'])->exists()) continue;
+                DB::table('cuenta_movimientos')->insert($m);
+                $devueltos++;
+            }
 
-        return back()->with('success', 'Deuda reactivada: vuelve a aparecer en el balance.');
+            // El saldo se recalcula desde sus movimientos vivos: mientras estuvo
+            // anulada recalcularSaldo() no corre, así que una cuota eliminada en
+            // ese lapso dejaba el saldo viejo. recalcularSaldo decide activa/pagada.
+            $deuda->update(['estado' => 'activa']);
+            $deuda->recalcularSaldo();
+
+            AuditoriaService::log('deuda.reactivada', $deuda, [
+                'motivo'                => $data['motivo'],
+                'saldo'                 => (float) $deuda->saldo,
+                'movimientos_devueltos' => $devueltos,
+            ], $user);
+        });
+
+        return back()->with('success', 'Deuda reactivada: vuelve al balance y su dinero a las cuentas.');
     }
 
     /**
@@ -812,6 +932,12 @@ class DeudaController extends Controller
         $data = $request->validate([
             'motivo' => ['required', 'string', 'min:5', 'max:500'],
         ]);
+
+        // Mismo criterio que anular: un cruce o compensación bajó el saldo de
+        // OTRO documento (anticipo, venta, compra u otra deuda). Borrar solo esta
+        // mitad dejaría al hermano descontado contra una deuda que ya no existe.
+        $cruces = $deuda->pagos()->get()->filter(fn (DeudaPago $p) => $p->esCruce() || $p->tipo === 'compensacion');
+        abort_if($cruces->isNotEmpty(), 422, 'Esta deuda tiene cruces o compensaciones con otros documentos: elimínalos primero desde sus movimientos (eso revierte los dos lados) y luego elimina la deuda.');
 
         DB::transaction(function () use ($deuda, $user, $data) {
             $deuda->loadMissing('pagos');
@@ -1019,6 +1145,9 @@ class DeudaController extends Controller
                 if ($pago->cliente_anticipo_id) {
                     $anticipo = \App\Models\ClienteAnticipo::whereKey($pago->cliente_anticipo_id)
                         ->lockForUpdate()->first();
+                    // Un anticipo devuelto/anulado no recupera saldo: ese dinero ya salió.
+                    abort_if($anticipo && in_array($anticipo->estado, ['devuelto', 'anulado'], true), 422,
+                        "El anticipo #{$anticipo?->id} con que se cobró esta cuota ya está {$anticipo?->estado}: su saldo no puede volver. Reactiva primero el anticipo en Finanzas → Anticipos.");
                     if ($anticipo) {
                         $anticipo->aplicaciones()->where('deuda_pago_id', $pago->id)->delete();
                         $anticipo->update([

@@ -26,6 +26,8 @@ interface VentaItem {
     subtotal: number;
     es_retornable: boolean;
     cantidad_devuelta: number;
+    /** Aún no entregado (anticipo del POS): no se devuelve, se cancela en Anticipos. */
+    cantidad_pendiente_entrega?: number;
     cantidad_disponible: number;
 }
 
@@ -34,11 +36,18 @@ interface VentaResultado {
     numero: string;
     fecha_venta: string;
     total: number;
+    /** Proporción que sobrevive al descuento global (misma fórmula que la nota de crédito). */
+    factor_descuento: number;
+    es_credito: boolean;
+    saldo_pendiente: number;
     cliente: { id: number; nombre_completo: string; numero_documento: string | null } | null;
     local: { id: number; nombre: string };
     pagos: { metodo_pago_id: number; metodo_pago_nombre: string; metodo_pago_tipo: string; monto: number }[];
     items: VentaItem[];
 }
+
+/** Ventas con el mismo número (correlativo por turno): la persona elige. */
+interface Coincidencia { id: number; numero: string; fecha_venta: string; total: number; cliente: string | null; }
 
 interface ConfigDev {
     permite_devoluciones: boolean;
@@ -89,6 +98,7 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
     const [buscando, setBuscando] = useState(false);
     const [venta, setVenta] = useState<VentaResultado | null>(null);
     const [config, setConfig] = useState<ConfigDev | null>(null);
+    const [coincidencias, setCoincidencias] = useState<Coincidencia[]>([]);
 
     const [motivoId, setMotivoId] = useState<number | ''>('');
     const [formaReembolso, setFormaReembolso] = useState<string>('efectivo');
@@ -107,13 +117,19 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    async function buscar(termino?: string) {
+    async function buscar(termino?: string, ventaId?: number) {
         const q = (termino ?? busqueda).trim();
-        if (!q) return;
+        if (!q && !ventaId) return;
         setBuscando(true);
-        setVenta(null); setConfig(null); setItems({});
+        setVenta(null); setConfig(null); setItems({}); setCoincidencias([]);
         try {
-            const { data } = await axios.get(route('devoluciones.buscar-venta'), { params: { q } });
+            const { data } = await axios.get(route('devoluciones.buscar-venta'), {
+                params: ventaId ? { venta_id: ventaId } : { q },
+            });
+            if (data.coincidencias) {
+                setCoincidencias(data.coincidencias);
+                return;
+            }
             setVenta(data.venta);
             setConfig(data.configuracion);
             if (!data.configuracion.permite_devoluciones) {
@@ -153,12 +169,20 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
         setItems(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } as ItemSeleccionado }));
     }
 
-    const totalDevolucion = Object.values(items).reduce((sum, i) => {
+    // Mismo cálculo que el servidor: bruto de cada línea redondeado, por el
+    // factor del descuento global, y un solo redondeo al final.
+    const factor = venta?.factor_descuento ?? 1;
+    const totalDevolucion = Math.round(Object.values(items).reduce((sum, i) => {
         const it = venta?.items.find(v => v.id === i.venta_item_id);
         if (!it) return sum;
         const cant = parseFloat(i.cantidad) || 0;
-        return sum + cant * (it.precio_unitario - (it.descuento_item ?? 0));
-    }, 0);
+        const bruto = Math.round(cant * (it.precio_unitario - (it.descuento_item ?? 0)) * 100) / 100;
+        return sum + bruto * factor;
+    }, 0) * 100) / 100;
+
+    // Venta al crédito: lo devuelto baja primero la deuda; solo el resto se reembolsa.
+    const descuentaDeuda = venta?.es_credito ? Math.min(totalDevolucion, Math.max(0, venta.saldo_pendiente)) : 0;
+    const aReembolsar = Math.round((totalDevolucion - descuentaDeuda) * 100) / 100;
 
     const totalReembolso = pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
 
@@ -181,12 +205,12 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
         // que sumen exactamente el monto a devolver.
         if (requierePagos) {
             const pagosValidos = pagos.filter(p => p.metodo_pago_id && parseFloat(p.monto) > 0);
-            if (pagosValidos.length === 0) {
+            if (pagosValidos.length === 0 && aReembolsar > 0.009) {
                 toast.error('Debes agregar al menos un pago para esta forma de reembolso.');
                 return;
             }
-            if (Math.abs(totalReembolso - totalDevolucion) > 0.01) {
-                toast.error(`El total del reembolso (S/ ${totalReembolso.toFixed(2)}) debe coincidir con el monto a devolver (S/ ${totalDevolucion.toFixed(2)}).`);
+            if (Math.abs(totalReembolso - aReembolsar) > 0.01) {
+                toast.error(`El total del reembolso (S/ ${totalReembolso.toFixed(2)}) debe ser S/ ${aReembolsar.toFixed(2)}.`);
                 return;
             }
         }
@@ -262,6 +286,25 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
                             <Search size={14} className="mr-1" />{buscando ? 'Buscando...' : 'Buscar'}
                         </Button>
                     </div>
+
+                    {coincidencias.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                                Hay {coincidencias.length} ventas con ese número. Elige la que corresponde:
+                            </p>
+                            {coincidencias.map(c => (
+                                <button key={c.id} type="button"
+                                    onClick={() => void buscar(undefined, c.id)}
+                                    className="w-full rounded-xl border px-4 py-2 text-left text-sm flex flex-wrap items-center justify-between gap-2"
+                                    style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}>
+                                    <span className="font-mono font-medium">{c.numero}</span>
+                                    <span style={{ color: 'var(--color-text-muted)' }}>{new Date(c.fecha_venta).toLocaleString('es-PE')}</span>
+                                    <span>{c.cliente ?? '—'}</span>
+                                    <span className="tabular-nums font-medium">S/ {c.total.toFixed(2)}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </section>
 
                 {/* Datos de la venta */}
@@ -282,6 +325,11 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
                             {!config.dentro_del_plazo && (
                                 <div className="col-span-full">
                                     <Badge variant="warning">Fuera del plazo (máx. {config.dias_max_devolucion} días)</Badge>
+                                </div>
+                            )}
+                            {venta.es_credito && venta.saldo_pendiente > 0.009 && (
+                                <div className="col-span-full">
+                                    <Badge variant="warning">Venta al crédito: debe S/ {venta.saldo_pendiente.toFixed(2)}. Lo devuelto se descuenta primero de esa deuda.</Badge>
                                 </div>
                             )}
                             {config.requiere_aprobacion && (
@@ -331,6 +379,11 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
                                                             {it.unidad_nombre} · S/ {it.precio_unitario.toFixed(2)}
                                                             {noRetornable && <span className="ml-2"><Badge variant="danger">No retornable</Badge></span>}
                                                         </div>
+                                                        {(it.cantidad_pendiente_entrega ?? 0) > 0.0001 && (
+                                                            <div className="text-xs mt-0.5" style={{ color: 'var(--color-warning)' }}>
+                                                                {it.cantidad_pendiente_entrega!.toFixed(2)} aún por entregar: no se devuelven aquí (cancélalas en Finanzas → Anticipos).
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     <td className="py-2 px-2 text-right tabular-nums">{it.cantidad.toFixed(2)}</td>
                                                     <td className="py-2 px-2 text-right tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
@@ -410,7 +463,7 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
                             {/* El vale ya no es solo una etiqueta: se convierte en un
                                 anticipo REAL del cliente, usable en POS y CxC. */}
                             {formaReembolso === 'vale_credito' && (
-                                <Callout variant="info" title={`Se creará un anticipo de S/ ${totalDevolucion.toFixed(2)} a favor de ${venta?.cliente?.nombre_completo ?? 'este cliente'}`}>
+                                <Callout variant="info" title={`Se creará un anticipo de S/ ${aReembolsar.toFixed(2)} a favor de ${venta?.cliente?.nombre_completo ?? 'este cliente'}`}>
                                     No sale dinero de caja. El crédito quedará registrado en <strong>Finanzas → Anticipos</strong> y el cliente podrá usarlo para pagar en el POS o para cancelar sus cuentas por cobrar. Si se anula la devolución, el vale se anula también (siempre que no se haya usado).
                                 </Callout>
                             )}
@@ -484,11 +537,19 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
                             <div>
                                 <p style={{ color: 'var(--color-text-muted)' }}>Monto a devolver</p>
                                 <p className="text-lg font-bold" style={{ color: 'var(--color-text)' }}>S/ {totalDevolucion.toFixed(2)}</p>
+                                {factor < 0.99995 && (
+                                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Ya descuenta la parte proporcional del descuento de la venta.</p>
+                                )}
+                                {descuentaDeuda > 0.009 && (
+                                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                        S/ {descuentaDeuda.toFixed(2)} se descuentan de la deuda · S/ {aReembolsar.toFixed(2)} a reembolsar
+                                    </p>
+                                )}
                             </div>
                             {requierePagos && (
                                 <div>
                                     <p style={{ color: 'var(--color-text-muted)' }}>Total reembolsado</p>
-                                    <p className="text-lg font-bold" style={{ color: totalReembolso === totalDevolucion ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                                    <p className="text-lg font-bold" style={{ color: Math.abs(totalReembolso - aReembolsar) <= 0.01 ? 'var(--color-success)' : 'var(--color-warning)' }}>
                                         S/ {totalReembolso.toFixed(2)}
                                     </p>
                                 </div>

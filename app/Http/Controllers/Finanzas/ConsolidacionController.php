@@ -55,25 +55,19 @@ class ConsolidacionController extends Controller
 
         $turnos = $query->orderByDesc('fecha_cierre')->paginate(20)->withQueryString();
 
-        // Esperado por método NO-efectivo para cada turno de la página:
-        // ventas completadas del turno agrupadas por método (neto de vuelto).
-        $turnoIds = collect($turnos->items())->pluck('id');
-        $esperadosPorMetodo = DB::table('venta_pagos')
-            ->join('ventas', 'ventas.id', '=', 'venta_pagos.venta_id')
-            ->join('metodos_pago', 'metodos_pago.id', '=', 'venta_pagos.metodo_pago_id')
-            ->join('tipos_metodo_pago', 'tipos_metodo_pago.id', '=', 'metodos_pago.tipo_id')
-            ->whereIn('ventas.turno_id', $turnoIds)
-            ->where('ventas.estado', 'completada')
-            ->where('tipos_metodo_pago.slug', '!=', 'efectivo')
-            ->selectRaw('ventas.turno_id, venta_pagos.metodo_pago_id, metodos_pago.nombre, SUM(venta_pagos.monto - venta_pagos.vuelto) as esperado')
-            ->groupBy('ventas.turno_id', 'venta_pagos.metodo_pago_id', 'metodos_pago.nombre')
-            ->get()
-            ->groupBy('turno_id')
-            ->map(fn ($rows) => $rows->map(fn ($r) => [
-                'metodo_pago_id' => (int) $r->metodo_pago_id,
-                'nombre'         => $r->nombre,
-                'esperado'       => round((float) $r->esperado, 2),
-            ])->values());
+        // Esperado por método NO-efectivo para cada turno de la página: lo que
+        // el turno COBRÓ por ese método (ventas sin vuelto + abonos + anticipos
+        // − reembolsos), la MISMA cuenta que ve la cajera al cerrar. Antes solo
+        // miraba las ventas y un abono por Yape aparecía como sobrante.
+        $esperadosPorMetodo = collect($turnos->items())
+            ->mapWithKeys(fn (Turno $t) => [$t->id => collect($t->cobrosPorMetodo())
+                ->reject(fn ($c) => $c['es_efectivo'])
+                ->map(fn ($c) => [
+                    'metodo_pago_id' => (int) $c['metodo_pago_id'],
+                    'nombre'         => $c['nombre'],
+                    'esperado'       => round((float) $c['total'], 2),
+                ])->values()])
+            ->filter(fn ($rows) => $rows->isNotEmpty());
 
         return Inertia::render('Finanzas/Consolidacion', [
             'turnos'                => $turnos,
@@ -170,13 +164,8 @@ class ConsolidacionController extends Controller
 
             // Declarado por método (arqueo de la cajera) y esperado por método (ventas).
             $declaradosMetodo = $turno->arqueoMetodos()->pluck('monto_declarado', 'metodo_pago_id');
-            $esperadosMetodo = DB::table('venta_pagos')
-                ->join('ventas', 'ventas.id', '=', 'venta_pagos.venta_id')
-                ->where('ventas.turno_id', $turno->id)
-                ->where('ventas.estado', 'completada')
-                ->selectRaw('venta_pagos.metodo_pago_id, SUM(venta_pagos.monto - venta_pagos.vuelto) as esperado')
-                ->groupBy('venta_pagos.metodo_pago_id')
-                ->pluck('esperado', 'metodo_pago_id');
+            $esperadosMetodo = collect($turno->cobrosPorMetodo())
+                ->mapWithKeys(fn ($c) => [$c['metodo_pago_id'] => $c['total']]);
 
             $contadoEf = (float) collect($data['items'])->first(fn ($i) => empty($i['metodo_pago_id']))['contado'];
 

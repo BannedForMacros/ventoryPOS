@@ -28,7 +28,7 @@ class BalanceVerificacionService
      * cambio de datos sino de modelo.
      */
     public const CATEGORIAS = [
-        'efectivo', 'cuenta_bancaria', 'stock', 'cxc', 'prestamo_otorgado',
+        'efectivo', 'cuenta_bancaria', 'stock', 'mercaderia_transito', 'cxc', 'prestamo_otorgado',
         'adelanto_proveedor', 'planilla_descuento', 'cxp', 'anticipo_cliente', 'deuda', 'personal',
     ];
 
@@ -136,7 +136,7 @@ class BalanceVerificacionService
     }
 
     /** Categorías de una sola línea: se comparan por categoría, no por su texto. */
-    private const LINEA_UNICA = ['stock', 'cxc', 'cxp', 'anticipo_cliente', 'planilla_descuento'];
+    private const LINEA_UNICA = ['stock', 'mercaderia_transito', 'cxc', 'cxp', 'anticipo_cliente', 'planilla_descuento'];
 
     private function normalizar(string $seccion, string $categoria, string $descripcion, $refId, float $monto): array
     {

@@ -74,7 +74,7 @@ class PlanillaDescuentoController extends Controller
 
         $data = $request->validate([
             'user_id' => ['required', 'integer', Rule::exists('users', 'id')->where('empresa_id', $user->empresa_id)],
-            'fecha'   => ['required', 'date'],
+            'fecha'   => ['required', 'date', new \App\Rules\NoFutura],
             'monto'   => ['required', 'numeric', 'min:0.01'],
             'motivo'  => ['required', 'string', 'min:5', 'max:250'],
         ]);
@@ -101,10 +101,14 @@ class PlanillaDescuentoController extends Controller
         abort_if($descuento->empresa_id !== $user->empresa_id, 403);
         abort_unless($descuento->estado === 'pendiente', 422, 'El descuento no está pendiente.');
 
+        $data = $request->validate([
+            'fecha_aplicacion' => ['nullable', 'date', new \App\Rules\NoFutura],
+        ]);
+
         $descuento->update([
             'estado'           => 'aplicado',
             'aplicado_por'     => $user->id,
-            'fecha_aplicacion' => $request->input('fecha_aplicacion', now()->toDateString()),
+            'fecha_aplicacion' => $data['fecha_aplicacion'] ?? now()->toDateString(),
         ]);
 
         AuditoriaService::log('planilla_descuento.aplicado', $descuento, [
@@ -143,7 +147,7 @@ class PlanillaDescuentoController extends Controller
 
         $data = $request->validate([
             'user_id' => ['required', 'integer', Rule::exists('users', 'id')->where('empresa_id', $user->empresa_id)],
-            'fecha'   => ['required', 'date'],
+            'fecha'   => ['required', 'date', new \App\Rules\NoFutura],
             'monto'   => ['required', 'numeric', 'min:0.01'],
             'motivo'  => ['required', 'string', 'min:5', 'max:250'],
         ]);

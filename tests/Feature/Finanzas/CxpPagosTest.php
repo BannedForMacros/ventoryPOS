@@ -115,3 +115,20 @@ it('abonar sin adelanto sigue exigiendo método de pago', function () {
         'monto' => 10, 'fecha' => now()->toDateString(), 'metodo_pago_id' => null,
     ])->assertSessionHasErrors(['metodo_pago_id']);
 });
+
+it('DIN-3 dos abonos simultáneos por el saldo completo no pagan dos veces', function () {
+    $stale = Entrada::find($this->entrada->id); // la segunda petición la cargó con saldo 100
+
+    pagarCxp($this, 100);
+
+    $req = \Illuminate\Http\Request::create('/x', 'POST', [
+        'monto' => 100, 'fecha' => now()->toDateString(), 'metodo_pago_id' => $this->env->metodo('efectivo')->id,
+    ]);
+    $req->setUserResolver(fn () => $this->env->admin);
+    expect(fn () => app(\App\Http\Controllers\Finanzas\CuentasPorPagarController::class)->abonar($req, $stale))
+        ->toThrow(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+
+    expect(EntradaPago::where('entrada_id', $this->entrada->id)->count())->toBe(1);
+    expect((float) CuentaMovimiento::where('empresa_id', $this->env->empresa->id)->where('ref_tipo', 'entrada_pago')->sum('monto'))->toBe(100.0);
+    expect((float) $this->entrada->fresh()->monto_pagado)->toBe(100.0);
+});

@@ -37,49 +37,61 @@ class EntregaPendienteService
      */
     public function aplicarEntregaMaterial(ClienteAnticipo $anticipo, array $data, User $user): void
     {
-        $anticipo->loadMissing('items.producto', 'venta.local');
-        $itemsAnticipo = $anticipo->items->keyBy('id');
-
-        // ── Validar entregas contra lo pendiente de cada ítem ───────────
-        $entregas = []; // [item => ClienteAnticipoItem, cantidad => float]
-        foreach ($data['items'] as $idx => $linea) {
-            $item = $itemsAnticipo->get((int) $linea['id']);
-            if (!$item) {
+        DB::transaction(function () use ($anticipo, $user, $data) {
+            // Todo se valida DENTRO de la transacción y con el anticipo y sus
+            // ítems BLOQUEADOS. Antes se leía lo pendiente fuera y sin lock: dos
+            // confirmaciones simultáneas del mismo despacho (doble clic, o
+            // almacenero y cajera a la vez) veían las mismas 7 unidades pendientes
+            // y las dos descontaban el stock.
+            $bloqueado = ClienteAnticipo::whereKey($anticipo->id)->lockForUpdate()->first();
+            if (!$bloqueado || $bloqueado->estado !== 'activo') {
                 throw ValidationException::withMessages([
-                    "items.{$idx}.id" => 'El ítem no pertenece a este despacho.',
+                    'items' => 'Este despacho ya no tiene nada pendiente: fue entregado o anulado mientras tanto.',
+                ]);
+            }
+            $anticipo = $bloqueado;
+            $anticipo->load('venta.local');
+            $itemsAnticipo = $anticipo->items()->with('producto')->lockForUpdate()->get()->keyBy('id');
+
+            // ── Validar entregas contra lo pendiente de cada ítem ───────────
+            $entregas = []; // [item => ClienteAnticipoItem, cantidad => float]
+            foreach ($data['items'] as $idx => $linea) {
+                $item = $itemsAnticipo->get((int) $linea['id']);
+                if (!$item) {
+                    throw ValidationException::withMessages([
+                        "items.{$idx}.id" => 'El ítem no pertenece a este despacho.',
+                    ]);
+                }
+
+                $cantidad  = round((float) $linea['cantidad'], 4);
+                $pendiente = (float) $item->cantidad_pendiente;
+                if ($cantidad <= 0.00009) {
+                    continue; // "lo demás lo dejamos"
+                }
+
+                if ($cantidad > $pendiente + 0.00009) {
+                    throw ValidationException::withMessages([
+                        "items.{$idx}.cantidad" => "De «{$item->producto_nombre}» solo quedan pendientes " . rtrim(rtrim(number_format($pendiente, 4, '.', ''), '0'), '.') . ' por entregar.',
+                    ]);
+                }
+
+                $entregas[] = ['item' => $item, 'cantidad' => $cantidad];
+            }
+
+            if (empty($entregas)) {
+                throw ValidationException::withMessages([
+                    'items' => 'Indica la cantidad a entregar de al menos un producto.',
                 ]);
             }
 
-            $cantidad  = round((float) $linea['cantidad'], 4);
-            $pendiente = (float) $item->cantidad_pendiente;
-            if ($cantidad <= 0.00009) {
-                continue; // "lo demás lo dejamos"
-            }
+            // El saldo (dinero) baja al valor PAGADO de lo entregado (precio
+            // congelado de la venta), capado al saldo restante.
+            $montoAplicado = min(
+                round(collect($entregas)->sum(fn ($e) => $e['cantidad'] * (float) $e['item']->precio_unitario), 2),
+                (float) $anticipo->saldo,
+            );
+            $totalUnidades = round(collect($entregas)->sum(fn ($e) => $e['cantidad']), 4);
 
-            if ($cantidad > $pendiente + 0.00009) {
-                throw ValidationException::withMessages([
-                    "items.{$idx}.cantidad" => "De «{$item->producto_nombre}» solo quedan pendientes " . rtrim(rtrim(number_format($pendiente, 4, '.', ''), '0'), '.') . ' por entregar.',
-                ]);
-            }
-
-            $entregas[] = ['item' => $item, 'cantidad' => $cantidad];
-        }
-
-        if (empty($entregas)) {
-            throw ValidationException::withMessages([
-                'items' => 'Indica la cantidad a entregar de al menos un producto.',
-            ]);
-        }
-
-        // El saldo (dinero) baja al valor PAGADO de lo entregado (precio
-        // congelado de la venta), capado al saldo restante.
-        $montoAplicado = min(
-            round(collect($entregas)->sum(fn ($e) => $e['cantidad'] * (float) $e['item']->precio_unitario), 2),
-            (float) $anticipo->saldo,
-        );
-        $totalUnidades = round(collect($entregas)->sum(fn ($e) => $e['cantidad']), 4);
-
-        DB::transaction(function () use ($anticipo, $user, $data, $entregas, $montoAplicado, $totalUnidades) {
             $aplicacion = $anticipo->aplicaciones()->create([
                 'empresa_id'  => $anticipo->empresa_id,
                 'numero'      => ClienteAnticipoAplicacion::generarNumero($anticipo->empresa_id),
@@ -150,5 +162,8 @@ class EntregaPendienteService
                 'saldo'    => (float) $anticipo->saldo,
             ], $user);
         });
+
+        // Quien llama sigue con su instancia: que vea el estado ya confirmado.
+        $anticipo->refresh();
     }
 }

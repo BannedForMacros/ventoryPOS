@@ -31,10 +31,17 @@ class ReporteDevolucionController extends Controller
             ->when($request->user_id, fn ($q, $v) => $q->where('user_id', $v))
             ->when($user->local_id, fn ($q) => $q->where('local_id', $user->local_id));
 
+        // Universo del DINERO: devoluciones que sí ocurrieron (aprobadas o
+        // completadas). El KPI, la serie, los motivos y las formas miran el
+        // mismo universo, así sus totales coinciden. Una devolución "sin
+        // reembolso" no devolvió dinero (mismo criterio que UtilidadService).
+        $efectivas = (clone $base)->whereIn('estado', ['aprobada', 'completada']);
+        $dinero    = "CASE WHEN forma_reembolso <> 'sin_reembolso' THEN monto_devolucion ELSE 0 END";
+
         $kpis = [
             'total_devoluciones' => (int)   (clone $base)->count(),
-            'monto_devuelto'     => (float) (clone $base)->whereIn('estado', ['aprobada', 'completada'])->sum('monto_devolucion'),
-            'monto_reembolsado'  => (float) (clone $base)->whereIn('estado', ['aprobada', 'completada'])->sum('monto_reembolso'),
+            'monto_devuelto'     => (float) (clone $efectivas)->sum(DB::raw($dinero)),
+            'monto_reembolsado'  => (float) (clone $efectivas)->sum('monto_reembolso'),
             'pendientes'         => (int)   (clone $base)->where('estado', 'pendiente')->count(),
             'completadas'        => (int)   (clone $base)->where('estado', 'completada')->count(),
             'rechazadas'         => (int)   (clone $base)->where('estado', 'rechazada')->count(),
@@ -52,11 +59,11 @@ class ReporteDevolucionController extends Controller
         $kpis['tasa']         = $ventasRango > 0 ? round(($kpis['monto_devuelto'] / $ventasRango) * 100, 2) : null;
 
         // Serie diaria
-        $serieDiaria = (clone $base)
+        $serieDiaria = (clone $efectivas)
             ->select(
                 DB::raw('DATE(fecha) as dia'),
                 DB::raw('COUNT(*) as devoluciones'),
-                DB::raw('SUM(monto_devolucion) as monto'),
+                DB::raw("SUM({$dinero}) as monto"),
             )
             ->groupBy('dia')->orderBy('dia')->get()
             ->map(fn ($r) => [
@@ -66,8 +73,8 @@ class ReporteDevolucionController extends Controller
             ]);
 
         // Por motivo
-        $porMotivo = (clone $base)
-            ->select('motivo_id', DB::raw('COUNT(*) as count'), DB::raw('SUM(monto_devolucion) as total'))
+        $porMotivo = (clone $efectivas)
+            ->select('motivo_id', DB::raw('COUNT(*) as count'), DB::raw("SUM({$dinero}) as total"))
             ->groupBy('motivo_id')
             ->with('motivo:id,nombre')
             ->orderByDesc('total')->get()
@@ -89,7 +96,7 @@ class ReporteDevolucionController extends Controller
             ]);
 
         // Por forma de reembolso
-        $porForma = (clone $base)
+        $porForma = (clone $efectivas)
             ->select('forma_reembolso', DB::raw('COUNT(*) as count'), DB::raw('SUM(monto_reembolso) as total'))
             ->groupBy('forma_reembolso')->orderByDesc('count')->get()
             ->map(fn ($r) => [

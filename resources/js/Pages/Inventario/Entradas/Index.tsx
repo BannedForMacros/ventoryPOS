@@ -11,6 +11,7 @@ import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Table, { Column } from '@/Components/UI/Table';
 import Badge from '@/Components/UI/Badge';
 import Modal from '@/Components/UI/Modal';
+import BotonGuardar, { useProblema, type Problema } from '@/Components/UI/BotonGuardar';
 import TableActions from '@/Components/UI/TableActions';
 import { fmtFecha } from '@/lib/fechas';
 import type { PageProps } from '@/types';
@@ -200,6 +201,13 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
             cuentaId: e.cuenta_id ?? '',
         });
     }
+
+    // Lo que impide guardar el pago rápido (mismas reglas que el servidor).
+    const problemaPagoRapido: Problema | null = !pagoForm.pagado ? null
+        : !pagoForm.metodoId ? { texto: 'Elige el método de pago', campo: 'pago-rapido-metodo' }
+        : cuentasQuick.length > 0 && !pagoForm.cuentaId ? { texto: `Elige la cuenta de ${metodoQuickSel?.nombre ?? 'este método'}`, campo: 'pago-rapido-cuenta' }
+        : null;
+    const avisoPagoRapido = useProblema(problemaPagoRapido);
 
     function guardarPago() {
         if (!pagoEntrada) return;
@@ -824,9 +832,10 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                         <Button variant="ghost" onClick={() => setPagoEntrada(null)} disabled={savingPago}>
                             {pagoFormDirty ? 'Cancelar' : 'Cerrar'}
                         </Button>
-                        <Button onClick={guardarPago} loading={savingPago} disabled={!pagoFormDirty || (pagoForm.pagado && !pagoForm.metodoId)}>
+                        <BotonGuardar problema={problemaPagoRapido} onGuardar={guardarPago} onCorregir={avisoPagoRapido.corregir}
+                            guardando={savingPago} disabled={!pagoFormDirty}>
                             Guardar
-                        </Button>
+                        </BotonGuardar>
                     </>
                 }
             >
@@ -895,22 +904,29 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
 
                         {pagoForm.pagado && (
                             <div className="space-y-3">
+                                <div data-campo="pago-rapido-metodo">
                                 <Select
                                     label="Método de pago"
                                     required
                                     placeholder="Seleccionar método"
                                     value={pagoForm.metodoId}
-                                    onChange={v => setPagoForm(f => ({
-                                        ...f,
-                                        metodoId: v === '' ? '' : Number(v),
-                                        cuentaId: '',
-                                    }))}
+                                    onChange={v => {
+                                        const id = v === '' ? '' : Number(v);
+                                        // Con una sola cuenta, se elige sola (como en el POS).
+                                        const cts = metodosPago.find(m => m.id === id)?.cuentas ?? [];
+                                        setPagoForm(f => ({ ...f, metodoId: id, cuentaId: cts.length === 1 ? cts[0].id : '' }));
+                                    }}
                                     options={metodosPago.map(m => ({ value: m.id, label: m.nombre }))}
+                                    error={avisoPagoRapido.err('pago-rapido-metodo')}
                                 />
+                                </div>
                                 {cuentasQuick.length > 0 && (
+                                    <div data-campo="pago-rapido-cuenta">
                                     <Select
-                                        label="Cuenta (opcional)"
-                                        placeholder="No especificada"
+                                        label="Cuenta"
+                                        required
+                                        placeholder="Elegir cuenta"
+                                        error={avisoPagoRapido.err('pago-rapido-cuenta')}
                                         value={pagoForm.cuentaId}
                                         onChange={v => setPagoForm(f => ({ ...f, cuentaId: v === '' ? '' : Number(v) }))}
                                         options={cuentasQuick.map(c => ({
@@ -918,6 +934,7 @@ export default function EntradasIndex({ entradas, almacenes, metodosPago, mostra
                                             label: c.banco ? `${c.nombre} · ${c.banco}` : c.nombre,
                                         }))}
                                     />
+                                    </div>
                                 )}
                             </div>
                         )}

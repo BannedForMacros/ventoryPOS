@@ -93,7 +93,7 @@ export default function ReportesProductos({
         { key: 'rank', label: '#', render: p => <span style={{ color: 'var(--color-text-muted)' }}>{p.rank}</span> },
         { key: 'producto_nombre', label: 'Producto', render: p => <span className="font-medium">{p.producto_nombre}</span> },
         { key: 'categoria_nombre', label: 'Categoría', render: p => <span style={{ color: 'var(--color-text-muted)' }}>{p.categoria_nombre ?? 'Sin categoría'}</span> },
-        { key: 'cantidad_total', label: 'Cant.', align: 'right', render: p => fmtCant(p.cantidad_total) },
+        { key: 'cantidad_total', label: 'Cant. (und. base)', align: 'right', render: p => fmtCant(p.cantidad_total) },
         { key: 'ventas_distintas', label: 'N° ventas', align: 'right', render: p => fmtInt(p.ventas_distintas) },
         { key: 'precio_promedio', label: 'P. promedio', align: 'right', render: p => fmtS(p.precio_promedio) },
         {

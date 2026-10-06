@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Inventario;
 
 use App\Support\EnEmpresa;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Inventario\Concerns\ResuelveFactorPresentacion;
 use App\Models\Almacen;
 use App\Models\Producto;
 use App\Models\Stock;
@@ -16,6 +17,8 @@ use Inertia\Inertia;
 
 class TransferenciaController extends Controller
 {
+    use ResuelveFactorPresentacion;
+
     public function __construct(private LocalScopeService $scope) {}
 
     public function index(Request $request)
@@ -126,7 +129,11 @@ class TransferenciaController extends Controller
         $destino = Almacen::find($data['almacen_destino_id']);
         $this->validarOrigenDestino($origen, $destino, $user->empresa_id);
 
-        $transferencia = DB::transaction(function () use ($data, $user) {
+        // Antes el closure usaba $request sin capturarlo: TODA transferencia nueva
+        // terminaba en error 500 ("Undefined variable $request").
+        $enviar = $request->boolean('enviar');
+
+        DB::transaction(function () use ($data, $user, $enviar) {
             $transferencia = Transferencia::create([
                 'empresa_id'         => $user->empresa_id,
                 'almacen_origen_id'  => $data['almacen_origen_id'],
@@ -140,8 +147,7 @@ class TransferenciaController extends Controller
             $this->guardarDetalles($transferencia, $data['detalles']);
 
             // Si se pidió enviar directo
-            if ($request->boolean('enviar')) {
-                $transferencia->load('detalles.producto');
+            if ($enviar) {
                 $transferencia->enviar($user->id, $data['observacion_envio'] ?? null);
             }
 
@@ -163,13 +169,20 @@ class TransferenciaController extends Controller
         abort_if($transferencia->esAnulada(), 403, 'No se pueden editar transferencias anuladas.');
 
         $user = $request->user();
-        $data = $this->validarPayload($request);
+        $data = $this->validarPayload($request, $transferencia);
 
         $origen  = Almacen::find($data['almacen_origen_id']);
         $destino = Almacen::find($data['almacen_destino_id']);
         $this->validarOrigenDestino($origen, $destino, $user->empresa_id);
 
         DB::transaction(function () use ($transferencia, $data) {
+            // Lo que ya se recibió de cada línea, ANTES de reemplazar los detalles.
+            // Los detalles se recrean con ids nuevos: sin esto la cantidad recibida
+            // se perdía y la recepción volvía a "todo lo enviado".
+            $recibidoAnterior = $transferencia->esRecibida()
+                ? $transferencia->detalles()->orderBy('id')->get()
+                : collect();
+
             $transferencia->load('detalles');
 
             // 1) Revertir efecto actual sobre stock
@@ -188,17 +201,10 @@ class TransferenciaController extends Controller
             $transferencia->detalles()->delete();
             $this->guardarDetalles($transferencia, $data['detalles']);
 
-            // 4) Si en estado recibida, copiar cantidades_recibidas si vinieron en payload
-            if ($transferencia->esRecibida() && isset($data['cantidades_recibidas'])) {
-                foreach ($transferencia->detalles()->get() as $d) {
-                    $cantRec = (float) ($data['cantidades_recibidas'][$d->id] ?? $d->cantidad_enviada);
-                    $cantBaseRec = round($cantRec * (float) $d->factor_conversion, 4);
-                    $d->update([
-                        'cantidad_recibida'      => $cantRec,
-                        'cantidad_base_recibida' => $cantBaseRec,
-                        'diferencia_base'        => round($cantBaseRec - (float) $d->cantidad_base_enviada, 4),
-                    ]);
-                }
+            // 4) Si está recibida, cada línea nueva conserva lo que se recibió de su
+            //    línea anterior (o lo que el formulario corrigió).
+            if ($transferencia->esRecibida()) {
+                $this->asignarCantidadesRecibidas($transferencia, $data, $recibidoAnterior);
             }
 
             // 5) Reaplicar efecto en stock con los nuevos valores
@@ -222,12 +228,14 @@ class TransferenciaController extends Controller
         abort_if($transferencia->empresa_id !== $request->user()->empresa_id, 403);
 
         $obs = $request->input('observacion_envio');
-        $transferencia->load('detalles.producto');
 
         try {
             $transferencia->enviar($request->user()->id, $obs);
         } catch (ValidationException $e) {
             return back()->withErrors($e->errors());
+        } catch (\LogicException $e) {
+            // Doble clic o ya enviada desde otra pestaña: aviso claro, no un 500.
+            throw ValidationException::withMessages(['estado' => $e->getMessage()]);
         }
 
         return redirect()->back()->with('success', 'Transferencia enviada. Stock descontado del almacén origen.');
@@ -244,12 +252,18 @@ class TransferenciaController extends Controller
             'observacion_recepcion'   => 'nullable|string|max:500',
         ]);
 
-        $transferencia->load('detalles');
-        $transferencia->recibir(
-            $data['cantidades'],
-            $request->user()->id,
-            $data['observacion_recepcion'] ?? null,
-        );
+        $transferencia->load('detalles.producto');
+        $this->validarCantidadesRecibidas($transferencia, $data['cantidades'], 'cantidades');
+
+        try {
+            $transferencia->recibir(
+                $data['cantidades'],
+                $request->user()->id,
+                $data['observacion_recepcion'] ?? null,
+            );
+        } catch (\LogicException $e) {
+            throw ValidationException::withMessages(['estado' => $e->getMessage()]);
+        }
 
         return redirect()->back()->with('success', 'Recepción confirmada. Stock actualizado en el almacén destino.');
     }
@@ -295,23 +309,133 @@ class TransferenciaController extends Controller
 
     // ── Helpers privados ──────────────────────────────────────
 
-    private function validarPayload(Request $request): array
+    private function validarPayload(Request $request, ?Transferencia $actual = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'almacen_origen_id'  => ['required', EnEmpresa::existe('almacenes')],
             'almacen_destino_id' => ['required', EnEmpresa::existe('almacenes'), 'different:almacen_origen_id'],
-            'fecha'              => 'required|date',
+            'fecha'              => ['required', 'date', new \App\Rules\NoFutura],
             'observacion_envio'      => 'nullable|string|max:500',
             'observacion_recepcion'  => 'nullable|string|max:500',
             'detalles'           => 'required|array|min:1',
             'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
             'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
-            'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
+            // Se ignora: el factor sale del catálogo del producto (resolverFactores).
+            'detalles.*.factor_conversion' => 'nullable|numeric',
             'detalles.*.observacion'       => 'nullable|string',
+            // Edición de una transferencia recibida: id de la línea que se edita y
+            // cuánto llegó de ella (en la presentación de la línea).
+            'detalles.*.id'                => 'nullable|integer',
+            'detalles.*.cantidad_recibida' => 'nullable|numeric|min:0',
             'cantidades_recibidas'   => 'nullable|array',
             'cantidades_recibidas.*' => 'nullable|numeric|min:0',
         ]);
+
+        // Al editar, las líneas que siguen igual conservan su factor registrado.
+        $data['detalles'] = $this->resolverFactores($data['detalles'], guardadas: $actual?->detalles()->get());
+
+        return $data;
+    }
+
+    /**
+     * Lo recibido de una línea no puede superar lo enviado, y solo se aceptan
+     * líneas de ESTA transferencia. Antes se aceptaba cualquier número: recibir
+     * 100 de 10 enviadas inflaba el stock del local con mercadería que nunca salió
+     * del central.
+     *
+     * @param array<int|string, mixed> $cantidades [detalle_id => cantidad recibida]
+     */
+    private function validarCantidadesRecibidas(Transferencia $transferencia, array $cantidades, string $campo): void
+    {
+        $detalles = $transferencia->detalles->keyBy('id');
+        $errores  = [];
+
+        foreach ($cantidades as $detalleId => $cantidad) {
+            $d = $detalles->get((int) $detalleId);
+            if (!$d) {
+                $errores["{$campo}.{$detalleId}"] = 'Esa línea no pertenece a esta transferencia. Recarga la página.';
+                continue;
+            }
+            if ((float) $cantidad > (float) $d->cantidad_enviada + 0.00001) {
+                $nombre = $d->producto?->nombre ?? "producto #{$d->producto_id}";
+                $errores["{$campo}.{$detalleId}"] = sprintf(
+                    'De "%s" se enviaron %s; no se puede recibir más de lo enviado.',
+                    $nombre, $this->num((float) $d->cantidad_enviada),
+                );
+            }
+        }
+
+        if (!empty($errores)) {
+            throw ValidationException::withMessages($errores);
+        }
+    }
+
+    /**
+     * Fija lo recibido de cada línea (recién recreada) de una transferencia ya
+     * recibida. Por orden de prioridad:
+     *   1. lo que el formulario mandó en la línea (detalles.N.cantidad_recibida);
+     *   2. lo que mandó en cantidades_recibidas con el id ANTERIOR de la línea;
+     *   3. lo que se había recibido de la línea anterior (mismo id, o si no el
+     *      mismo producto, en orden);
+     *   4. una línea nueva se da por recibida completa.
+     * Nunca más de lo enviado.
+     */
+    private function asignarCantidadesRecibidas(Transferencia $transferencia, array $data, \Illuminate\Support\Collection $anteriores): void
+    {
+        $porId     = $anteriores->keyBy('id');
+        $usados    = [];
+        $nuevas    = $transferencia->detalles()->orderBy('id')->get();
+        $porCampo  = $data['cantidades_recibidas'] ?? [];
+        $errores   = [];
+
+        foreach ($nuevas as $i => $d) {
+            $linea    = $data['detalles'][$i] ?? [];
+            $idViejo  = isset($linea['id']) ? (int) $linea['id'] : null;
+            $anterior = $idViejo && $porId->has($idViejo) && !isset($usados[$idViejo]) ? $porId->get($idViejo) : null;
+            if (!$anterior) {
+                $anterior = $anteriores->first(fn ($a) => !isset($usados[$a->id]) && (int) $a->producto_id === (int) $d->producto_id);
+            }
+            if ($anterior) {
+                $usados[$anterior->id] = true;
+            }
+            $claveVieja = $idViejo ?: $anterior?->id;
+
+            $cantRec = match (true) {
+                isset($linea['cantidad_recibida']) && $linea['cantidad_recibida'] !== ''
+                    => (float) $linea['cantidad_recibida'],
+                $claveVieja && isset($porCampo[$claveVieja]) && $porCampo[$claveVieja] !== ''
+                    => (float) $porCampo[$claveVieja],
+                $anterior && $anterior->cantidad_recibida !== null
+                    => (float) $anterior->cantidad_recibida,
+                default => (float) $d->cantidad_enviada,
+            };
+
+            if ($cantRec > (float) $d->cantidad_enviada + 0.00001) {
+                $nombre = Producto::whereKey($d->producto_id)->value('nombre') ?? "producto #{$d->producto_id}";
+                $errores["detalles.{$i}.cantidad_recibida"] = sprintf(
+                    'De "%s" se enviaron %s; no se puede recibir más de lo enviado.',
+                    $nombre, $this->num((float) $d->cantidad_enviada),
+                );
+                continue;
+            }
+
+            $cantBaseRec = round($cantRec * (float) $d->factor_conversion, 4);
+            $d->update([
+                'cantidad_recibida'      => $cantRec,
+                'cantidad_base_recibida' => $cantBaseRec,
+                'diferencia_base'        => round($cantBaseRec - (float) $d->cantidad_base_enviada, 4),
+            ]);
+        }
+
+        if (!empty($errores)) {
+            throw ValidationException::withMessages($errores);
+        }
+    }
+
+    private function num(float $n): string
+    {
+        return rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
     }
 
     private function validarOrigenDestino(Almacen $origen, Almacen $destino, int $empresaId): void

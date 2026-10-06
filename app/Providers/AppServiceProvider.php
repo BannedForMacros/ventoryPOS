@@ -17,6 +17,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Quién lee la foto del cuaderno en el visor de ventas (cambiable por un modelo local).
+        // VISOR_VENTAS_LECTOR=demo usa una página de ejemplo (nunca en producción).
+        $this->app->bind(\App\Services\VisorVentas\LectorCuaderno::class, fn ($app) =>
+            config('services.anthropic.lector') === 'demo' && ! $app->isProduction()
+                ? new \App\Services\VisorVentas\LectorDemostracion()
+                : new \App\Services\VisorVentas\LectorClaude());
+
         // SINGLETON a propósito: `FacturacionEmpresa` memoiza la conexión de cada
         // empresa y la existencia de la tabla, y esas dos preguntas se repiten
         // varias veces por pantalla (el POS pregunta por el modo, por el umbral y
@@ -33,6 +40,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Visor de ventas: límites propios (no comparten el contador del buscador
+        // del POS) y mensajes en palabras de la cajera.
+        $muchas = fn () => response()->json(['message' => 'Vas muy rápido. Espera un minuto y vuelve a intentar.'], 429);
+        \Illuminate\Support\Facades\RateLimiter::for('visor-ventas', fn ($r) =>
+            \Illuminate\Cache\RateLimiting\Limit::perMinute(4)->by('visor:u' . $r->user()?->id)->response($muchas));
+        \Illuminate\Support\Facades\RateLimiter::for('visor-verificar', fn ($r) =>
+            \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by('visor-v:u' . $r->user()?->id)->response($muchas));
+
         Vite::prefetch(concurrency: 3);
 
         Entrada::observe(EntradaObserver::class);

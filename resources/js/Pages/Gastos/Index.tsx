@@ -47,7 +47,7 @@ const MOSTRAR_OPCIONES = [
 ];
 
 export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, locales, turnosAbiertos, esAdmin, metodosPago }: Props) {
-    const { flash, turno_activo } = usePage<Props>().props;
+    const { flash, turno_activo, auth } = usePage<Props>().props;
     const [tab, setTab]                 = useState<Scope>(scope);
     const [modalGasto, setModalGasto]   = useState(false);
     const [gastoEditar, setGastoEditar] = useState<Gasto | null>(null);
@@ -88,10 +88,15 @@ export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, loc
         setModalGasto(true);
     }
 
-    // Editar/eliminar/reactivar: admin con cualquiera; no-admin solo sus gastos
-    // de turno mientras el turno siga abierto (igual que valida el backend).
-    const puedeModificar = (g: Gasto) =>
-        esAdmin || (g.turno_id !== null && (g.turno as any)?.estado === 'abierto');
+    // Editar/eliminar/reactivar (igual que valida el backend): nadie toca un
+    // gasto de un turno ya cerrado (se reabre el turno); el admin, cualquier
+    // otro; el no-admin solo los de SU turno abierto.
+    const puedeModificar = (g: Gasto) => {
+        const turno = g.turno as any;
+        if (g.turno_id !== null && turno?.estado !== 'abierto') return false;
+        if (esAdmin) return true;
+        return g.turno_id !== null && turno?.user_id === auth?.user?.id;
+    };
 
     const puedeNuevoTurno   = !!turno_activo;
     const puedeNuevoAdmin   = esAdmin;

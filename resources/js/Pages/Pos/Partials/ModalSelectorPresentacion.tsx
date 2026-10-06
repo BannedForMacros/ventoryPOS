@@ -1,6 +1,7 @@
 import { Package, Tag } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import type { Producto, ProductoUnidad } from '@/types';
+import { soles } from '@/lib/dinero';
 
 interface Props {
     isOpen:    boolean;
@@ -9,8 +10,7 @@ interface Props {
     onElegir:  (producto: Producto, unidad: ProductoUnidad) => void;
 }
 
-const sol = (n: string | number) =>
-    `S/. ${Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const sol = (n: number | string) => soles(n);
 
 /**
  * Modal que se abre cuando un producto/servicio tiene mas de una presentacion.

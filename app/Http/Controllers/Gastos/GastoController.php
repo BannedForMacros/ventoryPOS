@@ -131,6 +131,8 @@ class GastoController extends Controller
             }
         }
 
+        $this->validarFechaEnTurno($turnoId, $request->input('fecha'));
+
         // Resolver la cuenta destino igual que el POS: se elige un método de pago
         // y (si tiene) su cuenta. TesoreriaService::resolverCuenta traduce el
         // método + cuenta_metodo_pago_id a una cuenta_id concreta (efectivo si el
@@ -183,6 +185,7 @@ class GastoController extends Controller
         $user = $request->user();
         abort_if($gasto->empresa_id !== $user->empresa_id, 403);
         $this->autorizarModificacion($gasto, $user);
+        $this->validarFechaEnTurno($gasto->turno_id, $request->input('fecha'));
 
         // La cuenta solo cambia si mandan un método de pago; si no, se mantiene
         // la cuenta original del gasto (editar el monto no debe mover la cuenta).
@@ -229,6 +232,8 @@ class GastoController extends Controller
                 $gasto->id,
             );
 
+            $this->recuadrarTurno($gasto->turno_id, $user);
+
             AuditoriaService::log('gasto.editado', $gasto, [
                 'antes'   => $antes,
                 'despues' => [
@@ -261,6 +266,7 @@ class GastoController extends Controller
             // "Eliminados" y se puede reactivar).
             $this->tesoreria->revertir('gasto', $gasto->id);
             $gasto->delete();
+            $this->recuadrarTurno($gasto->turno_id, $user);
         });
 
         return redirect()->back()->with('success', 'Gasto eliminado. Puedes verlo en "Eliminados" y reactivarlo.');
@@ -290,6 +296,8 @@ class GastoController extends Controller
                 $gasto->id,
             );
 
+            $this->recuadrarTurno($gasto->turno_id, $user);
+
             AuditoriaService::log('gasto.reactivado', $gasto, [
                 'monto' => (float) $gasto->monto,
                 'fecha' => optional($gasto->fecha)->toDateString(),
@@ -301,16 +309,114 @@ class GastoController extends Controller
 
     /**
      * Reglas para editar / eliminar / reactivar un gasto: un administrador
-     * puede con cualquiera; un no-admin solo con SUS gastos de turno mientras
-     * el turno siga abierto (nunca con gastos administrativos).
+     * puede con cualquiera (si el turno está cerrado, se recuadra al guardar);
+     * un no-admin solo con SUS gastos de turno mientras el turno siga abierto
+     * (nunca con gastos administrativos).
      */
     private function autorizarModificacion(Gasto $gasto, User $user): void
     {
-        if ($user->rol->es_admin) return;
+        $turno = $gasto->turno;
+
+        // Un turno cerrado ya cuadró su caja con este gasto. Solo el admin lo
+        // corrige, y el cuadre del turno se recalcula en el acto (recuadrarTurno).
+        // Exigir reabrir lo dejaba sin salida: reabrir se bloquea si la cajera
+        // o la caja ya tienen otro turno abierto, que es lo normal al día siguiente.
+        if ($turno && $turno->estado !== 'abierto') {
+            abort_unless($user->rol?->es_admin, 422,
+                'El turno de este gasto ya está cerrado: solo un administrador puede corregirlo.');
+            // Consolidado: el conteo del consolidador ya se asentó contra el
+            // esperado viejo; recalcularlo aquí lo dejaría a medias.
+            abort_if($turno->consolidacion()->exists(), 422,
+                'El turno de este gasto ya fue consolidado: reabre el turno para modificarlo.');
+            // Cierre rápido con destino del efectivo: la entrega y lo que quedó
+            // en el cajón salieron del esperado viejo; se corrigen reabriendo.
+            abort_if($turno->monto_cierre_declarado === null && $turno->destino_efectivo !== null, 422,
+                'El turno de este gasto se cerró entregando el efectivo según el sistema: reabre el turno para modificarlo.');
+        }
+
+        if ($user->rol?->es_admin) return;
 
         abort_if($gasto->esAdministrativo(), 403, 'Solo un administrador puede modificar gastos administrativos.');
 
-        $turno = $gasto->turno;
-        abort_if(!$turno || $turno->estado !== 'abierto', 403, 'Solo puedes modificar gastos de un turno abierto.');
+        abort_if(!$turno, 403, 'Solo puedes modificar gastos de un turno abierto.');
+        abort_if($turno->user_id !== $user->id, 403, 'Este gasto es del turno de otra persona: solo ella o un administrador pueden modificarlo.');
+    }
+
+    /**
+     * Tras corregir un gasto de un turno CERRADO: recalcula el esperado y la
+     * diferencia con el conteo que ya declaró la cajera, y reasienta el
+     * sobrante/faltante en tesorería. Sin esto el gasto viejo seguía
+     * "explicado" por un sobrante/faltante que ya no existe y la caja quedaba
+     * contada dos veces. Turno abierto: no hace nada (se cuadra al cerrar).
+     */
+    private function recuadrarTurno(?int $turnoId, User $user): void
+    {
+        if (!$turnoId) return;
+
+        $turno = Turno::whereKey($turnoId)->lockForUpdate()->first();
+        if (!$turno || $turno->estado === 'abierto') return;
+
+        $antes = [
+            'esperado'   => $turno->monto_cierre_esperado !== null ? (float) $turno->monto_cierre_esperado : null,
+            'diferencia' => $turno->diferencia !== null ? (float) $turno->diferencia : null,
+        ];
+
+        $esperado   = round($turno->calcularMontoEsperado(), 2);
+        $declarado  = $turno->monto_cierre_declarado !== null ? (float) $turno->monto_cierre_declarado : null;
+        $diferencia = $declarado === null ? null : round($declarado - $esperado, 2);
+
+        $turno->update(['monto_cierre_esperado' => $esperado, 'diferencia' => $diferencia]);
+
+        // Mismo criterio que TurnoController::cerrar: el asiento de
+        // sobrante/faltante solo existe si la empresa no exige consolidación.
+        // Conserva la fecha del asiento original (el día del cierre).
+        $fechaAsiento = \App\Models\CuentaMovimiento::where('ref_tipo', 'cierre_turno')->where('ref_id', $turno->id)->value('fecha')
+            ?? $turno->fecha_cierre?->toDateString() ?? now()->toDateString();
+        $this->tesoreria->revertir('cierre_turno', $turno->id);
+        if (!$turno->empresa?->requiere_consolidacion_caja && $diferencia !== null && abs($diferencia) >= 0.01) {
+            $this->tesoreria->registrar(
+                $turno->empresa_id,
+                null, // efectivo
+                $turno->user_cierre_id ?? $user,
+                substr((string) $fechaAsiento, 0, 10),
+                $diferencia > 0 ? 'ingreso' : 'egreso',
+                abs($diferencia),
+                ($diferencia > 0 ? 'Sobrante' : 'Faltante') . " de caja — cierre turno #{$turno->id} ({$turno->user?->name})",
+                'cierre_turno',
+                $turno->id,
+            );
+        }
+
+        AuditoriaService::log('turno.cuadre_recalculado', $turno, [
+            'motivo'  => 'Corrección de un gasto del turno cerrado',
+            'antes'   => $antes,
+            'despues' => ['esperado' => $esperado, 'diferencia' => $diferencia],
+        ], $user);
+    }
+
+    /**
+     * Un gasto de turno sale de ESE cajón: su fecha tiene que caer dentro del
+     * turno (del día de apertura al de cierre, o a hoy si sigue abierto). Si
+     * no, el balance lo pondría en un día y la caja en otro.
+     */
+    private function validarFechaEnTurno(?int $turnoId, ?string $fecha): void
+    {
+        if (!$turnoId || !$fecha) return;
+
+        $turno = Turno::find($turnoId);
+        if (!$turno || !$turno->fecha_apertura) return;
+
+        $dia   = substr($fecha, 0, 10);
+        $desde = $turno->fecha_apertura->toDateString();
+        $hasta = ($turno->fecha_cierre ?? now())->toDateString();
+
+        if ($dia < $desde || $dia > $hasta) {
+            $rango = $desde === $hasta
+                ? \Illuminate\Support\Carbon::parse($desde)->format('d/m/Y')
+                : \Illuminate\Support\Carbon::parse($desde)->format('d/m/Y') . ' al ' . \Illuminate\Support\Carbon::parse($hasta)->format('d/m/Y');
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'fecha' => "La fecha del gasto debe ser la del turno ({$rango}). Si es de otro día, regístralo como gasto administrativo o en el turno de ese día.",
+            ]);
+        }
     }
 }

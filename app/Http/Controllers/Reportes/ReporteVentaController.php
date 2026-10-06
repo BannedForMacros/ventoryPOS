@@ -136,8 +136,9 @@ class ReporteVentaController extends Controller
             ->select(
                 'producto_id',
                 DB::raw('MIN(producto_nombre) as producto_nombre'),
-                DB::raw('SUM(cantidad) as cantidad'),
-                DB::raw('SUM(subtotal) as total'),
+                // Unidad base (no mezcla presentaciones) y neto del descuento global.
+                DB::raw('SUM(cantidad_base) as cantidad'),
+                DB::raw('SUM(' . \App\Services\UtilidadService::lineaNeta('venta_items') . ') as total'),
             )
             ->whereIn('venta_id', (clone $completadas)->select('id'))
             ->groupBy('producto_id')

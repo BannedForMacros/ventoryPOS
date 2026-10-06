@@ -104,6 +104,14 @@ export default function DevolucionShow({ devolucion: d }: Props) {
     const puedeReintentarNC = esAdmin
         && ['pendiente', 'esperando', 'fallida'].includes(d.nota_credito_estado ?? '');
 
+    // Aprobar/rechazar que llega tarde (doble clic, otro admin) vuelve con el
+    // motivo en `errors`: se muestra, en vez de no pasar nada.
+    const avisarError = { onError: (e: Record<string, string>) => { toast.error(Object.values(e)[0] ?? 'No se pudo completar la acción.'); } };
+
+    // Con la nota de crédito emitida o camino de SUNAT la devolución ya no se anula
+    // (el servidor lo bloquea): no se ofrece el botón.
+    const ncBloqueaAnular = ['emitida', 'pendiente', 'esperando'].includes(d.nota_credito_estado ?? '');
+
     function reintentarNC() {
         router.post(route('devoluciones.nota-credito.reintentar', d.id), {}, { preserveScroll: true });
     }
@@ -118,15 +126,15 @@ export default function DevolucionShow({ devolucion: d }: Props) {
                     <div className="flex gap-2">
                         {d.estado === 'pendiente' && esAdmin && (
                             <>
-                                <Button variant="success" onClick={() => router.post(route('devoluciones.aprobar', d.id))}>
+                                <Button variant="success" onClick={() => router.post(route('devoluciones.aprobar', d.id), {}, avisarError)}>
                                     <CheckCircle size={14} className="mr-1" />Aprobar
                                 </Button>
-                                <Button variant="danger" onClick={() => router.post(route('devoluciones.rechazar', d.id))}>
+                                <Button variant="danger" onClick={() => router.post(route('devoluciones.rechazar', d.id), {}, avisarError)}>
                                     <XCircle size={14} className="mr-1" />Rechazar
                                 </Button>
                             </>
                         )}
-                        {(d.estado === 'completada' || d.estado === 'aprobada') && (
+                        {(d.estado === 'completada' || d.estado === 'aprobada') && !ncBloqueaAnular && (
                             <Button variant="danger" onClick={() => router.post(route('devoluciones.anular', d.id))}>
                                 <Ban size={14} className="mr-1" />Anular
                             </Button>

@@ -117,7 +117,7 @@ class AuditoriaLineaService
                 break;
 
             case 'cxp':
-                foreach (DB::table('entradas')->where('empresa_id', $empresaId)->where('estado', 'confirmado')
+                foreach (DB::table('entradas')->where('empresa_id', $empresaId)->whereIn('estado', ['confirmado', 'en_transito'])
                     ->where('fecha', '>', $desde)->where('fecha', '<=', $hasta)
                     ->get(['id', 'numero_documento', 'correlativo', 'fecha', 'total', 'user_id']) as $e) {
                     $push('e' . $e->id, $e->fecha, 'Compra ' . ($e->numero_documento ?: ($e->correlativo ?: "#{$e->id}")) . ' registrada', (float) $e->total, $e->user_id);
@@ -126,6 +126,24 @@ class AuditoriaLineaService
                     ->where('e.empresa_id', $empresaId)->where('p.fecha', '>', $desde)->where('p.fecha', '<=', $hasta)
                     ->get(['p.entrada_id', 'e.numero_documento', 'p.fecha', 'p.monto', 'p.user_id']) as $p) {
                     $push('e' . $p->entrada_id, $p->fecha, 'Pago al proveedor' . ($p->numero_documento ? " ({$p->numero_documento})" : ''), -(float) $p->monto, $p->user_id);
+                }
+                break;
+
+            case 'mercaderia_transito':
+                // Entra al tránsito el día de la compra (si sigue en tránsito o se
+                // recibió después) y sale el día de su recepción, como en el balance.
+                foreach (DB::table('entradas')->where('empresa_id', $empresaId)
+                    ->where(fn ($q) => $q->where('estado', 'en_transito')
+                        ->orWhere(fn ($r) => $r->where('estado', 'confirmado')->whereColumn('fecha_recepcion', '>', 'fecha')))
+                    ->where('fecha', '>', $desde)->where('fecha', '<=', $hasta)
+                    ->get(['id', 'numero_documento', 'correlativo', 'fecha', 'total', 'user_id']) as $e) {
+                    $push('e' . $e->id, $e->fecha, 'Compra ' . ($e->numero_documento ?: ($e->correlativo ?: "#{$e->id}")) . ' en tránsito', (float) $e->total, $e->user_id);
+                }
+                foreach (DB::table('entradas')->where('empresa_id', $empresaId)->where('estado', 'confirmado')
+                    ->whereColumn('fecha_recepcion', '>', 'fecha')
+                    ->where('fecha_recepcion', '>', $desde)->where('fecha_recepcion', '<=', $hasta)
+                    ->get(['id', 'numero_documento', 'correlativo', 'fecha_recepcion', 'total', 'user_id']) as $e) {
+                    $push('e' . $e->id, $e->fecha_recepcion, 'Compra ' . ($e->numero_documento ?: ($e->correlativo ?: "#{$e->id}")) . ' recibida', -(float) $e->total, $e->user_id);
                 }
                 break;
 
@@ -139,6 +157,12 @@ class AuditoriaLineaService
                     ->where('c.empresa_id', $empresaId)->where('ca.fecha', '>', $desde)->where('ca.fecha', '<=', $hasta)
                     ->get(['ca.cliente_anticipo_id', 'ca.numero', 'ca.fecha', 'ca.monto', 'ca.user_id']) as $a) {
                     $push('a' . $a->cliente_anticipo_id, $a->fecha, 'Entrega / aplicación' . ($a->numero ? " {$a->numero}" : ''), -(float) $a->monto, $a->user_id);
+                }
+                foreach (DB::table('cliente_anticipo_cancelaciones')->where('empresa_id', $empresaId)
+                    ->where('fecha', '>', $desde)->where('fecha', '<=', $hasta)
+                    ->get(['cliente_anticipo_id', 'fecha', 'monto', 'cantidad', 'motivo', 'user_id']) as $c) {
+                    $push('a' . $c->cliente_anticipo_id, $c->fecha, 'Pendiente cancelado · '
+                        . rtrim(rtrim(number_format((float) $c->cantidad, 4, '.', ','), '0'), '.') . " und · {$c->motivo}", -(float) $c->monto, $c->user_id);
                 }
                 foreach (DB::table('cuenta_movimientos')->where('empresa_id', $empresaId)->where('ref_tipo', 'cliente_anticipo_devolucion')
                     ->where('fecha', '>', $desde)->where('fecha', '<=', $hasta)

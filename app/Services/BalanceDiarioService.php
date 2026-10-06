@@ -7,10 +7,8 @@ use App\Models\BalanceDiarioItem;
 use App\Models\ClienteAnticipo;
 use App\Models\Cuenta;
 use App\Models\Deuda;
-use App\Models\Gasto;
 use App\Models\ProveedorAdelanto;
 use App\Models\User;
-use App\Models\Venta;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -28,6 +26,9 @@ use Illuminate\Support\Facades\DB;
  */
 class BalanceDiarioService
 {
+    /** Compras que comprometen con el proveedor (= Entrada::scopeComprometido). */
+    private const ESTADOS_COMPROMETIDOS = [\App\Models\Entrada::ESTADO_CONFIRMADO, \App\Models\Entrada::ESTADO_EN_TRANSITO];
+
     public function __construct(private TesoreriaService $tesoreria) {}
 
     /**
@@ -87,29 +88,17 @@ class BalanceDiarioService
      */
     public function calcularMetricas(int $empresaId, string $fecha): array
     {
-        $gastosDia = (float) Gasto::deEmpresa($empresaId)
-            ->where('fecha', $fecha)
-            ->sum('monto');
-
-        $ventasDia = (float) Venta::deEmpresa($empresaId)
-            ->where('estado', 'completada')
-            ->whereBetween('fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
-            ->sum('total');
-
-        // Regla única del costo de lo vendido: nunca el costo vivo de hoy.
-        $costoSql = CostoVentaService::sql('vi', 'p');
-        $costoDia = (float) DB::table('venta_items as vi')
-            ->join('ventas as v', 'v.id', '=', 'vi.venta_id')
-            ->join('productos as p', 'p.id', '=', 'vi.producto_id')
-            ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
-            ->whereBetween('v.fecha_venta', [$fecha . ' 00:00:00', $fecha . ' 23:59:59'])
-            ->selectRaw("COALESCE(SUM(vi.cantidad_base * {$costoSql}), 0) as c")->value('c');
+        // Regla única de utilidad (UtilidadService): ventas y costo NETOS de las
+        // devoluciones completadas del día y costo congelado al vender. Antes las
+        // devoluciones se ignoraban y la utilidad del balance no coincidía con
+        // la del Reporte de Utilidad ni con el dashboard.
+        $r = app(UtilidadService::class)->resumen($empresaId, $fecha, $fecha);
 
         return [
-            'gastos_dia'   => round($gastosDia, 2),
-            'ventas_dia'   => round($ventasDia, 2),
-            'costo_dia'    => round($costoDia, 2),
-            'utilidad_dia' => round($ventasDia - $costoDia - $gastosDia, 2),
+            'gastos_dia'   => $r['gastos'],
+            'ventas_dia'   => $r['ventas'],
+            'costo_dia'    => $r['costo'],
+            'utilidad_dia' => $r['utilidad_neta'],
         ];
     }
 
@@ -164,8 +153,7 @@ class BalanceDiarioService
         // que REALMENTE hay. Agrupar por entidad resuelve el caso de dos cuentas
         // del mismo banco (BCP Soles + Yape): una puede salir negativa y otra
         // positiva, pero la entidad muestra el saldo único real (como el banco).
-        Cuenta::deEmpresa($empresaId)->activo()
-            ->orderByDesc('es_efectivo')->orderBy('nombre')->get()
+        $this->cuentasDelBalance($empresaId, $fechaCorte)
             ->groupBy(fn (Cuenta $c) => $c->es_efectivo ? 'efectivo' : ('banco:' . ($c->banco ?: $c->nombre)))
             ->each(function ($grupo, $clave) use (&$items, &$orden, $fechaCorte) {
                 $esEfectivo = str_starts_with((string) $clave, 'efectivo');
@@ -192,6 +180,21 @@ class BalanceDiarioService
             'monto' => $this->sumaDesglose($this->desgloseStock($empresaId, $fechaCorte)), 'orden' => ++$orden,
         ];
 
+        // Mercadería EN TRÁNSITO al corte: compras ya facturadas que aún no
+        // llegan (no están en el stock ni en el kardex). Es un activo: lo que el
+        // proveedor nos debe entregar. Su contraparte es la deuda con el
+        // proveedor (CxP incluye las compras en tránsito, como el módulo de CxP),
+        // así comprar en tránsito o pagarla por adelantado no mueve el
+        // patrimonio; al recibirla, esta línea baja y sube el stock.
+        $transito = $this->desgloseTransito($empresaId, $fechaCorte);
+        if ($transito) {
+            $items[] = [
+                'seccion' => 'favor', 'categoria' => 'mercaderia_transito',
+                'descripcion' => 'Mercadería en tránsito (comprada, aún no llega)',
+                'monto' => $this->sumaDesglose($transito), 'orden' => ++$orden,
+            ];
+        }
+
         // Deudas por cobrar A LA FECHA: ventas a crédito nacidas hasta el corte,
         // con el saldo QUE TENÍAN ese día (los abonos posteriores se devuelven:
         // un abono del 12 no puede borrar la deuda del balance del 11).
@@ -201,8 +204,10 @@ class BalanceDiarioService
             'monto' => $this->sumaDesglose($this->desgloseCxc($empresaId, $fechaCorte)), 'orden' => ++$orden,
         ];
 
-        // Ajuste por deuda: pagos POSTERIORES al corte (amortización devuelve
-        // saldo; incremento lo resta). Sirve para ambas direcciones.
+        // Ajuste por deuda: pagos POSTERIORES al corte (amortización y
+        // compensación devuelven saldo; incremento lo resta). Sirve para ambas
+        // direcciones. La compensación baja el saldo igual que una amortización
+        // (Deuda::recalcularSaldo): tratarla como incremento la restaba dos veces.
         $ajusteDeudaPost = DB::table('deuda_pagos as dp')
             ->join('deudas as d', 'd.id', '=', 'dp.deuda_id')
             ->where('d.empresa_id', $empresaId)
@@ -212,7 +217,7 @@ class BalanceDiarioService
             // la línea de la deuda en TODOS los balances anteriores a él.
             ->whereNull('dp.deleted_at')
             ->where('dp.fecha', '>', $fechaCorte)
-            ->selectRaw("dp.deuda_id, SUM(CASE WHEN dp.tipo = 'amortizacion' THEN dp.monto ELSE -dp.monto END) as ajuste")
+            ->selectRaw("dp.deuda_id, SUM(CASE WHEN dp.tipo IN ('amortizacion', 'compensacion') THEN dp.monto ELSE -dp.monto END) as ajuste")
             ->groupBy('dp.deuda_id')
             ->pluck('ajuste', 'deuda_id');
         $saldoDeudaAlCorte = fn (Deuda $d) => round((float) $d->saldo + (float) ($ajusteDeudaPost[$d->id] ?? 0), 2);
@@ -341,6 +346,7 @@ class BalanceDiarioService
             'stock'              => $this->desgloseStock($empresaId, $fechaCorte),
             'cxc'                => $this->desgloseCxc($empresaId, $fechaCorte),
             'cxp'                => $this->desgloseCxp($empresaId, $fechaCorte),
+            'mercaderia_transito' => $this->desgloseTransito($empresaId, $fechaCorte),
             'anticipo_cliente'   => $this->desgloseAnticipos($empresaId, $fechaCorte),
             'planilla_descuento' => $this->desglosePlanilla($empresaId, $fechaCorte),
             'efectivo'           => $this->desgloseCuentas($empresaId, $fechaCorte, true),
@@ -362,6 +368,28 @@ class BalanceDiarioService
     /** Por producto: saldo a la fecha × costo conocido a esa fecha (kardex). */
     public function desgloseStock(int $empresaId, string $fechaCorte): array
     {
+        if (!$this->tieneKardex($empresaId, $fechaCorte) && $fechaCorte >= now()->toDateString()) {
+            // Sin kardex, pero el corte es hoy: el stock vivo, producto por
+            // producto (misma fórmula que el camino rápido de stockValorizadoA).
+            $out = [];
+            foreach (DB::table('stock')->join('productos', 'productos.id', '=', 'stock.producto_id')
+                ->where('productos.empresa_id', $empresaId)->where('productos.activo', true)
+                ->groupBy('productos.id', 'productos.nombre')
+                ->selectRaw('productos.id, productos.nombre, SUM(stock.cantidad) as cantidad,
+                             SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)) as valor')
+                ->orderBy('productos.nombre')->get() as $f) {
+                if (abs((float) $f->cantidad) < 0.00005 && abs((float) $f->valor) < 0.005) continue;
+                $cant = (float) $f->cantidad;
+                $out['p' . $f->id] = [
+                    'descripcion' => $f->nombre,
+                    'monto'       => round((float) $f->valor, 2),
+                    'detalle'     => $this->cant($cant) . ' und × S/ ' . number_format(abs($cant) > 0.00005 ? (float) $f->valor / $cant : 0, 2),
+                ];
+            }
+
+            return $out;
+        }
+
         if (!$this->tieneKardex($empresaId, $fechaCorte)) {
             // Sin kardex no hay historia por producto: una sola partida con el total.
             return ['inventario' => [
@@ -399,7 +427,9 @@ class BalanceDiarioService
             FROM saldos s
             LEFT JOIN compra_dia cd ON cd.producto_id = s.producto_id
             LEFT JOIN cpp cp ON cp.producto_id = s.producto_id
-            JOIN productos p ON p.id = s.producto_id AND p.activo = true
+            -- Sin filtrar p.activo: un producto desactivado HOY seguía en el
+            -- almacén en días pasados (su saldo del kardex manda; en 0 no suma).
+            JOIN productos p ON p.id = s.producto_id
             GROUP BY s.producto_id, p.nombre',
             [$empresaId, $corte, $empresaId, $corte, $empresaId, $corte],
         );
@@ -455,17 +485,21 @@ class BalanceDiarioService
         return $out;
     }
 
-    /** Por compra: saldo por pagar que tenía al corte (pagos posteriores se devuelven). */
+    /**
+     * Por compra: saldo por pagar que tenía al corte (pagos posteriores se
+     * devuelven). Incluye las compras EN TRÁNSITO (Entrada::comprometido): el
+     * proveedor ya facturó aunque la mercadería no haya llegado.
+     */
     public function desgloseCxp(int $empresaId, string $fechaCorte): array
     {
         $entradas = DB::table('entradas as e')->leftJoin('proveedores as pr', 'pr.id', '=', 'e.proveedor_id')
-            ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')->where('e.fecha', '<=', $fechaCorte)
+            ->where('e.empresa_id', $empresaId)->whereIn('e.estado', self::ESTADOS_COMPROMETIDOS)->where('e.fecha', '<=', $fechaCorte)
             ->get(['e.id', 'e.numero_documento', 'e.correlativo', 'e.fecha', 'e.proveedor', 'e.total', 'e.monto_pagado',
                    'pr.razon_social', 'pr.nombre_comercial'])
             ->keyBy('id');
 
         $pagosPost = DB::table('entrada_pagos as ep')->join('entradas as e', 'e.id', '=', 'ep.entrada_id')
-            ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')->where('e.fecha', '<=', $fechaCorte)
+            ->where('e.empresa_id', $empresaId)->whereIn('e.estado', self::ESTADOS_COMPROMETIDOS)->where('e.fecha', '<=', $fechaCorte)
             ->where('ep.fecha', '>', $fechaCorte)
             ->selectRaw('ep.entrada_id, SUM(ep.monto) as t')->groupBy('ep.entrada_id')->pluck('t', 'entrada_id');
 
@@ -484,6 +518,39 @@ class BalanceDiarioService
         return $out;
     }
 
+    /**
+     * Por compra EN TRÁNSITO al corte: su valor facturado (lo que el proveedor
+     * nos debe entregar). Una compra recibida entra al kardex con su fecha de
+     * RECEPCIÓN, así que en los días entre la compra y la recepción sigue
+     * contando aquí (si no, el activo desaparece y la CxP queda): en ningún
+     * día cuenta dos veces ni cero veces.
+     */
+    public function desgloseTransito(int $empresaId, string $fechaCorte): array
+    {
+        $out = [];
+        DB::table('entradas as e')->leftJoin('proveedores as pr', 'pr.id', '=', 'e.proveedor_id')
+            ->where('e.empresa_id', $empresaId)
+            ->where(fn ($q) => $q->where('e.estado', \App\Models\Entrada::ESTADO_EN_TRANSITO)
+                ->orWhere(fn ($r) => $r->where('e.estado', \App\Models\Entrada::ESTADO_CONFIRMADO)
+                    ->where('e.fecha_recepcion', '>', $fechaCorte)))
+            ->where('e.fecha', '<=', $fechaCorte)
+            ->orderBy('e.fecha')->orderBy('e.id')
+            ->get(['e.id', 'e.numero_documento', 'e.correlativo', 'e.fecha', 'e.fecha_estimada_llegada', 'e.proveedor', 'e.total',
+                   'pr.razon_social', 'pr.nombre_comercial'])
+            ->each(function ($e) use (&$out) {
+                if (abs((float) $e->total) < 0.005) return;
+                $prov = $e->razon_social ?: ($e->nombre_comercial ?: ($e->proveedor ?: 'Sin proveedor'));
+                $out['e' . $e->id] = [
+                    'descripcion' => 'Compra ' . ($e->numero_documento ?: ($e->correlativo ?: "#{$e->id}")) . ' · ' . $prov,
+                    'monto'       => (float) $e->total,
+                    'detalle'     => 'Del ' . substr((string) $e->fecha, 0, 10)
+                        . ($e->fecha_estimada_llegada ? ' · llega el ' . substr((string) $e->fecha_estimada_llegada, 0, 10) : ''),
+                ];
+            });
+
+        return $out;
+    }
+
     /** Por anticipo: lo que se le debía al cliente al corte. */
     public function desgloseAnticipos(int $empresaId, string $fechaCorte): array
     {
@@ -495,6 +562,13 @@ class BalanceDiarioService
             ->groupBy('ca.cliente_anticipo_id')
             ->get()->keyBy('aid');
 
+        // Cancelaciones de pendiente POSTERIORES al corte: ese día el cliente
+        // todavía esperaba esa mercadería (o su dinero). Cancelar el 12 no puede
+        // borrar el pasivo del balance del 11, igual que una entrega posterior.
+        $cancPost = $this->cancelacionesPosteriores($empresaId, $fechaCorte)
+            ->groupBy('cliente_anticipo_id')
+            ->map(fn ($g) => round((float) $g->sum('monto'), 2));
+
         // Devueltos: cuentan hasta el día de su devolución (evento real); anulados nunca.
         $devueltoAntes = $this->devueltoHasta($empresaId, 'cliente_anticipo_devolucion', 'anticipo_cliente.devuelto');
 
@@ -504,12 +578,13 @@ class BalanceDiarioService
             ->whereDate('fecha', '<=', $fechaCorte)
             ->with(['producto', 'items', 'cliente', 'venta:id,numero'])->get()
             ->reject(fn (ClienteAnticipo $a) => $a->estado === 'devuelto' && $devueltoAntes($a, $fechaCorte))
-            ->each(function (ClienteAnticipo $a) use ($aplPost, &$out) {
+            ->each(function (ClienteAnticipo $a) use ($aplPost, $cancPost, &$out) {
                 $post = $aplPost->get($a->id);
 
                 if ($a->items->isNotEmpty()) {
-                    // Pendiente del POS (multi-producto): saldo pagado al corte.
-                    $monto   = round((float) $a->saldo + (float) ($post->monto ?? 0), 2);
+                    // Pendiente del POS (multi-producto): saldo pagado al corte
+                    // (entregas y cancelaciones posteriores se devuelven).
+                    $monto   = round((float) $a->saldo + (float) ($post->monto ?? 0) + (float) ($cancPost[$a->id] ?? 0), 2);
                     $detalle = 'Pedido por entregar' . ($a->venta?->numero ? " (venta {$a->venta->numero})" : '');
                 } elseif ($a->tipo_valorizacion === 'material' && $a->producto
                     && $a->cantidad_pendiente !== null && (float) $a->cantidad > 0) {
@@ -532,6 +607,18 @@ class BalanceDiarioService
             });
 
         return $out;
+    }
+
+    /**
+     * Cancelaciones de pendiente (cliente_anticipo_cancelaciones) con fecha
+     * posterior al corte: por anticipo y por ítem, monto y cantidad. Las usan la
+     * línea de anticipos y su modal (para listar lo pendiente al corte).
+     */
+    public function cancelacionesPosteriores(int $empresaId, string $fechaCorte): \Illuminate\Support\Collection
+    {
+        return DB::table('cliente_anticipo_cancelaciones')
+            ->where('empresa_id', $empresaId)->where('fecha', '>', $fechaCorte)
+            ->get(['cliente_anticipo_id', 'cliente_anticipo_item_id', 'monto', 'cantidad']);
     }
 
     /** Por descuento de planilla pendiente al corte. */
@@ -558,7 +645,7 @@ class BalanceDiarioService
     public function desgloseCuentas(int $empresaId, string $fechaCorte, bool $efectivo): array
     {
         $out = [];
-        Cuenta::deEmpresa($empresaId)->activo()->where('es_efectivo', $efectivo)->orderBy('nombre')->get()
+        $this->cuentasDelBalance($empresaId, $fechaCorte)->where('es_efectivo', $efectivo)->sortBy('nombre')
             ->each(function (Cuenta $c) use ($fechaCorte, &$out) {
                 $saldo = $this->tesoreria->saldo($c->id, $fechaCorte);
                 $out['c' . $c->id] = [
@@ -569,6 +656,25 @@ class BalanceDiarioService
             });
 
         return $out;
+    }
+
+    /**
+     * Cuentas que cuentan en el balance a una fecha: las activas y también las
+     * DESACTIVADAS que a esa fecha tenían saldo. Desactivar una cuenta es un
+     * hecho de hoy: no puede borrar el dinero que tuvo en días pasados (antes
+     * desaparecía de TODOS los balances y el patrimonio bajaba sin explicación).
+     */
+    public function cuentasDelBalance(int $empresaId, string $fechaCorte): \Illuminate\Support\Collection
+    {
+        $conSaldo = DB::table('cuenta_movimientos')
+            ->where('empresa_id', $empresaId)->where('fecha', '<=', $fechaCorte)
+            ->groupBy('cuenta_id')
+            ->havingRaw("ABS(SUM(CASE WHEN tipo = 'ingreso' THEN monto ELSE -monto END)) >= 0.005")
+            ->pluck('cuenta_id');
+
+        return Cuenta::deEmpresa($empresaId)
+            ->where(fn ($q) => $q->where('activo', true)->orWhereIn('id', $conSaldo))
+            ->orderByDesc('es_efectivo')->orderBy('nombre')->get();
     }
 
     private function nombreTercero($t): string
@@ -692,7 +798,7 @@ class BalanceDiarioService
                 FROM saldos s
                 LEFT JOIN compra_dia cd ON cd.producto_id = s.producto_id
                 LEFT JOIN cpp cp ON cp.producto_id = s.producto_id
-                JOIN productos p ON p.id = s.producto_id AND p.activo = true',
+                JOIN productos p ON p.id = s.producto_id',
                 [$empresaId, $corte, $empresaId, $corte, $empresaId, $corte],
             );
 
@@ -733,13 +839,15 @@ class BalanceDiarioService
             ->whereDate('s.fecha', '>', $fechaCorte)
             ->selectRaw("COALESCE(SUM(sd.cantidad_base * {$costo}), 0) as t")->value('t');
 
-        // Entradas (compras) posteriores (entraron DESPUÉS → se restan).
+        // Entradas (compras) posteriores (entraron DESPUÉS → se restan). Entran
+        // al almacén el día de su RECEPCIÓN (como en el kardex); antes cuentan
+        // como mercadería en tránsito.
         $entradasPost = (float) DB::table('entradas_detalle as ed')
             ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
             ->join('productos as p', 'p.id', '=', 'ed.producto_id')
             ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')
             ->where('p.activo', true)
-            ->whereDate('e.fecha', '>', $fechaCorte)
+            ->whereRaw('COALESCE(e.fecha_recepcion, e.fecha)::date > ?', [$fechaCorte])
             ->selectRaw("COALESCE(SUM(ed.cantidad_base * {$costo}), 0) as t")->value('t');
 
         // Devoluciones con reingreso posteriores (entraron DESPUÉS → se restan).

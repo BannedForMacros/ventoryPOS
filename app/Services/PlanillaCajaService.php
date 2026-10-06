@@ -255,9 +255,10 @@ class PlanillaCajaService
             ->where(fn ($q) => $q
                 ->where(fn ($s) => $s->where('ref_tipo', 'cliente_anticipo_devolucion')
                     ->whereIn('ref_id', ClienteAnticipo::where('turno_devolucion_id', $t->id)->select('id')))
-                ->orWhere(fn ($s) => $s->where('ref_tipo', 'anticipo_cancelacion')->where('user_id', $t->user_id)
-                    ->where('created_at', '>=', $t->fecha_apertura)
-                    ->when($t->fecha_cierre, fn ($w) => $w->where('created_at', '<=', $t->fecha_cierre))))
+                // Cancelaciones: el turno guardado en la cancelación ("Afecta caja"),
+                // igual que el esperado del turno.
+                ->orWhere(fn ($s) => $s->where('ref_tipo', 'anticipo_cancelacion')
+                    ->whereIn('ref_id', $t->cancelacionesAnticipo()->select('id'))))
             ->orderBy('id')->get();
         foreach ($otros as $m) {
             $filas[] = $this->fila('salida', "mov{$m->id}", 'Devolución de anticipo', $m->descripcion, [$ef => -(float) $m->monto]);

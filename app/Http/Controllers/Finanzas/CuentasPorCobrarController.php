@@ -208,7 +208,7 @@ class CuentasPorCobrarController extends Controller
 
         $data = $request->validate([
             'monto'          => ['required', 'numeric', 'min:0.01', 'max:' . (float) $venta->saldo_pendiente],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             // Sin método cuando se cobra consumiendo el anticipo del cliente.
             'metodo_pago_id' => ['required_without:cliente_anticipo_id', 'nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
@@ -251,6 +251,10 @@ class CuentasPorCobrarController extends Controller
                 : null;
 
             DB::transaction(function () use ($venta, $user, $data, $montoAnticipo, $montoAdicional, $turnoIdAdicional) {
+                // Saldo releído con la venta bloqueada: dos cobros a la vez no
+                // pueden pasar ambos el tope.
+                $venta = $this->bloquearVentaParaCobro($venta, $montoAnticipo + $montoAdicional);
+
                 $anticipo = \App\Models\ClienteAnticipo::where('id', $data['cliente_anticipo_id'])
                     ->where('empresa_id', $user->empresa_id)
                     ->where('cliente_id', $venta->cliente_id)
@@ -356,6 +360,8 @@ class CuentasPorCobrarController extends Controller
             : $this->turnoSugerido($user);
 
         DB::transaction(function () use ($venta, $user, $data, $turnoId) {
+            $venta = $this->bloquearVentaParaCobro($venta, (float) $data['monto']);
+
             $abono = VentaAbono::create($data + [
                 'venta_id' => $venta->id,
                 'user_id'  => $user->id,
@@ -394,6 +400,24 @@ class CuentasPorCobrarController extends Controller
     }
 
     /**
+     * Relee la venta con bloqueo (dentro de la transacción) y revalida que siga
+     * activa y que el cobro no supere su saldo de ESE momento.
+     */
+    private function bloquearVentaParaCobro(Venta $venta, float $monto): Venta
+    {
+        $venta = Venta::whereKey($venta->id)->lockForUpdate()->firstOrFail();
+        abort_unless($venta->es_credito && $venta->estado === 'completada', 422, 'La venta no es una venta a crédito activa.');
+        if ($monto > (float) $venta->saldo_pendiente + 0.009) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'monto' => 'El cobro (S/ ' . number_format($monto, 2) . ') supera el saldo pendiente actual de la venta (S/ '
+                    . number_format((float) $venta->saldo_pendiente, 2) . '). Puede que otro usuario acabe de registrar un abono.',
+            ]);
+        }
+
+        return $venta;
+    }
+
+    /**
      * Compensa una venta al crédito (CxC) contra una compra con saldo (CxP):
      * lo que el tercero nos debe se cancela contra lo que le debemos, SIN
      * mover dinero de caja. Sirve en ambas direcciones (se llama igual desde
@@ -411,7 +435,7 @@ class CuentasPorCobrarController extends Controller
             'venta_id'    => ['required', 'integer', Rule::exists('ventas', 'id')->where('empresa_id', $user->empresa_id)],
             'entrada_id'  => ['required', 'integer', Rule::exists('entradas', 'id')->where('empresa_id', $user->empresa_id)],
             'monto'       => ['required', 'numeric', 'min:0.01'],
-            'fecha'       => ['required', 'date'],
+            'fecha'       => ['required', 'date', new \App\Rules\NoFutura],
             'observacion' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -432,6 +456,17 @@ class CuentasPorCobrarController extends Controller
         }
 
         DB::transaction(function () use ($venta, $entrada, $data, $user) {
+            // Releer ambos saldos con bloqueo y revalidar el máximo aquí.
+            $venta   = Venta::whereKey($venta->id)->lockForUpdate()->firstOrFail();
+            $entrada = \App\Models\Entrada::whereKey($entrada->id)->lockForUpdate()->firstOrFail();
+            abort_unless($venta->es_credito && $venta->estado === 'completada', 422, 'La venta no es una venta a crédito activa.');
+            $maximo = round(min((float) $venta->saldo_pendiente, $entrada->saldoPendiente()), 2);
+            if ((float) $data['monto'] > $maximo + 0.009) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'monto' => 'El monto a compensar no puede superar S/ ' . number_format($maximo, 2) . ' (el menor de los dos saldos, recién actualizado).',
+                ]);
+            }
+
             app(\App\Services\CompensacionCxcCxpService::class)->crear(
                 $venta,
                 $entrada,
@@ -456,6 +491,7 @@ class CuentasPorCobrarController extends Controller
         $user  = $request->user();
         $venta = $abono->venta;
         abort_if(!$venta || $venta->empresa_id !== $user->empresa_id, 403);
+        abort_unless($venta->estado === 'completada', 422, 'La venta de este abono está anulada: sus abonos ya no se editan.');
         // Un abono por compensación no se edita (desalinearía el pago hermano
         // de la compra): se anula — eso revierte ambos lados — y se recompensa.
         abort_if($abono->esCompensacion(), 422,
@@ -470,7 +506,7 @@ class CuentasPorCobrarController extends Controller
 
         $data = $request->validate([
             'monto'          => ['required', 'numeric', 'min:0.01', "max:{$maxMonto}"],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
@@ -526,6 +562,7 @@ class CuentasPorCobrarController extends Controller
         $user  = $request->user();
         $venta = $abono->venta;
         abort_if(!$venta || $venta->empresa_id !== $user->empresa_id, 403);
+        abort_unless($venta->estado === 'completada', 422, 'La venta de este abono está anulada: sus abonos ya no se anulan por separado.');
 
         $data = $request->validate([
             'motivo' => ['required', 'string', 'min:5', 'max:500'],
@@ -543,6 +580,10 @@ class CuentasPorCobrarController extends Controller
                 // recupera su saldo y se borra la aplicación enlazada.
                 $anticipo = \App\Models\ClienteAnticipo::whereKey($abono->cliente_anticipo_id)
                     ->lockForUpdate()->first();
+                // Un anticipo ya devuelto (o anulado) no puede recuperar saldo:
+                // ese dinero ya salió de la empresa y el saldo resucitaría.
+                abort_if($anticipo && in_array($anticipo->estado, ['devuelto', 'anulado'], true), 422,
+                    "El anticipo #{$anticipo?->id} con que se cobró este abono ya está {$anticipo?->estado}: su saldo no puede volver. Reactiva primero el anticipo en Finanzas → Anticipos.");
                 if ($anticipo) {
                     $anticipo->aplicaciones()->where('venta_abono_id', $abono->id)->delete();
                     $anticipo->update([

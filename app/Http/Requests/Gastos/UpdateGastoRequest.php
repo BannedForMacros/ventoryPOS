@@ -30,7 +30,7 @@ class UpdateGastoRequest extends FormRequest
                 Rule::exists('gasto_conceptos', 'id')->where('empresa_id', $empresaId),
             ],
             'monto'      => ['required', 'numeric', 'min:0.01'],
-            'fecha'      => ['required', 'date'],
+            'fecha'      => ['required', 'date', new \App\Rules\NoFutura],
             'comentario' => ['nullable', 'string', 'max:500'],
             // Cambiar de cuenta es OPCIONAL: si no llega método, se mantiene la
             // cuenta con la que se registró el gasto.

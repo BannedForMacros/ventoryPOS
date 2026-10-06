@@ -11,10 +11,14 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import Checkbox from '@/Components/UI/Checkbox';
 import TableActions from '@/Components/UI/TableActions';
+import { Power } from 'lucide-react';
 import type { Empresa, Local, ModoCierreCaja, ModoCierreInventario, PageProps } from '@/types';
 
+/** El backend marca si el local tiene historia: esos se desactivan, no se borran. */
+type LocalFila = Local & { tiene_historia?: boolean };
+
 interface Props extends PageProps {
-    locales: Local[];
+    locales: LocalFila[];
     empresas: Empresa[];
 }
 
@@ -78,7 +82,7 @@ function triToPayload(v: TriBool): boolean | null {
 export default function Locales({ locales, empresas }: Props) {
     const { flash } = usePage<Props>().props;
     const [modalOpen, setModalOpen] = useState(false);
-    const [confirmId, setConfirmId] = useState<number | null>(null);
+    const [confirmar, setConfirmar] = useState<LocalFila | null>(null);
     const [editing, setEditing] = useState<Local | null>(null);
 
     const { data, setData, transform, post, put, processing, errors, reset } = useForm<FormData>(emptyForm);
@@ -134,9 +138,9 @@ export default function Locales({ locales, empresas }: Props) {
         }
     }
 
-    function destroy(id: number) {
-        setConfirmId(null);
-        router.delete(route('configuracion.locales.destroy', id));
+    function destroy(local: LocalFila) {
+        setConfirmar(null);
+        router.delete(route('configuracion.locales.destroy', local.id));
     }
 
     const empresaOptions = empresas.map(e => ({
@@ -161,7 +165,7 @@ export default function Locales({ locales, empresas }: Props) {
         ? `Hoy la empresa: ${empresaSeleccionada.fondos_iniciales_en_declaracion ? 'sí incluye' : 'no incluye'}`
         : 'La empresa decide';
 
-    const columns: Column<Local>[] = [
+    const columns: Column<LocalFila>[] = [
         {
             key: 'nombre',
             label: 'Nombre',
@@ -211,10 +215,23 @@ export default function Locales({ locales, empresas }: Props) {
             label: 'Acciones',
             sortable: false,
             render: (local) => (
-                <TableActions
-                    onEdit={() => openEdit(local)}
-                    onDelete={() => setConfirmId(local.id)}
-                />
+                local.tiene_historia ? (
+                    <TableActions
+                        onEdit={() => openEdit(local)}
+                        extra={[{
+                            variant: 'custom',
+                            icon: Power,
+                            label: local.activo ? 'Desactivar' : 'Ya está inactivo',
+                            disabled: !local.activo,
+                            onClick: () => setConfirmar(local),
+                        }]}
+                    />
+                ) : (
+                    <TableActions
+                        onEdit={() => openEdit(local)}
+                        onDelete={() => setConfirmar(local)}
+                    />
+                )
             ),
         },
     ];
@@ -383,21 +400,25 @@ export default function Locales({ locales, empresas }: Props) {
                 </form>
             </Modal>
 
-            {/* Confirm Delete */}
+            {/* Confirmar eliminar / desactivar */}
             <Modal
-                isOpen={confirmId !== null}
-                onClose={() => setConfirmId(null)}
-                title="Confirmar eliminación"
+                isOpen={confirmar !== null}
+                onClose={() => setConfirmar(null)}
+                title={confirmar?.tiene_historia ? 'Desactivar local' : 'Confirmar eliminación'}
                 size="sm"
                 footer={
                     <>
-                        <Button variant="ghost" onClick={() => setConfirmId(null)}>Cancelar</Button>
-                        <Button variant="danger" onClick={() => confirmId && destroy(confirmId)}>Eliminar</Button>
+                        <Button variant="ghost" onClick={() => setConfirmar(null)}>Cancelar</Button>
+                        <Button variant="danger" onClick={() => confirmar && destroy(confirmar)}>
+                            {confirmar?.tiene_historia ? 'Desactivar' : 'Eliminar'}
+                        </Button>
                     </>
                 }
             >
                 <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-                    ¿Estás seguro de que deseas eliminar este local? Esta acción no se puede deshacer.
+                    {confirmar?.tiene_historia
+                        ? 'Este local tiene ventas, turnos, gastos o movimientos de inventario, así que no se puede eliminar sin perder esa historia. Se desactivará: deja de aparecer para operar, pero sus registros se conservan. Puedes reactivarlo desde Editar.'
+                        : '¿Estás seguro de que deseas eliminar este local? No tiene movimientos; se eliminarán también su caja y su almacén vacíos. Esta acción no se puede deshacer.'}
                 </p>
             </Modal>
         </AppLayout>

@@ -28,6 +28,20 @@ interface Cobro {
     total:          number;
 }
 
+/** Una línea del efectivo esperado, calculada en el servidor. */
+interface LineaEsperado {
+    concepto: string;
+    monto:    number;
+}
+
+/** Cómo se llega al efectivo esperado: apertura + entradas − salidas. */
+interface DesgloseEsperado {
+    apertura: number;
+    entradas: LineaEsperado[];
+    salidas:  LineaEsperado[];
+    esperado: number;
+}
+
 type DestinoEfectivo = 'caja' | 'administracion' | 'parcial';
 
 interface Props {
@@ -37,6 +51,7 @@ interface Props {
     totalVentas:            number;
     totalGastos:            number;
     montoEsperado:          number;
+    desgloseEsperado:       DesgloseEsperado;
     metodosPago:            MetodoPago[];
     preguntaDestino:        boolean;
     totalRetiros:           number;
@@ -46,7 +61,7 @@ const num = (v: string | number | null | undefined) => parseFloat(String(v ?? 0)
 const fechaHora = (iso: string) =>
     new Date(iso).toLocaleString('es-PE', { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-export default function CerrarRapido({ turno, cobrosPorMetodo, productosStockNegativo, totalVentas, totalGastos, montoEsperado, metodosPago, preguntaDestino, totalRetiros }: Props) {
+export default function CerrarRapido({ turno, cobrosPorMetodo, productosStockNegativo, totalVentas, totalGastos, montoEsperado, desgloseEsperado, metodosPago, preguntaDestino }: Props) {
     const caja = turno.caja!;
     const negativos = productosStockNegativo ?? [];
     const cantidadVentas = (turno.ventas ?? []).length;
@@ -60,11 +75,11 @@ export default function CerrarRapido({ turno, cobrosPorMetodo, productosStockNeg
     const [confirmar, setConfirmar]     = useState(false);
     const impreso = useRef(false);
 
-    // Efectivo: lo que debe haber en el cajón. Las salidas se deducen del
-    // esperado para que la cuenta mostrada sume exacto.
-    const apertura      = num(turno.monto_apertura);
-    const cobroEfectivo = cobrosPorMetodo.find(c => c.es_efectivo)?.total ?? 0;
-    const salidas       = Math.max(0, Math.round((apertura + cobroEfectivo - montoEsperado) * 100) / 100);
+    // Efectivo: lo que debe haber en el cajón. El desglose viene del servidor
+    // (mismo cálculo que el esperado), así el texto siempre suma exacto.
+    const apertura      = num(desgloseEsperado?.apertura ?? turno.monto_apertura);
+    const entradasEf    = desgloseEsperado?.entradas ?? [];
+    const salidasEf     = desgloseEsperado?.salidas ?? [];
     const otrosMedios   = cobrosPorMetodo.filter(c => !c.es_efectivo && Math.abs(c.total) > 0.009);
 
     const quedaParcial = Math.min(parseFloat(queda) || 0, Math.max(0, montoEsperado));
@@ -102,10 +117,14 @@ export default function CerrarRapido({ turno, cobrosPorMetodo, productosStockNeg
         });
     }
 
+    const detalleLineas = (lineas: LineaEsperado[]) => lineas.length === 1
+        ? lineas[0].concepto.toLowerCase()
+        : lineas.map(l => `${l.concepto.toLowerCase()} ${fmtS(l.monto)}`).join(', ');
+    const suma = (lineas: LineaEsperado[]) => lineas.reduce((s, l) => s + num(l.monto), 0);
     const partesEfectivo = [
         apertura > 0.009 ? `abriste con ${fmtS(apertura)}` : null,
-        `cobraste ${fmtS(cobroEfectivo)}`,
-        salidas > 0.009 ? `salieron ${fmtS(salidas)} en gastos${totalRetiros > 0 ? ' y retiros' : ''}` : null,
+        entradasEf.length > 0 ? `entraron ${fmtS(suma(entradasEf))} (${detalleLineas(entradasEf)})` : 'no entró efectivo',
+        salidasEf.length > 0 ? `salieron ${fmtS(suma(salidasEf))} (${detalleLineas(salidasEf)})` : null,
     ].filter(Boolean).join(', ');
 
     return (

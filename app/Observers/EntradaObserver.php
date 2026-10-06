@@ -20,7 +20,9 @@ class EntradaObserver
             // Entrada en o antes de la fecha del inventario inicial: su mercadería
             // ya quedó DENTRO del conteo físico (apertura). Aplicarle stock la
             // duplicaría; solo es registro documental de la compra.
-            if (Stock::absorbidoPorApertura($entrada->almacen_id, $detalle->producto_id, $entrada->fecha)) {
+            // Cuenta la fecha en que LLEGÓ (fechaStock): una compra en tránsito
+            // recibida después del inicial sí entra al stock.
+            if (Stock::absorbidoPorApertura($entrada->almacen_id, $detalle->producto_id, $entrada->fechaStock())) {
                 continue;
             }
 
@@ -28,13 +30,14 @@ class EntradaObserver
                 almacenId:    $entrada->almacen_id,
                 productoId:   $detalle->producto_id,
                 cantidadBase: (float) $detalle->cantidad_base,
-                costoNuevo:   (float) $detalle->precio_costo,
+                // Costo por UNIDAD BASE: precio_costo es por presentación.
+                costoNuevo:   $detalle->costoBase(),
                 contexto: [
                     'tipo'            => 'entrada',
                     'referencia_tipo' => 'entrada',
                     'referencia_id'   => $entrada->id,
                     'documento'       => $entrada->numero_documento,
-                    'fecha'           => $entrada->fecha,
+                    'fecha'           => $entrada->fechaStock(),
                     'user_id'         => $entrada->user_id,
                     'empresa_id'      => $entrada->empresa_id,
                 ],

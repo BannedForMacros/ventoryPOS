@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\ReconstruirParKardex;
+use App\Models\EntradaDetalle;
 use App\Models\Local;
 use App\Models\Producto;
 use App\Models\Stock;
@@ -148,6 +149,47 @@ class KardexService
     }
 
     /**
+     * Un documento que mueve stock (ajuste, salida, cierre) fechado EN o ANTES del
+     * corte del inventario inicial no tiene efecto: la apertura ya es el conteo
+     * físico de ese día y el kardex solo cuenta lo posterior. Antes se aceptaba,
+     * movía el stock en vivo y el siguiente "Recalcular" lo borraba sin aviso.
+     *
+     * Lanza un error de validación con los productos afectados y su fecha de corte.
+     *
+     * @param iterable<int> $productoIds
+     */
+    public function exigirPosteriorAApertura(int $almacenId, iterable $productoIds, $fecha, string $campo = 'fecha', string $documento = 'Este movimiento'): void
+    {
+        $f   = substr((string) ($fecha instanceof \DateTimeInterface ? $fecha->format('Y-m-d') : $fecha), 0, 10);
+        $ids = collect($productoIds)->map(fn ($id) => (int) $id)->unique()->values();
+        if ($f === '' || $ids->isEmpty()) {
+            return;
+        }
+
+        $absorbidos = DB::table('stock_iniciales as si')
+            ->join('productos as p', 'p.id', '=', 'si.producto_id')
+            ->where('si.almacen_id', $almacenId)
+            ->whereIn('si.producto_id', $ids)
+            ->whereDate('si.fecha', '>=', $f)
+            ->orderBy('p.nombre')
+            ->get(['p.nombre', 'si.fecha']);
+
+        if ($absorbidos->isEmpty()) {
+            return;
+        }
+
+        $corte   = \Illuminate\Support\Carbon::parse($absorbidos->max('fecha'))->format('d/m/Y');
+        $nombres = $absorbidos->pluck('nombre')->take(5)->implode('", "');
+        $mas     = $absorbidos->count() > 5 ? ' y ' . ($absorbidos->count() - 5) . ' más' : '';
+
+        throw \Illuminate\Validation\ValidationException::withMessages([
+            $campo => "{$documento} tiene fecha en o antes del inventario inicial ({$corte}) de \"{$nombres}\"{$mas}. "
+                . 'Ese día ya está cubierto por el conteo de apertura y no tendría efecto: usa una fecha posterior al '
+                . $corte . ' o corrige el inventario inicial.',
+        ]);
+    }
+
+    /**
      * Rearma todos los productos de los almacenes indicados. Cada producto va en
      * su propia transacción: no bloquea el inventario completo mientras corre.
      */
@@ -279,14 +321,22 @@ class KardexService
         }
 
         // (+) Entradas confirmadas: recalculan el costo promedio con su precio.
+        // Fecha de stock = la de RECEPCIÓN si vino en tránsito (llegó después de
+        // comprarse), si no la de la compra: lo comprado antes del inventario
+        // inicial pero recibido después SÍ entra. precio_costo es por
+        // presentación; al kardex entra por unidad base (÷ factor).
+        $fechaEntrada = DB::raw('COALESCE(e.fecha_recepcion, e.fecha)');
         foreach ($post(DB::table('entradas_detalle as ed')
             ->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
             ->where('e.almacen_id', $almacenId)
             ->where('e.estado', 'confirmado')
-            ->where('ed.producto_id', $productoId), 'e.fecha')
-            ->get(['ed.cantidad_base', 'ed.precio_costo', 'e.id', 'e.fecha', 'e.numero_documento', 'e.user_id']) as $r) {
+            ->where('ed.producto_id', $productoId), $fechaEntrada)
+            ->selectRaw('ed.cantidad_base, ed.precio_costo, ed.factor_conversion, e.id, COALESCE(e.fecha_recepcion, e.fecha) as fecha, e.numero_documento, e.user_id')
+            ->get() as $r) {
             $movs[] = $this->mov($r->fecha, (int) $r->id, 'entrada', 'entrada', (int) $r->id,
-                (float) $r->cantidad_base, (float) $r->precio_costo, true, $r->numero_documento, $r->user_id);
+                (float) $r->cantidad_base,
+                EntradaDetalle::costoPorUnidadBase((float) $r->precio_costo, (float) $r->factor_conversion),
+                true, $r->numero_documento, $r->user_id);
         }
 
         // (-) Salidas confirmadas.

@@ -80,7 +80,11 @@ class UsuarioAdminController extends Controller
         abort_if(!$usuario->empresa_id, 404);
 
         $snapshot = ['empresa_id' => $usuario->empresa_id, 'name' => $usuario->name, 'email' => $usuario->email, 'rol_id' => $usuario->rol_id];
-        $usuario->delete();
+        if (! \App\Support\EliminarUsuario::eliminarODesactivar($usuario)) {
+            AuditoriaService::log('admin.usuario.desactivado', $usuario, $snapshot + ['motivo' => 'tiene historial']);
+            return redirect()->back()->with('success',
+                "«{$usuario->name}» tiene operaciones registradas, así que no se eliminó: se desactivó y ya no podrá iniciar sesión.");
+        }
         AuditoriaService::log('admin.usuario.eliminado', $usuario, $snapshot);
         return redirect()->back()->with('success', 'Usuario eliminado correctamente.');
     }

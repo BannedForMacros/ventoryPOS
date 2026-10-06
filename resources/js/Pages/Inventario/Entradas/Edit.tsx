@@ -15,8 +15,9 @@ import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveed
 import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
-import { hoyLocal } from '@/lib/fechas';
+import { hoyLocal, esFutura } from '@/lib/fechas';
 import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
+import { soles } from '@/lib/dinero';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -107,8 +108,7 @@ interface Props extends PageProps {
     permiteStockNegativo: boolean;
 }
 
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
-
+const money = (v: unknown) => soles(v);
 interface DetalleRow {
     producto_id: number | '';
     unidad_medida_id: number | '';
@@ -403,6 +403,7 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
         if (!almacenId) return { texto: 'Elige el almacén destino', campo: 'almacen_id' };
         if (!tipo)      return { texto: 'Elige el tipo de entrada', campo: 'tipo' };
         if (!fecha)     return { texto: 'Elige la fecha de la entrada', campo: 'fecha' };
+        if (esFutura(fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
         if (facturadaACliente && !clienteId) return { texto: 'Elige el cliente al que se facturó la compra', campo: 'cliente_id' };
 
         if (detalles.filter(d => d.producto_id !== '').length === 0) return { texto: 'Agrega al menos un producto', campo: 'detalles' };

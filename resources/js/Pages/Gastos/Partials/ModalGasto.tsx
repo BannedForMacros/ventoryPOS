@@ -7,7 +7,7 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
 import type { Gasto, GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
-import { hoyLocal } from '@/lib/fechas';
+import { hoyLocal, esFutura } from '@/lib/fechas';
 
 export interface GastoForm {
     gasto_tipo_id:         number | '';
@@ -161,6 +161,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
         const monto = Number(form.monto);
         if (!Number.isFinite(monto) || monto < 0.01) return { texto: 'El monto debe ser mayor a S/ 0.00', campo: 'monto' };
         if (!form.fecha) return { texto: 'Elige la fecha del gasto', campo: 'fecha' };
+        if (esFutura(form.fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
         if (!editando && metodosPago.length > 0 && !form.metodo_pago_id) return { texto: 'Elige con qué se paga', campo: 'metodo_pago_id' };
         if (faltaCuenta) return { texto: `Elige la cuenta de ${metodoSel?.nombre ?? 'este método'}`, campo: 'cuenta_metodo_pago_id' };
         return null;

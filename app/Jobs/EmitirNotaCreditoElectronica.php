@@ -103,6 +103,18 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             return;
         }
 
+        // Solo se acredita lo que de verdad se devolvió: una devolución que aún
+        // espera aprobación puede rechazarse, y la NC ya no se podría deshacer.
+        // No se anota nada: al aprobarla se vuelve a encolar.
+        if (!$devolucion->esCompletada()) {
+            Log::info('Nota de crédito aplazada: la devolución aún no está completada', [
+                'devolucion_id' => $devolucion->id,
+                'estado'        => $devolucion->estado,
+            ]);
+
+            return;
+        }
+
         $venta = $devolucion->venta;
 
         // La empresa del job tiene que ser la de la venta que se acredita. Si no
@@ -511,7 +523,9 @@ class EmitirNotaCreditoElectronica implements ShouldQueue
             );
         }
 
-        return max(0.0, 1 - ($descuento / $bruto));
+        // El cálculo es el de la devolución: el reembolso y la NC tienen que
+        // descontar exactamente lo mismo.
+        return Devolucion::factorDescuentoGlobal($venta);
     }
 
     private function usuario(): ?User

@@ -30,6 +30,13 @@ use Inertia\Inertia;
  */
 class BalanceDiarioController extends Controller
 {
+    /** Movimientos de una deuda: la compensación baja el saldo como una amortización. */
+    private const ETIQUETA_MOV_DEUDA = [
+        'amortizacion' => 'Amortización',
+        'compensacion' => 'Compensación',
+        'incremento'   => 'Incremento',
+    ];
+
     public function __construct(private BalanceDiarioService $service) {}
 
     /**
@@ -153,8 +160,8 @@ class BalanceDiarioController extends Controller
         // "¿cuánto tengo en efectivo / en mis tarjetas / en cada banco?" sin
         // tener que restar mentalmente el bruto A FAVOR y los gastos emitidos.
         $tesoreria = app(TesoreriaService::class);
-        $saldosCuentas = Cuenta::deEmpresa($user->empresa_id)->activo()
-            ->orderByDesc('es_efectivo')->orderBy('nombre')->get()
+        // Mismas cuentas que la línea del balance (incluye desactivadas con saldo a la fecha).
+        $saldosCuentas = $this->service->cuentasDelBalance($user->empresa_id, $fecha)
             ->map(fn ($c) => [
                 'id'          => $c->id, // para abrir el detalle/auditoría al hacer clic
                 'nombre'      => $c->nombre,
@@ -190,7 +197,7 @@ class BalanceDiarioController extends Controller
 
         $labelCat = [
             'efectivo' => 'Efectivo', 'cuenta_bancaria' => 'Cuentas bancarias',
-            'stock' => 'Stock (inventario)', 'cxc' => 'Deudas por cobrar',
+            'stock' => 'Stock (inventario)', 'mercaderia_transito' => 'Mercadería en tránsito', 'cxc' => 'Deudas por cobrar',
             'cxp' => 'Deudas por pagar', 'prestamo_otorgado' => 'Préstamos otorgados',
             'adelanto_proveedor' => 'Adelantos a proveedores', 'anticipo_cliente' => 'Anticipos de clientes',
             'planilla_descuento' => 'Descuentos de planilla', 'gastos_emitidos' => 'Gastos emitidos',
@@ -883,166 +890,44 @@ class BalanceDiarioController extends Controller
             }
 
             // ── Stock A LA FECHA del balance: producto por producto ─────
-            // Para fechas pasadas se reconstruye revirtiendo los movimientos
-            // posteriores al corte (mismo criterio que la línea del balance).
+            // Sale del MISMO desglose que la línea (BalanceDiarioService::
+            // desgloseStock): saldo del kardex por almacén sin negativos × costo
+            // conocido a la fecha. Así el modal suma exactamente la línea.
             case 'stock': {
-                // ── Fuente preferida: KARDEX — misma base que la línea del
-                // balance (BalanceDiarioService::stockValorizadoA): última fila
-                // de cada producto hasta el fin del día = saldo y costo promedio
-                // HISTÓRICOS (estables; no se re-valorizan al costo de hoy).
-                // Mismo criterio de cobertura que stockValorizadoA: kardex solo
-                // desde la apertura (antes solo hay fragmentos migrados).
-                $primeraApertura = DB::table('stock_iniciales')
-                    ->where('empresa_id', $empresaId)->min('fecha');
-                $tieneKardex = ($primeraApertura === null || $fecha >= substr((string) $primeraApertura, 0, 10))
-                    && DB::table('movimientos_inventario')
-                        ->where('empresa_id', $empresaId)
-                        ->where('fecha', '<=', $fecha . ' 23:59:59')
-                        ->exists();
-
-                if ($tieneKardex) {
-                    // Cantidad histórica del kardex × costo "precio del día"
-                    // conocido a la fecha (última compra ≤ fecha; sin compras,
-                    // precio_costo; último recurso CPP histórico) — idéntico a
-                    // BalanceDiarioService::stockValorizadoA para que el total
-                    // y este detalle cuadren al centavo.
-                    $corte = $fecha . ' 23:59:59';
-                    $filas = collect(DB::select(
-                        'WITH saldos AS (
-                            SELECT DISTINCT ON (mi.almacen_id, mi.producto_id) mi.producto_id, mi.saldo_cantidad
-                            FROM movimientos_inventario mi
-                            WHERE mi.empresa_id = ? AND mi.fecha <= ?
-                            ORDER BY mi.almacen_id, mi.producto_id, mi.fecha DESC, mi.id DESC
-                         ),
-                         compra_dia AS (
-                            SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_unitario
-                            FROM movimientos_inventario mi
-                            WHERE mi.empresa_id = ? AND mi.fecha <= ?
-                              AND mi.tipo IN (\'entrada\', \'transferencia_recepcion\') AND mi.costo_unitario > 0
-                            ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
-                         ),
-                         cpp AS (
-                            SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_promedio
-                            FROM movimientos_inventario mi
-                            WHERE mi.empresa_id = ? AND mi.fecha <= ?
-                            ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
-                         )
-                         SELECT p.id as producto_id, p.nombre,
-                                SUM(s.saldo_cantidad) as cantidad,
-                                COALESCE(MAX(cd.costo_unitario), NULLIF(MIN(p.precio_costo), 0), MAX(cp.costo_promedio), 0) as costo,
-                                SUM(s.saldo_cantidad) * COALESCE(MAX(cd.costo_unitario), NULLIF(MIN(p.precio_costo), 0), MAX(cp.costo_promedio), 0) as valor
-                         FROM saldos s
-                         LEFT JOIN compra_dia cd ON cd.producto_id = s.producto_id
-                         LEFT JOIN cpp cp ON cp.producto_id = s.producto_id
-                         JOIN productos p ON p.id = s.producto_id AND p.activo = true
-                         WHERE p.empresa_id = ?
-                         GROUP BY p.id, p.nombre',
-                        [$empresaId, $corte, $empresaId, $corte, $empresaId, $corte, $empresaId],
-                    ))
-                        ->map(function ($f) {
-                            $f->cantidad = round((float) $f->cantidad, 4);
-                            $f->valor    = round((float) $f->valor, 2);
-                            return $f;
-                        })
-                        ->filter(fn ($f) => abs((float) $f->cantidad) > 0.0001)
-                        ->sortByDesc('valor')
-                        ->take(1000)
-                        ->values();
-
-                    $fmtCant = fn ($n) => rtrim(rtrim(number_format((float) $n, 2), '0'), '.');
-
-                    return response()->json([
-                        'tipo'  => 'grupos',
-                        'cards' => [
-                            ['label' => 'Valor del inventario al ' . $fecha, 'valor' => round((float) $filas->sum('valor'), 2), 'color' => 'success'],
-                            ['label' => 'Productos con stock', 'valor' => $filas->count(), 'esNumero' => true],
-                        ],
-                        'grupos' => $filas->map(fn ($f, $i) => [
-                            'id'        => (string) $i,
-                            'titulo'    => $f->nombre,
-                            'subtitulo' => $fmtCant($f->cantidad) . ' und × S/ ' . number_format((float) $f->costo, 2) . ' (costo del día)',
-                            'monto'     => round((float) $f->valor, 2),
-                            'items'     => [],
-                        ])->values(),
-                    ]);
-                }
-
-                // ── Método LEGADO (sin kardex) ──────────────────────────────
-                // Costo efectivo: precio_costo del producto; si está en 0, el
-                // costo_promedio real del inventario (mismo criterio que el balance).
-                $filas = DB::table('stock')
-                    ->join('productos', 'productos.id', '=', 'stock.producto_id')
-                    ->where('productos.empresa_id', $empresaId)
-                    ->where('productos.activo', true)
-                    ->selectRaw('productos.id as producto_id, productos.nombre,
-                                 SUM(stock.cantidad) as cantidad,
-                                 COALESCE(NULLIF(MIN(productos.precio_costo), 0),
-                                          MAX(stock.costo_promedio), 0) as costo')
-                    ->groupBy('productos.id', 'productos.nombre')
-                    ->get();
-
-                // Movimientos posteriores al corte por producto (para fechas pasadas):
-                // cantidad al corte = actual + ventas_post + salidas_post
-                //                     − entradas_post − devoluciones_post − ajustes_post
-                $esPasado = $fecha < now()->toDateString();
-                if ($esPasado) {
-                    $delta = []; // producto_id => ajuste de cantidad
-                    $acum = function ($rows, int $signo) use (&$delta) {
-                        foreach ($rows as $r) {
-                            $delta[$r->pid] = ($delta[$r->pid] ?? 0) + $signo * (float) $r->c;
-                        }
-                    };
-
-                    $acum(DB::table('venta_items as vi')->join('ventas as v', 'v.id', '=', 'vi.venta_id')
-                        ->where('v.empresa_id', $empresaId)->where('v.estado', 'completada')
-                        ->whereDate('v.fecha_venta', '>', $fecha)
-                        ->selectRaw('vi.producto_id as pid, SUM(vi.cantidad_base) as c')->groupBy('vi.producto_id')->get(), +1);
-                    $acum(DB::table('salidas_detalle as sd')->join('salidas as s', 's.id', '=', 'sd.salida_id')
-                        ->where('s.empresa_id', $empresaId)->where('s.estado', 'confirmado')
-                        ->whereDate('s.fecha', '>', $fecha)
-                        ->selectRaw('sd.producto_id as pid, SUM(sd.cantidad_base) as c')->groupBy('sd.producto_id')->get(), +1);
-                    $acum(DB::table('entradas_detalle as ed')->join('entradas as e', 'e.id', '=', 'ed.entrada_id')
-                        ->where('e.empresa_id', $empresaId)->where('e.estado', 'confirmado')
-                        ->whereDate('e.fecha', '>', $fecha)
-                        ->selectRaw('ed.producto_id as pid, SUM(ed.cantidad_base) as c')->groupBy('ed.producto_id')->get(), -1);
-                    $acum(DB::table('devoluciones_detalle as dd')->join('devoluciones as d', 'd.id', '=', 'dd.devolucion_id')
-                        ->where('d.empresa_id', $empresaId)->where('d.estado', 'completada')->where('dd.restock', true)
-                        ->whereDate('d.fecha', '>', $fecha)
-                        ->selectRaw('dd.producto_id as pid, SUM(dd.cantidad_base) as c')->groupBy('dd.producto_id')->get(), -1);
-                    $acum(DB::table('cierres_inventario_items as ci')->join('cierres_inventario as c', 'c.id', '=', 'ci.cierre_id')
-                        ->where('c.empresa_id', $empresaId)->where('c.estado', 'confirmado')
-                        ->whereDate('c.fecha', '>', $fecha)
-                        ->selectRaw('ci.producto_id as pid, SUM(ci.diferencia) as c')->groupBy('ci.producto_id')->get(), -1);
-
-                    $filas = $filas->map(function ($f) use ($delta) {
-                        $f->cantidad = round((float) $f->cantidad + ($delta[$f->producto_id] ?? 0), 4);
-                        return $f;
-                    });
-                }
-
-                $filas = $filas
-                    ->map(function ($f) {
-                        $f->valor = round((float) $f->cantidad * (float) $f->costo, 2);
-                        return $f;
-                    })
-                    ->filter(fn ($f) => abs((float) $f->cantidad) > 0.0001)
-                    ->sortByDesc('valor')
-                    ->take(1000)
-                    ->values();
-
-                $fmtCant = fn ($n) => rtrim(rtrim(number_format((float) $n, 2), '0'), '.');
+                $desglose = $this->service->desgloseStock($empresaId, $fecha);
+                $filas = collect($desglose)->sortByDesc('monto');
 
                 return response()->json([
                     'tipo'  => 'grupos',
                     'cards' => [
-                        ['label' => 'Valor del inventario al ' . $fecha, 'valor' => round((float) $filas->sum('valor'), 2), 'color' => 'success'],
-                        ['label' => 'Productos con stock', 'valor' => $filas->count(), 'esNumero' => true],
+                        ['label' => 'Valor del inventario al ' . $fecha, 'valor' => round((float) $filas->sum('monto'), 2), 'color' => 'success'],
+                        ['label' => 'Productos con stock', 'valor' => $filas->filter(fn ($f) => $f['monto'] > 0.005)->count(), 'esNumero' => true],
                     ],
-                    'grupos' => $filas->map(fn ($f, $i) => [
-                        'id'        => (string) $i,
-                        'titulo'    => $f->nombre,
-                        'subtitulo' => $fmtCant($f->cantidad) . ' und × S/ ' . number_format((float) $f->costo, 2) . ' (costo)',
-                        'monto'     => round((float) $f->valor, 2),
+                    'grupos' => $filas->map(fn ($f, $clave) => [
+                        'id'        => (string) $clave,
+                        'titulo'    => $f['descripcion'],
+                        'subtitulo' => $f['detalle'] ? $f['detalle'] . ' (costo del día)' : null,
+                        'monto'     => round((float) $f['monto'], 2),
+                        'items'     => [],
+                    ])->values(),
+                ]);
+            }
+
+            // ── Mercadería en tránsito al corte: compra por compra ──────
+            case 'mercaderia_transito': {
+                $filas = collect($this->service->desgloseTransito($empresaId, $fecha));
+
+                return response()->json([
+                    'tipo'  => 'grupos',
+                    'cards' => [
+                        ['label' => "En tránsito al {$fecha}", 'valor' => round((float) $filas->sum('monto'), 2), 'color' => 'success'],
+                        ['label' => 'Compras por llegar', 'valor' => $filas->count(), 'esNumero' => true],
+                    ],
+                    'grupos' => $filas->map(fn ($f, $clave) => [
+                        'id'        => (string) $clave,
+                        'titulo'    => $f['descripcion'],
+                        'subtitulo' => $f['detalle'],
+                        'monto'     => round((float) $f['monto'], 2),
                         'items'     => [],
                     ])->values(),
                 ]);
@@ -1053,10 +938,9 @@ class BalanceDiarioController extends Controller
             // parte por movimientos (ventas/salidas/entradas) y parte por cambio
             // de costos (revaluación), que NO se ve en los movimientos.
             case 'stock_mov': {
-                $valorHoy = (float) DB::table('stock')
-                    ->join('productos', 'productos.id', '=', 'stock.producto_id')
-                    ->where('productos.empresa_id', $empresaId)->where('productos.activo', true)
-                    ->selectRaw('COALESCE(SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)), 0) as v')->value('v');
+                // Valor del inventario A LA FECHA del balance, el mismo de su
+                // línea (no el stock vivo de hoy al costo actual).
+                $valorHoy = round(array_sum(array_column($this->service->desgloseStock($empresaId, $fecha), 'monto')), 2);
 
                 // Valor de stock del último balance confirmado anterior.
                 $balAnt = DB::table('balances_diarios as b')
@@ -1099,7 +983,7 @@ class BalanceDiarioController extends Controller
                 if ($revaluado !== null && abs($revaluado) >= 0.01) {
                     $cards[] = ['label' => 'Por cambio de costos / ajustes', 'valor' => $revaluado, 'color' => $revaluado >= 0 ? 'success' : 'danger'];
                 }
-                $cards[] = ['label' => 'Valor del inventario hoy', 'valor' => round($valorHoy, 2), 'color' => 'success'];
+                $cards[] = ['label' => 'Valor del inventario al ' . $fecha, 'valor' => round($valorHoy, 2), 'color' => 'success'];
 
                 return response()->json([
                     'tipo'  => 'grupos',
@@ -1119,23 +1003,16 @@ class BalanceDiarioController extends Controller
             // ese día (abonos posteriores se devuelven; ventas posteriores no
             // aparecen). El historial solo muestra pagos hasta la fecha.
             case 'cxc': {
-                $ventas = Venta::deEmpresa($empresaId)
-                    ->where('es_credito', true)->where('estado', 'completada')
-                    ->where('fecha_venta', '<=', $fecha . ' 23:59:59')
+                // Las ventas y su saldo al corte salen del MISMO desglose que la
+                // línea (sin límite ni filtros propios): el modal suma la línea.
+                $saldos = $this->montosDesglose($empresaId, $fecha, 'cxc', 'v');
+                $ventas = Venta::deEmpresa($empresaId)->whereIn('id', array_keys($saldos))
                     ->with(['cliente:id,nombres,apellidos,razon_social', 'user:id,name',
                             'pagos.metodoPago:id,nombre',
                             'abonos.metodoPago:id,nombre', 'abonos.cuenta:id,nombre', 'abonos.user:id,name'])
                     ->orderByDesc('fecha_venta')
-                    ->limit(500)
                     ->get()
-                    // Saldo a la fecha = saldo actual + abonos posteriores.
-                    ->map(function ($v) use ($fecha) {
-                        $abonosPost = (float) $v->abonos->filter(fn ($a) => $a->fecha->toDateString() > $fecha)->sum('monto');
-                        $v->setAttribute('saldo_corte', round((float) $v->saldo_pendiente + $abonosPost, 2));
-                        return $v;
-                    })
-                    ->filter(fn ($v) => (float) $v->saldo_corte > 0.01)
-                    ->values();
+                    ->each(fn ($v) => $v->setAttribute('saldo_corte', $saldos[$v->id]));
 
                 $grupos = $ventas->groupBy(fn ($v) => $v->fecha_venta->format('Y-m-d'))
                     ->map(fn ($rows, $f) => [
@@ -1196,20 +1073,14 @@ class BalanceDiarioController extends Controller
             // Compras hasta la fecha con el saldo que tenían ese día (pagos
             // posteriores se devuelven; compras posteriores no aparecen).
             case 'cxp': {
-                $entradas = Entrada::deEmpresa($empresaId)->confirmado()
-                    ->whereDate('fecha', '<=', $fecha)
+                // Mismas compras y saldos que la línea (desgloseCxp), sin límite.
+                $saldos = $this->montosDesglose($empresaId, $fecha, 'cxp', 'e');
+                $entradas = Entrada::deEmpresa($empresaId)->whereIn('id', array_keys($saldos))
                     ->with(['proveedorRel:id,razon_social,nombre_comercial', 'user:id,name',
                             'pagosParciales.metodoPago:id,nombre', 'pagosParciales.cuenta:id,nombre', 'pagosParciales.user:id,name'])
                     ->orderByDesc('fecha')
-                    ->limit(500)
                     ->get()
-                    ->map(function ($e) use ($fecha) {
-                        $pagosPost = (float) $e->pagosParciales->filter(fn ($p) => $p->fecha->toDateString() > $fecha)->sum('monto');
-                        $e->setAttribute('saldo_corte', round(max(0, $e->saldoPendiente()) + $pagosPost, 2));
-                        return $e;
-                    })
-                    ->filter(fn ($e) => (float) $e->saldo_corte > 0.01)
-                    ->values();
+                    ->each(fn ($e) => $e->setAttribute('saldo_corte', $saldos[$e->id]));
 
                 $grupos = $entradas->groupBy(fn ($e) => $e->fecha->format('Y-m-d'))
                     ->map(fn ($rows, $f) => [
@@ -1261,45 +1132,32 @@ class BalanceDiarioController extends Controller
             // día (entregas posteriores se devuelven; anticipos posteriores
             // no aparecen).
             case 'anticipo_cliente': {
-                // Misma regla que la línea del balance: los devueltos cuentan hasta
-                // el día de su devolución (evento real), los anulados nunca.
-                $devueltoAntes = app(\App\Services\BalanceDiarioService::class)
-                    ->devueltoHasta($empresaId, 'cliente_anticipo_devolucion', 'anticipo_cliente.devuelto');
+                // Mismos anticipos y montos que la línea (desgloseAnticipos): los
+                // devueltos hasta su devolución, entregas y cancelaciones
+                // posteriores devueltas, material al precio congelado. Sin límite.
+                $valores = $this->montosDesglose($empresaId, $fecha, 'anticipo_cliente', 'a');
+                $cancPost = $this->service->cancelacionesPosteriores($empresaId, $fecha);
 
-                $anticipos = ClienteAnticipo::deEmpresa($empresaId)
-                    ->whereIn('estado', ['activo', 'aplicado', 'devuelto'])
-                    ->whereDate('fecha', '<=', $fecha)
+                $anticipos = ClienteAnticipo::deEmpresa($empresaId)->whereIn('id', array_keys($valores))
                     ->with(['cliente:id,nombres,apellidos,razon_social', 'producto:id,nombre,precio_venta', 'user:id,name',
                             'items', 'venta:id,numero',
                             'aplicaciones.user:id,name', 'aplicaciones.items'])
                     ->orderByDesc('fecha')
-                    ->limit(500)
                     ->get()
-                    ->reject(fn (ClienteAnticipo $a) => $a->estado === 'devuelto' && $devueltoAntes($a, $fecha))
-                    ->map(function (ClienteAnticipo $a) use ($fecha) {
-                        // Entregas POSTERIORES al corte → se devuelven al pendiente.
+                    ->each(function (ClienteAnticipo $a) use ($fecha, $valores, $cancPost) {
+                        // Entregas y cancelaciones POSTERIORES al corte → vuelven al pendiente.
                         $post = $a->aplicaciones->filter(fn ($ap) => $ap->fecha->toDateString() > $fecha);
-                        $a->setAttribute('post_por_item', $post->flatMap(fn ($ap) => $ap->items)
-                            ->groupBy('cliente_anticipo_item_id')->map(fn ($g) => (float) $g->sum('cantidad')));
-
-                        if ($a->items->isNotEmpty()) {
-                            $valor = round((float) $a->saldo + (float) $post->sum('monto'), 2);
-                        } elseif ($a->tipo_valorizacion === 'material' && $a->producto && $a->cantidad_pendiente !== null
-                            && (float) $a->cantidad > 0) {
-                            // Al precio CONGELADO que pagó el cliente (monto/cantidad), igual
-                            // que la línea del balance. Antes el modal usaba el precio de
-                            // venta de HOY y su total no coincidía con la línea.
-                            $cant  = (float) $a->cantidad_pendiente + (float) $post->sum(fn ($ap) => (float) ($ap->cantidad ?? 0));
-                            $valor = round($cant * ((float) $a->monto / (float) $a->cantidad), 2);
-                            $a->setAttribute('cant_corte', $cant);
-                        } else {
-                            $valor = round((float) $a->saldo + (float) $post->sum('monto'), 2);
+                        $porItem = $post->flatMap(fn ($ap) => $ap->items)
+                            ->groupBy('cliente_anticipo_item_id')->map(fn ($g) => (float) $g->sum('cantidad'));
+                        foreach ($cancPost->where('cliente_anticipo_id', $a->id) as $c) {
+                            $porItem[$c->cliente_anticipo_item_id] = ($porItem[$c->cliente_anticipo_item_id] ?? 0) + (float) $c->cantidad;
                         }
-                        $a->setAttribute('valor_corte', $valor);
-                        return $a;
-                    })
-                    ->filter(fn ($a) => (float) $a->valor_corte > 0.01)
-                    ->values();
+                        $a->setAttribute('post_por_item', $porItem);
+                        if ($a->items->isEmpty() && $a->tipo_valorizacion === 'material' && $a->cantidad_pendiente !== null) {
+                            $a->setAttribute('cant_corte', (float) $a->cantidad_pendiente + (float) $post->sum(fn ($ap) => (float) ($ap->cantidad ?? 0)));
+                        }
+                        $a->setAttribute('valor_corte', $valores[$a->id]);
+                    });
 
                 // Modalidad legible AL CORTE: multi-producto (pendiente del POS)
                 // lista sus ítems pendientes; material clásico su producto.
@@ -1402,31 +1260,33 @@ class BalanceDiarioController extends Controller
                 ]);
             }
 
-            // ── Descuentos de planilla: pendientes (suman) + aplicados ──
+            // ── Descuentos de planilla PENDIENTES AL CORTE ──────────────
+            // Los mismos de la línea (desglosePlanilla): registrados hasta la
+            // fecha y aún sin aplicar ese día, sin importar su antigüedad ni su
+            // estado de hoy (aplicado después del corte todavía suma).
             case 'planilla_descuento': {
+                $montos = $this->montosDesglose($empresaId, $fecha, 'planilla_descuento', 'pd');
                 $descuentos = \App\Models\PlanillaDescuento::deEmpresa($empresaId)
+                    ->whereIn('id', array_keys($montos))
                     ->with(['trabajador:id,name', 'registradoPor:id,name'])
-                    ->whereBetween('fecha', [date('Y-m-d', strtotime($fecha . ' -3 months')), $fecha])
                     ->orderByDesc('fecha')->orderByDesc('id')
                     ->get();
-
-                $estados = ['pendiente' => 'Pendiente', 'aplicado' => 'Aplicado en planilla', 'anulado' => 'Anulado'];
 
                 $grupos = $descuentos->groupBy(fn ($d) => $d->fecha->format('Y-m-d'))
                     ->map(fn ($rows, $f) => [
                         'id'      => $f,
                         'titulo'  => $f,
                         'esFecha' => true,
-                        // Solo lo PENDIENTE suma a la línea del balance.
-                        'monto'   => round((float) $rows->where('estado', 'pendiente')->sum('monto'), 2),
+                        'monto'   => round((float) $rows->sum(fn ($d) => $montos[$d->id]), 2),
                         'tipo'    => 'neutro',
                         'items'   => $rows->map(fn ($d) => [
                             'descripcion' => $d->motivo,
                             'trabajador'  => $d->trabajador?->name ?? '—',
-                            'estado'      => ($estados[$d->estado] ?? $d->estado)
-                                . ($d->estado === 'aplicado' && $d->fecha_aplicacion ? ' (' . $d->fecha_aplicacion->format('d/m/Y') . ')' : ''),
-                            'monto'       => (float) $d->monto,
-                            'tipo'        => $d->estado === 'pendiente' ? 'ingreso' : null,
+                            'estado'      => $d->estado === 'aplicado' && $d->fecha_aplicacion
+                                ? 'Pendiente al ' . $fecha . ' (aplicado el ' . $d->fecha_aplicacion->format('d/m/Y') . ')'
+                                : 'Pendiente',
+                            'monto'       => $montos[$d->id],
+                            'tipo'        => 'ingreso',
                             'user'        => $d->registradoPor?->name,
                         ])->values(),
                     ])->values();
@@ -1434,8 +1294,8 @@ class BalanceDiarioController extends Controller
                 return response()->json([
                     'tipo'  => 'grupos',
                     'cards' => [
-                        ['label' => 'Pendiente de descontar', 'valor' => round((float) $descuentos->where('estado', 'pendiente')->sum('monto'), 2), 'color' => 'success'],
-                        ['label' => 'Ya aplicado en planilla (rango)', 'valor' => round((float) $descuentos->where('estado', 'aplicado')->sum('monto'), 2)],
+                        ['label' => "Pendiente de descontar al {$fecha}", 'valor' => round(array_sum($montos), 2), 'color' => 'success'],
+                        ['label' => 'Descuentos pendientes', 'valor' => count($montos), 'esNumero' => true],
                     ],
                     'itemCols' => [
                         ['campo' => 'descripcion', 'label' => 'Motivo'],
@@ -1482,11 +1342,11 @@ class BalanceDiarioController extends Controller
                         'monto'   => round((float) $rows->sum('monto'), 2),
                         'tipo'    => 'neutro',
                         'items'   => $rows->map(fn ($p) => [
-                            'descripcion' => $p->tipo === 'amortizacion' ? 'Amortización' : 'Incremento',
+                            'descripcion' => self::ETIQUETA_MOV_DEUDA[$p->tipo] ?? 'Incremento',
                             'cuenta'      => $p->cuenta?->nombre ?? '—',
                             'observacion' => $p->observacion ?? '—',
                             'monto'       => (float) $p->monto,
-                            'tipo'        => $p->tipo === 'amortizacion' ? 'ingreso' : 'egreso',
+                            'tipo'        => in_array($p->tipo, ['amortizacion', 'compensacion'], true) ? 'ingreso' : 'egreso',
                             'user'        => $p->user?->name,
                         ])->values(),
                     ])->values();
@@ -1534,6 +1394,24 @@ class BalanceDiarioController extends Controller
     }
 
     /**
+     * Monto de cada entidad de una línea según el desglose del servicio (la
+     * misma fuente que la línea), indexado por id: ['v12' => 30.5] → [12 => 30.5].
+     *
+     * @return array<int, float>
+     */
+    private function montosDesglose(int $empresaId, string $fecha, string $categoria, string $prefijo): array
+    {
+        $out = [];
+        foreach ($this->service->desglose($empresaId, $fecha, $categoria) as $clave => $d) {
+            if (str_starts_with((string) $clave, $prefijo)) {
+                $out[(int) substr((string) $clave, strlen($prefijo))] = (float) $d['monto'];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * Auditoría de una línea del balance entre el día anterior CONFIRMADO y esta
      * fecha: cada entidad (producto, venta, compra, anticipo, cuenta, deuda…) con
      * su valor en ambos días y los documentos que la movieron. Las filas suman
@@ -1547,7 +1425,8 @@ class BalanceDiarioController extends Controller
     {
         $nombres = [
             'efectivo' => 'Efectivo', 'cuenta_bancaria' => 'Cuentas bancarias', 'stock' => 'Stock (inventario)',
-            'stock_mov' => 'Stock (inventario)', 'cxc' => 'Deudas por cobrar', 'cxp' => 'Proveedores por pagar',
+            'stock_mov' => 'Stock (inventario)', 'mercaderia_transito' => 'Mercadería en tránsito',
+            'cxc' => 'Deudas por cobrar', 'cxp' => 'Proveedores por pagar',
             'prestamo_otorgado' => 'Préstamos otorgados', 'adelanto_proveedor' => 'Adelantos a proveedores',
             'anticipo_cliente' => 'Anticipos de clientes', 'planilla_descuento' => 'Descuentos de planilla',
             'deuda' => 'Deudas y préstamos', 'personal' => 'Deudas con el personal',
@@ -1685,11 +1564,11 @@ class BalanceDiarioController extends Controller
                 'monto'   => round((float) collect($rows)->sum('monto'), 2),
                 'tipo'    => 'neutro',
                 'items'   => collect($rows)->map(fn ($m) => [
-                    'descripcion' => ($m['tipo'] ?? '') === 'amortizacion' ? 'Amortización' : 'Incremento',
+                    'descripcion' => self::ETIQUETA_MOV_DEUDA[$m['tipo'] ?? ''] ?? 'Incremento',
                     'cuenta'      => '—',
                     'observacion' => 'Reconstruido desde la auditoría',
                     'monto'       => (float) ($m['monto'] ?? 0),
-                    'tipo'        => ($m['tipo'] ?? '') === 'amortizacion' ? 'ingreso' : 'egreso',
+                    'tipo'        => in_array($m['tipo'] ?? '', ['amortizacion', 'compensacion'], true) ? 'ingreso' : 'egreso',
                     'user'        => $log?->user_name,
                 ])->values(),
             ])->values();

@@ -19,6 +19,8 @@ export type DescTipo = 'monto' | 'porcentaje';
 
 export interface LineaCarrito {
     key:                  string;
+    /** Los montos en soles antes de pasar a dólares: volver a soles no arrastra redondeos (10.00 → 2.67 → 10.01). */
+    en_soles?:            { precio_unitario: number; precio_original: number; costo_minimo: number; descuento_valor: number };
     producto_id:          number;
     producto_unidad_id:   number;
     producto_nombre:      string;
@@ -72,9 +74,11 @@ interface Props {
     onEliminar:         (key: string) => void;
     /** Cambia cada vez que se agrega (o suma) este producto: la fila se ilumina y se hace visible. */
     pulso?:             number;
+    /** Símbolo de la moneda de la venta ("S/" o "US$"). */
+    simbolo?:           string;
 }
 
-export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar, pulso }: Props) {
+export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar, pulso, simbolo = 'S/' }: Props) {
     // Recién agregado: la fila se ilumina un instante y queda a la vista. Así la
     // cajera ve QUÉ entró sin un aviso flotante que tape la barra superior.
     const filaRef = useRef<HTMLLIElement | null>(null);
@@ -145,7 +149,7 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
         if (valor > max) {
             setAvisoTope(tipo === 'porcentaje'
                 ? 'El descuento no puede superar el 100 %.'
-                : `El descuento no puede superar S/ ${max.toFixed(2)}${modo === 'total' ? ' (total de la línea)' : ' (precio unitario)'}.`);
+                : `El descuento no puede superar ${simbolo} ${max.toFixed(2)}${modo === 'total' ? ' (total de la línea)' : ' (precio unitario)'}.`);
             return max;
         }
         setAvisoTope(null);
@@ -255,7 +259,7 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
         onPrecio(item.key, costo);
         if (avisar) {
             toast(
-                `El precio de "${item.producto_nombre}" se subió a S/ ${costo.toFixed(2)}: no se puede vender bajo el costo.`,
+                `El precio de "${item.producto_nombre}" se subió a ${simbolo} ${costo.toFixed(2)}: no se puede vender bajo el costo.`,
                 { id: `precio-bajo-costo-${item.key}`, duration: 4000 },
             );
         }
@@ -307,7 +311,7 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
     return (
         <li
             ref={filaRef}
-            className="px-3 py-2"
+            className="px-3 py-2 bajo:py-1.5"
             style={{
                 backgroundColor: esInactivo ? 'color-mix(in srgb, var(--color-danger) 7%, var(--color-surface))' : undefined,
                 borderTop: '1px solid var(--color-border)',
@@ -335,14 +339,14 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                     )}
                 </p>
                 <span className="font-display text-[15px] font-bold tabular-nums whitespace-nowrap" style={{ color: 'var(--vp-navy)' }}>
-                    S/ {item.subtotal.toFixed(2)}
+                    {simbolo} {item.subtotal.toFixed(2)}
                 </span>
             </div>
 
             {/* Fila 2: cantidad × precio, stock y acciones */}
-            <div className="flex items-center gap-2 mt-1.5">
+            <div className="flex items-center gap-2 mt-1.5 bajo:mt-1">
                 <div
-                    className="flex items-center h-8 rounded-lg overflow-hidden select-none flex-shrink-0 transition-shadow"
+                    className="flex items-center h-8 bajo:h-7 rounded-lg overflow-hidden select-none flex-shrink-0 transition-shadow"
                     style={{
                         border: `1px solid ${cantFocus ? 'var(--color-primary)' : 'var(--color-border)'}`,
                         // El anillo va en el contenedor: el overflow-hidden lo recortaría en el input.
@@ -384,15 +388,15 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
 
                 {/* Precio editable: nunca por debajo del costo (aviso en vivo + ajuste solo). */}
                 <label
-                    className="flex items-center h-8 rounded-lg flex-shrink-0 transition-shadow"
+                    className="flex items-center h-8 bajo:h-7 rounded-lg flex-shrink-0 transition-shadow"
                     style={{
                         border: `1px solid ${precioBajoCosto ? 'var(--color-danger)' : precioEditado ? 'var(--vp-amber)' : 'var(--color-border)'}`,
                         backgroundColor: precioBajoCosto ? 'color-mix(in srgb, var(--color-danger) 6%, var(--color-surface))' : 'var(--color-surface)',
                         boxShadow: precioFocus ? '0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent)' : 'none',
                     }}
-                    title={precioEditado ? `Precio de lista: S/ ${item.precio_original.toFixed(2)}` : 'Precio por unidad'}
+                    title={precioEditado ? `Precio de lista: ${simbolo} ${item.precio_original.toFixed(2)}` : 'Precio por unidad'}
                 >
-                    <span className="pl-2 text-[12px] font-semibold" style={{ color: precioBajoCosto ? 'var(--vp-coral-ink)' : 'var(--color-text-muted)' }}>S/</span>
+                    <span className="pl-2 text-[12px] font-semibold" style={{ color: precioBajoCosto ? 'var(--vp-coral-ink)' : 'var(--color-text-muted)' }}>{simbolo}</span>
                     <input
                         ref={precioInputRef}
                         type="number" inputMode="decimal"
@@ -436,9 +440,9 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                             style={{ backgroundColor: 'var(--vp-midnight)', color: '#fff', boxShadow: '0 10px 24px -8px rgb(15 25 35 / 0.45)' }}>
                             {conCosto ? (
                                 <>
-                                    <p className="font-semibold">Costo S/ {item.costo_minimo.toFixed(2)}</p>
+                                    <p className="font-semibold">Costo {simbolo} {item.costo_minimo.toFixed(2)}</p>
                                     <p style={{ color: 'rgb(255 255 255 / 0.75)' }}>
-                                        Margen S/ {(item.precio_unitario - item.costo_minimo).toFixed(2)}
+                                        Margen {simbolo} {(item.precio_unitario - item.costo_minimo).toFixed(2)}
                                         {' '}({Math.round(((item.precio_unitario - item.costo_minimo) / item.costo_minimo) * 100)} %)
                                     </p>
                                 </>
@@ -531,15 +535,15 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
             {/* Fila 3 (solo si aplica): de dónde sale el precio que se cobra */}
             {(precioEditado || hayDescuento) && !precioBajoCosto && (
                 <p className="flex items-center gap-1.5 mt-1 text-[11px] tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
-                    {precioEditado && <span className="line-through" title="Precio de lista">S/ {item.precio_original.toFixed(2)}</span>}
+                    {precioEditado && <span className="line-through" title="Precio de lista">{simbolo} {item.precio_original.toFixed(2)}</span>}
                     {precioEditado && hayDescuento && <span aria-hidden>›</span>}
                     {hayDescuento && (
                         <>
-                            <span className="line-through" title="Precio antes del descuento">S/ {item.precio_unitario.toFixed(2)}</span>
+                            <span className="line-through" title="Precio antes del descuento">{simbolo} {item.precio_unitario.toFixed(2)}</span>
                             <span aria-hidden>›</span>
-                            <strong style={{ color: 'var(--color-primary)' }}>S/ {precioEfectivo.toFixed(2)} c/u</strong>
+                            <strong style={{ color: 'var(--color-primary)' }}>{simbolo} {precioEfectivo.toFixed(2)} c/u</strong>
                             <span className="font-semibold" style={{ color: 'var(--vp-amber-ink)' }}>
-                                −S/ {(item.descuento_item * item.cantidad).toFixed(2)}{item.descuento_tipo === 'porcentaje' ? ` (${item.descuento_valor} %)` : ''}
+                                −{simbolo} {(item.descuento_item * item.cantidad).toFixed(2)}{item.descuento_tipo === 'porcentaje' ? ` (${item.descuento_valor} %)` : ''}
                             </span>
                         </>
                     )}
@@ -551,7 +555,7 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
             {precioBajoCosto && (
                 <p role="alert" className="flex items-center gap-1.5 mt-1 text-[12px] font-semibold" style={{ color: 'var(--vp-coral-ink)' }}>
                     <AlertTriangle size={13} className="flex-shrink-0" />
-                    <span>Está bajo el costo (S/ {item.costo_minimo.toFixed(2)}).</span>
+                    <span>Está bajo el costo ({simbolo} {item.costo_minimo.toFixed(2)}).</span>
                     <button type="button" onClick={() => ajustarAlCosto(false)} className="underline underline-offset-2 hover:opacity-80">
                         Subir al costo
                     </button>
@@ -569,7 +573,7 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                             opciones={[['pu', 'Por unidad', 'El descuento se resta del precio de cada unidad'], ['total', 'A la línea', 'El descuento se resta del total de esta línea']]}
                             valor={descModo} onCambio={v => cambiarModo(v as DescModo)} />
                         <Segmento
-                            opciones={[['monto', 'S/', 'Descuento en soles'], ['porcentaje', '%', 'Descuento en porcentaje']]}
+                            opciones={[['monto', simbolo, simbolo === 'S/' ? 'Descuento en soles' : 'Descuento en dólares'], ['porcentaje', '%', 'Descuento en porcentaje']]}
                             valor={descTipo} onCambio={v => cambiarTipo(v as DescTipo)} />
                         <button onClick={quitarDescuento} title="Quitar descuento" aria-label="Quitar descuento"
                             className="ml-auto p-1 rounded hover:bg-black/5" style={{ color: 'var(--color-text-muted)' }}>
@@ -580,7 +584,7 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                     <div className="flex flex-wrap items-center gap-2">
                         <div className="relative w-24 flex-shrink-0">
                             {descTipo === 'monto' && (
-                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>S/</span>
+                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] font-semibold" style={{ color: 'var(--color-text-muted)' }}>{simbolo}</span>
                             )}
                             <input
                                 type="number" inputMode="decimal" min="0"

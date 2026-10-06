@@ -1,6 +1,7 @@
 import React from 'react';
 import { UserRound } from 'lucide-react';
 import Badge from '@/Components/UI/Badge';
+import { soles } from '@/lib/dinero';
 
 /**
  * Timeline — historial de movimientos (abonos, pagos, entregas, cuotas).
@@ -21,8 +22,7 @@ export interface TimelineItem {
     tipo?: 'ingreso' | 'egreso' | 'neutro';
 }
 
-const money = (v: number) => `S/ ${v.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
+const money = (v: unknown) => soles(v);
 export default function Timeline({ items, emptyMessage = 'Sin movimientos registrados' }: { items: TimelineItem[]; emptyMessage?: string }) {
     if (items.length === 0) {
         return <p className="text-sm text-center py-6" style={{ color: 'var(--color-text-muted)' }}>{emptyMessage}</p>;

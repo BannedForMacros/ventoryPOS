@@ -36,6 +36,19 @@ class DevolucionService
 
         $devolucion = DB::transaction(function () use ($data, $user, $turno, $venta) {
 
+            // La venta se relee BLOQUEADA dentro de la transacción. Así:
+            //  · una venta anulada (o anulándose ahora mismo) no admite devolución:
+            //    el stock y el dinero ya se revirtieron al anularla;
+            //  · dos devoluciones simultáneas de la misma venta se serializan y la
+            //    segunda ve lo que ya devolvió la primera.
+            $venta = Venta::whereKey($venta->id)->lockForUpdate()->first();
+            if ($venta->estado !== 'completada') {
+                throw ValidationException::withMessages([
+                    'venta_id' => "La venta {$venta->numero} está anulada: no admite devoluciones.",
+                ]);
+            }
+            $venta->load('items.producto', 'local');
+
             $local  = $venta->local;
             abort_unless($this->config->permiteDevoluciones($local), 422,
                 'Las devoluciones están deshabilitadas para este local.');
@@ -75,7 +88,7 @@ class DevolucionService
                 'monto_reembolso'     => 0,
             ]);
 
-            $totalDevolucion = 0.0;
+            $subtotales = [];
 
             foreach ($data['items'] as $i) {
                 $item = VentaItem::with('producto', 'productoUnidad')->findOrFail($i['venta_item_id']);
@@ -112,8 +125,13 @@ class DevolucionService
                     'observacion'        => $i['observacion'] ?? null,
                 ]);
 
-                $totalDevolucion += $subtotal;
+                $subtotales[] = $subtotal;
             }
+
+            // El detalle guarda el bruto de línea (lo usa la nota de crédito); el
+            // importe de la devolución lleva el descuento GLOBAL de la venta
+            // prorrateado con la misma fórmula que la NC.
+            $totalDevolucion = Devolucion::montoNeto($subtotales, Devolucion::factorDescuentoGlobal($venta));
 
             // Pagos del reembolso
             $totalReembolso = 0.0;
@@ -143,7 +161,11 @@ class DevolucionService
             return $devolucion->fresh(['detalles', 'pagos', 'motivo', 'venta']);
         });
 
-        // V15 — FUERA de la transacción, a propósito.
+        // V15 — FUERA de la transacción, a propósito. Y SOLO si la devolución quedó
+        // completada: una pendiente de aprobación puede rechazarse, y entonces la
+        // nota de crédito habría acreditado ante SUNAT algo que nunca se devolvió.
+        // La de las pendientes se encola al aprobarlas (DevolucionController).
+        //
         //
         // Estaba dentro y su try/catch parecía suficiente, pero en PostgreSQL una
         // consulta fallida deja la transacción en estado abortado: el `fresh()` de
@@ -154,9 +176,52 @@ class DevolucionService
         // Aquí la devolución ya está confirmada y es intocable, que es la regla de
         // oro: un fallo al emitir la nota de crédito no puede deshacer una
         // operación de caja que ya ocurrió.
-        $this->encolarNotaCredito($devolucion, $venta, $user);
+        if ($devolucion->esCompletada()) {
+            $this->encolarNotaCredito($devolucion, $venta, $user);
+        }
 
         return $devolucion;
+    }
+
+    /**
+     * Importe a devolver por unas líneas de la venta, con el descuento global
+     * prorrateado (misma fórmula que la nota de crédito). Lo usan la validación
+     * del formulario y `crear`, para que ambos digan lo mismo al céntimo.
+     *
+     * @param array<int, array{venta_item_id: int, cantidad: float|string}> $items
+     */
+    public function montoADevolver(Venta $venta, array $items): float
+    {
+        $venta->loadMissing('items');
+        $subtotales = [];
+        foreach ($items as $i) {
+            $vi = $venta->items->firstWhere('id', (int) ($i['venta_item_id'] ?? 0));
+            if (!$vi) {
+                continue;
+            }
+            $subtotales[] = round(((float) $vi->precio_unitario - (float) $vi->descuento_item) * (float) ($i['cantidad'] ?? 0), 2);
+        }
+
+        return Devolucion::montoNeto($subtotales, Devolucion::factorDescuentoGlobal($venta));
+    }
+
+    /**
+     * Cantidad aún PENDIENTE DE ENTREGA por línea de venta (anticipo material
+     * vinculado). Esa mercadería nunca salió del almacén.
+     *
+     * @return \Illuminate\Support\Collection<int, float> venta_item_id => cantidad
+     */
+    public function pendienteDeEntregaPorItem(int $ventaId): \Illuminate\Support\Collection
+    {
+        return DB::table('cliente_anticipo_items as ci')
+            ->join('cliente_anticipos as an', 'an.id', '=', 'ci.cliente_anticipo_id')
+            ->where('an.venta_id', $ventaId)
+            ->where('an.estado', '<>', 'anulado')
+            ->whereNotNull('ci.venta_item_id')
+            ->selectRaw('ci.venta_item_id, SUM(ci.cantidad_pendiente) as total')
+            ->groupBy('ci.venta_item_id')
+            ->pluck('total', 'venta_item_id')
+            ->map(fn ($t) => (float) $t);
     }
 
     /**
@@ -173,8 +238,12 @@ class DevolucionService
      *  · Incluso el propio dispatch va en try/catch: ni un fallo de la cola
      *    puede tumbar una operación de caja.
      */
-    private function encolarNotaCredito(Devolucion $devolucion, Venta $venta, User $user): void
+    public function encolarNotaCredito(Devolucion $devolucion, Venta $venta, User $user): void
     {
+        if (!$devolucion->esCompletada()) {
+            return;
+        }
+
         try {
             // La integración es opcional y se despliega por partes.
             if (!method_exists($venta, 'comprobanteElectronico')) {
@@ -220,22 +289,39 @@ class DevolucionService
             ->groupBy('devoluciones_detalle.venta_item_id')
             ->pluck('total', 'venta_item_id');
 
+        // Solo se devuelve lo ENTREGADO. Lo pendiente de entrega nunca salió del
+        // almacén: reingresarlo inflaba el stock (venta 10, se lleva 3, devolución
+        // de 10 → +10 al almacén cuando solo volvieron 3) y el anticipo seguía
+        // debiendo esas 7 unidades al cliente, que además ya cobró su reembolso.
+        // Lo pendiente se cancela en Finanzas → Anticipos («Cancelar pendiente»),
+        // que ajusta la venta, el anticipo y el dinero de una sola vez.
+        $pendientePorItem = $this->pendienteDeEntregaPorItem($venta->id);
+
+        $solicitadoPorItem = [];
         foreach ($items as $i) {
-            $vi = $venta->items->firstWhere('id', $i['venta_item_id']);
+            $solicitadoPorItem[(int) $i['venta_item_id']] = ($solicitadoPorItem[(int) $i['venta_item_id']] ?? 0.0) + (float) $i['cantidad'];
+        }
+
+        foreach ($solicitadoPorItem as $ventaItemId => $solicitado) {
+            $vi = $venta->items->firstWhere('id', $ventaItemId);
             if (!$vi) {
                 throw ValidationException::withMessages([
-                    'items' => "El ítem {$i['venta_item_id']} no pertenece a esta venta.",
+                    'items' => "El ítem {$ventaItemId} no pertenece a esta venta.",
                 ]);
             }
 
             $yaDevuelto = (float) ($devueltoPorItem[$vi->id] ?? 0);
-            $disponible = (float) $vi->cantidad - $yaDevuelto;
-            $solicitado = (float) $i['cantidad'];
+            $pendiente  = (float) ($pendientePorItem[$vi->id] ?? 0);
+            $disponible = max(0.0, round((float) $vi->cantidad - $yaDevuelto - $pendiente, 4));
+            $nombre     = $vi->producto_nombre;
+            $fmt        = fn (float $n) => rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
 
             if ($solicitado > $disponible + 0.0001) {
-                $nombre = $vi->producto_nombre;
                 throw ValidationException::withMessages([
-                    'items' => "Cantidad excedida para \"{$nombre}\". Disponible para devolver: {$disponible}, solicitado: {$solicitado}.",
+                    'items' => $pendiente > 0.0001
+                        ? "De \"{$nombre}\" solo puedes devolver {$fmt($disponible)}: {$fmt($pendiente)} siguen pendientes de entrega "
+                            . 'y nunca salieron del almacén. Para no entregarlas, usa «Cancelar pendiente» en Finanzas → Anticipos.'
+                        : "Cantidad excedida para \"{$nombre}\". Disponible para devolver: {$fmt($disponible)}, solicitado: {$fmt($solicitado)}.",
                 ]);
             }
         }

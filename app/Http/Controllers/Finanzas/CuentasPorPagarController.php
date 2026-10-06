@@ -106,7 +106,7 @@ class CuentasPorPagarController extends Controller
             'entradas'       => $entradas,
             'totalPendiente' => round($totalPendiente, 2),
             'kpis'           => $kpis,
-            'esAdmin'        => (bool) $user->rol->es_admin,
+            'esAdmin'        => (bool) $user->rol?->es_admin,
             'estado'         => $request->input('estado', 'pendientes'),
             'buscar'         => $request->input('buscar', ''),
             'facturacion'    => $request->input('facturacion', ''),
@@ -224,7 +224,7 @@ class CuentasPorPagarController extends Controller
 
         $data = $request->validate([
             'monto'                 => ['required', 'numeric', 'min:0.01', "max:{$saldo}"],
-            'fecha'                 => ['required', 'date'],
+            'fecha'                 => ['required', 'date', new \App\Rules\NoFutura],
             'metodo_pago_id'        => ['required_without:proveedor_adelanto_id', 'nullable', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'             => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'proveedor_adelanto_id' => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
@@ -239,6 +239,15 @@ class CuentasPorPagarController extends Controller
         $data['turno_id'] = AfectaCaja::resolverTurno($user, 'cxp', $data['turno_id'] ?? null, 'libre');
 
         DB::transaction(function () use ($entrada, $user, $data) {
+            // Bloquear la compra y recalcular el saldo con la fila fresca: dos
+            // envíos simultáneos validaban contra el mismo saldo y pagaban doble
+            // (y aplicarPago sumaba sobre un monto_pagado viejo).
+            $entrada = Entrada::whereKey($entrada->id)->lockForUpdate()->firstOrFail();
+            $saldo   = $entrada->saldoPendiente();
+            abort_if($saldo <= 0, 422, 'La entrada ya está pagada.');
+            abort_if((float) $data['monto'] > $saldo + 0.001, 422,
+                'El monto supera el saldo pendiente de la compra (S/ ' . number_format($saldo, 2) . ').');
+
             $pago = null;
 
             // Si el pago consume un adelanto, validar saldo y descontarlo.
@@ -298,7 +307,7 @@ class CuentasPorPagarController extends Controller
         $entrada = $pago->entrada;
 
         abort_if(!$entrada || $entrada->empresa_id !== $user->empresa_id, 403);
-        abort_unless($user->rol->es_admin, 403, 'Solo un administrador puede editar pagos registrados.');
+        abort_unless($user->rol?->es_admin, 403, 'Solo un administrador puede editar pagos registrados.');
         // Un pago por compensación no se edita (desalinearía el abono hermano
         // de la venta): se anula — eso revierte ambos lados — y se recompensa.
         abort_if($pago->esCompensacion(), 422,
@@ -311,7 +320,7 @@ class CuentasPorPagarController extends Controller
 
         $data = $request->validate([
             'monto'          => [$esAdelanto ? 'prohibited' : 'required', 'numeric', 'min:0.01', "max:{$maxMonto}"],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             'metodo_pago_id' => [$esAdelanto ? 'nullable' : 'required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
@@ -396,7 +405,7 @@ class CuentasPorPagarController extends Controller
         $entrada = $pago->entrada;
 
         abort_if(!$entrada || $entrada->empresa_id !== $user->empresa_id, 403);
-        abort_unless($user->rol->es_admin, 403, 'Solo un administrador puede anular pagos registrados.');
+        abort_unless($user->rol?->es_admin, 403, 'Solo un administrador puede anular pagos registrados.');
 
         $data = $request->validate([
             'motivo' => ['required', 'string', 'min:5', 'max:500'],

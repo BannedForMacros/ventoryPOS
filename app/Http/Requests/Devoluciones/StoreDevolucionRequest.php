@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests\Devoluciones;
 
+use App\Models\Devolucion;
+use App\Models\Venta;
+use App\Services\DevolucionService;
 use App\Support\EnEmpresa;
-use App\Models\VentaItem;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +35,7 @@ class StoreDevolucionRequest extends FormRequest
             'turno_id' => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $empresaId)],
 
             'items' => ['required', 'array', 'min:1'],
-            'items.*.venta_item_id' => ['required', 'integer', 'exists:venta_items,id'],
+            'items.*.venta_item_id' => ['required', 'integer', Rule::exists('venta_items', 'id')->where('venta_id', (int) $this->input('venta_id'))],
             'items.*.cantidad' => ['required', 'numeric', 'min:0.0001'],
             'items.*.estado_producto' => ['nullable', Rule::in(['bueno', 'defectuoso', 'vencido', 'dañado'])],
             'items.*.restock' => ['nullable', 'boolean'],
@@ -53,10 +55,28 @@ class StoreDevolucionRequest extends FormRequest
         $validator->after(function ($validator) {
             $forma = $this->input('forma_reembolso');
             $requierePagos = in_array($forma, ['efectivo', 'mismo_metodo'], true);
-            $pagos = $this->input('pagos', []);
+            $pagos = $this->input('pagos', []) ?: [];
 
-            // 1. Formas de reembolso que entregan dinero exigen al menos un pago.
-            if ($requierePagos && empty($pagos)) {
+            // Lo que de verdad hay que reembolsar: el importe devuelto CON el
+            // descuento global de la venta prorrateado (misma fórmula que la nota
+            // de crédito) y, si la venta es al crédito, MENOS lo que se descuenta
+            // de su deuda. Lo calcula el servicio para que formulario y registro
+            // digan lo mismo al céntimo.
+            $venta = Venta::where('id', $this->input('venta_id'))
+                ->where('empresa_id', $this->user()->empresa_id)
+                ->with('items')
+                ->first();
+            $totalDevolucion = $venta
+                ? app(DevolucionService::class)->montoADevolver($venta, (array) $this->input('items', []))
+                : 0.0;
+            $reparto = $venta
+                ? Devolucion::repartoContraCxc($venta, $totalDevolucion)
+                : ['cxc' => 0.0, 'reembolso' => $totalDevolucion];
+            $aReembolsar = $reparto['reembolso'];
+
+            // 1. Formas de reembolso que entregan dinero exigen al menos un pago
+            //    (salvo que todo lo devuelto se descuente de la deuda de la venta).
+            if ($requierePagos && empty($pagos) && $aReembolsar > 0.009) {
                 $validator->errors()->add('pagos', 'Debes registrar al menos un pago porque la forma de reembolso requiere entregar dinero.');
                 return;
             }
@@ -71,30 +91,21 @@ class StoreDevolucionRequest extends FormRequest
                 }
             }
 
-            // 3. Si hay pagos, la suma debe coincidir con el monto a devolver.
+            // 3. Si hay pagos, la suma debe coincidir con lo que hay que reembolsar.
             if (!empty($pagos)) {
-                $totalDevolucion = 0.0;
-                foreach ($this->input('items', []) as $item) {
-                    $ventaItem = VentaItem::find($item['venta_item_id'] ?? null);
-                    if (!$ventaItem) {
-                        continue;
-                    }
-
-                    $cantidad = (float) ($item['cantidad'] ?? 0);
-                    $totalDevolucion += round(
-                        ((float) $ventaItem->precio_unitario - (float) $ventaItem->descuento_item) * $cantidad,
-                        2
-                    );
-                }
-
                 $totalReembolso = collect($pagos)->sum(fn ($p) => (float) ($p['monto'] ?? 0));
 
-                if (abs($totalReembolso - $totalDevolucion) > 0.01) {
-                    $validator->errors()->add('pagos', sprintf(
-                        'El total del reembolso (S/ %.2f) debe coincidir con el monto a devolver (S/ %.2f).',
-                        $totalReembolso,
-                        $totalDevolucion
-                    ));
+                if (abs($totalReembolso - $aReembolsar) > 0.01) {
+                    $validator->errors()->add('pagos', $reparto['cxc'] > 0.009
+                        ? sprintf(
+                            'El total del reembolso (S/ %.2f) debe ser S/ %.2f: de los S/ %.2f devueltos, S/ %.2f se descuentan de la deuda pendiente de la venta.',
+                            $totalReembolso, $aReembolsar, $totalDevolucion, $reparto['cxc'],
+                        )
+                        : sprintf(
+                            'El total del reembolso (S/ %.2f) debe coincidir con el monto a devolver (S/ %.2f).',
+                            $totalReembolso,
+                            $totalDevolucion
+                        ));
                 }
             }
 

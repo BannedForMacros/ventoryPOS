@@ -308,7 +308,7 @@ export default function Usuarios({ usuarios, empresas, locales, roles }: Props) 
                 }
             >
                 <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-                    ¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.
+                    ¿Estás seguro de que deseas eliminar este usuario? Si ya tiene operaciones registradas (ventas, turnos, gastos…), no se elimina: se desactiva para conservar su historial y ya no podrá iniciar sesión.
                 </p>
             </Modal>
         </AppLayout>

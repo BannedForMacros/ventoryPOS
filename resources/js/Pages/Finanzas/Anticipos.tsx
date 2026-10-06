@@ -45,6 +45,8 @@ interface Aplicacion {
     cuenta_id?: number | null;
     metodo_pago?: { nombre: string } | null;
     cuenta?: { nombre: string } | null;
+    /** Si la creó otro módulo (CxC, deuda, POS): se anula/edita desde ahí. */
+    origen_externo?: string | null;
 }
 
 interface Cancelacion {
@@ -95,7 +97,13 @@ interface Anticipo extends Record<string, unknown> {
     aplicaciones: Aplicacion[];
     items?: AnticipoItem[];
     cancelaciones?: Cancelacion[];
+    /** Vale de una devolución / saldo a favor por modificar un pedido: sin dinero nuevo. */
+    devolucion_id?: number | null;
+    venta_origen_id?: number | null;
 }
+
+/** Vale de devolución o saldo a favor: no entró dinero nuevo, su monto no se edita. */
+const esSaldoAFavor = (a: Anticipo) => !!a.devolucion_id || !!a.venta_origen_id;
 
 interface Paginado<T> { data: T[]; total: number; }
 
@@ -122,9 +130,10 @@ interface Props extends PageProps {
 }
 
 import { hoyLocal } from '@/lib/fechas';
+import { soles } from '@/lib/dinero';
 
 const hoy = () => hoyLocal();
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+const money = (v: unknown) => soles(v);
 const nombreCliente = (c?: { nombres?: string; apellidos?: string; razon_social?: string; es_cliente_general?: boolean } | null) =>
     c?.es_cliente_general
         ? 'Clientes varios'
@@ -330,14 +339,18 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
     function submitEditar() {
         if (!editando) return;
         setSaving(true);
+        // Vale / saldo a favor: solo datos descriptivos (no hay dinero que reasentar).
+        const sinDinero = esSaldoAFavor(editando);
         router.put(route('finanzas.anticipos.update', editando.id), {
             cliente_id:     form.cliente_id,
             fecha:          form.fecha,
-            monto:          form.monto,
-            metodo_pago_id: form.metodo_pago_id || null,
-            cuenta_id:      form.cuenta_id || null,
-            turno_id:       form.turno_id || null,
+            monto:          sinDinero ? editando.monto : form.monto,
             observacion:    form.observacion,
+            ...(sinDinero ? {} : {
+                metodo_pago_id: form.metodo_pago_id || null,
+                cuenta_id:      form.cuenta_id || null,
+                turno_id:       form.turno_id || null,
+            }),
         } as any, {
             onSuccess: () => { setEditando(null); setForm(emptyForm()); setSaving(false); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
@@ -772,26 +785,37 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                         <Input label="Fecha" required type="date" value={form.fecha}
                             onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} error={errors.fecha} />
                         <Input label="Monto recibido" required type="number" min="0.01" step="0.01" value={form.monto}
+                            disabled={!!editando && esSaldoAFavor(editando)}
                             onChange={e => setForm(f => ({ ...f, monto: e.target.value }))} error={errors.monto} />
                     </div>
-                    <PagoForm
-                        value={{ metodo_pago_id: form.metodo_pago_id, cuenta_id: form.cuenta_id }}
-                        onChange={pago => setForm(f => ({ ...f, metodo_pago_id: String(pago.metodo_pago_id ?? ''), cuenta_id: String(pago.cuenta_id ?? '') }))}
-                        metodosPago={metodosPago}
-                        cuentas={cuentas}
-                        errors={errors}
-                        showReferencia={false}
-                        showObservacion={false}
-                    />
-                    <AfectaCajaSelect
-                        modulo="anticipos" modo="libre" formato="largo"
-                        label="Afecta caja a (turno)"
-                        sinTurnoLabel="Sin turno (no afecta caja)"
-                        turnos={turnos}
-                        value={form.turno_id === '' ? '' : Number(form.turno_id)}
-                        onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
-                        hint="Si el anticipo es en efectivo, entra a la caja de este turno y suma a su efectivo esperado. «Sin turno» no afecta ninguna caja."
-                    />
+                    {editando && esSaldoAFavor(editando) ? (
+                        <Callout variant="info">
+                            {editando.devolucion_id
+                                ? 'Este saldo a favor es el vale de una devolución: no entró dinero nuevo, así que su monto, método y caja no se editan. Puedes corregir cliente, fecha y observación.'
+                                : 'Este saldo a favor nació al modificar un pedido: no entró dinero nuevo, así que su monto, método y caja no se editan. Puedes corregir cliente, fecha y observación.'}
+                        </Callout>
+                    ) : (
+                        <>
+                            <PagoForm
+                                value={{ metodo_pago_id: form.metodo_pago_id, cuenta_id: form.cuenta_id }}
+                                onChange={pago => setForm(f => ({ ...f, metodo_pago_id: String(pago.metodo_pago_id ?? ''), cuenta_id: String(pago.cuenta_id ?? '') }))}
+                                metodosPago={metodosPago}
+                                cuentas={cuentas}
+                                errors={errors}
+                                showReferencia={false}
+                                showObservacion={false}
+                            />
+                            <AfectaCajaSelect
+                                modulo="anticipos" modo="libre" formato="largo"
+                                label="Afecta caja a (turno)"
+                                sinTurnoLabel="Sin turno (no afecta caja)"
+                                turnos={turnos}
+                                value={form.turno_id === '' ? '' : Number(form.turno_id)}
+                                onChange={v => setForm(f => ({ ...f, turno_id: v === '' ? '' : String(v) }))}
+                                hint="Si el anticipo es en efectivo, entra a la caja de este turno y suma a su efectivo esperado. «Sin turno» no afecta ninguna caja."
+                            />
+                        </>
+                    )}
                     <Input label="Observación" value={form.observacion}
                         onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} />
                     {errors.anticipo && <Callout variant="danger">{errors.anticipo}</Callout>}
@@ -968,6 +992,11 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                     {anulando && esMultiItem(anulando) && formAnular.accion === 'anulado' && (
                         <Callout variant="warning">
                             Este pendiente proviene de una venta del POS{anulando.venta?.numero ? ` (${anulando.venta.numero})` : ''}. Para revertirlo, anula esa venta desde el historial: eso ajusta stock y tesorería juntos.
+                        </Callout>
+                    )}
+                    {anulando && !esMultiItem(anulando) && formAnular.accion === 'anulado' && (anulando.aplicaciones?.length ?? 0) > 0 && (
+                        <Callout variant="warning">
+                            Este anticipo ya se usó (tiene entregas o cobros): no se puede anular como registro erróneo. Marca como devuelto el saldo restante, o anula primero sus consumos.
                         </Callout>
                     )}
                     {errors.accion && <Callout variant="danger">{errors.accion}</Callout>}
@@ -1168,7 +1197,12 @@ export default function Anticipos({ anticipos, totalPasivo, kpis, estado, buscar
                                                 <FileDown size={13} /> PDF A4
                                             </button>
                                             {/* Editar / anular la entrega: dinero (no POS) o material multi-producto del POS. */}
-                                            {puedeEditarEntregas && (
+                                            {ap.origen_externo && (
+                                                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }} title={`Se anula o corrige desde ${ap.origen_externo}`}>
+                                                    Se gestiona desde {ap.origen_externo.split(' (')[0]}
+                                                </span>
+                                            )}
+                                            {puedeEditarEntregas && !ap.origen_externo && (
                                                 (detalle.tipo_valorizacion === 'monto' && !esMultiItem(detalle) && !detalle.venta) ||
                                                 (esMultiItem(detalle) && detalle.tipo_valorizacion === 'material')
                                             ) && (

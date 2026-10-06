@@ -102,6 +102,14 @@ class ProveedorAdelantoService
             return;
         }
 
+        // Un adelanto ya devuelto (el proveedor nos regresó el saldo) o anulado
+        // no puede recuperar saldo: ese dinero ya no está con el proveedor.
+        if (in_array($adelanto->estado, ['devuelto', 'anulado'], true)) {
+            throw ValidationException::withMessages([
+                'proveedor_adelanto_id' => "El adelanto #{$adelanto->id} con que se pagó esto ya está {$adelanto->estado}: su saldo no puede volver. Reactiva primero el adelanto en Finanzas → Adelantos.",
+            ]);
+        }
+
         $adelanto->update([
             'saldo'  => round((float) $adelanto->saldo + (float) $pago->monto, 2),
             'estado' => 'activo',

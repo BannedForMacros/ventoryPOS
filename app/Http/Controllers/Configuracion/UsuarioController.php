@@ -83,7 +83,15 @@ class UsuarioController extends Controller
         abort_if($usuario->rol?->es_admin && !$actor->rol?->es_admin, 403, 'Solo un administrador puede gestionar usuarios administradores.');
 
         $snapshot = ['name' => $usuario->name, 'email' => $usuario->email, 'rol_id' => $usuario->rol_id];
-        $usuario->delete();
+
+        // Con historial (ventas, turnos, gastos...) no se puede borrar sin
+        // perderlo: se desactiva y ya no podrá iniciar sesión.
+        if (! \App\Support\EliminarUsuario::eliminarODesactivar($usuario)) {
+            \App\Services\AuditoriaService::log('usuario.desactivado', $usuario, $snapshot + ['motivo' => 'tiene historial']);
+            return redirect()->back()->with('success',
+                "«{$usuario->name}» tiene operaciones registradas, así que no se eliminó: se desactivó y ya no podrá iniciar sesión.");
+        }
+
         \App\Services\AuditoriaService::log('usuario.eliminado', $usuario, $snapshot);
         return redirect()->back()->with('success', 'Usuario eliminado correctamente.');
     }

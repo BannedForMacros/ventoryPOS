@@ -371,6 +371,37 @@ class VentaController extends Controller
                     ->groupBy('ci.venta_item_id')
                     ->pluck('t', 'venta_item_id');
 
+                // Despacho en almacén: no hay columna propia; el anticipo que crea
+                // VentaService lo marca en su observación. Sin esto, editar la
+                // venta la convertía en "pendiente por entregar".
+                $esDespacho = $anticiposPend->contains(fn ($a) => str_starts_with((string) $a->observacion, 'Despacho en almacén'));
+
+                // Anticipos de dinero con que se pagó esta venta en el POS (no los
+                // cobros de crédito de CxC, que siguen vigentes al editar). Se
+                // precargan para que la edición no los reemplace por efectivo.
+                $anticiposAplicados = \App\Models\ClienteAnticipoAplicacion::where('venta_id', $v->id)
+                    ->whereNull('venta_abono_id')
+                    ->whereHas('anticipo', fn ($q) => $q->where('tipo_valorizacion', 'monto'))
+                    ->with('anticipo:id,fecha,monto,saldo,observacion')
+                    ->get()
+                    ->groupBy('cliente_anticipo_id')
+                    ->map(function ($apps) {
+                        $a = $apps->first()->anticipo;
+                        $aplicado = round((float) $apps->sum('monto'), 2);
+                        return [
+                            'id'          => $a->id,
+                            'fecha'       => $a->fecha?->toDateString(),
+                            'monto'       => (float) $a->monto,
+                            // Lo que tendrá disponible al guardar: su saldo de hoy
+                            // más lo que esta venta le devuelve antes de re-aplicar.
+                            'saldo'       => round((float) $a->saldo + $aplicado, 2),
+                            'aplicado'    => $aplicado,
+                            'observacion' => $a->observacion,
+                        ];
+                    })
+                    ->sortBy(fn ($a) => [$a['fecha'], $a['id']])
+                    ->values();
+
                 $ventaEnEdicion = [
                     'id'                    => $v->id,
                     'numero'                => $v->numero,
@@ -379,6 +410,8 @@ class VentaController extends Controller
                     'descuento_total'       => $factor > 0 ? round((float) $v->descuento_total / $factor, 2) : (float) $v->descuento_total,
                     'descuento_concepto_id' => $v->descuento_concepto_id,
                     'moneda'                => $v->moneda ?? 'PEN',
+                    // TC congelado de la venta: el POS convierte con este, no con el de hoy.
+                    'tipo_cambio'           => $v->tipo_cambio ? (float) $v->tipo_cambio : null,
                     'es_admin'              => (bool) $user->rol->es_admin,
                     'expira_en'             => $puedeEditarVenta && $this->edicionConContador($user->empresa)
                         ? $v->created_at?->addSeconds($this->minutosEdicionVenta($user->empresa) * 60)->toIso8601String()
@@ -399,7 +432,9 @@ class VentaController extends Controller
                     'monto_pagado'          => (float) $v->monto_pagado,
                     'saldo_pendiente'       => (float) $v->saldo_pendiente,
                     'total'                 => (float) $v->total,
-                    'entrega_pendiente'     => $anticiposPend->isNotEmpty(),
+                    'entrega_pendiente'     => $anticiposPend->isNotEmpty() && !$esDespacho,
+                    'despacho_almacen'      => $esDespacho,
+                    'anticipos'             => $anticiposAplicados,
                     'fecha_entrega_estimada'=> $anticiposPend->first()?->fecha_entrega_estimada?->toDateString(),
                     'items'                 => $v->items->map(fn($it) => [
                         'producto_id'           => $it->producto_id,
@@ -510,6 +545,8 @@ class VentaController extends Controller
             'vendeTransito'      => $transitoSvc->permiteVender($user->empresa),
             // Casillas del POS que se ocultan a los negocios que no las usan.
             'permiteCredito'           => (bool) ($user->empresa->pos_permite_credito ?? true),
+            // Tope de descuento del rol (null = sin tope): el POS avisa antes de cobrar.
+            'topeDescuento'            => $user->rol?->max_descuento_porcentaje !== null ? (float) $user->rol->max_descuento_porcentaje : null,
             // Pedir teléfono, dirección y observación del cliente (opcional por empresa).
             'pideDatosCliente'         => (bool) ($user->empresa->pos_datos_cliente ?? false),
             // Alta rápida de productos desde el POS: con el mismo permiso del Catálogo.
@@ -517,6 +554,17 @@ class VentaController extends Controller
             // Para avisar en el POS si el programa de impresión de la PC aún no
             // imprime plantillas (saldría el ticket estándar).
             'ticketPorPlantilla'       => \App\Support\PlantillaTicket::deEmpresa($user->empresa)['plantilla'] !== \App\Support\PlantillaTicket::ESTANDAR,
+            // Visor de ventas (función del plan): null si la empresa no lo tiene.
+            'visorVentas'              => $user->empresa?->usa_visor_ventas ? [
+                'limite'    => (int) $user->empresa->visor_ventas_limite_diario,
+                'restantes' => app(\App\Services\VisorVentas\VisorVentasService::class)->restantesHoy($user->empresa),
+                // Al volver al POS (cobrar sale a la venta) la revisión sigue donde estaba.
+                // Editando una venta o con cotización/cita prellenada el visor no se
+                // muestra: no se paga el cruce completo de la lectura (cientos de queries).
+                'ultima'    => ($ventaEnEdicion || $cotizacionPrellenada || $citaPrellenada)
+                    ? null
+                    : app(\App\Services\VisorVentas\VisorVentasService::class)->ultimaLectura($user),
+            ] : null,
             // Entregas (recojo o envío). null = la empresa no usa la función.
             'entregas'                 => $this->entregasParaPos($user->empresa),
             'permitePendienteEntrega'  => (bool) ($user->empresa->pos_permite_pendiente_entrega ?? true),
@@ -630,6 +678,13 @@ class VentaController extends Controller
         return [$request->fecha_desde ?: $hoy, $request->fecha_hasta ?: $hoy];
     }
 
+    /** ¿Las fechas son el "hoy" por defecto (nadie las eligió)? */
+    private function fechasPorDefecto(Request $request, string $q): bool
+    {
+        return !$request->filled('fecha_desde') && !$request->filled('fecha_hasta')
+            && $q === '' && !$request->filled('turno_id');
+    }
+
     public function index(Request $request)
     {
         $user    = $request->user();
@@ -721,7 +776,13 @@ class VentaController extends Controller
             // Reflejar en la UI las fechas efectivas (incluye el default de hoy).
             'filters' => array_merge(
                 $request->only(['estado', 'fecha_desde', 'fecha_hasta', 'local_id', 'turno_id', 'q']),
-                ['fecha_desde' => $fechaDesde, 'fecha_hasta' => $fechaHasta],
+                [
+                    'fecha_desde' => $fechaDesde,
+                    'fecha_hasta' => $fechaHasta,
+                    // El front no debe reenviar este "hoy" automático al buscar un
+                    // n.º de venta o elegir un turno: limitaría la búsqueda a hoy.
+                    'fechas_por_defecto' => $this->fechasPorDefecto($request, $q),
+                ],
             ),
         ]);
     }
@@ -835,13 +896,24 @@ class VentaController extends Controller
     /** Turnos que alimentan el selector de filtro (y contexto de las cards). */
     private function turnosParaFiltro(User $user, bool $esAdmin, Request $request, ?string $fechaDesde, ?string $fechaHasta)
     {
+        // Los del rango, MÁS los de los últimos 30 días y el que ya está elegido:
+        // con el "hoy" por defecto el selector solo ofrecía los de hoy y no había
+        // forma de elegir el turno de ayer.
+        $recientes = now()->subDays(30)->toDateString();
+
         return Turno::deEmpresa($user->empresa_id)
             ->with(['user:id,name', 'caja:id,nombre'])
             ->when(!$esAdmin, fn($q) => $q->where('user_id', $user->id))
             ->when($user->local_id, fn($q) => $q->where('local_id', $user->local_id))
             ->when($request->local_id, fn($q, $v) => $q->where('local_id', $v))
-            ->when($fechaDesde, fn($q, $v) => $q->whereDate('fecha_apertura', '>=', $v))
-            ->when($fechaHasta, fn($q, $v) => $q->whereDate('fecha_apertura', '<=', $v))
+            ->where(function ($q) use ($fechaDesde, $fechaHasta, $recientes, $request) {
+                $q->where(function ($r) use ($fechaDesde, $fechaHasta) {
+                    $r->when($fechaDesde, fn($x, $v) => $x->whereDate('fecha_apertura', '>=', $v))
+                      ->when($fechaHasta, fn($x, $v) => $x->whereDate('fecha_apertura', '<=', $v));
+                })
+                ->orWhereDate('fecha_apertura', '>=', $recientes)
+                ->when($request->turno_id, fn($x, $v) => $x->orWhere('id', $v));
+            })
             ->orderByDesc('fecha_apertura')
             ->limit(60)
             ->get(['id', 'user_id', 'caja_id', 'local_id', 'fecha_apertura', 'estado']);
@@ -852,9 +924,13 @@ class VentaController extends Controller
     {
         $base = Turno::deEmpresa($user->empresa_id)->with(['user:id,name', 'caja:id,nombre']);
 
-        // Turno específico (filtro ?turno_id): solo ese.
+        // Turno específico (filtro ?turno_id): solo ese. La cajera, solo si es suyo
+        // (mismo alcance que la lista): si no, con cambiar el id veía la caja ajena.
         if ($request->turno_id) {
-            $t = $base->find($request->turno_id);
+            $t = $base
+                ->when(!$esAdmin, fn($q) => $q->where('user_id', $user->id))
+                ->when($user->local_id, fn($q) => $q->where('local_id', $user->local_id))
+                ->find($request->turno_id);
             return $t ? collect([$t]) : collect();
         }
 
@@ -904,7 +980,9 @@ class VentaController extends Controller
             ->whereIn('ventas.turno_id', $turnoIds)
             ->where('ventas.estado', 'completada')
             ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
-            ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(venta_pagos.monto) as total')
+            // Neto del vuelto (como Turno::calcularMontoEsperado): lo que se devolvió
+            // al cliente no se quedó en la caja.
+            ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(venta_pagos.monto - COALESCE(venta_pagos.vuelto, 0)) as total')
             ->get();
 
         // Consolidamos por MÉTODO (una card por método: Yape, Transferencia...);
@@ -946,7 +1024,8 @@ class VentaController extends Controller
         // Efectivo separado en ventas vs abonos (para el detalle de la card de caja).
         $efectivoVentas = (float) \App\Models\VentaPago::whereHas('venta', fn($q) =>
             $q->whereIn('turno_id', $turnoIds)->where('estado', 'completada')
-        )->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))->sum('monto');
+        )->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))
+            ->sum(DB::raw('monto - COALESCE(vuelto, 0)'));
         $efectivoAbonos = (float) \App\Models\VentaAbono::whereIn('turno_id', $turnoIds)
             ->whereHas('metodoPago.tipo', fn($q) => $q->where('slug', 'efectivo'))->sum('monto');
 
@@ -1266,10 +1345,19 @@ class VentaController extends Controller
         ]);
     }
 
+    /**
+     * Mismo alcance que la lista de ventas (ver App\Support\VerVenta). Antes el
+     * detalle, el PDF y el ticket solo miraban la empresa y bastaba cambiar el id.
+     */
+    private function autorizarVerVenta(User $user, Venta $venta): void
+    {
+        \App\Support\VerVenta::autorizar($user, $venta);
+    }
+
     /** Payload de impresión de una venta (para imprimir desde la lista sin abrir el detalle). */
     public function ticket(Request $request, Venta $venta)
     {
-        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+        $this->autorizarVerVenta($request->user(), $venta);
 
         return response()->json(app(TicketPrintService::class)->payloadDeVenta($venta));
     }
@@ -1281,7 +1369,7 @@ class VentaController extends Controller
      */
     public function pdf(Request $request, Venta $venta)
     {
-        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+        $this->autorizarVerVenta($request->user(), $venta);
 
         $venta->load([
             'empresa', 'local', 'caja', 'turno.caja', 'user', 'cliente',
@@ -1345,7 +1433,7 @@ class VentaController extends Controller
 
     public function show(Request $request, Venta $venta)
     {
-        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+        $this->autorizarVerVenta($request->user(), $venta);
 
         $venta->load([
             'user', 'cliente', 'local', 'caja', 'turno',
@@ -1450,21 +1538,22 @@ class VentaController extends Controller
                 return back()->withErrors(['fecha_venta' => "La fecha de la venta debe estar entre la apertura del turno ({$minFecha}) y hoy."]);
             }
             $data['fecha_venta'] = $fechaVenta;
-        } else {
-            // Flujo normal: turno propio activo, fecha = ahora (sin backdate).
+        } elseif (app(\App\Services\ConfiguracionOperacionService::class)->turnoAutomatico($user->empresa_id)) {
+            // Negocios SIN CAJA (peluquería, veterinaria, taller): el turno del día
+            // se abre solo, uno por persona. La venta lo necesita igual —turno_id es
+            // obligatorio y el correlativo cuelga de él—, pero nadie tiene que
+            // acordarse de abrirlo antes de cobrar. Va directo al turno de HOY:
+            // con el "turno abierto" a secas, si el de ayer seguía abierto las
+            // ventas de hoy caían en él.
             unset($data['fecha_venta']);
-            $turno = Turno::turnoActivoDelUsuario($user->id);
-        }
-
-        // Negocios SIN CAJA (peluquería, veterinaria, taller): el turno del día
-        // se abre solo, uno por persona. La venta lo necesita igual —turno_id es
-        // obligatorio y el correlativo cuelga de él—, pero nadie tiene que
-        // acordarse de abrirlo antes de cobrar.
-        if (!$turno && app(\App\Services\ConfiguracionOperacionService::class)->turnoAutomatico($user->empresa_id)) {
             $localId = $user->local_id
                 ?? $this->scope->localesVisibles($user)->first()?->id
                 ?? abort(422, 'Tu usuario no tiene un local asignado.');
             $turno = Turno::delDia($user, (int) $localId);
+        } else {
+            // Flujo normal: turno propio activo, fecha = ahora (sin backdate).
+            unset($data['fecha_venta']);
+            $turno = Turno::turnoActivoDelUsuario($user->id);
         }
 
         if (!$turno) {
@@ -1494,6 +1583,16 @@ class VentaController extends Controller
                         'error'    => $e->getMessage(),
                     ]);
                 }
+            }
+        }
+
+        // Venta que vino del cuaderno (visor de ventas): se recuerda para no
+        // cobrarla dos veces y se aprende lo que la cajera eligió. Nunca frena la venta.
+        if (is_array($visor = $request->input('visor')) && $user->empresa?->usa_visor_ventas) {
+            try {
+                app(\App\Services\VisorVentas\VisorVentasService::class)->registrarCobro($venta, $user, $visor);
+            } catch (\Throwable $e) {
+                \Log::warning('Visor de ventas: no se pudo registrar el cobro', ['venta_id' => $venta->id, 'error' => $e->getMessage()]);
             }
         }
 
@@ -1570,11 +1669,18 @@ class VentaController extends Controller
             }
         }
 
-        $this->ventaService->anular(
-            $venta,
-            $user,
-            $request->validated('motivo'),
-        );
+        // Los rechazos de negocio (abort 422) los convierte en "aviso" el manejador
+        // global. Aquí solo queda la otra pestaña que anuló primero.
+        try {
+            $this->ventaService->anular(
+                $venta,
+                $user,
+                $request->validated('motivo'),
+            );
+        } catch (\RuntimeException $e) {
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) throw $e;
+            return back()->withErrors(['venta' => $e->getMessage()]);
+        }
 
         return redirect()->back()->with('success', "Venta {$venta->numero} anulada correctamente.");
     }
@@ -1614,6 +1720,14 @@ class VentaController extends Controller
         } catch (\Throwable $e) {
             return null;
         }
+    }
+
+    /** Cursor de una búsqueda por relevancia: la posición desde la que sigue. */
+    private function offsetDeCursor(?string $cursor): int
+    {
+        $data = $cursor ? json_decode((string) base64_decode($cursor, true), true) : null;
+
+        return is_array($data) && isset($data['o']) && is_int($data['o']) ? max(0, min($data['o'], 5000)) : 0;
     }
 
     private function codificarCursor(string $nombre, int $id): string
@@ -1699,14 +1813,41 @@ class VentaController extends Controller
             Producto::deEmpresa($empresaId)->activo()
         );
 
-        if ($cursor) {
-            $query->where(function ($q) use ($cursor) {
-                $q->where('nombre', '>', $cursor['n'])
-                  ->orWhere(fn($q) => $q->where('nombre', $cursor['n'])->where('id', '>', $cursor['id']));
-            });
+        // Con búsqueda, primero lo que más se parece ("para" → PARACETAMOL antes
+        // que "Llave para amoladora"): el orden es por relevancia y se pagina por
+        // posición. Sin búsqueda, alfabético con cursor por nombre.
+        $offset = 0;
+        if ($busqueda !== '') {
+            $offset = $this->offsetDeCursor($request->input('cursor'));
+            $norm = mb_strtolower($busqueda);
+            $query->orderByRaw(
+                "CASE WHEN public.unaccent_immutable(lower(nombre)) LIKE public.unaccent_immutable(?) THEN 0
+                      WHEN public.unaccent_immutable(lower(nombre)) LIKE public.unaccent_immutable(?) THEN 1
+                      ELSE 2 END",
+                [addcslashes($norm, '%_\\') . '%', '% ' . addcslashes($norm, '%_\\') . '%'],
+            )->orderByRaw(
+                'word_similarity(public.unaccent_immutable(lower(?)), public.unaccent_immutable(lower(nombre))) DESC',
+                [$norm],
+            )->orderBy('nombre')->orderBy('id');
+        } else {
+            if ($cursor) {
+                $query->where(function ($q) use ($cursor) {
+                    $q->where('nombre', '>', $cursor['n'])
+                      ->orWhere(fn($q) => $q->where('nombre', $cursor['n'])->where('id', '>', $cursor['id']));
+                });
+            }
+            $query->orderBy('nombre')->orderBy('id');
         }
 
-        $query->orderBy('nombre')->orderBy('id');
+        // Productos puntuales por id (el visor de ventas carga al carrito lo leído).
+        $ids = array_values(array_filter(array_map('intval', (array) $request->input('ids', []))));
+        if ($ids) {
+            $ids = array_slice(array_values(array_unique($ids)), 0, 50);
+            $query->whereIn('id', $ids);
+            // Una venta leída trae hasta 50 renglones: con el tope de la grilla
+            // (40) los últimos salían "ya no disponible" y la venta no cargaba.
+            $limite = count($ids);
+        }
 
         if ($busqueda !== '') {
             $terminos = $this->terminosBusqueda($busqueda);
@@ -1744,15 +1885,15 @@ class VentaController extends Controller
             $query->where('tipo', $tipo);
         }
 
-        $productos = $query->limit($limite + 1)->get();
+        $productos = $query->when($offset > 0, fn ($q) => $q->offset($offset))->limit($limite + 1)->get();
         $hasMore   = $productos->count() > $limite;
         $productos = $productos->take($limite);
 
         $this->completarStockPos($productos, $user, $request->query('venta_id'));
 
-        $nextCursor = $hasMore && $productos->last()
-            ? $this->codificarCursor((string) $productos->last()->nombre, (int) $productos->last()->id)
-            : null;
+        $nextCursor = !$hasMore || !$productos->last() ? null : ($busqueda !== ''
+            ? base64_encode(json_encode(['o' => $offset + $limite]))
+            : $this->codificarCursor((string) $productos->last()->nombre, (int) $productos->last()->id));
 
         return response()->json([
             'productos' => $productos,
@@ -1922,10 +2063,12 @@ class VentaController extends Controller
 
         $stopwords = ['de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'unos', 'unas', 'con', 'por', 'para', 'en', 'y', 'e', 'o', 'a', 'al', 'que', 'lo', 'contra', 'sin', 'sobre', 'entre', 'hacia', 'desde', 'hasta'];
 
-        return array_values(array_filter(
-            explode(' ', $q),
-            fn ($t) => $t !== '' && ! in_array($t, $stopwords, true) && mb_strlen($t) >= 2,
-        ));
+        $palabras = array_values(array_filter(explode(' ', $q), fn ($t) => $t !== '' && mb_strlen($t) >= 2));
+        $utiles   = array_values(array_filter($palabras, fn ($t) => ! in_array($t, $stopwords, true)));
+
+        // Las palabras comunes solo se ignoran si queda otra para buscar: "para"
+        // a secas es el comienzo de "paracetamol", no un relleno.
+        return $utiles ?: $palabras;
     }
 
     private function ajustarUmbralTrgm(): void

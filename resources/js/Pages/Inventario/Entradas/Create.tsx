@@ -16,8 +16,9 @@ import ModalCrearProveedor, { ProveedorLite } from './Partials/ModalCrearProveed
 import ModalCrearCliente from '@/Pages/Pos/Partials/ModalCrearCliente';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import type { PageProps } from '@/types';
-import { hoyLocal } from '@/lib/fechas';
+import { hoyLocal, esFutura } from '@/lib/fechas';
 import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
+import { soles } from '@/lib/dinero';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { id: number; unidad_medida_id: number; es_base: boolean; factor_conversion: string; unidad_medida?: UnidadMedida; }
@@ -90,8 +91,7 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
     return String(Math.round((t / q) * 10000) / 10000);
 }
 
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
-
+const money = (v: unknown) => soles(v);
 export default function EntradaCreate({ almacenes, productos, proveedores, clientes, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen, usaTransito, adelantos }: Props) {
     // Compra despachada pero que aún no llega: no toca stock hasta que se reciba.
     const [enTransito, setEnTransito] = useState(false);
@@ -245,6 +245,7 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
         if (!almacenId) return { texto: 'Elige el almacén destino', campo: 'almacen_id' };
         if (!tipo)      return { texto: 'Elige el tipo de entrada', campo: 'tipo' };
         if (!fecha)     return { texto: 'Elige la fecha de la entrada', campo: 'fecha' };
+        if (esFutura(fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
         if (facturadaACliente && !clienteId) return { texto: 'Elige el cliente al que se facturó la compra', campo: 'cliente_id' };
 
         const conProducto = detalles.filter(d => d.producto_id !== '');

@@ -14,6 +14,7 @@ use App\Services\AuditoriaService;
 use App\Services\ConfiguracionOperacionService;
 use App\Services\DevolucionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use RuntimeException;
@@ -115,31 +116,60 @@ class DevolucionController extends Controller
     public function buscarVenta(Request $request)
     {
         $request->validate([
-            'q' => 'required|string|max:30',
+            'q'        => 'required_without:venta_id|nullable|string|max:30',
+            'venta_id' => 'nullable|integer',
         ]);
 
         $user = $request->user();
-        $q    = $request->input('q');
+        $q    = trim((string) $request->input('q', ''));
 
-        $venta = Venta::deEmpresa($user->empresa_id)
-            ->where(function ($qry) use ($q) {
-                $qry->where('numero', 'ilike', "%{$q}%")
-                    ->orWhere('id', is_numeric($q) ? (int) $q : 0);
-            })
-            ->with([
-                'items.producto',
-                'items.productoUnidad.unidadMedida',
-                'cliente',
-                'local',
-                'pagos.metodoPago',
-            ])
-            ->where('estado', 'completada')
-            ->latest('fecha_venta')
-            ->first();
+        $base = fn () => Venta::deEmpresa($user->empresa_id)->where('estado', 'completada');
 
-        if (!$venta) {
-            return response()->json(['error' => 'No se encontró una venta completada con ese criterio.'], 404);
+        if ($request->filled('venta_id')) {
+            // Elegida de la lista de coincidencias: va por id, sin ambigüedad.
+            $candidatas = $base()->whereKey($request->integer('venta_id'))->get();
+        } else {
+            // Coincidencia EXACTA del número (sin distinguir mayúsculas) o del id.
+            // Antes era ILIKE %q% y se quedaba con la más reciente: con el
+            // correlativo por turno, "V-1001" existe una vez por turno y la
+            // devolución acababa colgada de la venta equivocada.
+            $candidatas = $base()
+                ->where(function ($qry) use ($q) {
+                    $qry->whereRaw('UPPER(numero) = UPPER(?)', [$q]);
+                    if (ctype_digit($q)) {
+                        $qry->orWhere('id', (int) $q);
+                    }
+                })
+                ->with('cliente')
+                ->latest('fecha_venta')
+                ->limit(30)
+                ->get();
         }
+
+        if ($candidatas->isEmpty()) {
+            return response()->json(['error' => 'No se encontró una venta completada con ese número.'], 404);
+        }
+
+        // Varias ventas con el mismo número: que elija la persona, no el sistema.
+        if ($candidatas->count() > 1) {
+            return response()->json([
+                'coincidencias' => $candidatas->map(fn (Venta $v) => [
+                    'id'          => $v->id,
+                    'numero'      => $v->numero,
+                    'fecha_venta' => $v->fecha_venta->toIso8601String(),
+                    'total'       => (float) $v->total,
+                    'cliente'     => $v->cliente?->nombre_completo,
+                ])->values(),
+            ]);
+        }
+
+        $venta = $candidatas->first()->load([
+            'items.producto',
+            'items.productoUnidad.unidadMedida',
+            'cliente',
+            'local',
+            'pagos.metodoPago',
+        ]);
 
         // Verificar plazo
         $dentroPlazo = $this->config->estaDentroDelPlazo($venta->local, $venta->fecha_venta);
@@ -153,9 +183,13 @@ class DevolucionController extends Controller
             ->groupBy('devoluciones_detalle.venta_item_id')
             ->pluck('total', 'venta_item_id');
 
-        $itemsConDisponibilidad = $venta->items->map(function ($it) use ($devueltos) {
+        // Lo pendiente de entrega no se devuelve (nunca salió del almacén).
+        $pendientes = $this->service->pendienteDeEntregaPorItem($venta->id);
+
+        $itemsConDisponibilidad = $venta->items->map(function ($it) use ($devueltos, $pendientes) {
             $devuelto = (float) ($devueltos[$it->id] ?? 0);
-            $disponible = (float) $it->cantidad - $devuelto;
+            $pendiente = (float) ($pendientes[$it->id] ?? 0);
+            $disponible = (float) $it->cantidad - $devuelto - $pendiente;
             $producto = $it->producto;
             return [
                 'id'                  => $it->id,
@@ -169,7 +203,8 @@ class DevolucionController extends Controller
                 'subtotal'            => (float) $it->subtotal,
                 'es_retornable'       => $producto ? $this->config->esRetornable($producto) : true,
                 'cantidad_devuelta'   => $devuelto,
-                'cantidad_disponible' => max(0, $disponible),
+                'cantidad_pendiente_entrega' => $pendiente,
+                'cantidad_disponible' => max(0, round($disponible, 4)),
             ];
         });
 
@@ -183,6 +218,12 @@ class DevolucionController extends Controller
                 'descuento_total'=> (float) $venta->descuento_total,
                 'igv'            => (float) $venta->igv,
                 'total'          => (float) $venta->total,
+                // Para que el formulario calcule lo mismo que el servidor: el
+                // descuento global se prorratea y, al crédito, lo devuelto baja
+                // primero la deuda.
+                'factor_descuento' => Devolucion::factorDescuentoGlobal($venta),
+                'es_credito'     => (bool) $venta->es_credito,
+                'saldo_pendiente'=> (float) $venta->saldo_pendiente,
                 'cliente'        => $venta->cliente ? [
                     'id'              => $venta->cliente->id,
                     'nombre_completo' => $venta->cliente->nombre_completo,
@@ -237,7 +278,7 @@ class DevolucionController extends Controller
             $devolucion = $this->service->crear($data, $user, $turno);
         } catch (ValidationException $e) {
             throw $e;
-        } catch (RuntimeException $e) {
+        } catch (RuntimeException|\LogicException $e) {
             return back()->withErrors(['general' => $e->getMessage()])->withInput();
         }
 
@@ -269,8 +310,26 @@ class DevolucionController extends Controller
         abort_unless($request->user()->rol?->es_admin, 403, 'Solo administradores pueden aprobar devoluciones.');
 
         $obs = $request->input('observacion_aprobacion');
-        $devolucion->aprobar($request->user()->id, $obs);
-        $devolucion->refresh()->completar();
+
+        try {
+            // Bloqueada: un doble clic (o dos admins a la vez) no puede aprobar y
+            // completar dos veces la misma devolución —doble restock, doble egreso.
+            $devolucion = DB::transaction(function () use ($devolucion, $request, $obs) {
+                $dev = Devolucion::whereKey($devolucion->id)->lockForUpdate()->firstOrFail();
+                $dev->aprobar($request->user()->id, $obs);
+                $dev->refresh()->completar();
+
+                return $dev->fresh();
+            });
+        } catch (\LogicException $e) {
+            return back()->withErrors(['general' => $this->mensajeYaProcesada($devolucion, $e)]);
+        }
+
+        // Recién ahora, completada y confirmada, corresponde la nota de crédito.
+        $devolucion->loadMissing('venta');
+        if ($devolucion->venta) {
+            $this->service->encolarNotaCredito($devolucion, $devolucion->venta, $request->user());
+        }
 
         \App\Services\AuditoriaService::log('devolucion.aprobada', $devolucion, [
             'numero'        => $devolucion->numero,
@@ -288,7 +347,17 @@ class DevolucionController extends Controller
         abort_unless($request->user()->rol?->es_admin, 403, 'Solo administradores pueden rechazar devoluciones.');
 
         $obs = $request->input('observacion_aprobacion');
-        $devolucion->rechazar($request->user()->id, $obs);
+
+        try {
+            $devolucion = DB::transaction(function () use ($devolucion, $request, $obs) {
+                $dev = Devolucion::whereKey($devolucion->id)->lockForUpdate()->firstOrFail();
+                $dev->rechazar($request->user()->id, $obs);
+
+                return $dev;
+            });
+        } catch (\LogicException $e) {
+            return back()->withErrors(['general' => $this->mensajeYaProcesada($devolucion, $e)]);
+        }
 
         \App\Services\AuditoriaService::log('devolucion.rechazada', $devolucion, [
             'numero'      => $devolucion->numero,
@@ -297,6 +366,22 @@ class DevolucionController extends Controller
         ]);
 
         return redirect()->back()->with('success', 'Devolución rechazada.');
+    }
+
+    /**
+     * Mensaje para un aprobar/rechazar que llega tarde (doble clic, otra pestaña,
+     * otro admin): dice en qué quedó la devolución en vez de un 500.
+     */
+    private function mensajeYaProcesada(Devolucion $devolucion, \LogicException $e): string
+    {
+        $estado = Devolucion::whereKey($devolucion->id)->value('estado');
+
+        return match ($estado) {
+            'completada' => 'Esta devolución ya fue aprobada y completada.',
+            'rechazada'  => 'Esta devolución ya fue rechazada.',
+            'anulada'    => 'Esta devolución está anulada.',
+            default      => $e->getMessage(),
+        };
     }
 
     public function anular(Request $request, Devolucion $devolucion)
@@ -338,6 +423,13 @@ class DevolucionController extends Controller
         // `emitida` y `no_aplica` no se reintentan: en la primera ya existe el
         // documento y en la segunda no hay nada que acreditar. Dejar pulsar aquí
         // solo serviría para encolar trabajo que el job va a descartar.
+        // Una devolución sin completar (pendiente de aprobación, rechazada,
+        // anulada) no tiene nada que acreditar ante SUNAT.
+        if (!$devolucion->esCompletada()) {
+            return redirect()->back()->with('error',
+                'La nota de crédito solo se emite cuando la devolución está completada.');
+        }
+
         if (!$devolucion->notaCreditoSinCerrar()) {
             return redirect()->back()->with('error',
                 $devolucion->nota_credito_estado === Devolucion::NC_EMITIDA

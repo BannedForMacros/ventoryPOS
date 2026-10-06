@@ -45,9 +45,10 @@ interface Props extends PageProps {
 }
 
 import { hoyLocal } from '@/lib/fechas';
+import { soles } from '@/lib/dinero';
 
 const hoy = () => hoyLocal();
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+const money = (v: unknown) => soles(v);
 const fdate = (s: string) => new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE');
 
 const ORIGEN_LABEL: Record<string, string> = {

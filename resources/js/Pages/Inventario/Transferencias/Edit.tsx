@@ -119,10 +119,14 @@ export default function TransferenciaEdit({ transferencia: t, almacenesOrigen, a
             observacion_envio: obsEnvio,
             observacion_recepcion: obsRecepcion,
             detalles: detalles.map(d => ({
+                // id de la línea existente: el servidor la empareja para no perder
+                // lo ya recibido al editar una transferencia recibida.
+                id:                d.id ?? null,
                 producto_id:       d.producto_id,
                 unidad_medida_id:  d.unidad_medida_id,
                 cantidad:          d.cantidad,
                 factor_conversion: d.factor_conversion,
+                cantidad_recibida: t.estado === 'recibida' && d.cantidad_recibida !== '' ? d.cantidad_recibida : null,
                 observacion:       d.observacion,
             })),
             cantidades_recibidas: cantidadesRecibidas,

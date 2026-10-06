@@ -160,7 +160,7 @@ class AdelantoProveedorController extends Controller
 
         $data = $request->validate([
             'proveedor_id'   => ['required', 'integer', Rule::exists('proveedores', 'id')->where('empresa_id', $user->empresa_id)->where('activo', true)],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             'monto'          => ['required', 'numeric', 'min:0.01'],
             'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
@@ -237,7 +237,7 @@ class AdelantoProveedorController extends Controller
             if ($data['accion'] === 'devuelto') {
                 $this->tesoreria->registrar(
                     $user->empresa_id,
-                    $adelanto->cuenta_id,
+                    $adelanto->cuenta_id ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $adelanto->metodo_pago_id),
                     $user,
                     now()->toDateString(),
                     'ingreso',
@@ -274,7 +274,7 @@ class AdelantoProveedorController extends Controller
 
         $data = $request->validate([
             'monto'          => [$tieneConsumos ? 'prohibited' : 'required', 'numeric', 'min:0.01'],
-            'fecha'          => ['required', 'date'],
+            'fecha'          => ['required', 'date', new \App\Rules\NoFutura],
             'metodo_pago_id' => ['required', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
             'referencia'     => ['nullable', 'string', 'max:200'],
@@ -294,7 +294,10 @@ class AdelantoProveedorController extends Controller
                 'saldo'          => $tieneConsumos ? $adelanto->saldo : $montoNuevo,
                 'fecha'          => $data['fecha'],
                 'metodo_pago_id' => $data['metodo_pago_id'] ?? $adelanto->metodo_pago_id,
-                'cuenta_id'      => $data['cuenta_id'] ?? $adelanto->cuenta_id,
+                // La cuenta sigue al método NUEVO: pasar de transferencia a
+                // efectivo no puede dejar la cuenta bancaria vieja.
+                'cuenta_id'      => $data['cuenta_id']
+                    ?? $this->tesoreria->resolverCuenta($user->empresa_id, null, $data['metodo_pago_id'] ?? $adelanto->metodo_pago_id),
                 'referencia'     => $data['referencia'] ?? null,
                 'observacion'    => $data['observacion'] ?? null,
                 // Solo tocar turno_id si el request lo envió (para no borrarlo sin querer).

@@ -6,7 +6,7 @@ import {
     Search, ShoppingCart, User, X, ArrowLeft, ChevronDown,
     Package, Receipt, Layers, AlertTriangle, ShoppingBag, ChevronUp,
     Image as ImageIcon, CreditCard, RefreshCw, Truck, FileCheck2, Wrench, Banknote, CheckCircle2, Store, Plus, PackageCheck, Printer,
-    ArrowRight, Info,
+    ArrowRight, Info, Camera,
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import axios from 'axios';
@@ -15,8 +15,9 @@ import { celebrarVenta } from '@/lib/celebrarVenta';
 import Button from '@/Components/UI/Button';
 import Modal from '@/Components/UI/Modal';
 import CarritoItem, { LineaCarrito, HistorialPrecioCliente, DescModo, DescTipo } from './Partials/CarritoItem';
-import PanelPago, { LineaPago, faltanCuentas } from './Partials/PanelPago';
+import PanelPago, { LineaPago, faltanCuentas, cuentaDefaultDe } from './Partials/PanelPago';
 import SelectorComprobante from './Partials/SelectorComprobante';
+import ModalVisorVentas, { prepararLectura, type LecturaVisor, type LineaPlan, type VentaLeida } from './Partials/ModalVisorVentas';
 import type { LucideIcon } from 'lucide-react';
 import PanelDescuento from './Partials/PanelDescuento';
 import ModalClienteRapido from './Partials/ModalClienteRapido';
@@ -111,6 +112,14 @@ interface VentaEnEdicionItem {
     descuento_concepto_id: number | null;
     incluye_igv:           boolean;
 }
+interface AnticipoCliente {
+    id:          number;
+    fecha:       string;
+    monto:       number;
+    saldo:       number;
+    observacion: string | null;
+    aplicado?:   number;
+}
 interface VentaEnEdicionPago {
     metodo_pago_id:        number;
     cuenta_metodo_pago_id: number | null;
@@ -127,6 +136,10 @@ interface VentaEnEdicion {
     moneda:                'PEN' | 'USD';
     es_admin:              boolean;
     expira_en:             string | null;
+    tipo_cambio?:          number | null;
+    // Anticipos de dinero con que se pagó la venta (saldo = el disponible al
+    // guardar, incluido lo que esta venta le devuelve).
+    anticipos?:            AnticipoCliente[];
     cliente:               Cliente | null;
     observacion?:          string | null;
     cliente_telefono?:     string | null;
@@ -191,6 +204,8 @@ interface Props extends PageProps {
     // Puede crear productos desde el POS (permiso de Catálogo → Productos).
     puedeCrearProducto?:       boolean;
     ticketPorPlantilla?:       boolean;
+    // Visor de ventas (leer el cuaderno con IA). null = no está en el plan.
+    visorVentas?:              { limite: number; restantes: number; ultima?: { sesion: number; ventas: VentaLeida[]; leida: string } | null } | null;
     // Ventana de SUNAT para la fecha del comprobante (hoy y hasta 3 días atrás),
     // calculada en el servidor. Ver App\Support\VentanaEmisionSunat.
     ventanaEmision?:           VentanaEmision | null;
@@ -212,11 +227,32 @@ interface Props extends PageProps {
     // `vendeTransito` además habilita prometerlo como entrega pendiente.
     usaTransito?:       boolean;
     vendeTransito?:     boolean;
+    // Tope de descuento del rol en % (null = sin tope). El servidor lo exige igual.
+    topeDescuento?:     number | null;
 }
 
 type TipoComprobante = TipoComprobantePos;
 
 function uid() { return Math.random().toString(36).slice(2); }
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Clave de cada línea prellenada (edición, cita o cotización). La primera de
+ * cada producto+presentación usa la clave clásica (así "agregar" sigue sumando
+ * en ella); las repetidas llevan sufijo propio. Con la misma clave para dos
+ * líneas, cambiar una cambiaba las dos y el pendiente se mezclaba.
+ * Determinista: el estado inicial del carrito y el de los pendientes deben
+ * calcular las MISMAS claves.
+ */
+function clavesDeLineas(items: { producto_id: number; producto_unidad_id: number }[]): string[] {
+    const vistos = new Set<string>();
+    return items.map((it, i) => {
+        const base = `${it.producto_id}-${it.producto_unidad_id}`;
+        if (!vistos.has(base)) { vistos.add(base); return base; }
+        return `${base}-l${i}`;
+    });
+}
 
 /**
  * Costo minimo de una presentacion: el precio de venta editable no puede
@@ -373,7 +409,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null, puedeCrearProducto = false, ventanaEmision = null, permiteFechaFactura = false, ticketPorPlantilla = false }: Props) {
+export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null, puedeCrearProducto = false, ventanaEmision = null, permiteFechaFactura = false, ticketPorPlantilla = false, topeDescuento = null , visorVentas = null }: Props) {
     // Configuración de la empresa (configurable por tenant).
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
@@ -389,7 +425,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // mientras existan inactivos. La cotización además trae su descuento por
     // línea con el precio COTIZADO (congelado), que se respeta tal cual.
     const itemsPrellenados = citaPrellenada?.items ?? cotizacionPrellenada?.items ?? null;
-    const carritoInicial: LineaCarrito[] = itemsPrellenados?.map(it => {
+    const clavesPrellenados = clavesDeLineas(itemsPrellenados ?? []);
+    const carritoInicial: LineaCarrito[] = itemsPrellenados?.map((it, idx) => {
         const descuentoItem = (it as CotizacionPrellenadaItem).descuento_item ?? 0;
         const subtotal = (it.precio_unitario - descuentoItem) * it.cantidad;
         const motivo = !it.producto_activo
@@ -401,7 +438,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         const prodCatalogo = productos.find(p => p.id === it.producto_id);
         const uniCatalogo  = prodCatalogo?.unidades?.find(u => u.id === it.producto_unidad_id);
         return {
-            key: `${it.producto_id}-${it.producto_unidad_id}`,
+            key:                   clavesPrellenados[idx],
             producto_id:           it.producto_id,
             producto_unidad_id:    it.producto_unidad_id,
             producto_nombre:       it.producto_nombre,
@@ -430,18 +467,22 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
 
     // Si el POS se abrió en modo EDICIÓN (?venta_id=), prellenar el carrito con
     // los items de la venta existente (resolviendo costo_minimo del catálogo).
-    const carritoEdicion: LineaCarrito[] = ventaEnEdicion?.items.map(it => {
+    const clavesEdicion = clavesDeLineas(ventaEnEdicion?.items ?? []);
+    // Una venta en USD llega en dólares; el catálogo (precio de lista y costo)
+    // está en soles: se convierte con el TC congelado de la venta.
+    const tcEdicion = ventaEnEdicion?.moneda === 'USD' ? (ventaEnEdicion.tipo_cambio || tipoCambioHoy || 1) : 1;
+    const carritoEdicion: LineaCarrito[] = ventaEnEdicion?.items.map((it, idx) => {
         const prod = productos.find(p => p.id === it.producto_id);
         const uni  = prod?.unidades?.find(u => u.id === it.producto_unidad_id);
         return {
-            key: `${it.producto_id}-${it.producto_unidad_id}`,
+            key:                   clavesEdicion[idx],
             producto_id:           it.producto_id,
             producto_unidad_id:    it.producto_unidad_id,
             producto_nombre:       it.producto_nombre,
             unidad_nombre:         it.unidad_nombre,
             precio_unitario:       it.precio_unitario,
-            precio_original:       uni ? parseFloat(uni.precio_venta) : it.precio_unitario,
-            costo_minimo:          prod && uni ? costoMinimoDe(prod, uni) : 0,
+            precio_original:       uni ? r2(parseFloat(uni.precio_venta) / tcEdicion) : it.precio_unitario,
+            costo_minimo:          prod && uni ? r2(costoMinimoDe(prod, uni) / tcEdicion) : 0,
             stock_disponible:      prod?.stock_disponible ?? null,
             stock_en_transito:     prod?.stock_en_transito ?? 0,
             transito_fecha:        prod?.transito_fecha ?? null,
@@ -463,7 +504,10 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         return {
             key:                   uid(),
             metodo_pago_id:        p.metodo_pago_id,
-            cuenta_metodo_pago_id: p.cuenta_metodo_pago_id,
+            // Pagos viejos sin cuenta en un método que hoy tiene una sola: se
+            // completa sola (con 1 cuenta el panel no muestra selector y la
+            // cajera no tendría cómo elegirla).
+            cuenta_metodo_pago_id: p.cuenta_metodo_pago_id ?? cuentaDefaultDe(m),
             monto:                 p.monto,
             referencia:            p.referencia ?? '',
             admite_vuelto:         !!m?.admite_vuelto,
@@ -506,6 +550,14 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // Multimoneda: moneda de la venta. En USD los precios/pagos se ingresan en
     // dólares y el backend los convierte a soles al TC del día (congelado).
     const [moneda, setMoneda]                       = useState<'PEN' | 'USD'>(ventaEnEdicion?.moneda ?? 'PEN');
+    // Soles por 1 US$: al editar, el TC congelado de la venta (el servidor
+    // convierte con ese); en una venta nueva, el del día.
+    const tcVenta = (ventaEnEdicion?.tipo_cambio || tipoCambioHoy || 0) as number;
+    // Factor de la moneda de la venta → soles. El catálogo, el costo y los
+    // anticipos están en soles; el carrito, en la moneda de la venta.
+    const factorMoneda = moneda === 'USD' && tcVenta > 0 ? tcVenta : 1;
+    const sim = moneda === 'USD' ? 'US$' : 'S/';
+    const aMonedaVenta = (soles: number) => r2(soles / factorMoneda);
     // F1 — Venta a crédito: se entrega mercadería sin cobrar el total.
     // Requiere cliente identificado; el saldo queda como cuenta por cobrar.
     // En EDICIÓN se prellena con lo guardado (antes salía siempre desmarcado).
@@ -541,9 +593,10 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const envioPendiente = envioSaleAlEntregar && !envioEntregado;
     const [pendientes, setPendientes]               = useState<Record<string, number>>(() => {
         const m: Record<string, number> = {};
-        ventaEnEdicion?.items.forEach(it => {
+        const claves = clavesDeLineas(ventaEnEdicion?.items ?? []);
+        ventaEnEdicion?.items.forEach((it, idx) => {
             if (it.cantidad_pendiente && it.cantidad_pendiente > 0) {
-                m[`${it.producto_id}-${it.producto_unidad_id}`] = it.cantidad_pendiente;
+                m[claves[idx]] = it.cantidad_pendiente;
             }
         });
         return m;
@@ -572,6 +625,29 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const [nuevaLineaPrecioKey, setNuevaLineaPrecioKey] = useState<string | null>(null);
     // Línea recién agregada o sumada → se ilumina en el carrito (ver CarritoItem).
     const [pulsos, setPulsos] = useState<Record<string, number>>({});
+    // Visor de ventas: la lectura vive aquí para cobrar venta por venta sin
+    // gastar otra lectura al reabrir el modal.
+    const [verVisor, setVerVisor] = useState(false);
+    // Al volver al POS después de cobrar, la última lectura de hoy sigue ahí (las cobradas vienen marcadas).
+    const [lecturaVisor, setLecturaVisor] = useState<LecturaVisor | null>(() => visorVentas?.ultima ? prepararLectura(visorVentas.ultima.ventas, visorVentas.ultima.sesion) : null);
+    // El visor carga ventas nuevas: no aplica al editar una venta ni al cobrar una cotización o cita.
+    const visorActivo = !!visorVentas && !ventaEnEdicion && !cotizacionPrellenada && !citaPrellenada;
+    const [restantesVisor, setRestantesVisor] = useState(visorVentas?.restantes ?? 0);
+    // Total anotado en el cuaderno de la venta cargada (aviso en el carrito).
+    const [totalCuaderno, setTotalCuaderno] = useState<number | null>(null);
+    // Lo que se manda al cobrar una venta cargada desde el cuaderno.
+    const [visorCarga, setVisorCarga] = useState<{ indice: number; sesion?: number; fecha: string | null; total: number | null; huella?: string; items: { texto: string; producto_id: number; cantidad: number | null }[] } | null>(null);
+    // Vaciar el carrito sin cobrar devuelve la venta del cuaderno a "por cargar".
+    useEffect(() => {
+        if (carrito.length > 0) return;
+        setTotalCuaderno(null);
+        if (visorCarga) {
+            const indice = visorCarga.indice;
+            setLecturaVisor(l => l && ({ ...l, ventas: l.ventas.map((v, vi) => vi === indice ? { ...v, cargada: false } : v) }));
+            setVisorCarga(null);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [carrito.length]);
 
     /**
      * Confirma que el producto entró. En pantalla grande el carrito está a la
@@ -593,12 +669,19 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // pasa el mouse; no tiene que hacer clic en nada.
     const [tooltipProd, setTooltipProd] = useState<{ producto: Producto; top: number; bottom: number; left: number } | null>(null);
     // Anticipos de efectivo del cliente seleccionado.
-    const [anticiposCliente, setAnticiposCliente] = useState<{ id: number; fecha: string; monto: number; saldo: number; observacion: string | null }[]>([]);
+    // Al EDITAR una venta pagada con anticipo, arranca con esos anticipos ya
+    // marcados (y con el saldo que tendrán al guardar). Antes arrancaba sin
+    // anticipo, el efectivo automático cubría todo y al guardar la venta quedaba
+    // pagada con un efectivo que nunca entró.
+    const anticiposEdicion = ventaEnEdicion?.anticipos ?? [];
+    const [anticiposCliente, setAnticiposCliente] = useState<AnticipoCliente[]>(anticiposEdicion);
     // Anticipos elegidos para pagar la venta. 'auto' recalcula solo el mínimo
     // necesario (del más antiguo al más nuevo) cada vez que cambia el total;
     // marcar/desmarcar a mano pasa a 'manual' y respeta lo elegido.
-    const [modoAnticipo, setModoAnticipo] = useState<'off' | 'auto' | 'manual'>('off');
-    const [anticiposManual, setAnticiposManual] = useState<number[]>([]);
+    const [modoAnticipo, setModoAnticipo] = useState<'off' | 'auto' | 'manual'>(anticiposEdicion.length ? 'manual' : 'off');
+    const [anticiposManual, setAnticiposManual] = useState<number[]>(anticiposEdicion.map(a => a.id));
+    // La primera carga del cliente de la venta en edición no debe desmarcarlos.
+    const conservarAnticiposEdicion = useRef(anticiposEdicion.length > 0);
     const [cargandoAnticipos, setCargandoAnticipos] = useState(false);
 
     // Totales de la venta (disponibles temprano para efectos y validaciones).
@@ -615,7 +698,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             for (const a of anticiposCliente) {
                 if (falta <= 0.009 && ids.length) break;
                 ids.push(a.id);
-                falta = Math.round((falta - a.saldo) * 100) / 100;
+                falta = Math.round((falta - aMonedaVenta(a.saldo)) * 100) / 100;
             }
             return ids;
         })();
@@ -624,7 +707,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         let falta = total;
         for (const a of anticiposCliente) {
             if (!anticiposIds.includes(a.id)) continue;
-            const usa = Math.max(0, Math.min(a.saldo, Math.round(falta * 100) / 100));
+            // El saldo está en soles: en una venta en US$ se compara en dólares.
+            const usa = Math.max(0, Math.min(aMonedaVenta(a.saldo), Math.round(falta * 100) / 100));
             r[a.id] = usa;
             falta -= usa;
         }
@@ -827,15 +911,31 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             .catch(() => { if (vivo) setHistorialCliente({}); });
 
         setCargandoAnticipos(true);
-        axios.get<{ anticipos: { id: number; fecha: string; monto: number; saldo: number; observacion: string | null }[]; total: number }>(route('pos.clientes.anticipos', id))
+        axios.get<{ anticipos: AnticipoCliente[]; total: number }>(route('pos.clientes.anticipos', id))
             .then(r => {
                 if (!vivo) return;
-                setAnticiposCliente(r.data.anticipos);
+                // Cliente de la venta en edición: lo que esta venta consumió vuelve a
+                // estar disponible al guardar (el servidor lo devuelve antes de
+                // re-aplicar), aunque el anticipo haya quedado agotado por ella.
+                let lista = r.data.anticipos;
+                if (ventaEnEdicion && id === ventaEnEdicion.cliente?.id && anticiposEdicion.length) {
+                    const propios = new Map(anticiposEdicion.map(a => [a.id, a]));
+                    lista = [
+                        ...lista.filter(a => !propios.has(a.id)),
+                        ...anticiposEdicion,
+                    ].sort((a, b) => (a.fecha === b.fecha ? a.id - b.id : a.fecha < b.fecha ? -1 : 1));
+                }
+                setAnticiposCliente(lista);
+                if (conservarAnticiposEdicion.current) {
+                    conservarAnticiposEdicion.current = false;
+                    return;
+                }
                 // Otro cliente: lo elegido del anterior no aplica.
                 setModoAnticipo('off');
                 setAnticiposManual([]);
             })
-            .catch(() => { if (vivo) setAnticiposCliente([]); })
+            // Sin conexión: al menos se conservan los que ya pagaban esta venta.
+            .catch(() => { if (vivo) setAnticiposCliente(ventaEnEdicion && id === ventaEnEdicion.cliente?.id ? anticiposEdicion : []); })
             .finally(() => { if (vivo) setCargandoAnticipos(false); });
         return () => { vivo = false; };
     }, [cliente?.id]);
@@ -901,7 +1001,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             setPagos([{
                 key:                   uid(),
                 metodo_pago_id:        efectivo.id,
-                cuenta_metodo_pago_id: null,
+                // Si el efectivo tiene UNA cuenta vinculada va esa (el panel no
+                // pinta selector con una sola y el cobro quedaba trabado).
+                cuenta_metodo_pago_id: cuentaDefaultDe(efectivo),
                 // Lo que falta: si hay un anticipo parcial, no el total entero.
                 monto:                 parseFloat(Math.max(0, total - montoAnticipoUsado).toFixed(2)),
                 referencia:            '',
@@ -1024,7 +1126,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
      */
     function agregarConPresentacion(producto: Producto, unidad: ProductoUnidad) {
         const baseKey = `${producto.id}-${unidad.id}`;
-        const precio = parseFloat(unidad.precio_venta);
+        // El catálogo está en soles: en una venta en US$ entra ya convertido.
+        const precio = aMonedaVenta(parseFloat(unidad.precio_venta));
+        const costoMinimo = aMonedaVenta(costoMinimoDe(producto, unidad));
         const nombreCompleto = unidad.unidad_medida?.nombre
             ? `${producto.nombre} (${unidad.unidad_medida.nombre})`
             : producto.nombre;
@@ -1048,7 +1152,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 unidad_nombre:        unidad.unidad_medida?.nombre ?? '',
                 precio_unitario:      precio,
                 precio_original:      precio,
-                costo_minimo:         costoMinimoDe(producto, unidad),
+                costo_minimo:         costoMinimo,
                 stock_disponible:     producto.stock_disponible ?? null,
                 stock_en_transito:    producto.stock_en_transito ?? 0,
                 transito_fecha:       producto.transito_fecha ?? null,
@@ -1087,7 +1191,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 unidad_nombre:        unidad.unidad_medida?.nombre ?? '',
                 precio_unitario:      precio,
                 precio_original:      precio,
-                costo_minimo:         costoMinimoDe(producto, unidad),
+                costo_minimo:         costoMinimo,
                 stock_disponible:     producto.stock_disponible ?? null,
                 stock_en_transito:    producto.stock_en_transito ?? 0,
                 transito_fecha:       producto.transito_fecha ?? null,
@@ -1105,6 +1209,87 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         }
 
         avisarAgregado(baseKey, nombreCompleto);
+    }
+
+    /**
+     * Carga al carrito una venta leída del cuaderno. El modal ya resolvió todo:
+     * una línea por producto (los repetidos sumados, salvo que la empresa
+     * permita duplicar) y el precio final (de lista o ajustado al total que
+     * anotó la cajera). Va en la unidad base: el cuaderno cuenta tabletas,
+     * sobres, frascos.
+     */
+    async function cargarVentaLeida(venta: VentaLeida, indice: number, lineasPlan: LineaPlan[]): Promise<boolean> {
+        // El cuaderno está en soles: convertir cada precio a dólares descuadraría el total.
+        if (moneda !== 'PEN') {
+            toast.error('El cuaderno está en soles: cambia la venta a soles para cargarla.');
+            return false;
+        }
+        // Nunca pisa lo que la cajera ya tiene en el carrito.
+        if (carrito.length > 0) {
+            toast.error('Cobra o vacía el carrito actual antes de cargar otra venta del cuaderno.');
+            return false;
+        }
+        const ids = [...new Set(lineasPlan.map(l => l.producto_id))];
+        let encontrados: Producto[] = [];
+        try {
+            const { data } = await axios.get(route('pos.productos'), { params: { ids } });
+            encontrados = data.productos ?? [];
+        } catch {
+            toast.error('No se pudieron traer los productos. Revisa tu conexión e intenta de nuevo.');
+            return false;
+        }
+        const lineas: LineaCarrito[] = [];
+        for (const plan of lineasPlan) {
+            const producto = encontrados.find(p => p.id === plan.producto_id);
+            const unidades = (producto?.unidades ?? []).filter(u => u.activo !== false);
+            // El cuaderno cuenta unidades sueltas: sin unidad base activa no se adivina la presentación.
+            const unidad = unidades.find(u => u.es_base) ?? producto?.unidad_base;
+            if (!producto || !unidad) {
+                toast.error(`"${plan.nombre}" ya no está disponible para la venta.`);
+                return false;
+            }
+            const lista = aMonedaVenta(parseFloat(unidad.precio_venta));
+            lineas.push(recalcularLinea({
+                // Sin duplicados permitidos, la clave base: si luego tocan el mismo producto, se suma a esta línea.
+                key:                  permiteDuplicarItems ? `${producto.id}-${unidad.id}-${uid()}` : `${producto.id}-${unidad.id}`,
+                producto_id:          producto.id,
+                producto_unidad_id:   unidad.id,
+                producto_nombre:      producto.nombre,
+                unidad_nombre:        unidad.unidad_medida?.nombre ?? '',
+                // Precio final elegido en la revisión; el de lista queda tachado si cambió.
+                precio_unitario:      aMonedaVenta(plan.precio),
+                precio_original:      lista,
+                costo_minimo:         aMonedaVenta(costoMinimoDe(producto, unidad)),
+                stock_disponible:     producto.stock_disponible ?? null,
+                stock_en_transito:    producto.stock_en_transito ?? 0,
+                transito_fecha:       producto.transito_fecha ?? null,
+                factor_conversion:    parseFloat(unidad.factor_conversion) || 1,
+                cantidad:             plan.cantidad,
+                descuento_item:       0,
+                descuento_modo:       'pu',
+                descuento_tipo:       'monto',
+                descuento_valor:      0,
+                descuento_concepto_id: null,
+                subtotal:             0,
+                incluye_igv:          producto.incluye_igv,
+            }));
+        }
+        setCarrito(lineas);
+        setTotalCuaderno(venta.total);
+        // Al cobrar se manda con la venta: se recuerda (no cobrarla dos veces)
+        // y se aprende qué producto era cada texto escrito.
+        setVisorCarga({
+            indice,
+            sesion:  lecturaVisor?.sesion,
+            huella: venta.huella,
+            fecha: venta.fecha,
+            total: venta.total,
+            items: venta.items.filter(i => !i.quitado && i.elegido).map(i => ({ texto: i.texto, producto_id: i.elegido!.producto_id, cantidad: i.cantidad })),
+        });
+        setLecturaVisor(l => l && ({ ...l, ventas: l.ventas.map((v, vi) => vi === indice ? { ...v, cargada: true } : v) }));
+        setVerVisor(false);
+        toast.success(`Venta ${indice + 1} cargada: revisa y cobra.`);
+        return true;
     }
 
     function cambiarCantidad(key: string, delta: number) {
@@ -1143,6 +1328,45 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 })
                 : i,
         ));
+    }
+
+    /**
+     * Cambiar de moneda con productos en el carrito convierte sus precios (y el
+     * descuento y los pagos) al TC. Antes solo cambiaba la etiqueta: los S/ 10
+     * de un producto pasaban a cobrarse US$ 10.
+     */
+    const descuentoSoles = useRef<number | null>(null);
+    function cambiarMoneda(nueva: 'PEN' | 'USD') {
+        if (nueva === moneda) return;
+        if (!(tcVenta > 0)) { toast.error('No hay tipo de cambio del día: no se puede vender en dólares.'); return; }
+        const f = nueva === 'USD' ? 1 / tcVenta : tcVenta;
+        // De vuelta a soles: si el monto en dólares no se tocó, vuelve el de soles
+        // exacto; solo lo que se cambió en dólares se convierte.
+        const volver = (soles: number | undefined, actual: number) =>
+            soles != null && r2(soles / tcVenta) === actual ? soles : r2(actual * f);
+        setCarrito(prev => prev.map(i => {
+            if (nueva === 'USD') {
+                return recalcularLinea(i, {
+                    en_soles:        { precio_unitario: i.precio_unitario, precio_original: i.precio_original, costo_minimo: i.costo_minimo, descuento_valor: i.descuento_valor },
+                    precio_unitario: r2(i.precio_unitario * f),
+                    precio_original: r2(i.precio_original * f),
+                    costo_minimo:    r2(i.costo_minimo * f),
+                    descuento_valor: i.descuento_tipo === 'monto' ? r2(i.descuento_valor * f) : i.descuento_valor,
+                });
+            }
+            const s = i.en_soles;
+            return recalcularLinea(i, {
+                en_soles:        undefined,
+                precio_unitario: volver(s?.precio_unitario, i.precio_unitario),
+                precio_original: volver(s?.precio_original, i.precio_original),
+                costo_minimo:    volver(s?.costo_minimo, i.costo_minimo),
+                descuento_valor: i.descuento_tipo === 'monto' ? volver(s?.descuento_valor, i.descuento_valor) : i.descuento_valor,
+            });
+        }));
+        if (nueva === 'USD') descuentoSoles.current = descuentoTotal;
+        setDescuentoTotal(d => (nueva === 'USD' ? r2(d * f) : volver(descuentoSoles.current ?? undefined, d)));
+        setPagos(prev => prev.map(p => ({ ...p, monto: r2(p.monto * f) })));
+        setMoneda(nueva);
     }
 
     function eliminarItem(key: string) {
@@ -1282,12 +1506,26 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         if (descuentoTotal > 0 && !descuentoConceptoId) {
             return { texto: 'Elige el motivo del descuento', resolver: enfocar('[data-descuento-concepto]') };
         }
-        const bajoCosto = carrito.find(i => (i.costo_minimo ?? 0) > 0 && i.precio_unitario < i.costo_minimo - 0.009);
+        // Mismo piso que el servidor: lo que se cobra (precio menos un descuento
+        // SIN motivo) no puede quedar bajo el costo.
+        const cobradoDe = (i: LineaCarrito) => i.precio_unitario - (i.descuento_concepto_id ? 0 : i.descuento_item);
+        const bajoCosto = carrito.find(i => (i.costo_minimo ?? 0) > 0 && cobradoDe(i) < i.costo_minimo - 0.009);
         if (bajoCosto) {
             return {
-                texto: `Sube el precio de ${bajoCosto.producto_nombre}: está bajo el costo (S/ ${bajoCosto.costo_minimo.toFixed(2)})`,
+                texto: bajoCosto.precio_unitario < bajoCosto.costo_minimo - 0.009
+                    ? `Sube el precio de ${bajoCosto.producto_nombre}: está bajo el costo (${sim} ${bajoCosto.costo_minimo.toFixed(2)})`
+                    : `El descuento deja ${bajoCosto.producto_nombre} bajo el costo (${sim} ${bajoCosto.costo_minimo.toFixed(2)}): bájalo o elige su motivo`,
                 resolver: enfocar(`[data-precio-key="${bajoCosto.key}"]`),
             };
+        }
+        // Tope de descuento del rol, sumando el global y los de cada producto.
+        if (topeDescuento !== null && topeDescuento !== undefined) {
+            const bruto = carrito.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0);
+            const descontado = descuentoTotal + carrito.reduce((s, i) => s + Math.min(i.descuento_item, i.precio_unitario) * i.cantidad, 0);
+            const pct = bruto > 0 ? Math.round((descontado / bruto) * 10000) / 100 : 0;
+            if (descontado > 0.009 && pct > topeDescuento + 0.01) {
+                return { texto: `Tu rol permite hasta ${topeDescuento}% de descuento y vas en ${pct}%: pide a un supervisor` };
+            }
         }
 
         if (esEnvio && entregas) {
@@ -1315,7 +1553,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         } else if (!sinCobro) {
             if (pagos.length === 0 && !anticipoSeleccionado) return { texto: 'Elige cómo paga', resolver: enfocar('[data-metodo-pago]') };
             if (totalPagado < total - 0.009) {
-                return { texto: `Falta cubrir S/ ${(total - totalPagado).toFixed(2)}`, resolver: enfocar('[data-pago-monto]') };
+                return { texto: `Falta cubrir ${sim} ${(total - totalPagado).toFixed(2)}`, resolver: enfocar('[data-pago-monto]') };
             }
         }
 
@@ -1388,7 +1626,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             despacho_almacen:      despachoAlmacen,
             fecha_entrega_estimada: (entregaPendiente || despachoAlmacen) && fechaEntrega ? fechaEntrega : null,
             moneda,
-            tipo_cambio:           moneda === 'USD' ? (tipoCambioHoy ?? null) : null,
+            tipo_cambio:           moneda === 'USD' ? (tcVenta || null) : null,
             // Modo turno específico (admin): la venta va a ESE turno con la
             // fecha del turno (backdate). El backend valida admin + turno abierto.
             turno_id:              turnoBackdate?.turno_id ?? null,
@@ -1402,6 +1640,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             // Si vino de una cotización, el backend la marca 'convertida' y
             // le guarda el venta_id.
             cotizacion_id:         cotizacionPrellenada?.id ?? null,
+            // Venta que vino del cuaderno (visor de ventas): recordarla y aprender.
+            visor:                 visorCarga,
             // Anticipos de efectivo del cliente con los que se pagará la venta
             // (el backend los consume del más antiguo al más nuevo).
             anticipo_ids:          anticiposIds.filter(id => (repartoAnticipos[id] ?? 0) > 0.009),
@@ -1455,6 +1695,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 celebrarVenta(cobrado);
                 setLoading(false);
                 setModalConfirm(false);
+                // Cobrada: la venta del cuaderno queda como cargada (no vuelve a "por cargar").
+                setVisorCarga(null);
                 limpiarCarrito();
                 setCarritoAbierto(false);
                 // Renovar key para la proxima venta (la actual ya quedo persistida).
@@ -1598,8 +1840,11 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         pulsos,
         // Resumen de las opciones de la venta (pie del carrito) y si deben verse
         // abiertas: un envío tiene datos que llenar (ruta, fecha, dirección).
+        totalCuaderno,
         resumenEntrega:        entregas ? comoFrase(tipoEntrega === 'envio' ? entregas.texto_envio : entregas.texto_recojo) : null,
         forzarOpciones:        esEnvio,
+        // Símbolo de la moneda de la venta (carrito, pago y total).
+        simbolo:               sim,
     };
 
     /*
@@ -1911,7 +2156,9 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                         <div className="hidden sm:flex items-center gap-1.5" title={`Tipo de cambio del día: S/ ${Number(tipoCambioHoy).toFixed(3)} por US$ 1`}>
                             <Select variant="oscuro" size="sm" ariaLabel="Moneda" className="w-32"
                                 value={moneda}
-                                onChange={v => setMoneda(v as 'PEN' | 'USD')}
+                                // Editar no cambia la moneda (VentaService la conserva).
+                                disabled={!!ventaEnEdicion}
+                                onChange={v => cambiarMoneda(v as 'PEN' | 'USD')}
                                 options={[{ value: 'PEN', label: 'S/ Soles' }, { value: 'USD', label: 'US$ Dólares' }]} />
                             {moneda === 'USD' && (
                                 <span className="text-[11px] font-medium text-white/90 whitespace-nowrap">TC {Number(tipoCambioHoy).toFixed(3)}</span>
@@ -1944,7 +2191,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 mover caja (el dinero ya entró al registrar cada anticipo). */}
             {!!cliente && anticiposCliente.length > 0 && (() => {
                 const activo = anticiposIds.length > 0;
-                const saldoTotal = anticiposCliente.reduce((s, a) => s + a.saldo, 0);
+                const saldoTotal = anticiposCliente.reduce((s, a) => s + aMonedaVenta(a.saldo), 0);
                 const falta = Math.max(0, Math.round((total - montoAnticipoUsado) * 100) / 100);
                 const alternar = (id: number) => {
                     const base = anticiposIds;
@@ -1971,8 +2218,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                             </span>
                             <span className="truncate">
                                 {activo
-                                    ? `Se descontará S/ ${montoAnticipoUsado.toFixed(2)}${falta > 0.009 ? ` · falta S/ ${falta.toFixed(2)} por pagar` : ''}.`
-                                    : `Este cliente tiene S/ ${saldoTotal.toFixed(2)} en ${anticiposCliente.length > 1 ? `${anticiposCliente.length} anticipos` : 'un anticipo'} de efectivo.`}
+                                    ? `Se descontará ${sim} ${montoAnticipoUsado.toFixed(2)}${falta > 0.009 ? ` · falta ${sim} ${falta.toFixed(2)} por pagar` : ''}.`
+                                    : `Este cliente tiene ${sim} ${saldoTotal.toFixed(2)} en ${anticiposCliente.length > 1 ? `${anticiposCliente.length} anticipos` : 'un anticipo'} de efectivo.`}
                             </span>
                         </div>
                         <button
@@ -1995,20 +2242,20 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                             {anticiposCliente.map(a => {
                                 const marcado = anticiposIds.includes(a.id);
                                 const usa = repartoAnticipos[a.id] ?? 0;
-                                const queda = Math.round((a.saldo - usa) * 100) / 100;
+                                const queda = Math.round((aMonedaVenta(a.saldo) - usa) * 100) / 100;
                                 return (
                                     <label key={a.id} className="flex items-center gap-2 text-xs cursor-pointer rounded px-1.5 py-1"
                                         style={{ backgroundColor: marcado ? 'color-mix(in srgb, var(--color-success) 8%, transparent)' : 'transparent' }}>
                                         <input type="checkbox" checked={marcado} onChange={() => alternar(a.id)} disabled={cargandoAnticipos} />
                                         <span className="tabular-nums" style={{ color: 'var(--color-text-muted)' }}>{a.fecha}</span>
                                         <span className="truncate min-w-0 flex-1">
-                                            #{a.id}{a.observacion ? ` · ${a.observacion}` : ''} — saldo S/ {a.saldo.toFixed(2)}
+                                            #{a.id}{a.observacion ? ` · ${a.observacion}` : ''} — saldo {sim} {aMonedaVenta(a.saldo).toFixed(2)}
                                         </span>
                                         <span className="tabular-nums font-semibold flex-shrink-0">
                                             {!marcado ? ''
                                                 : usa <= 0.009 ? <span style={{ color: 'var(--color-text-muted)' }}>no se necesita</span>
-                                                : queda > 0.009 ? `usa S/ ${usa.toFixed(2)} · queda S/ ${queda.toFixed(2)}`
-                                                : `usa S/ ${usa.toFixed(2)} · se agota`}
+                                                : queda > 0.009 ? `usa ${sim} ${usa.toFixed(2)} · queda ${sim} ${queda.toFixed(2)}`
+                                                : `usa ${sim} ${usa.toFixed(2)} · se agota`}
                                         </span>
                                     </label>
                                 );
@@ -2158,6 +2405,26 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                             >
                                 <RefreshCw size={15} className={refrescando ? 'animate-spin' : ''} />
                             </button>
+                            {visorActivo && (
+                                <button
+                                    onClick={() => setVerVisor(true)}
+                                    title="Leer ventas del cuaderno con una foto"
+                                    aria-label="Leer ventas del cuaderno con una foto"
+                                    className="relative flex items-center gap-1 h-10 px-3 flex-shrink-0 rounded-xl text-[13px] font-semibold transition-colors hover:brightness-95"
+                                    style={{ color: 'var(--vp-navy)', backgroundColor: 'var(--vp-sky-light)' }}
+                                >
+                                    <Camera size={16} /> <span className="hidden sm:inline">Cuaderno</span>
+                                    {(() => {
+                                        const porCargar = lecturaVisor?.ventas.filter(v => !v.cargada && !v.saltada && !(v.ya_cobrada && !v.forzar)).length ?? 0;
+                                        return porCargar > 0 && (
+                                            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold text-white flex items-center justify-center"
+                                                style={{ backgroundColor: 'var(--color-primary)' }} title={`${porCargar} por cargar`}>
+                                                {porCargar}
+                                            </span>
+                                        );
+                                    })()}
+                                </button>
+                            )}
                             {puedeCrearProducto && (
                                 <button
                                     onClick={() => { setNombreNuevoProducto(''); setModalNuevoProducto(true); }}
@@ -2517,7 +2784,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                                 <span className="text-[10px] font-medium uppercase tracking-wider opacity-80">
                                     {cantidadItems === 0 ? 'Carrito vacío' : `${cantidadItems} ${cantidadItems === 1 ? 'item' : 'items'} · Tocar para cobrar`}
                                 </span>
-                                <span className="text-base font-bold">S/ {total.toFixed(2)}</span>
+                                <span className="text-base font-bold">{sim} {total.toFixed(2)}</span>
                             </div>
                         </div>
                         <ChevronUp size={20} className="flex-shrink-0 opacity-80" />
@@ -2570,7 +2837,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                     </Button>
                 </>}>
                 <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-                    Esta venta suma <strong>S/ {total.toFixed(2)}</strong> y está marcada como recojo en tienda.
+                    Esta venta suma <strong>{sim} {total.toFixed(2)}</strong> y está marcada como recojo en tienda.
                     Si hay que llevársela al cliente, márcala como envío para que salga en los despachos con su dirección y su hora.
                 </p>
             </Modal>
@@ -2597,7 +2864,23 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 fechaEntrega={fechaEntrega}
                 despachoAlmacen={despachoAlmacen}
                 anticipoMonto={montoAnticipoUsado}
+                simbolo={sim}
             />
+
+            {visorVentas && visorActivo && (
+                <ModalVisorVentas
+                    isOpen={verVisor}
+                    onClose={() => setVerVisor(false)}
+                    limite={visorVentas.limite}
+                    restantes={restantesVisor}
+                    onRestantes={setRestantesVisor}
+                    lectura={lecturaVisor}
+                    onLectura={setLecturaVisor}
+                    carritoVacio={carrito.length === 0}
+                    permiteDuplicar={permiteDuplicarItems}
+                    onCargar={cargarVentaLeida}
+                />
+            )}
 
             <ModalSelectorPresentacion
                 isOpen={productoEnSeleccion !== null}
@@ -2760,6 +3043,9 @@ interface CarritoPanelProps {
     resumenEntrega: string | null;
     // Las opciones se muestran abiertas sí o sí (envío con datos por llenar).
     forzarOpciones: boolean;
+    simbolo: string;
+    // Total anotado en el cuaderno de la venta cargada por el visor.
+    totalCuaderno: number | null;
 }
 
 function CarritoPanel({
@@ -2777,7 +3063,7 @@ function CarritoPanel({
     usaDespachoAlmacen, envioPendiente, envioSaleAlEntregar, slotEntrega,
     nuevaLineaPrecioKey, onAutoFocusPrecio,
     anticipoSeleccionado, montoAnticipoUsado,
-    slotComprobante, pulsos, resumenEntrega, forzarOpciones,
+    slotComprobante, pulsos, resumenEntrega, forzarOpciones, simbolo, totalCuaderno,
 }: CarritoPanelProps) {
     // Opciones de la venta (recojo/envío, crédito, por entregar, despacho): casi
     // siempre quedan en su valor normal, así que van RESUMIDAS en una línea del
@@ -2819,7 +3105,7 @@ function CarritoPanel({
                 Una sola zona arriba: comprobante (pantalla grande) y cliente.
                 Nada de cabecera "Carrito" que compita con la barra azul. */}
             <div
-                className="px-3 pt-3 pb-2.5 flex flex-col gap-2 flex-shrink-0"
+                className="px-3 pt-3 pb-2.5 bajo:pt-2 bajo:pb-2 flex flex-col gap-2 bajo:gap-1.5 flex-shrink-0"
                 style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}
             >
                 {slotComprobante}
@@ -2828,14 +3114,14 @@ function CarritoPanel({
                     type="button"
                     onClick={onAbrirCliente}
                     aria-label={`Cliente: ${clienteNombre}. Cambiar cliente`}
-                    className="group flex items-center gap-2.5 w-full text-left rounded-lg px-2 py-1.5 -mx-0 transition-colors"
+                    className="group flex items-center gap-2.5 w-full text-left rounded-lg px-2 py-1.5 bajo:py-1 -mx-0 transition-colors"
                     style={{
                         border: `1px solid ${faltaCliente ? 'var(--color-danger)' : 'var(--color-border)'}`,
                         backgroundColor: faltaCliente ? 'color-mix(in srgb, var(--color-danger) 6%, var(--color-surface))' : 'var(--color-surface)',
                     }}
                 >
                     <span
-                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[13px] font-bold"
+                        className="flex h-8 w-8 bajo:h-7 bajo:w-7 flex-shrink-0 items-center justify-center rounded-full text-[13px] font-bold"
                         style={esClienteGeneral
                             ? { backgroundColor: 'var(--color-bg)', color: 'var(--color-text-muted)' }
                             : { backgroundColor: 'var(--vp-navy)', color: '#fff' }}
@@ -2867,12 +3153,23 @@ function CarritoPanel({
                 Productos + descuento + modalidad + pago + desglose comparten
                 UN scroll. Abajo queda fijo solo lo esencial: estado del pago,
                 TOTAL y Cobrar. */}
-            <div className="flex-1 overflow-y-auto px-3 py-2.5 flex flex-col gap-3">
+            <div className="flex-1 overflow-y-auto px-3 py-2.5 bajo:py-1.5 flex flex-col gap-3 bajo:gap-2 min-h-[7rem]">
                 {hayInactivos && (
                     <Aviso tono="error" titulo={`${inactivosCount === 1 ? 'Hay 1 producto que ya no se vende' : `Hay ${inactivosCount} productos que ya no se venden`}`}>
                         Quítalos del carrito o pide al administrador que los reactive.
                     </Aviso>
                 )}
+
+                {totalCuaderno != null && carrito.length > 0 && (Math.abs(totalCuaderno - total) > 0.009 ? (
+                    <Aviso tono="aviso">
+                        El cuaderno dice <strong>S/ {totalCuaderno.toFixed(2)}</strong>; el carrito suma S/ {total.toFixed(2)}. Ajusta precios o cantidades si cobraste distinto.
+                    </Aviso>
+                ) : (
+                    // Coincide: basta una línea, el espacio es para los productos.
+                    <p className="flex items-center gap-1.5 px-1 text-[12px] font-semibold" style={{ color: 'var(--vp-mint-ink)' }}>
+                        <CheckCircle2 size={13} /> Igual al cuaderno (S/ {totalCuaderno.toFixed(2)})
+                    </p>
+                ))}
 
                 {carrito.length === 0 ? (
                     <div className="flex flex-col items-center justify-center flex-1 gap-2 py-10 text-center" style={{ color: 'var(--color-text-muted)' }}>
@@ -2913,6 +3210,7 @@ function CarritoPanel({
                                     onDescuento={onAplicarDescuentoItem}
                                     onEliminar={onEliminarItem}
                                     pulso={pulsos[item.key]}
+                                    simbolo={simbolo}
                                 />
                             ))}
                         </ul>
@@ -3121,7 +3419,7 @@ function CarritoPanel({
 
             {/* ── Pie FIJO: opciones + cómo paga + TOTAL + Cobrar ─────── */}
             <div
-                className="flex-shrink-0 px-3 pt-2 flex flex-col gap-2 max-h-[72%] overflow-y-auto"
+                className="flex-shrink-0 px-3 pt-2 bajo:pt-1.5 flex flex-col gap-2 bajo:gap-1.5"
                 style={{
                     borderTop: '1px solid var(--color-border)',
                     backgroundColor: 'var(--color-surface)',
@@ -3129,6 +3427,9 @@ function CarritoPanel({
                     paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
                 }}
             >
+                {/* Opciones y pago con su propio scroll: con un pago dividido (cuentas,
+                    n.º de operación) crece, pero el TOTAL y Cobrar nunca salen de la vista. */}
+                <div className="flex flex-col gap-2 bajo:gap-1.5 overflow-y-auto max-h-[40vh] bajo:max-h-[30vh] -mx-1 px-1 empty:hidden">
                 {/* Opciones de la venta, resumidas: lo normal en gris, lo especial
                     (crédito, por entregar, despacho) con su color. */}
                 {carrito.length > 0 && hayOpciones && (
@@ -3166,12 +3467,14 @@ function CarritoPanel({
                         anticipoMonto={montoAnticipoUsado}
                         esCredito={esCredito}
                         onChange={onSetPagos}
+                        simbolo={simbolo}
                     />
                 )}
+                </div>
 
                 {/* TOTAL + estado del pago en el mismo bloque: lo que se cobra y si ya está cubierto. */}
                 <div
-                    className="rounded-xl px-4 py-2.5 text-white"
+                    className="rounded-xl px-4 py-2.5 bajo:py-1.5 text-white"
                     style={{
                         background: 'linear-gradient(135deg, var(--vp-sky), var(--vp-navy))',
                         boxShadow: '0 6px 16px -8px rgb(15 76 129 / 0.55)',
@@ -3190,7 +3493,7 @@ function CarritoPanel({
                             </span>
                             {/* Las bases SUMAN el total, igual que en el comprobante impreso. */}
                             {carrito.length > 0 && (
-                                <span className="block text-[11px] tabular-nums mt-0.5" style={{ color: 'rgb(255 255 255 / 0.78)' }}>
+                                <span className="block text-[11px] tabular-nums mt-0.5 bajo:mt-0" style={{ color: 'rgb(255 255 255 / 0.78)' }}>
                                     Op. gravada {baseGravada.toFixed(2)}
                                     {baseExonerada > 0 && <> · Exonerada {baseExonerada.toFixed(2)}</>}
                                     {' · '}IGV {igv.toFixed(2)}
@@ -3198,7 +3501,7 @@ function CarritoPanel({
                                 </span>
                             )}
                         </span>
-                        <span className="font-display text-[24px] font-extrabold tabular-nums leading-none">S/ {total.toFixed(2)}</span>
+                        <span className="font-display text-[24px] bajo:text-[21px] font-extrabold tabular-nums leading-none">{simbolo} {total.toFixed(2)}</span>
                     </div>
                     {carrito.length > 0 && (pagos.length > 0 || esCredito || anticipoSeleccionado) && (() => {
                         const totalPagado = pagos.reduce((s, p) => s + p.monto, 0) + montoAnticipoUsado;
@@ -3207,18 +3510,18 @@ function CarritoPanel({
                         // Pago exacto sin nada especial: no hay nada que decir (ahorra una fila).
                         if (!esCredito && !anticipoSeleccionado && falta <= 0.009 && vuelto <= 0.009) return null;
                         const [texto, fondo] = esCredito
-                            ? [`Saldo a crédito S/ ${falta.toFixed(2)}`, 'rgb(255 255 255 / 0.18)']
+                            ? [`Saldo a crédito ${simbolo} ${falta.toFixed(2)}`, 'rgb(255 255 255 / 0.18)']
                             : falta > 0.009
-                                ? [`Falta S/ ${falta.toFixed(2)}`, 'var(--vp-amber)']
+                                ? [`Falta ${simbolo} ${falta.toFixed(2)}`, 'var(--vp-amber)']
                                 : vuelto > 0.009
-                                    ? [`Vuelto S/ ${vuelto.toFixed(2)}`, 'var(--vp-mint)']
+                                    ? [`Vuelto ${simbolo} ${vuelto.toFixed(2)}`, 'var(--vp-mint)']
                                     : ['Pago completo', 'var(--vp-mint)'];
                         const oscuro = !esCredito; // ámbar y menta llevan texto oscuro
                         return (
                             <div className="flex items-center justify-between gap-2 mt-1.5 pt-1.5 text-[12px]" style={{ borderTop: '1px solid rgb(255 255 255 / 0.2)' }}>
                                 <span className="tabular-nums" style={{ color: 'rgb(255 255 255 / 0.85)' }}>
-                                    {esCredito ? 'Pago inicial' : 'Pagado'} <strong className="text-white">S/ {totalPagado.toFixed(2)}</strong>
-                                    {anticipoSeleccionado && montoAnticipoUsado > 0.009 && <> · anticipo S/ {montoAnticipoUsado.toFixed(2)}</>}
+                                    {esCredito ? 'Pago inicial' : 'Pagado'} <strong className="text-white">{simbolo} {totalPagado.toFixed(2)}</strong>
+                                    {anticipoSeleccionado && montoAnticipoUsado > 0.009 && <> · anticipo {simbolo} {montoAnticipoUsado.toFixed(2)}</>}
                                 </span>
                                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-md font-bold tabular-nums whitespace-nowrap"
                                     style={{ backgroundColor: fondo, color: oscuro ? '#0F1923' : '#fff' }}>
@@ -3239,7 +3542,7 @@ function CarritoPanel({
                     <button
                         type="button"
                         onClick={onConfirmar}
-                        className="w-full flex items-center gap-2 h-12 px-3 rounded-xl text-[13px] font-bold text-left transition-colors hover:brightness-[0.98]"
+                        className="w-full flex items-center gap-2 h-12 bajo:h-10 px-3 rounded-xl text-[13px] font-bold text-left transition-colors hover:brightness-[0.98]"
                         style={{
                             backgroundColor: 'color-mix(in srgb, var(--vp-amber) 16%, var(--color-surface))',
                             border: '1.5px solid var(--vp-amber)',
@@ -3257,14 +3560,14 @@ function CarritoPanel({
                         variant="success"
                         size="lg"
                         radius="lg"
-                        className="w-full !h-12 !text-[15px] !font-bold"
+                        className="w-full !h-12 bajo:!h-10 !text-[15px] !font-bold"
                         onClick={onConfirmar}
                         disabled={carrito.length === 0 || !puedeVender}
                         title={!puedeVender ? (razonNoVender ?? 'No puedes registrar ventas en este momento.') : undefined}
                     >
                         {!puedeVender ? 'POS bloqueado'
                          : carrito.length === 0 ? 'Cobrar venta'
-                         : total > 0 ? `Cobrar S/ ${total.toFixed(2)}`
+                         : total > 0 ? `Cobrar ${simbolo} ${total.toFixed(2)}`
                          : 'Registrar venta sin cobro'}
                     </Button>
                 )}

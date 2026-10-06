@@ -8,6 +8,7 @@ import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
 import Table, { Column } from '@/Components/UI/Table';
 import Modal from '@/Components/UI/Modal';
+import Callout from '@/Components/UI/Callout';
 import Badge from '@/Components/UI/Badge';
 import Input from '@/Components/UI/Input';
 import Checkbox from '@/Components/UI/Checkbox';
@@ -479,6 +480,13 @@ export default function Empresas({ empresas }: Props) {
                     )}
                     {tab === 'venta' && (
                         <div className="space-y-4 [&>div:first-child]:border-t-0 [&>div:first-child]:pt-0">
+                            {/* Función del plan: la enciende el proveedor del sistema, aquí solo se informa. */}
+                            <Callout variant={(editing as { usa_visor_ventas?: boolean } | null)?.usa_visor_ventas ? 'success' : 'neutral'}
+                                title="Visor de ventas (leer el cuaderno con una foto)">
+                                {(editing as { usa_visor_ventas?: boolean } | null)?.usa_visor_ventas
+                                    ? <>Incluido en tu plan: {(editing as { visor_ventas_limite_diario?: number }).visor_ventas_limite_diario ?? 2} lecturas por día. En el POS usa el botón "Cuaderno".</>
+                                    : <>No está incluido en tu plan. Si lo quieres, pídeselo al proveedor del sistema.</>}
+                            </Callout>
                     {/* ── Sección: Punto de venta (POS) ── */}
                     <div className="border-t pt-4" style={{ borderColor: 'var(--color-border)' }}>
                         <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Punto de venta (POS)</p>

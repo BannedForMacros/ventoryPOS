@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { router, usePage, Link } from '@inertiajs/react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -22,6 +22,7 @@ import type { ComprobanteElectronico, Local, PageProps, Venta } from '@/types';
 import Select from '@/Components/UI/Select';
 import { useTiempoReal } from '@/lib/useTiempoReal';
 import Callout from '@/Components/UI/Callout';
+import { soles } from '@/lib/dinero';
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
@@ -32,6 +33,8 @@ interface Filters {
     local_id?:    string;
     turno_id?:    string;
     q?:           string;
+    // Las fechas son el "hoy" que pone el servidor (nadie las eligió).
+    fechas_por_defecto?: boolean;
 }
 
 interface TurnoLite {
@@ -94,8 +97,7 @@ interface Props extends PageProps {
     filters: Filters;
 }
 
-const money = (v: number) => `S/ ${Number(v ?? 0).toFixed(2)}`;
-
+const money = (v: unknown) => soles(v);
 export default function VentasIndex({ ventas, locales, turnos, resumen, filters, flash }: Props) {
     const { auth } = usePage<Props>().props;
 
@@ -132,7 +134,17 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         turno_id:    filters.turno_id ?? '',
         q:           filters.q ?? '',
     });
+    // El "hoy" que puso el servidor (no la cajera). Se recuerda aparte: después
+    // de la primera búsqueda el servidor ya no lo marca, y las fechas de hoy que
+    // siguen en el formulario se reenviaban limitando la búsqueda a hoy.
+    const hoyPorDefecto = useRef<{ desde?: string | null; hasta?: string | null } | null>(
+        filters.fechas_por_defecto ? { desde: filters.fecha_desde, hasta: filters.fecha_hasta } : null,
+    );
+    useEffect(() => {
+        if (filters.fechas_por_defecto) hoyPorDefecto.current = { desde: filters.fecha_desde, hasta: filters.fecha_hasta };
+    }, [filters.fechas_por_defecto, filters.fecha_desde, filters.fecha_hasta]);
     function set<K extends keyof Filters>(k: K, v: string) {
+        if (k === 'fecha_desde' || k === 'fecha_hasta') hoyPorDefecto.current = null;   // las eligió ella
         setLocal(prev => ({ ...prev, [k]: v }));
     }
 
@@ -217,9 +229,21 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
     }
 
     // ── Aplicar / limpiar filtros ───────────────────────────────────────
+    // El "hoy" automático no se reenvía si la cajera no tocó las fechas: con una
+    // búsqueda (V-0123) o un turno elegido, el servidor ya busca en todos los días.
+    function sinFechasPorDefecto(f: Filters): Filters {
+        const { fechas_por_defecto: _omit, ...resto } = f;
+        const hoy = hoyPorDefecto.current;
+        if (hoy && resto.fecha_desde === hoy.desde && resto.fecha_hasta === hoy.hasta) {
+            delete resto.fecha_desde;
+            delete resto.fecha_hasta;
+        }
+        return resto;
+    }
+
     function aplicar() {
         const params = Object.fromEntries(
-            Object.entries(local).filter(([, v]) => v !== '' && v != null),
+            Object.entries(sinFechasPorDefecto(local)).filter(([, v]) => v !== '' && v != null),
         );
         router.get(route('ventas.index'), params, { preserveState: true, replace: true, preserveScroll: true });
     }
@@ -230,7 +254,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
 
     function exportarExcel() {
         const params = new URLSearchParams();
-        Object.entries(filters).forEach(([k, v]) => {
+        Object.entries(sinFechasPorDefecto(filters)).forEach(([k, v]) => {
             if (v !== '' && v != null) params.set(k, String(v));
         });
         const base = route('ventas.exportar');
@@ -238,7 +262,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
     }
 
     const tienesFiltros = !!(filters.estado || filters.local_id || filters.turno_id || filters.q
-        || filters.fecha_desde || filters.fecha_hasta);
+        || (!filters.fechas_por_defecto && (filters.fecha_desde || filters.fecha_hasta)));
 
     function clienteNombre(v: Venta) {
         if (!v.cliente) return 'General';
@@ -653,7 +677,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                         ) : (
                             <button
                                 key={page}
-                                onClick={() => router.get(route('ventas.index'), { ...filters, page }, { preserveState: true, preserveScroll: true })}
+                                onClick={() => router.get(route('ventas.index'), { ...sinFechasPorDefecto(filters), page }, { preserveState: true, preserveScroll: true })}
                                 className="min-w-8 h-8 px-1.5 rounded-lg text-xs font-semibold transition-colors"
                                 style={{
                                     backgroundColor: page === ventas.current_page

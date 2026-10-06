@@ -34,8 +34,11 @@ class HandleInertiaRequests extends Middleware
             // su propia navegación); sin este corte, al no tener rol, el árbol
             // le mostraría TODOS los módulos.
             'modules' => fn () => ($user && !$user->es_superadmin) ? $this->buildModulesTree($user) : [],
+            // Sin cajas.token_impresora: viajaba en CADA página y el navegador
+            // no lo usa (el ticket lo trae ya armado TicketPrintService).
             'turno_activo' => fn () => auth()->check()
-                ? Turno::turnoActivoDelUsuario(auth()->id())?->load('caja')
+                ? tap(Turno::turnoActivoDelUsuario(auth()->id())?->load('caja'),
+                    fn ($t) => $t?->caja?->makeHidden('token_impresora'))
                 : null,
             'flash' => [
                 'success' => session('success'),

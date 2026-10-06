@@ -14,6 +14,16 @@ return [
     |
     */
 
+    // Visor de ventas: lee con Claude la foto del cuaderno de ventas.
+    // Sin ANTHROPIC_API_KEY la función responde un aviso claro y no llama a nada.
+    'anthropic' => [
+        'api_key'      => env('ANTHROPIC_API_KEY'),
+        'modelo_visor' => env('ANTHROPIC_MODELO_VISOR', 'claude-opus-5-5'),
+        // 'demo' = página de ejemplo sin gastar créditos (nunca en producción).
+        'lector'       => env('VISOR_VENTAS_LECTOR'),
+        'esfuerzo'     => env('ANTHROPIC_ESFUERZO_VISOR', 'medium'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

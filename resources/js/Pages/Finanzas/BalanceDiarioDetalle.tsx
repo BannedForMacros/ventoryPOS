@@ -15,6 +15,7 @@ import DetalleAgrupado from '@/Components/Finanzas/DetalleAgrupado';
 import CambiosCierreModal from '@/Components/Finanzas/CambiosCierreModal';
 import type { PageProps } from '@/types';
 import { avisoError } from '@/lib/avisoError';
+import { soles } from '@/lib/dinero';
 
 interface Item {
     id: number;
@@ -97,11 +98,10 @@ interface Props extends PageProps {
     cambiosDiaAnterior?: { fecha: string; diferencia: number; relevante: boolean; verificable: boolean; umbral: number } | null;
 }
 
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
-
+const money = (v: unknown) => soles(v);
 /** Categorías cuyo monto se puede "abrir" para ver de dónde sale. */
 const CON_DETALLE = new Set([
-    'efectivo', 'cuenta_bancaria', 'stock', 'stock_mov', 'cxc', 'cxp', 'gastos_emitidos',
+    'efectivo', 'cuenta_bancaria', 'stock', 'stock_mov', 'mercaderia_transito', 'cxc', 'cxp', 'gastos_emitidos',
     'anticipo_cliente', 'adelanto_proveedor', 'deuda', 'personal', 'prestamo_otorgado',
     'planilla_descuento',
 ]);
@@ -116,6 +116,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
     efectivo:           'Efectivo',
     stock:              'Stock',
     stock_mov:          'Movimientos de inventario',
+    mercaderia_transito: 'En tránsito',
     cxc:                'Por cobrar',
     adelanto_proveedor: 'Adelanto prov.',
     prestamo_otorgado:  'Préstamo otorgado',

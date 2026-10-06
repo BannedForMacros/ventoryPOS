@@ -46,7 +46,7 @@ class StoreGastoRequest extends FormRequest
             ],
             // F7 (compat) — cuenta directa de la que sale el dinero (null = efectivo)
             'cuenta_id'  => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $empresaId)],
-            'fecha'      => ['required', 'date'],
+            'fecha'      => ['required', 'date', new \App\Rules\NoFutura],
             'comentario' => ['nullable', 'string', 'max:500'],
             'turno_id'   => ['nullable', 'integer', EnEmpresa::existe('turnos')],
         ];

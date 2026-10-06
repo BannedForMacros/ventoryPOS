@@ -207,11 +207,44 @@ class Entrada extends Model
 
     public function confirmar(): void
     {
-        if (!$this->esBorrador()) {
-            throw new \LogicException('Solo se puede confirmar una entrada en estado borrador.');
-        }
+        DB::transaction(function () {
+            // Doble clic / dos pestañas: la fila se bloquea y el estado se lee de
+            // la base. Sin esto dos confirmaciones simultáneas sumaban el stock
+            // dos veces (el observer corre una vez por cada update).
+            $this->bloquearYRefrescarEstado();
 
-        $this->update(['estado' => self::ESTADO_CONFIRMADO]);
+            if (!$this->esBorrador()) {
+                throw new \LogicException($this->estado === self::ESTADO_CONFIRMADO
+                    ? 'Esta entrada ya fue confirmada.'
+                    : 'Solo se puede confirmar una entrada en estado borrador.');
+            }
+
+            $this->update(['estado' => self::ESTADO_CONFIRMADO]);
+        });
+    }
+
+    /**
+     * Fecha en que la mercadería entró FÍSICAMENTE al almacén: la de recepción si
+     * vino en tránsito, si no la de la compra. Es la que cuenta para el stock y
+     * el kardex (y para saber si la absorbió el inventario inicial); `fecha`
+     * sigue siendo la del documento para las finanzas.
+     */
+    public function fechaStock(): ?\Carbon\CarbonInterface
+    {
+        return $this->fecha_recepcion ?? $this->fecha;
+    }
+
+    /**
+     * Bloquea la fila hasta que termine la transacción y trae su estado actual
+     * de la base (el objeto en memoria puede estar viejo).
+     */
+    private function bloquearYRefrescarEstado(): void
+    {
+        $fila = static::whereKey($this->getKey())->lockForUpdate()->first(['id', 'estado']);
+        if ($fila) {
+            $this->estado = $fila->estado;
+            $this->syncOriginalAttribute('estado');
+        }
     }
 
     /**
@@ -234,20 +267,26 @@ class Entrada extends Model
      * La mercadería llegó: pasa a 'confirmado' y ahí el observer suma el stock.
      *
      * `fecha` es la de recepción real y NO pisa `fecha` (la de la compra/factura),
-     * que es la que usan el kardex y las finanzas para ubicar el documento en el
-     * tiempo. Si llegó distinto de lo facturado, se edita la entrada antes de
+     * que es la que usan las finanzas. El stock y el kardex usan la de recepción
+     * (fechaStock): lo que llegó después del inventario inicial sí entra. Si llegó distinto de lo facturado, se edita la entrada antes de
      * recibir: el flujo de edición ya sabe revertir y reaplicar stock.
      */
     public function recibir(?string $fecha = null): void
     {
-        if (!$this->esEnTransito()) {
-            throw new \LogicException('Solo se puede recibir una entrada que está en tránsito.');
-        }
+        DB::transaction(function () use ($fecha) {
+            $this->bloquearYRefrescarEstado();
 
-        $this->update([
-            'estado'          => self::ESTADO_CONFIRMADO,
-            'fecha_recepcion' => $fecha ?: now()->toDateString(),
-        ]);
+            if (!$this->esEnTransito()) {
+                throw new \LogicException($this->estado === self::ESTADO_CONFIRMADO
+                    ? 'Esta mercadería ya fue recibida.'
+                    : 'Solo se puede recibir una entrada que está en tránsito.');
+            }
+
+            $this->update([
+                'estado'          => self::ESTADO_CONFIRMADO,
+                'fecha_recepcion' => $fecha ?: now()->toDateString(),
+            ]);
+        });
     }
 
     /**

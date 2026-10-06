@@ -385,7 +385,7 @@ export default function AgendaForm({
                                         onChange={v => setItem(i, 'producto_unidad_id', Number(v))}
                                         options={unidadesActivas.map(u => ({
                                             value: u.id,
-                                            label: `${u.unidad_medida?.nombre ?? '—'} — S/. ${Number(u.precio_venta).toFixed(2)}`,
+                                            label: `${u.unidad_medida?.nombre ?? '—'} — S/ ${Number(u.precio_venta).toFixed(2)}`,
                                         }))}
                                         searchPlaceholder="Buscar..."
                                         error={(errors as any)[`items.${i}.producto_unidad_id`]}
@@ -418,7 +418,7 @@ export default function AgendaForm({
                             Duración total: <strong style={{ color: 'var(--color-text)' }}>{duracionTotal} min</strong>
                         </div>
                         <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                            Precio estimado: <strong style={{ color: 'var(--color-primary)' }}>S/. {precioEstimado.toFixed(2)}</strong>
+                            Precio estimado: <strong style={{ color: 'var(--color-primary)' }}>S/ {precioEstimado.toFixed(2)}</strong>
                         </div>
                     </div>
                 </section>

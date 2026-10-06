@@ -14,6 +14,7 @@ import Select from '@/Components/UI/Select';
 import Callout from '@/Components/UI/Callout';
 import type { PageProps } from '@/types';
 import { avisoError } from '@/lib/avisoError';
+import { soles } from '@/lib/dinero';
 
 interface ArqueoMetodo {
     id: number;
@@ -73,7 +74,7 @@ interface LineaConteo {
     contado: string;
 }
 
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+const money = (v: unknown) => soles(v);
 const fdatetime = (s: string | null) => s ? new Date(s).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 
 export default function Consolidacion({ turnos, esperadosPorMetodo, estado, buscar, requiereConsolidacion }: Props) {

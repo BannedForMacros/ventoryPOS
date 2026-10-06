@@ -61,9 +61,10 @@ interface Props extends PageProps {
 }
 
 import { hoyLocal } from '@/lib/fechas';
+import { soles } from '@/lib/dinero';
 
 const hoy = () => hoyLocal();
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+const money = (v: unknown) => soles(v);
 const nombreProveedor = (p?: { razon_social?: string; nombre_comercial?: string } | null) =>
     p?.razon_social ?? p?.nombre_comercial ?? '—';
 

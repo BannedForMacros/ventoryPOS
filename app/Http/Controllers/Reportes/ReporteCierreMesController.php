@@ -122,17 +122,29 @@ class ReporteCierreMesController extends Controller
         $creditoCount    = (int)   (clone $completadas)->where('es_credito', true)->count();
         $creditoCobrado  = (float) $abonosBase($desde, $hasta)->sum('monto');
 
-        $porCobrarCorte = Venta::deEmpresa($user->empresa_id)
-            ->where('estado', 'completada')->where('es_credito', true)
-            ->where('fecha_venta', '<=', $hasta . ' 23:59:59')
-            ->when($localId, fn ($q, $v) => $q->where('local_id', $v));
+        // Por cobrar AL CORTE (como el balance): el saldo de hoy + los abonos
+        // con fecha posterior al corte. Un cobro de la semana siguiente no puede
+        // borrar la deuda del cierre del mes.
+        $corte = Carbon::parse($hasta)->toDateString(); // normalizada: va en el SQL
+        $porCobrarCorte = DB::query()->fromSub(
+            Venta::deEmpresa($user->empresa_id)
+                ->where('estado', 'completada')->where('es_credito', true)
+                ->where('fecha_venta', '<=', $corte . ' 23:59:59')
+                ->when($localId, fn ($q, $v) => $q->where('local_id', $v))
+                ->selectRaw("ventas.id, ventas.cliente_id, ventas.saldo_pendiente
+                    + COALESCE((SELECT SUM(a.monto) FROM venta_abonos a WHERE a.venta_id = ventas.id AND a.fecha > '{$corte}'), 0) AS saldo_corte"),
+            'cc')->where('cc.saldo_corte', '>', 0.005);
 
-        // Compras del período (borradores no cuentan: aún no son compra real)
+        // Compras del período: recibidas o en tránsito (como CxP y el balance;
+        // borradores no cuentan). Lo pagado es AL CORTE: los pagos posteriores
+        // vuelven a ser saldo pendiente, igual que en el balance.
         $comprasBase = Entrada::deEmpresa($user->empresa_id)
             ->whereIn('estado', [Entrada::ESTADO_CONFIRMADO, Entrada::ESTADO_EN_TRANSITO])
             ->whereBetween('fecha', [$desde, $hasta]);
+        $pagadoCorteSql = "(entradas.monto_pagado - COALESCE((SELECT SUM(ep.monto) FROM entrada_pagos ep
+            WHERE ep.entrada_id = entradas.id AND ep.fecha > '{$corte}'), 0))";
         $comprasTotal   = (float) (clone $comprasBase)->sum('total');
-        $comprasPagado  = (float) (clone $comprasBase)->sum('monto_pagado');
+        $comprasPagado  = (float) (clone $comprasBase)->sum(DB::raw($pagadoCorteSql));
 
         // ── Comparativa vs período anterior de la misma duración ────────
         $dias      = Carbon::parse($desde)->diffInDays(Carbon::parse($hasta)) + 1;
@@ -166,8 +178,8 @@ class ReporteCierreMesController extends Controller
             'credito_otorgado'  => round($creditoOtorgado, 2),
             'credito_count'     => $creditoCount,
             'credito_cobrado'   => round($creditoCobrado, 2),
-            'por_cobrar'        => round((float) (clone $porCobrarCorte)->sum('saldo_pendiente'), 2),
-            'por_cobrar_count'  => (int) (clone $porCobrarCorte)->where('saldo_pendiente', '>', 0)->count(),
+            'por_cobrar'        => round((float) (clone $porCobrarCorte)->sum('cc.saldo_corte'), 2),
+            'por_cobrar_count'  => (int) (clone $porCobrarCorte)->count(),
             'compras'           => round($comprasTotal, 2),
             'compras_count'     => (int) (clone $comprasBase)->count(),
             'compras_pagado'    => round($comprasPagado, 2),
@@ -285,11 +297,13 @@ class ReporteCierreMesController extends Controller
 
         // ── Clientes con mayor deuda al corte ───────────────────────────
         $topDeudores = (clone $porCobrarCorte)
-            ->where('saldo_pendiente', '>', 0)
-            ->select('cliente_id', DB::raw('SUM(saldo_pendiente) as saldo'), DB::raw('COUNT(*) as ventas'))
-            ->groupBy('cliente_id')
-            ->with('cliente:id,nombres,apellidos,razon_social')
-            ->orderByDesc('saldo')->limit(6)->get()
+            ->select('cc.cliente_id', DB::raw('SUM(cc.saldo_corte) as saldo'), DB::raw('COUNT(*) as ventas'))
+            ->groupBy('cc.cliente_id')
+            ->orderByDesc('saldo')->limit(6)->get();
+        $clientesDeudores = \App\Models\Cliente::whereIn('id', $topDeudores->pluck('cliente_id')->filter())
+            ->get(['id', 'nombres', 'apellidos', 'razon_social'])->keyBy('id');
+        $topDeudores = $topDeudores
+            ->map(fn ($r) => (object) ['cliente' => $clientesDeudores->get($r->cliente_id), 'saldo' => $r->saldo, 'ventas' => $r->ventas])
             ->map(fn ($r) => [
                 'nombre' => $r->cliente?->razon_social
                     ?: trim(($r->cliente?->nombres ?? '') . ' ' . ($r->cliente?->apellidos ?? '')) ?: '—',
@@ -299,7 +313,7 @@ class ReporteCierreMesController extends Controller
 
         // ── Compras por proveedor ───────────────────────────────────────
         $comprasPorProveedor = (clone $comprasBase)
-            ->select('proveedor_id', DB::raw('SUM(total) as total'), DB::raw('SUM(monto_pagado) as pagado'), DB::raw('COUNT(*) as count'))
+            ->select('proveedor_id', DB::raw('SUM(total) as total'), DB::raw("SUM({$pagadoCorteSql}) as pagado"), DB::raw('COUNT(*) as count'))
             ->groupBy('proveedor_id')
             ->with('proveedorRel:id,razon_social,nombre_comercial')
             ->orderByDesc('total')->limit(6)->get()

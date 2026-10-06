@@ -12,6 +12,7 @@ use App\Services\Facturacion\CompartirComprobante;
 use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\Facturacion\FacturaMacClient;
 use App\Services\Facturacion\FacturaMacException;
+use App\Support\VerVenta;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -87,7 +88,8 @@ class ComprobanteElectronicoController extends Controller
      */
     public function estado(Request $request, Venta $venta, CompartirComprobante $compartir): JsonResponse
     {
-        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+        // Mismo candado que el detalle de la venta: la cajera, solo las suyas.
+        VerVenta::autorizar($request->user(), $venta);
 
         // La guarda va ANTES de la consulta, no después.
         //
@@ -108,13 +110,16 @@ class ComprobanteElectronicoController extends Controller
                 // un ticket nunca va a tener comprobante, y con el módulo apagado
                 // tampoco lo va a tener ninguna venta.
                 'emitible' => !in_array($venta->tipo_comprobante, ['ticket', 'boleta_externa', 'factura_externa'], true)
+                    && $venta->estado !== 'anulada'
                     && $this->comprobantesDisponibles($venta->empresa_id),
                 'estado'   => null,
-                'mensaje'  => $venta->tipo_comprobante === 'ticket'
+                'mensaje'  => $venta->estado === 'anulada'
+                    ? 'Venta anulada: no se informa a SUNAT.'
+                    : ($venta->tipo_comprobante === 'ticket'
                     ? 'Nota de venta interna: no se informa a SUNAT.'
                     : (in_array($venta->tipo_comprobante, ['boleta_externa', 'factura_externa'], true)
                         ? 'Comprobante electrónico registrado externamente.'
-                        : 'La emisión está en cola.'),
+                        : 'La emisión está en cola.')),
             ]);
         }
 
@@ -155,7 +160,8 @@ class ComprobanteElectronicoController extends Controller
             'error'             => $ce->error,
             'intentos'          => (int) $ce->intentos,
             'enviado_at'        => $ce->enviado_at,
-            'puede_reintentar'  => $ce->puedeReintentar(),
+            // Una venta anulada no se emite: el botón Reintentar no debe ofrecerse.
+            'puede_reintentar'  => $venta->estado !== 'anulada' && $ce->puedeReintentar(),
             'tiene_pdf'         => (bool) $ce->facturamac_id,
             // Estado terminal: el POS puede dejar de preguntar. La lista vive en
             // el modelo porque estaba repetida —y desalineada— en tres sitios.
@@ -171,7 +177,10 @@ class ComprobanteElectronicoController extends Controller
      */
     public function reintentar(Request $request, Venta $venta)
     {
-        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+        // Mismo candado que el detalle de la venta: la cajera, solo las suyas.
+        VerVenta::autorizar($request->user(), $venta);
+        abort_if($venta->estado === 'anulada', 422,
+            "La venta {$venta->numero} está anulada: su comprobante no se informa a SUNAT.");
         abort_if(in_array($venta->tipo_comprobante, ['ticket', 'boleta_externa', 'factura_externa'], true), 422,
             'Este tipo de comprobante no se emite ante SUNAT desde el sistema.');
         // Misma guarda que el resto: apagado o sin migrar, ni se consulta la tabla.
@@ -206,7 +215,8 @@ class ComprobanteElectronicoController extends Controller
      */
     public function pdf(Request $request, Venta $venta, FacturacionEmpresa $facturacion)
     {
-        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+        // Mismo candado que el detalle de la venta: la cajera, solo las suyas.
+        VerVenta::autorizar($request->user(), $venta);
 
         // Sin módulo no hay PDF que proxear (ni tabla que consultar): 404 limpio
         // en vez de un 500 por una relación inexistente.
@@ -289,7 +299,8 @@ class ComprobanteElectronicoController extends Controller
         FacturacionEmpresa $facturacion,
         CompartirComprobante $compartir,
     ) {
-        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+        // Mismo candado que el detalle de la venta: la cajera, solo las suyas.
+        VerVenta::autorizar($request->user(), $venta);
 
         $datos = $request->validate([
             'email' => ['nullable', 'email', 'max:255'],

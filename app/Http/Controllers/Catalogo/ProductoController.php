@@ -106,6 +106,10 @@ class ProductoController extends Controller
 
         $data = $request->validated();
 
+        if ($bloqueo = $this->cambioEstructuralBloqueado($producto, $data)) {
+            return back()->withErrors($bloqueo)->withInput();
+        }
+
         DB::transaction(function () use ($data, $producto) {
             $esProducto = $data['tipo'] === 'producto';
 
@@ -178,6 +182,58 @@ class ProductoController extends Controller
 
         return redirect()->route('catalogo.productos.index')
             ->with('success', 'Producto actualizado correctamente.');
+    }
+
+    /**
+     * Un producto con stock o con historia (compras, ventas, kardex) no puede
+     * cambiar de unidad base ni pasar de producto a servicio (o al revés).
+     *
+     * Todo lo registrado está en unidades base: si "UND" pasa a ser "CAJA", las
+     * 120 unidades en stock se leerían como 120 cajas; y un servicio con ventas
+     * convertido en producto haría que el kardex descuente esas ventas de golpe
+     * (stock negativo). Para cambiarlo, se crea un producto nuevo.
+     *
+     * @return array<string, string>|null  errores por campo, o null si se puede
+     */
+    private function cambioEstructuralBloqueado(Producto $producto, array $data): ?array
+    {
+        $cambiaTipo = ($data['tipo'] ?? $producto->tipo) !== $producto->tipo;
+
+        $baseActual = $producto->unidades()->where('es_base', true)->where('activo', true)
+            ->orderByDesc('id')->value('unidad_medida_id');
+        $baseNueva  = collect($data['unidades'] ?? [])->first(fn ($u) => !empty($u['es_base']))['unidad_medida_id'] ?? null;
+        $cambiaBase = $baseActual !== null && $baseNueva !== null && (int) $baseActual !== (int) $baseNueva;
+
+        if (!$cambiaTipo && !$cambiaBase) {
+            return null;
+        }
+
+        $tieneStock = DB::table('stock')->where('producto_id', $producto->id)
+            ->whereRaw('ABS(cantidad) > 0.00005')->exists();
+        $tieneHistoria = $tieneStock
+            || DB::table('movimientos_inventario')->where('producto_id', $producto->id)->exists()
+            || DB::table('stock_iniciales')->where('producto_id', $producto->id)->exists()
+            || DB::table('entradas_detalle')->where('producto_id', $producto->id)->exists()
+            || DB::table('salidas_detalle')->where('producto_id', $producto->id)->exists()
+            || DB::table('venta_items')->where('producto_id', $producto->id)->exists();
+
+        if (!$tieneHistoria) {
+            return null;
+        }
+
+        $motivo = $tieneStock ? 'tiene stock' : 'ya tiene movimientos (compras, ventas o kardex)';
+        $errores = [];
+        if ($cambiaTipo) {
+            $errores['tipo'] = "No se puede cambiar \"{$producto->nombre}\" de "
+                . ($producto->tipo === 'servicio' ? 'servicio a producto' : 'producto a servicio')
+                . " porque {$motivo}. Crea un producto nuevo con el tipo correcto y desactiva este.";
+        }
+        if ($cambiaBase) {
+            $errores['unidades'] = "No se puede cambiar la unidad base de \"{$producto->nombre}\" porque {$motivo}: "
+                . 'todo lo registrado está en la unidad base actual. Agrega la nueva unidad como presentación (con su factor) o crea un producto nuevo.';
+        }
+
+        return $errores;
     }
 
     public function destroy(Request $request, Producto $producto)

@@ -123,7 +123,9 @@ class Venta extends Model
         $baseExonerada  = 0.0;
 
         foreach ($this->items as $i) {
-            $importe = ((float) $i->precio_unitario - (float) $i->descuento_item) * (float) $i->cantidad;
+            // Cada línea se redondea a céntimos, igual que su subtotal guardado y
+            // que el POS: sumar importes sin redondear daba un céntimo distinto.
+            $importe = round(((float) $i->precio_unitario - (float) $i->descuento_item) * (float) $i->cantidad, 2);
             $subtotal += $importe;
 
             if ($i->incluye_igv) {
@@ -209,6 +211,16 @@ class Venta extends Model
         }
 
         $max = (int) $q->value('n');
+
+        // El UNIQUE es por (turno, número): un turno que cruzó la medianoche ya
+        // tiene su V-0001 de ayer, y reiniciar "por día" chocaba con él. El
+        // siguiente número nunca baja del máximo del propio turno.
+        if ($alcance !== 'turno') {
+            $max = max($max, (int) DB::table('ventas')
+                ->where('turno_id', $turno->id)
+                ->selectRaw('COALESCE(MAX(CAST(SUBSTRING(numero FROM 3) AS INTEGER)), 0) as n')
+                ->value('n'));
+        }
 
         // La cajera puede fijar el inicio de numeración al abrir el turno
         // (ej. 1001 → V-1001, V-1002, ...); sin configurar arranca en V-0001.

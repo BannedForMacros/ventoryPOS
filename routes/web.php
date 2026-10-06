@@ -109,13 +109,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('auth')->group(function () {
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-        Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+        // Sin DELETE /profile (autoborrado de Breeze): un usuario con historial
+        // no se puede borrar sin perderlo. Los usuarios se desactivan desde
+        // Configuración → Usuarios.
     });
 
     // ── CONFIGURACIÓN ─────────────────────────────────────────────────────
     Route::prefix('configuracion')->name('configuracion.')->group(function () {
         // PIN maestro para cambiar la URL del agente de impresión (VentoryPrint).
         // Accesible para cualquier usuario autenticado porque la URL se guarda por dispositivo.
+        // Límite de intentos: 5 fallos por minuto (ImpresionController), para
+        // que el PIN no se pueda adivinar a fuerza bruta.
         Route::post('impresion/verificar-pin', [ImpresionController::class, 'verificarPin'])
             ->name('impresion.verificar-pin');
 
@@ -397,6 +401,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Retiros de efectivo (sangría / entrega a administración)
         Route::middleware('permiso:turnos,crear')->post('/{turno}/retiros', [\App\Http\Controllers\Turnos\TurnoRetiroController::class, 'store'])->name('retiros.store');
         Route::middleware('permiso:turnos,editar')->post('/retiros/{retiro}/aprobar', [\App\Http\Controllers\Turnos\TurnoRetiroController::class, 'aprobar'])->name('retiros.aprobar');
+        Route::middleware('permiso:turnos,editar')->post('/retiros/{retiro}/rechazar', [\App\Http\Controllers\Turnos\TurnoRetiroController::class, 'rechazar'])->name('retiros.rechazar');
         // Planilla de caja del turno (función opcional por empresa)
         Route::middleware('permiso:turnos,ver')->get('/{turno}/planilla/excel', [\App\Http\Controllers\Turnos\TurnoPlanillaController::class, 'excel'])->name('planilla.excel');
         Route::middleware('permiso:turnos,ver')->get('/{turno}/planilla/imprimir', [\App\Http\Controllers\Turnos\TurnoPlanillaController::class, 'imprimir'])->name('planilla.imprimir');
@@ -423,6 +428,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware(['permiso:pos,ver', 'throttle:60,1'])->get('/pos/clientes', [VentaController::class, 'buscarClientes'])->name('pos.clientes');
     // Anticipos de efectivo activos de un cliente para usar en el POS.
     Route::middleware(['permiso:pos,ver', 'throttle:60,1'])->get('/pos/clientes/{cliente}/anticipos', [VentaController::class, 'anticiposCliente'])->name('pos.clientes.anticipos');
+
+    // Visor de ventas: leer con IA la foto del cuaderno (función del plan, con límite diario).
+    Route::middleware(['permiso:pos,ver', 'throttle:visor-ventas'])->post('/pos/visor-ventas', [\App\Http\Controllers\Pos\VisorVentasController::class, 'leer'])->name('pos.visor-ventas');
+    Route::middleware(['permiso:pos,ver', 'throttle:visor-verificar'])->post('/pos/visor-ventas/verificar', [\App\Http\Controllers\Pos\VisorVentasController::class, 'verificar'])->name('pos.visor-ventas.verificar');
 
     // ── VENTAS ───────────────────────────────────────────────────────────
     // M17: throttle:60,1 en `store` evita que un usuario autenticado (sesion
@@ -572,6 +581,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:finanzas.deudas,ver')->get('deudas/exportar', [DeudaController::class, 'exportar'])->name('deudas.exportar');
         Route::middleware('permiso:finanzas.deudas,eliminar')->get('deudas/eliminadas', [DeudaController::class, 'eliminadas'])->name('deudas.eliminadas');
         Route::middleware('permiso:finanzas.deudas,eliminar')->get('deudas/{deuda}/impacto-eliminar', [DeudaController::class, 'impactoEliminar'])->name('deudas.impacto-eliminar');
+        Route::middleware('permiso:finanzas.deudas,editar')->get('deudas/{deuda}/impacto-anular', [DeudaController::class, 'impactoAnular'])->name('deudas.impacto-anular');
         Route::middleware('permiso:finanzas.deudas,eliminar')->post('deudas/eliminadas/{auditoria}/restaurar', [DeudaController::class, 'restaurar'])->whereNumber('auditoria')->name('deudas.restaurar');
         Route::middleware('permiso:finanzas.deudas,editar')->post('deudas/compensar', [DeudaController::class, 'compensar'])->name('deudas.compensar');
         Route::middleware('permiso:finanzas.deudas,editar')->put('deudas/pagos/{pago}', [DeudaController::class, 'editarPago'])->name('deudas.pagos.update');

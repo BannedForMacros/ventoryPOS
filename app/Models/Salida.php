@@ -54,12 +54,27 @@ class Salida extends Model
      */
     public function confirmar(): void
     {
-        if (!$this->esBorrador()) {
-            throw new LogicException('Solo se puede confirmar una salida en estado borrador.');
-        }
-
         DB::transaction(function () {
+            // Doble clic: se bloquea la fila y se lee el estado real de la base,
+            // para no descontar el stock dos veces.
+            $estado = static::whereKey($this->getKey())->lockForUpdate()->value('estado');
+            if ($estado !== null) {
+                $this->estado = $estado;
+                $this->syncOriginalAttribute('estado');
+            }
+
+            if (!$this->esBorrador()) {
+                throw new LogicException('Solo se puede confirmar una salida en estado borrador.');
+            }
+
             $detalles = $this->detalles()->get();
+
+            // Una salida fechada en o antes del inventario inicial no tendría
+            // efecto (la apertura ya es el conteo de ese día): se rechaza con aviso
+            // en vez de descontar en vivo y perderse en el siguiente "Recalcular".
+            app(\App\Services\KardexService::class)->exigirPosteriorAApertura(
+                $this->almacen_id, $detalles->pluck('producto_id'), $this->fecha, 'fecha', 'Esta salida',
+            );
 
             // Validar stock disponible producto por producto (agrupar por producto)
             $necesitadoPorProducto = [];

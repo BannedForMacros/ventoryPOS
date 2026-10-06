@@ -67,26 +67,34 @@ export default function CierreCreate({ almacenes, mostrarSelector, turnoId, alma
         if (!almacenId) { setProductos([]); return; }
 
         setCargando(true);
-        axios.get(route('inventario.cierres.productos'), { params: { almacen_id: almacenId } })
+        // El stock del sistema es el de la FECHA del cierre (un cierre de un día
+        // pasado se compara con lo que había ese día, no con lo de hoy).
+        axios.get(route('inventario.cierres.productos'), { params: { almacen_id: almacenId, fecha: data.fecha || undefined } })
             .then(r => {
                 const prods: ProductoFila[] = r.data.productos ?? r.data;
                 setProductos(prods);
                 // Modo lógico (precarga): declarado arranca = stock del sistema (editas
                 // solo lo que difiere). Modo en blanco: declarado vacío (declaras todo).
-                const initial: Record<number, ItemDeclarado> = {};
-                prods.forEach((p: ProductoFila) => {
-                    initial[p.id] = {
-                        producto_id: p.id,
-                        stock_sistema: p.stock_sistema,
-                        stock_declarado: precarga ? String(p.stock_sistema) : '',
-                        observacion: '',
-                    };
+                // Al cambiar la fecha, lo que ya escribió a mano se conserva.
+                setItems(prev => {
+                    const initial: Record<number, ItemDeclarado> = {};
+                    prods.forEach((p: ProductoFila) => {
+                        const antes = prev[p.id];
+                        const tocado = antes && antes.stock_declarado !== (precarga ? String(antes.stock_sistema) : '');
+                        initial[p.id] = {
+                            producto_id: p.id,
+                            stock_sistema: p.stock_sistema,
+                            stock_declarado: tocado ? antes.stock_declarado : (precarga ? String(p.stock_sistema) : ''),
+                            observacion: antes?.observacion ?? '',
+                        };
+                    });
+                    return initial;
                 });
-                setItems(initial);
             })
             .catch(() => toast.error('Error al cargar productos'))
             .finally(() => setCargando(false));
-    }, [almacenId]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [almacenId, data.fecha]);
 
     const categorias = useMemo(() => {
         const map = new Map<number, string>();

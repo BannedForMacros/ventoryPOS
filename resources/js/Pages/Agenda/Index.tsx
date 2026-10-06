@@ -366,7 +366,7 @@ export default function AgendaIndex({
                                                 {cita.venta && (
                                                     <div className="mt-1 text-xs">
                                                         <Link href={route('ventas.show', cita.venta.id)} className="hover:underline" style={{ color: 'var(--color-success)' }}>
-                                                            ✓ Cobrado en {cita.venta.numero} (S/. {Number(cita.venta.total).toFixed(2)})
+                                                            ✓ Cobrado en {cita.venta.numero} (S/ {Number(cita.venta.total).toFixed(2)})
                                                         </Link>
                                                     </div>
                                                 )}

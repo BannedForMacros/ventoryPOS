@@ -94,11 +94,11 @@ interface Props extends PageProps {
     comprasCompensables: CompraCompensable[];
 }
 
-import { hoyLocal } from '@/lib/fechas';
+import { hoyLocal, esFutura } from '@/lib/fechas';
+import { soles } from '@/lib/dinero';
 
 const hoy = () => hoyLocal();
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
-
+const money = (v: unknown) => soles(v);
 const TIPO_LABEL: Record<string, string> = {
     bancaria: 'Bancaria', personal: 'Personal', trabajador: 'Al personal', otro: 'Otro',
 };
@@ -265,14 +265,15 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         } as any);
     }
 
-    // Al abrir "Eliminar", traer qué asientos de caja/banco se van a deshacer.
+    // Al abrir "Eliminar" o "Anular", traer qué asientos de caja/banco se van a deshacer.
     useEffect(() => {
         setImpacto(null);
-        if (!eliminando) return;
-        axios.get(route('finanzas.deudas.impacto-eliminar', eliminando.id))
+        const d = eliminando ?? anulando;
+        if (!d) return;
+        axios.get(route(eliminando ? 'finanzas.deudas.impacto-eliminar' : 'finanzas.deudas.impacto-anular', d.id))
             .then(r => setImpacto(r.data))
             .catch(() => setImpacto({ movimientos: [], cantidad_pagos: 0 }));
-    }, [eliminando]);
+    }, [eliminando, anulando]);
 
     function abrirPapelera() {
         setVerPapelera(true);
@@ -304,6 +305,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         const monto = Number(form.monto_original);
         if (!form.monto_original || !(monto >= 0.01)) return { texto: 'Escribe el monto (mayor a S/ 0.00)', resolver: irACampo('monto') };
         if (!form.fecha_inicio) return { texto: 'Indica la fecha de inicio', resolver: irACampo('fecha') };
+        if (esFutura(form.fecha_inicio)) return { texto: 'La fecha no puede ser posterior a hoy', resolver: irACampo('fecha') };
         if (form.fecha_vencimiento && form.fecha_vencimiento < form.fecha_inicio) {
             return { texto: 'El vencimiento no puede ser antes de la fecha de inicio', resolver: irACampo('vencimiento') };
         }
@@ -324,6 +326,7 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
         const monto = Number(formPago.monto);
         if (!formPago.monto || !(monto >= 0.01)) return { texto: 'Escribe el monto del movimiento', resolver: irACampo('pago-monto') };
         if (!formPago.fecha) return { texto: 'Indica la fecha', resolver: irACampo('pago-fecha') };
+        if (esFutura(formPago.fecha)) return { texto: 'La fecha no puede ser posterior a hoy', resolver: irACampo('pago-fecha') };
         if (cruceModo) {
             if (!cruceRefId) return { texto: 'Elige con qué se cruza', resolver: irACampo('pago-cruce') };
             if (topeCruce !== null && monto > topeCruce + 0.001) {
@@ -1069,16 +1072,42 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
 
             {/* Modal anular */}
             <Modal isOpen={anulando !== null} onClose={() => setAnulando(null)}
-                title={anulando ? `Anular — ${anulando.nombre}` : ''} size="sm"
+                title={anulando ? `Anular — ${anulando.nombre}` : ''} size="md"
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAnulando(null)}>Cancelar</Button>
-                        <Button variant="danger" onClick={submitAnular} disabled={saving}>{saving ? 'Anulando...' : 'Anular'}</Button>
+                        <Button variant="danger" onClick={submitAnular} disabled={saving || motivoAnular.trim().length < 5}>{saving ? 'Anulando...' : 'Sí, anular'}</Button>
                     </>
                 }
             >
-                <Input label="Motivo" required value={motivoAnular}
-                    onChange={e => setMotivoAnular(e.target.value)} error={errors.motivo} />
+                {anulando && (
+                    <div className="space-y-3">
+                        <Callout variant="warning" title="Deja de contar en el balance y se deshace su dinero">
+                            {impacto === null ? (
+                                <span style={{ color: 'var(--color-text-muted)' }}>Revisando su dinero…</span>
+                            ) : impacto.movimientos.length === 0 ? (
+                                <>No movió dinero en caja ni bancos.</>
+                            ) : (
+                                <ul className="mt-1 space-y-0.5">
+                                    {impacto.movimientos.map((m, i) => (
+                                        <li key={i} className="flex items-baseline justify-between gap-3 tabular-nums">
+                                            <span className="min-w-0 truncate">
+                                                    {m.efecto > 0 ? 'Vuelven a' : 'Salen de'} <strong>{m.cuenta}</strong>
+                                                    <span style={{ color: 'var(--color-text-muted)' }}> · se deshace {m.efecto > 0 ? 'la salida' : 'la entrada'} del {new Date(m.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</span>
+                                                </span>
+                                            <strong className="whitespace-nowrap">{money(Math.abs(m.efecto))}</strong>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </Callout>
+                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            El registro se conserva. Si fue un error, <strong>Reactivar</strong> la devuelve con su dinero tal cual.
+                        </p>
+                        <Input label="Motivo (mínimo 5 caracteres)" required value={motivoAnular}
+                            onChange={e => setMotivoAnular(e.target.value)} error={errors.motivo} />
+                    </div>
+                )}
             </Modal>
 
             {/* Modal detalle movimientos */}
@@ -1355,8 +1384,11 @@ export default function Deudas({ deudas, totales, estado, buscar, metodosPago, c
                                     <ul className="space-y-0.5">
                                         {impacto.movimientos.map((m, i) => (
                                             <li key={i} className="flex items-baseline justify-between gap-3 tabular-nums">
-                                                <span className="min-w-0 truncate">{m.cuenta} · {new Date(m.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</span>
-                                                <strong className="whitespace-nowrap">{m.efecto < 0 ? '−' : '+'}{money(Math.abs(m.efecto))}</strong>
+                                                <span className="min-w-0 truncate">
+                                                    {m.efecto > 0 ? 'Vuelven a' : 'Salen de'} <strong>{m.cuenta}</strong>
+                                                    <span style={{ color: 'var(--color-text-muted)' }}> · se deshace {m.efecto > 0 ? 'la salida' : 'la entrada'} del {new Date(m.fecha + 'T00:00:00').toLocaleDateString('es-PE')}</span>
+                                                </span>
+                                                <strong className="whitespace-nowrap">{money(Math.abs(m.efecto))}</strong>
                                             </li>
                                         ))}
                                     </ul>

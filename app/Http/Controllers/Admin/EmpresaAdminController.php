@@ -73,6 +73,12 @@ class EmpresaAdminController extends Controller
             'telefono'         => 'nullable|string|max:20',
             'email'            => 'nullable|email|max:255',
             'activo'           => 'boolean',
+            // Visor de ventas: función del plan (gasta créditos de la API).
+            'usa_visor_ventas'           => 'boolean',
+            'visor_ventas_limite_diario' => 'integer|min:1|max:100',
+        ], [
+            'visor_ventas_limite_diario.min' => 'El límite de lecturas por día debe ser al menos 1.',
+            'visor_ventas_limite_diario.max' => 'El límite de lecturas por día no puede pasar de 100.',
         ]);
 
         $cambios = collect($datos)->filter(fn ($val, $key) => $empresa->{$key} != $val)->toArray();

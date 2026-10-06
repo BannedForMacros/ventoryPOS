@@ -22,6 +22,9 @@ use Illuminate\Support\Facades\DB;
  */
 class EstadoCuentaService
 {
+    /** Compras que comprometen con el proveedor (= Entrada::scopeComprometido). */
+    private const ESTADOS_COMPROMETIDOS = [\App\Models\Entrada::ESTADO_CONFIRMADO, \App\Models\Entrada::ESTADO_EN_TRANSITO];
+
     /**
      * Clave de agrupación de un tercero. Si tiene documento, ese documento
      * une al cliente con el proveedor homónimo; si no, cae a su propio id.
@@ -124,10 +127,12 @@ class EstadoCuentaService
                 $terceros[$clave]['mas_antiguo']     = self::menorFecha($terceros[$clave]['mas_antiguo'], $r->mas_antiguo);
             });
 
-        // ── 2. Le debemos: compras confirmadas no pagadas ────────────────────
+        // ── 2. Le debemos: compras no pagadas (recibidas o EN TRÁNSITO) ──────
+        // Mismo criterio que CxP y el balance (Entrada::comprometido): que la
+        // mercadería siga en camino no cambia que el proveedor ya facturó.
         DB::table('entradas')
             ->where('empresa_id', $empresaId)
-            ->where('estado', 'confirmado')
+            ->whereIn('estado', self::ESTADOS_COMPROMETIDOS)
             ->whereRaw('COALESCE(total, 0) - COALESCE(monto_pagado, 0) > 0')
             ->get(['id', 'proveedor_id', 'proveedor', 'total', 'monto_pagado', 'fecha'])
             ->each(function ($e) use (&$terceros, $claveDeProveedor, $fila) {
@@ -156,15 +161,12 @@ class EstadoCuentaService
             });
 
         // ── 3. Su anticipo: lo que el cliente pagó y aún no se lleva ─────────
-        // Siempre al precio CONGELADO de la venta (el `saldo`), nunca al precio
-        // del día: el cliente pagó un precio concreto y ese se le respeta.
-        DB::table('cliente_anticipos')
-            ->where('empresa_id', $empresaId)
-            ->where('estado', 'activo')
-            ->where('saldo', '>', 0)
+        // Siempre al precio CONGELADO de la venta, nunca al precio del día: el
+        // cliente pagó un precio concreto y ese se le respeta. Mismo valor que
+        // la línea de anticipos del balance (ver anticiposVivos).
+        $this->anticiposVivos($empresaId)
             ->groupBy('cliente_id')
-            ->selectRaw('cliente_id, SUM(saldo) AS total')
-            ->get()
+            ->map(fn ($g, $clienteId) => (object) ['cliente_id' => $clienteId, 'total' => $g->sum('valor')])
             ->each(function ($r) use (&$terceros, $claveDeCliente, $fila) {
                 $clave = $claveDeCliente[$r->cliente_id] ?? null;
                 if (!$clave) {
@@ -235,8 +237,10 @@ class EstadoCuentaService
                     $t['es_proveedor']                     => 'proveedor',
                     default                                => 'cliente',
                 };
+                // Días transcurridos desde el documento más antiguo. En Carbon 3
+                // diffInDays tiene signo (fecha pasada → negativo): va absoluto.
                 $t['dias_antiguedad']  = $t['mas_antiguo']
-                    ? (int) now()->startOfDay()->diffInDays(\Carbon\Carbon::parse($t['mas_antiguo'])->startOfDay())
+                    ? (int) \Carbon\Carbon::parse($t['mas_antiguo'])->startOfDay()->diffInDays(now()->startOfDay(), true)
                     : null;
 
                 return $t;
@@ -245,6 +249,36 @@ class EstadoCuentaService
             ->filter(fn (array $t) => $t['nos_debe'] > 0 || $t['le_debemos'] > 0
                 || $t['su_anticipo'] > 0 || $t['nuestro_adelanto'] > 0)
             ->sortByDesc(fn (array $t) => abs($t['neto']))
+            ->values();
+    }
+
+    /**
+     * Anticipos de clientes que hoy siguen vivos, con lo que se le debe al
+     * cliente (`valor`), igual que la línea de anticipos del balance:
+     *   • pedido por entregar (con ítems) o dinero → su saldo;
+     *   • material clásico → unidades pendientes × precio CONGELADO que pagó
+     *     (monto / cantidad), aunque el saldo en dinero ya esté en 0.
+     */
+    public function anticiposVivos(int $empresaId, ?int $clienteId = null): Collection
+    {
+        return DB::table('cliente_anticipos as a')
+            ->where('a.empresa_id', $empresaId)
+            ->whereIn('a.estado', ['activo', 'aplicado'])
+            ->when($clienteId, fn ($q, $id) => $q->where('a.cliente_id', $id))
+            ->selectRaw("a.id, a.cliente_id, a.fecha, a.monto, a.saldo, a.tipo_valorizacion, a.venta_id,
+                CASE WHEN a.tipo_valorizacion = 'material' AND a.producto_id IS NOT NULL
+                          AND a.cantidad_pendiente IS NOT NULL AND a.cantidad > 0
+                          AND NOT EXISTS (SELECT 1 FROM cliente_anticipo_items i WHERE i.cliente_anticipo_id = a.id)
+                     THEN ROUND(a.cantidad_pendiente * a.monto / a.cantidad, 2)
+                     ELSE a.saldo END AS valor")
+            ->orderBy('a.fecha')->orderBy('a.id')
+            ->get()
+            ->map(function ($a) {
+                $a->valor = (float) $a->valor;
+
+                return $a;
+            })
+            ->filter(fn ($a) => $a->valor > 0.005)
             ->values();
     }
 

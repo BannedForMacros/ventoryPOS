@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Inventario;
 
 use App\Support\EnEmpresa;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Inventario\Concerns\ResuelveFactorPresentacion;
 use App\Models\Almacen;
 use App\Models\Cuenta;
 use App\Models\Entrada;
@@ -28,6 +29,7 @@ use Inertia\Inertia;
 class EntradaController extends Controller
 {
     use ExigeCuentaDePago;
+    use ResuelveFactorPresentacion;
     public function __construct(
         private LocalScopeService $scope,
         private TesoreriaService $tesoreria,
@@ -268,7 +270,7 @@ class EntradaController extends Controller
             'proveedor'        => 'nullable|string|max:150',
             'numero_documento' => 'nullable|string|max:50',
             'tipo'             => 'required|in:compra,ajuste,devolucion,otro',
-            'fecha'            => 'required|date',
+            'fecha'            => ['required', 'date', new \App\Rules\NoFutura],
             // Mercadería en tránsito: la compra ya está hecha pero llega después.
             // Solo se acepta si la empresa encendió el módulo; la fecha estimada
             // es opcional (muchas veces el proveedor no promete una).
@@ -284,7 +286,8 @@ class EntradaController extends Controller
             'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
             'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
-            'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
+            // Se ignora: el factor sale del catálogo del producto (resolverFactores).
+            'detalles.*.factor_conversion' => 'nullable|numeric',
             'detalles.*.precio_costo'      => 'required|numeric|min:0',
             // NULL = hereda numero_documento de la cabecera al mostrar; no se copia el valor
             // para que cambiar la cabecera actualice los items que no tienen factura propia.
@@ -301,12 +304,14 @@ class EntradaController extends Controller
             'pagos.*.proveedor_adelanto_id'    => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'                    => 'required|numeric|min:0.01',
             'pagos.*.referencia'               => 'nullable|string|max:200',
-            'pagos.*.fecha'                    => ['nullable', 'date'],
+            'pagos.*.fecha'                    => ['nullable', 'date', new \App\Rules\NoFutura],
             'turno_id'                 => ['nullable', Rule::exists('turnos', 'id')->where('empresa_id', $user->empresa_id)],
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
         abort_unless($this->scope->puedeAccederAlmacen($user, $almacen), 403);
+
+        $data['detalles'] = $this->resolverFactores($data['detalles']);
 
         // Si vino proveedor_id, validar que sea de la empresa y completar el campo proveedor (denormalizado)
         if (!empty($data['proveedor_id'])) {
@@ -498,7 +503,7 @@ class EntradaController extends Controller
             // que el form NO debe restringir su reducción (edición documental).
             'productosAbsorbidos' => $entrada->estado === 'confirmado'
                 ? $entrada->detalles->pluck('producto_id')->unique()
-                    ->filter(fn ($pid) => \App\Models\Stock::absorbidoPorApertura($entrada->almacen_id, (int) $pid, $entrada->fecha))
+                    ->filter(fn ($pid) => \App\Models\Stock::absorbidoPorApertura($entrada->almacen_id, (int) $pid, $entrada->fechaStock()))
                     ->values()
                 : collect(),
             'mostrarSelector' => $this->scope->mostrarSelectorLocal($user),
@@ -521,7 +526,7 @@ class EntradaController extends Controller
             'proveedor'        => 'nullable|string|max:150',
             'numero_documento' => 'nullable|string|max:50',
             'tipo'             => 'required|in:compra,ajuste,devolucion,otro',
-            'fecha'            => 'required|date',
+            'fecha'            => ['required', 'date', new \App\Rules\NoFutura],
             'facturada_a_cliente' => 'nullable|boolean',
             'cliente_id'          => ['nullable', 'integer', 'required_if:facturada_a_cliente,true',
                 Rule::exists('clientes', 'id')->where('empresa_id', $user->empresa_id)],
@@ -530,7 +535,8 @@ class EntradaController extends Controller
             'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
             'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
-            'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
+            // Se ignora: el factor sale del catálogo del producto (resolverFactores).
+            'detalles.*.factor_conversion' => 'nullable|numeric',
             'detalles.*.precio_costo'      => 'required|numeric|min:0',
             // NULL = hereda numero_documento de la cabecera al mostrar; no se copia el valor
             // para que cambiar la cabecera actualice los items que no tienen factura propia.
@@ -543,7 +549,7 @@ class EntradaController extends Controller
             'pagos.*.proveedor_adelanto_id'    => ['nullable', 'integer', Rule::exists('proveedor_adelantos', 'id')->where('empresa_id', $user->empresa_id)],
             'pagos.*.monto'                    => 'required|numeric|min:0.01',
             'pagos.*.referencia'               => 'nullable|string|max:200',
-            'pagos.*.fecha'                    => ['nullable', 'date'],
+            'pagos.*.fecha'                    => ['nullable', 'date', new \App\Rules\NoFutura],
             // Pagos YA registrados EDITADOS en la misma pantalla (solo admin). Se
             // guardan junto con todo lo demás en un solo submit — sin botón por fila.
             'pagos_editados'                  => 'nullable|array',
@@ -571,11 +577,16 @@ class EntradaController extends Controller
         ]);
 
         $almacen = Almacen::find($data['almacen_id']);
+        // También el almacén NUEVO debe ser uno al que el usuario tiene acceso.
+        abort_unless($this->scope->puedeAccederAlmacen($user, $almacen), 403);
         if ($user->empresa->usaCentralYLocal() && !$almacen->esCentral()) {
             return back()->withErrors([
                 'almacen_id' => 'Las entradas solo pueden ingresar al almacén central.',
             ])->withInput();
         }
+
+        // Las líneas que siguen igual conservan el factor con que se registraron.
+        $data['detalles'] = $this->resolverFactores($data['detalles'], guardadas: $entrada->detalles()->get());
 
         if (!empty($data['proveedor_id'])) {
             $prov = Proveedor::where('id', $data['proveedor_id'])
@@ -586,6 +597,10 @@ class EntradaController extends Controller
 
         $eraConfirmada    = $entrada->estado === 'confirmado';
         $almacenAnterior  = $entrada->almacen_id;
+        $cambiaAlmacen    = (int) $data['almacen_id'] !== (int) $almacenAnterior;
+        // Fecha en que la mercadería entró al stock (la de recepción si vino en
+        // tránsito): es la que decide si la absorbió el inventario inicial.
+        $fechaStockAnterior = $entrada->fechaStock();
 
         // ── Si era confirmada, validar ANTES que ninguna reduccion deje stock negativo.
         // Esto cubre el caso "ya se vendieron / transfirieron unidades de esta entrada".
@@ -614,11 +629,14 @@ class EntradaController extends Controller
                 // Entrada absorbida por el inventario inicial (fecha <= corte de
                 // apertura): sus unidades viven en el conteo físico, NO en el stock
                 // en vivo. Reducirla es corrección documental — no valida stock.
-                if (Stock::absorbidoPorApertura($almacenAnterior, (int) $productoId, $entrada->fecha)) {
+                if (Stock::absorbidoPorApertura($almacenAnterior, (int) $productoId, $fechaStockAnterior)) {
                     continue;
                 }
 
-                $cantNueva = (float) $nuevosBase->get($productoId, 0);
+                // Si la entrada se MUDA de almacén, el anterior pierde TODO lo que
+                // ella aportó (lo nuevo entra en el otro almacén). Antes se comparaba
+                // solo nuevo − viejo y el almacén anterior podía quedar en negativo.
+                $cantNueva = $cambiaAlmacen ? 0.0 : (float) $nuevosBase->get($productoId, 0);
                 $delta     = $cantNueva - $cantVieja;
                 if ($delta >= 0) continue; // suma o igual: no hay riesgo
 
@@ -634,12 +652,18 @@ class EntradaController extends Controller
                     $minPermit   = max(0.0001, $cantVieja - $stockActual);
                     $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 4, '.', ''), '0'), '.');
 
-                    $errores[] = sprintf(
-                        'No se puede reducir "%s": ya se generaron salidas (ventas / transferencias / etc.) por %s unidades base de esta entrada. La cantidad mínima permitida en esta línea es %s (base).',
-                        $producto?->nombre ?? "producto #$productoId",
-                        $fmt($consumido),
-                        $fmt($minPermit),
-                    );
+                    $errores[] = $cambiaAlmacen
+                        ? sprintf(
+                            'No se puede cambiar el almacén: de "%s" ya salieron %s unidades base (ventas / transferencias / etc.) del almacén original; moverla dejaría ese almacén en negativo.',
+                            $producto?->nombre ?? "producto #$productoId",
+                            $fmt($consumido),
+                        )
+                        : sprintf(
+                            'No se puede reducir "%s": ya se generaron salidas (ventas / transferencias / etc.) por %s unidades base de esta entrada. La cantidad mínima permitida en esta línea es %s (base).',
+                            $producto?->nombre ?? "producto #$productoId",
+                            $fmt($consumido),
+                            $fmt($minPermit),
+                        );
                 }
             }
 
@@ -649,7 +673,7 @@ class EntradaController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($data, $entrada, $eraConfirmada, $almacenAnterior, $user) {
+            DB::transaction(function () use ($data, $entrada, $eraConfirmada, $almacenAnterior, $fechaStockAnterior, $user) {
                 // 1) Si era confirmada, revertir el stock que aporto cada detalle viejo.
                 //    permitirNegativo=true porque es transitorio: al final reaplicamos
                 //    los nuevos. La validacion previa ya garantizo que el saldo final >= 0.
@@ -661,7 +685,7 @@ class EntradaController extends Controller
                         // Absorbida por la apertura: nunca aportó al stock en vivo,
                         // no hay nada que revertir (evita el ruido entrada_reverso
                         // y el falso descuadre al editar entradas del día del corte).
-                        if (Stock::absorbidoPorApertura($almacenAnterior, $d->producto_id, $entrada->fecha)) {
+                        if (Stock::absorbidoPorApertura($almacenAnterior, $d->producto_id, $fechaStockAnterior)) {
                             continue;
                         }
                         Stock::ajustar(
@@ -680,7 +704,7 @@ class EntradaController extends Controller
                                 // posterior. Con now(), una entrada retrofechada dejaba la
                                 // reversión en un día distinto → el kardex "as-of-date"
                                 // leía el saldo revertido y el stock caía fantasma (bug).
-                                'fecha'           => $entrada->fecha,
+                                'fecha'           => $fechaStockAnterior,
                                 'user_id'         => $user->id,
                                 'empresa_id'      => $entrada->empresa_id,
                             ],
@@ -873,20 +897,21 @@ class EntradaController extends Controller
                         // Con fecha (nueva) en o antes del corte de apertura: la
                         // mercadería ya está contada en el inventario inicial —
                         // reaplicarla duplicaría stock. Solo corrección documental.
-                        if (Stock::absorbidoPorApertura($entrada->almacen_id, $d->producto_id, $entrada->fecha)) {
+                        if (Stock::absorbidoPorApertura($entrada->almacen_id, $d->producto_id, $entrada->fechaStock())) {
                             continue;
                         }
                         Stock::ajustar(
                             almacenId:    $entrada->almacen_id,
                             productoId:   $d->producto_id,
                             cantidadBase: (float) $d->cantidad_base,
-                            costoNuevo:   (float) $d->precio_costo,
+                            // Por unidad base: precio_costo es por presentación.
+                            costoNuevo:   $d->costoBase(),
                             contexto: [
                                 'tipo'            => 'entrada_edicion',
                                 'referencia_tipo' => 'entrada',
                                 'referencia_id'   => $entrada->id,
                                 'documento'       => $entrada->numero_documento,
-                                'fecha'           => $entrada->fecha,
+                                'fecha'           => $entrada->fechaStock(),
                                 'user_id'         => $user->id,
                                 'empresa_id'      => $entrada->empresa_id,
                             ],
@@ -922,7 +947,12 @@ class EntradaController extends Controller
     {
         abort_unless($this->scope->puedeAccederAlmacen($request->user(), $entrada->almacen), 403);
 
-        $entrada->confirmar();
+        try {
+            $entrada->confirmar();
+        } catch (\LogicException $e) {
+            // Doble clic o ya confirmada desde otra pestaña: aviso claro, no un 500.
+            throw ValidationException::withMessages(['estado' => $e->getMessage()]);
+        }
 
         return redirect()->back()->with('success', 'Entrada confirmada. El stock ha sido actualizado.');
     }
@@ -941,11 +971,19 @@ class EntradaController extends Controller
         abort_unless($this->transito->habilitado($request->user()->empresa), 403);
         abort_unless($entrada->esEnTransito(), 422, 'Esta entrada no está en tránsito.');
 
+        // No puede llegar antes de comprarse ni en el futuro.
+        $fechaCompra = $entrada->fecha->toDateString();
         $data = $request->validate([
-            'fecha_recepcion' => 'nullable|date',
+            'fecha_recepcion' => ['nullable', 'date', new \App\Rules\NoFutura, 'after_or_equal:' . $fechaCompra],
+        ], [
+            'fecha_recepcion.after_or_equal' => 'La mercadería no puede llegar antes de la fecha de la compra (' . $entrada->fecha->format('d/m/Y') . ').',
         ]);
 
-        $entrada->recibir($data['fecha_recepcion'] ?? null);
+        try {
+            $entrada->recibir($data['fecha_recepcion'] ?? null);
+        } catch (\LogicException $e) {
+            throw ValidationException::withMessages(['estado' => $e->getMessage()]);
+        }
 
         AuditoriaService::log('entrada.recibida', $entrada, [
             'correlativo'      => $entrada->correlativo,
@@ -1000,17 +1038,22 @@ class EntradaController extends Controller
 
         $data = $request->validate([
             'estado_pago'    => 'required|in:pendiente,pagado',
-            'metodo_pago_id' => ['required_if:estado_pago,pagado', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
+            // nullable: al volver a "pendiente" el método llega vacío.
+            'metodo_pago_id' => ['nullable', 'required_if:estado_pago,pagado', 'integer', Rule::exists('metodos_pago', 'id')->where('empresa_id', $user->empresa_id)],
             'cuenta_id'      => ['nullable', 'integer', Rule::exists('cuentas', 'id')->where('empresa_id', $user->empresa_id), $this->reglaCuentaObligatoria($request)],
         ]);
 
         if ($data['estado_pago'] === 'pagado') {
-            $saldo = $entrada->saldoPendiente();
-            if ($saldo <= 0.01) {
-                return redirect()->back()->with('success', 'La entrada ya estaba pagada.');
-            }
+            // El saldo se calcula con la compra BLOQUEADA y releída: dos "Pagado"
+            // simultáneos (doble clic, dos pestañas) leían el mismo saldo fuera de
+            // la transacción y pagaban dos veces, sacando el doble de la caja.
+            $saldo = DB::transaction(function () use ($entrada, $data, $user) {
+                $entrada = Entrada::whereKey($entrada->id)->lockForUpdate()->firstOrFail();
+                $saldo   = $entrada->saldoPendiente();
+                if ($saldo <= 0.01) {
+                    return 0.0;
+                }
 
-            DB::transaction(function () use ($entrada, $data, $user, $saldo) {
                 $entrada->update([
                     'metodo_pago_id' => $data['metodo_pago_id'] ?? null,
                     'cuenta_id'      => $data['cuenta_id'] ?? null,
@@ -1024,7 +1067,13 @@ class EntradaController extends Controller
                 AuditoriaService::log('entrada.pago_total', $entrada, [
                     'monto' => $saldo,
                 ], $user);
+
+                return $saldo;
             });
+
+            if ($saldo <= 0.01) {
+                return redirect()->back()->with('success', 'La entrada ya estaba pagada.');
+            }
 
             return redirect()->back()->with('success', 'Pago registrado: S/ ' . number_format($saldo, 2) . ' al proveedor.');
         }
@@ -1039,8 +1088,9 @@ class EntradaController extends Controller
 
         DB::transaction(function () use ($entrada, $pagos, $user) {
             foreach ($pagos as $p) {
-                $this->tesoreria->revertir('entrada_pago', $p->id);
-                $p->delete();
+                // Una compensación CxC↔CxP no movió dinero: se revierte también el
+                // abono de la venta (o el movimiento de la deuda) que la acompaña.
+                $this->revertirPagoDeEntrada($p, $user);
             }
             $entrada->update([
                 'monto_pagado'   => 0,
@@ -1079,15 +1129,11 @@ class EntradaController extends Controller
             ])->all(),
         ];
 
-        DB::transaction(function () use ($entrada) {
-            // Revertir pagos registrados (y sus asientos de tesorería o adelantos) antes de borrar.
+        DB::transaction(function () use ($entrada, $request) {
+            // Revertir pagos registrados (y sus asientos de tesorería, adelantos o
+            // compensaciones) antes de borrar.
             foreach ($entrada->pagosParciales()->get() as $p) {
-                if ($p->proveedor_adelanto_id) {
-                    $this->adelantos->revertirAplicacion($p);
-                } else {
-                    $this->tesoreria->revertir('entrada_pago', $p->id);
-                }
-                $p->delete();
+                $this->revertirPagoDeEntrada($p, $request->user());
             }
             $entrada->detalles()->delete();
             $entrada->delete();
@@ -1136,14 +1182,10 @@ class EntradaController extends Controller
         DB::transaction(function () use ($entrada, $user) {
             $productos = $entrada->detalles->pluck('producto_id')->unique();
 
-            // 1) Revertir pagos y sus egresos de tesorería (o restaurar adelantos).
+            // 1) Revertir pagos y sus egresos de tesorería (o restaurar adelantos,
+            //    o deshacer la compensación con la venta/deuda del tercero).
             foreach ($entrada->pagosParciales()->get() as $p) {
-                if ($p->proveedor_adelanto_id) {
-                    $this->adelantos->revertirAplicacion($p);
-                } else {
-                    $this->tesoreria->revertir('entrada_pago', $p->id);
-                }
-                $p->delete();
+                $this->revertirPagoDeEntrada($p, $user);
             }
 
             // 2) Marcarla anulada ANTES de reconstruir: así stock y kardex ya no la
@@ -1203,6 +1245,31 @@ class EntradaController extends Controller
         return redirect()->back()->with('success', $entrada->fresh()->esEnTransito()
             ? 'Entrada reactivada: vuelve a quedar en camino y por pagar.'
             : 'Entrada reactivada: quedó confirmada y por pagar; stock y kardex re-aplicados.');
+    }
+
+    /**
+     * Deshace UN pago de la entrada según de dónde salió y lo borra:
+     *  - compensación CxC↔CxP / deuda: no hubo dinero; se revierte la contraparte
+     *    (el abono hermano de la venta o el movimiento de la deuda). Antes se
+     *    borraba solo este lado y la venta quedaba "cobrada" con una compra que ya
+     *    no existía;
+     *  - adelanto al proveedor: el adelanto recupera su saldo;
+     *  - dinero: se revierte el egreso de tesorería.
+     */
+    private function revertirPagoDeEntrada(EntradaPago $pago, \App\Models\User $user): void
+    {
+        if ($pago->esCompensacion()) {
+            app(\App\Services\CompensacionCxcCxpService::class)
+                ->revertirContraparteDesdeEntrada($pago->compensacion_grupo_id, $user);
+            AuditoriaService::log('entrada.pago_anulado', $pago->entrada, [
+                'pago_id' => $pago->id, 'monto' => (float) $pago->monto, 'compensacion' => $pago->compensacion_grupo_id,
+            ], $user);
+        } elseif ($pago->proveedor_adelanto_id) {
+            $this->adelantos->revertirAplicacion($pago);
+        } else {
+            $this->tesoreria->revertir('entrada_pago', $pago->id);
+        }
+        $pago->delete();
     }
 
     private function reglaMetodoOAdelantoEnArray(): \Closure

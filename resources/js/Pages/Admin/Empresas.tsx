@@ -43,6 +43,8 @@ type EditarForm = {
     telefono: string;
     email: string;
     activo: boolean;
+    usa_visor_ventas: boolean;
+    visor_ventas_limite_diario: number;
 };
 
 const emptyCrear: CrearForm = {
@@ -71,6 +73,8 @@ export default function Empresas({ empresas }: Props) {
         telefono: '',
         email: '',
         activo: true,
+        usa_visor_ventas: false,
+        visor_ventas_limite_diario: 2,
     });
 
     useEffect(() => {
@@ -145,6 +149,8 @@ export default function Empresas({ empresas }: Props) {
             telefono: e.telefono ?? '',
             email: e.email ?? '',
             activo: e.activo,
+            usa_visor_ventas: !!(e as { usa_visor_ventas?: boolean }).usa_visor_ventas,
+            visor_ventas_limite_diario: Number((e as { visor_ventas_limite_diario?: number }).visor_ventas_limite_diario ?? 2),
         });
         setEditing(e);
     }
@@ -415,6 +421,28 @@ export default function Empresas({ empresas }: Props) {
                         />
                         Empresa activa
                     </label>
+                    {/* Función del plan: cada foto gasta créditos de la API de Claude. */}
+                    <div className="rounded-xl p-3 space-y-3" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                        <Checkbox
+                            name="usa_visor_ventas"
+                            checked={editar.data.usa_visor_ventas}
+                            onChange={e => editar.setData('usa_visor_ventas', e.target.checked)}
+                            label="Visor de ventas"
+                            description="En el POS aparece una cámara para leer con IA la foto del cuaderno de ventas. Cada foto gasta créditos de la API."
+                        />
+                        {editar.data.usa_visor_ventas && (
+                            <Input
+                                label="Lecturas por día que incluye el plan"
+                                type="number"
+                                min={1}
+                                max={100}
+                                value={editar.data.visor_ventas_limite_diario}
+                                onChange={e => editar.setData('visor_ventas_limite_diario', Number(e.target.value))}
+                                error={editar.errors.visor_ventas_limite_diario}
+                                hint='Al pasar el límite la cajera ve: "Su plan es solo para N sesiones máximas por día".'
+                            />
+                        )}
+                    </div>
                     <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                         La configuración fina (almacén, cierres, devoluciones, ticket, facturación) la
                         administra el propio administrador de la empresa desde su panel.

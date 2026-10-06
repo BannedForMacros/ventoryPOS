@@ -198,6 +198,25 @@ class TurnoController extends Controller
         abort_if($turno->empresa_id !== $request->user()->empresa_id, 403);
         abort_if($turno->estado !== 'cerrado', 422);
 
+        // Reabrir no puede dejar a nadie con dos turnos abiertos (las ventas y
+        // gastos caerían en uno u otro al azar) ni a la caja con dos cajeras.
+        $otroDeLaDuena = Turno::where('user_id', $turno->user_id)->where('estado', 'abierto')
+            ->where('id', '<>', $turno->id)->first();
+        if ($otroDeLaDuena) {
+            return back()->withErrors([
+                'motivo' => 'La dueña de este turno ya tiene otro turno abierto (#' . $otroDeLaDuena->id
+                    . ', abierto el ' . $otroDeLaDuena->fecha_apertura?->format('d/m/Y H:i') . '). Ciérralo antes de reabrir este.',
+            ]);
+        }
+        $otroDeLaCaja = Turno::where('caja_id', $turno->caja_id)->where('estado', 'abierto')
+            ->where('id', '<>', $turno->id)->first();
+        if ($otroDeLaCaja) {
+            return back()->withErrors([
+                'motivo' => 'La caja ya tiene otro turno abierto (#' . $otroDeLaCaja->id . ', de '
+                    . ($otroDeLaCaja->user?->name ?? 'otra persona') . '). Ciérralo antes de reabrir este.',
+            ]);
+        }
+
         $motivo = $request->validated('motivo');
 
         DB::transaction(function () use ($turno, $request, $motivo) {
@@ -477,7 +496,10 @@ class TurnoController extends Controller
         }
 
         $totalGastos = $turno->gastos->sum(fn($g) => (float) $g->monto);
-        $montoEsperado = $turno->calcularMontoEsperado();
+        // Desglose del efectivo esperado (apertura + entradas − salidas por
+        // concepto): el cierre lo muestra tal cual, así el texto cuadra con el total.
+        $desgloseEsperado = $turno->desgloseEsperado();
+        $montoEsperado = $desgloseEsperado['esperado'];
 
         $metodosPago = MetodoPago::deEmpresa($user->empresa_id)
             ->activo()
@@ -517,6 +539,7 @@ class TurnoController extends Controller
             'totalVentas'                  => $totalVentas,
             'totalGastos'                  => $totalGastos,
             'montoEsperado'                => $montoEsperado,
+            'desgloseEsperado'             => $desgloseEsperado,
             'metodosPago'                  => $metodosPago,
             'modoCierreCaja'               => $modoCaja,
             'modoCierreInventario'         => $modoInventario,

@@ -45,6 +45,8 @@ class Empresa extends Model
         'restock_default',
         // Modulo Agenda multidisciplina
         'usa_agenda',
+        'usa_visor_ventas',
+        'visor_ventas_limite_diario',
         'agenda_sujeto_label',
         'agenda_sujeto_requerido',
         'agenda_recordatorio_plantilla',
@@ -98,6 +100,8 @@ class Empresa extends Model
             'requiere_aprobacion_devolucion'  => 'boolean',
             'restock_default'                 => 'boolean',
             'usa_agenda'                      => 'boolean',
+            'usa_visor_ventas'                => 'boolean',
+            'visor_ventas_limite_diario'      => 'integer',
             'turno_cierre_automatico'         => 'boolean',
             'agenda_sujeto_requerido'         => 'boolean',
             'venta_edicion_minutos'           => 'integer',

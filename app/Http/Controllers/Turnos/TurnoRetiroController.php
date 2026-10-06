@@ -93,4 +93,34 @@ class TurnoRetiroController extends Controller
 
         return back()->with('success', 'Retiro aprobado.');
     }
+
+    /**
+     * Rechaza un retiro pendiente de aprobación: se ANULA (la fila queda como
+     * constancia) y su monto vuelve a contarse en el efectivo esperado del
+     * cajón. Solo mientras el turno siga abierto: en uno cerrado el esperado
+     * ya se congeló (reabrir el turno primero).
+     */
+    public function rechazar(Request $request, TurnoRetiro $retiro)
+    {
+        $user = $request->user();
+
+        abort_if($retiro->empresa_id !== $user->empresa_id, 403);
+        abort_unless($user->rol?->es_admin, 403, 'Solo un administrador puede rechazar retiros.');
+        abort_if($retiro->estado !== 'registrado', 422, 'Solo se rechazan retiros pendientes de aprobación.');
+        abort_if($retiro->turno?->estado !== 'abierto', 422, 'El turno ya está cerrado: reábrelo para rechazar este retiro.');
+
+        $retiro->update([
+            'estado'       => TurnoRetiro::ESTADO_ANULADO,
+            'aprobado_por' => $user->id,
+            'observacion'  => trim(($retiro->observacion ?? '') . ' [Rechazado por ' . $user->name . ' el ' . now()->format('d/m/Y H:i') . ']'),
+        ]);
+
+        AuditoriaService::log('turno.retiro_rechazado', $retiro, [
+            'turno_id'       => $retiro->turno_id,
+            'monto'          => (float) $retiro->monto,
+            'registrado_por' => $retiro->user?->name,
+        ], $user);
+
+        return back()->with('success', 'Retiro rechazado: el efectivo vuelve a contarse en el cajón.');
+    }
 }

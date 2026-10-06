@@ -82,9 +82,65 @@ class StoreVentaRequest extends FormRequest
         $this->merge($cambios);
     }
 
+    /** Venta que se está editando (PUT ventas.update), o null si es una venta nueva. */
+    private function ventaEditada(): ?\App\Models\Venta
+    {
+        $venta = $this->route('venta');
+
+        return $venta instanceof \App\Models\Venta ? $venta : null;
+    }
+
+    /**
+     * Soles por 1 unidad de la moneda de la venta. Los precios y pagos llegan en
+     * esa moneda; el costo y los anticipos se guardan en soles. Al editar manda
+     * el TC congelado de la venta, que es con el que VentaService convierte.
+     */
+    private function factorMoneda(): float
+    {
+        $venta = $this->ventaEditada();
+        if ($venta) {
+            return ($venta->moneda && $venta->moneda !== 'PEN' && (float) $venta->tipo_cambio > 0)
+                ? (float) $venta->tipo_cambio : 1.0;
+        }
+
+        $moneda = strtoupper((string) ($this->input('moneda') ?: 'PEN'));
+        $tc     = (float) $this->input('tipo_cambio');
+
+        return $moneda !== 'PEN' && $tc > 0 ? $tc : 1.0;
+    }
+
+    /** "S/" o "US$" según la moneda en que viene la venta. */
+    private function simbolo(): string
+    {
+        return $this->factorMoneda() !== 1.0 ? 'US$' : 'S/';
+    }
+
+    /** Productos que la venta editada ya tenía: se aceptan aunque luego se desactivaran. */
+    private function productosDeLaVentaEditada(): array
+    {
+        return $this->ventaEditada()?->items()->pluck('producto_id')->unique()->values()->all() ?? [];
+    }
+
     public function rules(): array
     {
         $empresaId = $this->user()->empresa_id;
+        $venta     = $this->ventaEditada();
+
+        // Al editar se acepta la fecha de vencimiento que ya tenía el crédito
+        // (aunque ya pasó) y los productos que ya estaban en la venta (aunque se
+        // hayan desactivado después): si no, esas ventas no se podían corregir.
+        $vencimientoOriginal = $venta?->fecha_vencimiento?->toDateString();
+        $reglaVencimiento = function (string $attr, $value, \Closure $fail) use ($vencimientoOriginal) {
+            try {
+                $fecha = \Illuminate\Support\Carbon::parse($value)->toDateString();
+            } catch (\Throwable) {
+                return; // la regla `date` da el mensaje
+            }
+            if ($fecha < now()->toDateString() && $fecha !== $vencimientoOriginal) {
+                $fail('La fecha de vencimiento del crédito no puede ser anterior a hoy.');
+            }
+        };
+        $productosPrevios = $this->productosDeLaVentaEditada();
 
         return [
             // Cliente: si viene, debe ser de la empresa Y estar activo.
@@ -109,7 +165,7 @@ class StoreVentaRequest extends FormRequest
             // Exige cliente identificado (se valida en withValidator) y permite
             // pagos parciales o sin pago inicial.
             'es_credito'             => ['nullable', 'boolean'],
-            'fecha_vencimiento'      => ['nullable', 'date', 'after_or_equal:today'],
+            'fecha_vencimiento'      => ['nullable', 'date', $reglaVencimiento],
             // Pendiente por entregar: el cliente paga TODO pero se lleva solo
             // parte de la mercadería. El POS crea un anticipo material con los
             // ítems pendientes (items.*.cantidad_pendiente) y el stock de lo
@@ -166,7 +222,9 @@ class StoreVentaRequest extends FormRequest
                 'required', 'integer',
                 Rule::exists('productos', 'id')
                     ->where('empresa_id', $empresaId)
-                    ->where('activo', true),
+                    ->where(fn ($q) => $productosPrevios
+                        ? $q->where('activo', true)->orWhereIn('id', $productosPrevios)
+                        : $q->where('activo', true)),
             ],
             'items.*.producto_unidad_id'      => ['required', 'integer', EnEmpresa::presentacion()],
             'items.*.cantidad'                => ['required', 'numeric', 'min:0.0001'],
@@ -215,8 +273,8 @@ class StoreVentaRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'fecha_vencimiento.after_or_equal' => 'La fecha de vencimiento del crédito no puede ser anterior a hoy.',
             'fecha_venta.before_or_equal'      => 'La venta no puede registrarse con fecha futura.',
+            'items.*.producto_id.exists'       => 'Uno de los productos ya no está a la venta (se desactivó o no existe). Quítalo del carrito y vuelve a agregarlo desde el catálogo.',
         ];
     }
 
@@ -249,7 +307,11 @@ class StoreVentaRequest extends FormRequest
             }
 
             $this->validarSobrepagoNoEfectivo($validator, $total, $empresaId);
-            $this->validarEntregaPendiente($validator, $empresaId);
+            // Con despacho en almacén ya corrió dentro de validarDespachoAlmacen:
+            // dos veces repetía cada mensaje.
+            if (!$this->boolean('despacho_almacen')) {
+                $this->validarEntregaPendiente($validator, $empresaId);
+            }
             $this->validarEnvio($validator, $empresaId);
             $this->validarComprobanteElectronico($validator, $empresaId, $total); // V13
         });
@@ -513,7 +575,11 @@ class StoreVentaRequest extends FormRequest
         }
 
         $empresa = Empresa::find($empresaId);
-        if (!($empresa?->usa_despacho_almacen ?? false)) {
+        // Una venta que ya nació como despacho se puede corregir aunque la
+        // empresa haya apagado la opción después.
+        $yaEraDespacho = ($venta = $this->ventaEditada())
+            && $venta->anticipos()->where('observacion', 'like', 'Despacho en almacén%')->exists();
+        if (!$yaEraDespacho && !($empresa?->usa_despacho_almacen ?? false)) {
             $validator->errors()->add(
                 'despacho_almacen',
                 'La empresa no tiene habilitada la opción de despacho en almacén.',
@@ -607,10 +673,9 @@ class StoreVentaRequest extends FormRequest
     private function validarDescuentoYTope($validator): void
     {
         $descuentoTotal = (float) ($this->input('descuento_total') ?? 0);
-        if ($descuentoTotal <= 0) return;
 
         // (a) Concepto obligatorio cuando hay descuento global
-        if (empty($this->input('descuento_concepto_id'))) {
+        if ($descuentoTotal > 0 && empty($this->input('descuento_concepto_id'))) {
             $validator->errors()->add(
                 'descuento_concepto_id',
                 'Debes seleccionar un motivo (concepto de descuento) cuando aplicas un descuento global.'
@@ -618,29 +683,34 @@ class StoreVentaRequest extends FormRequest
             return;
         }
 
-        // (b) Tope porcentual por rol
+        // (b) Tope porcentual por rol. Cuenta TODO lo descontado: el global y
+        // los descuentos por línea. Antes solo miraba el global y bastaba con
+        // descontar en cada producto para pasar el tope.
         $user = $this->user();
         $user->loadMissing('rol');
         $topePct = $user->rol?->max_descuento_porcentaje;
         if ($topePct === null) return; // sin tope (típicamente admin)
 
-        // Subtotal bruto del carrito (suma simple, no la base IGV-separada).
-        // El cajero entiende este monto como "el total antes del descuento".
-        $subtotalBruto = 0.0;
+        // Subtotal bruto del carrito (precio de lista × cantidad, antes de
+        // cualquier descuento): el cajero lo entiende como "el total sin descuento".
+        $subtotalBruto  = 0.0;
+        $descuentoLinea = 0.0;
         foreach ($this->input('items', []) as $item) {
             $precio    = (float) ($item['precio_unitario'] ?? 0);
             $descItem  = (float) ($item['descuento_item']  ?? 0);
             $cantidad  = (float) ($item['cantidad']        ?? 0);
-            $subtotalBruto += ($precio - $descItem) * $cantidad;
+            $subtotalBruto  += $precio * $cantidad;
+            $descuentoLinea += min($descItem, $precio) * $cantidad;
         }
 
-        if ($subtotalBruto <= 0) return; // sin productos válidos, otra regla lo atrapa
+        $descuentoTodo = $descuentoTotal + $descuentoLinea;
+        if ($descuentoTodo <= 0.009 || $subtotalBruto <= 0) return;
 
-        $pctSolicitado = round(($descuentoTotal / $subtotalBruto) * 100, 2);
+        $pctSolicitado = round(($descuentoTodo / $subtotalBruto) * 100, 2);
         if ($pctSolicitado > (float) $topePct + 0.01) {
             $validator->errors()->add(
-                'descuento_total',
-                "Tu rol permite máximo {$topePct}% de descuento sobre el subtotal. "
+                $descuentoTotal > 0 ? 'descuento_total' : 'items',
+                "Tu rol permite máximo {$topePct}% de descuento sobre el subtotal (sumando los descuentos por producto). "
                 . "Estás aplicando {$pctSolicitado}%. Pide aprobación de un supervisor."
             );
         }
@@ -664,6 +734,10 @@ class StoreVentaRequest extends FormRequest
             ->whereIn('id', $unidadIds)
             ->get()
             ->keyBy('id');
+
+        $productosPrevios = array_map('intval', $this->productosDeLaVentaEditada());
+        // Precio en la moneda de la venta; el costo, siempre en soles.
+        $factorMoneda = $this->factorMoneda();
 
         // Costo promedio real del stock en el almacén de ventas del usuario.
         // Se usa como piso de precio antes que el campo estático productos.precio_costo,
@@ -705,14 +779,18 @@ class StoreVentaRequest extends FormRequest
                 continue;
             }
 
-            if ($unidad->activo === false) {
+            // Al editar, lo que la venta ya tenía se acepta aunque se haya
+            // desactivado después (si no, la venta no se podía corregir).
+            $yaEstaba = in_array((int) $productoId, $productosPrevios, true);
+
+            if ($unidad->activo === false && !$yaEstaba) {
                 $validator->errors()->add(
                     "items.{$index}.producto_unidad_id",
                     'La presentación seleccionada está inactiva.',
                 );
             }
 
-            if ($unidad->producto->activo === false) {
+            if ($unidad->producto->activo === false && !$yaEstaba) {
                 $validator->errors()->add(
                     "items.{$index}.producto_id",
                     'El producto seleccionado fue desactivado. Refresca el catálogo.',
@@ -740,14 +818,22 @@ class StoreVentaRequest extends FormRequest
                 $costoMinimo = round($costoProducto * $factor, 2);
             }
 
-            $precio = (float) ($item['precio_unitario'] ?? 0);
+            // El piso es para lo que REALMENTE se cobra: precio menos el
+            // descuento de la línea, convertido a soles. Un descuento CON motivo
+            // (cortesía, regalo) puede bajar del costo: queda auditado y el tope
+            // del rol lo limita; sin motivo, el descuento no sirve para saltarse
+            // el piso.
+            $conMotivo = !empty($item['descuento_concepto_id']);
+            $precio = round(((float) ($item['precio_unitario'] ?? 0)
+                - ($conMotivo ? 0.0 : (float) ($item['descuento_item'] ?? 0))) * $factorMoneda, 2);
             if ($costoMinimo > 0 && $precio < $costoMinimo - 0.009) {
                 $validator->errors()->add(
                     "items.{$index}.precio_unitario",
                     sprintf(
-                        'El precio de "%s" (S/ %s) no puede ser menor al costo (S/ %s).',
+                        'El precio de "%s" (S/ %s%s) no puede ser menor al costo (S/ %s).',
                         $unidad->producto->nombre,
                         number_format($precio, 2),
+                        !$conMotivo && (float) ($item['descuento_item'] ?? 0) > 0 ? ' con su descuento' : '',
                         number_format($costoMinimo, 2),
                     ),
                 );
@@ -771,9 +857,10 @@ class StoreVentaRequest extends FormRequest
         // resuelven solos en TesoreriaService, así que no se exigen.
         $metodoIds = collect($this->input('pagos', []))
             ->pluck('metodo_pago_id')->filter()->unique()->all();
-        $metodosConCuentas = empty($metodoIds) ? [] : DB::table('cuenta_metodo_pago')
-            ->whereIn('metodo_pago_id', $metodoIds)
-            ->pluck('metodo_pago_id')->flip()->all();
+        // Solo cuentas ACTIVAS (misma regla que PagoCuenta y que lo que el POS
+        // muestra): un método cuyas cuentas están todas desactivadas no ofrece
+        // ninguna para elegir, y exigirla trababa la venta.
+        $metodosConCuentas = \App\Support\PagoCuenta::conCuenta($metodoIds);
 
         foreach ($this->input('pagos', []) as $index => $pago) {
             $metodoId = $pago['metodo_pago_id'] ?? null;
@@ -861,21 +948,52 @@ class StoreVentaRequest extends FormRequest
             return;
         }
 
-        $anticipos = \App\Models\ClienteAnticipo::whereIn('id', $ids)
-            ->where('empresa_id', $empresaId)
-            ->where('cliente_id', $clienteId)
-            ->where('tipo_valorizacion', 'monto')
-            ->where('estado', 'activo')
-            ->get(['id', 'saldo']);
+        $saldos = $this->saldosAnticipo($ids, (int) $clienteId, $empresaId);
 
-        if ($anticipos->count() !== count($ids)) {
+        if (count($saldos) !== count($ids)) {
             $validator->errors()->add('anticipo_id', 'Alguno de los anticipos no existe, no pertenece al cliente o ya no está activo.');
             return;
         }
 
-        if ($sinSaldo = $anticipos->first(fn ($a) => (float) $a->saldo <= 0.009)) {
-            $validator->errors()->add('anticipo_id', "El anticipo #{$sinSaldo->id} no tiene saldo disponible.");
+        foreach ($saldos as $id => $saldo) {
+            if ($saldo <= 0.009) {
+                $validator->errors()->add('anticipo_id', "El anticipo #{$id} no tiene saldo disponible.");
+                return;
+            }
         }
+    }
+
+    /**
+     * Saldo usable (en soles) de cada anticipo pedido, indexado por id. Al
+     * EDITAR, lo que esta misma venta ya consumió vuelve a estar disponible
+     * (VentaService lo devuelve antes de re-aplicar), aunque el anticipo haya
+     * quedado agotado por ella.
+     *
+     * @return array<int, float>
+     */
+    private function saldosAnticipo(array $ids, ?int $clienteId, int $empresaId): array
+    {
+        $venta = $this->ventaEditada();
+
+        $aplicadoAqui = $venta
+            ? \App\Models\ClienteAnticipoAplicacion::where('venta_id', $venta->id)
+                ->whereNull('venta_abono_id')
+                ->whereIn('cliente_anticipo_id', $ids)
+                ->selectRaw('cliente_anticipo_id, SUM(monto) as t')
+                ->groupBy('cliente_anticipo_id')
+                ->pluck('t', 'cliente_anticipo_id')
+                ->all()
+            : [];
+
+        return \App\Models\ClienteAnticipo::whereIn('id', $ids)
+            ->where('empresa_id', $empresaId)
+            ->when($clienteId, fn ($q) => $q->where('cliente_id', $clienteId))
+            ->where('tipo_valorizacion', 'monto')
+            ->where(fn ($q) => $q->where('estado', 'activo')
+                ->when($aplicadoAqui, fn ($q2) => $q2->orWhereIn('id', array_keys($aplicadoAqui))))
+            ->get(['id', 'saldo'])
+            ->mapWithKeys(fn ($a) => [(int) $a->id => round((float) $a->saldo + (float) ($aplicadoAqui[$a->id] ?? 0), 2)])
+            ->all();
     }
 
     /**
@@ -887,12 +1005,11 @@ class StoreVentaRequest extends FormRequest
         $ids = $this->idsAnticipo();
         if (!$ids) return 0.0;
 
-        $saldo = (float) \App\Models\ClienteAnticipo::whereIn('id', $ids)
-            ->where('tipo_valorizacion', 'monto')
-            ->where('estado', 'activo')
-            ->sum('saldo');
+        $clienteId = $this->input('cliente_id') ? (int) $this->input('cliente_id') : null;
+        $saldo     = array_sum($this->saldosAnticipo($ids, $clienteId, (int) $this->user()->empresa_id));
 
-        return min($saldo, $total);
+        // El saldo está en soles y el total en la moneda de la venta.
+        return min(round($saldo / $this->factorMoneda(), 2), $total);
     }
 
     /**
@@ -912,7 +1029,8 @@ class StoreVentaRequest extends FormRequest
             $descuento  = (float) ($item['descuento_item'] ?? 0);
             $cantidad   = (float) ($item['cantidad'] ?? 0);
             $incluyeIgv = !empty($item['incluye_igv']);
-            $importe    = ($precio - $descuento) * $cantidad;
+            // Redondeo por línea, igual que Venta::calcularTotales y el POS.
+            $importe    = round(($precio - $descuento) * $cantidad, 2);
 
             if ($incluyeIgv) {
                 $baseGravadaRaw += $tasa > 0 ? $importe / (1 + $tasa) : $importe;
@@ -1048,14 +1166,23 @@ class StoreVentaRequest extends FormRequest
             $sinVueltoIdx[]  = $index;
         }
 
-        if ($sinVueltoTotal > $total + 0.01) {
-            $exceso = round($sinVueltoTotal - $total, 2);
+        // El anticipo cubre primero (como en VentaService): lo que pongan los
+        // pagos sin vuelto encima de él tampoco puede pasarse del total.
+        $anticipo = $this->montoAnticipoUsable($total);
+        $s        = $this->simbolo();
+
+        if ($sinVueltoTotal + $anticipo > $total + 0.01) {
+            $exceso = round($sinVueltoTotal + $anticipo - $total, 2);
             foreach ($sinVueltoIdx as $idx) {
                 $validator->errors()->add(
                     "pagos.{$idx}.monto",
-                    "La suma de pagos sin vuelto (S/ {$sinVueltoTotal}) excede el total "
-                    . "de la venta (S/ {$total}). Exceso: S/ {$exceso}. Usa un método que "
-                    . "admita vuelto para cubrir el excedente.",
+                    $anticipo > 0.009
+                        ? "El anticipo ({$s} " . number_format($anticipo, 2) . ") más los pagos sin vuelto ({$s} "
+                            . number_format($sinVueltoTotal, 2) . ") pasan el total de la venta ({$s} " . number_format($total, 2)
+                            . "). Sobran {$s} " . number_format($exceso, 2) . ': baja ese pago o cobra la diferencia en efectivo.'
+                        : "La suma de pagos sin vuelto ({$s} {$sinVueltoTotal}) excede el total "
+                            . "de la venta ({$s} {$total}). Exceso: {$s} {$exceso}. Usa un método que "
+                            . "admita vuelto para cubrir el excedente.",
                 );
             }
         }

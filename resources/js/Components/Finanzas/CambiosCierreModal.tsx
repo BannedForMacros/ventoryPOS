@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, FileText } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
+import { soles } from '@/lib/dinero';
 
 /**
  * "¿Qué cambió después del cierre?" de un día confirmado.
@@ -58,6 +59,7 @@ export const CATEGORIA_NOMBRE: Record<string, string> = {
     efectivo:           'Efectivo',
     cuenta_bancaria:    'Cuentas bancarias',
     stock:              'Stock (inventario)',
+    mercaderia_transito: 'Mercadería en tránsito',
     cxc:                'Deudas por cobrar',
     prestamo_otorgado:  'Préstamos otorgados',
     adelanto_proveedor: 'Adelantos a proveedores',
@@ -74,9 +76,7 @@ const METRICA_NOMBRE: Record<string, string> = {
     gastos_dia: 'Gastos del día',
 };
 
-const money = (v: number) =>
-    `S/ ${Number(v ?? 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
+const money = (v: unknown) => soles(v);
 const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${money(Math.abs(v))}`;
 
 const colorDe = (v: number) => (v > 0 ? 'var(--color-success)' : v < 0 ? 'var(--color-danger)' : 'var(--color-text)');

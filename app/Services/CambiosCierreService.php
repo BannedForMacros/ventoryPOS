@@ -114,10 +114,14 @@ class CambiosCierreService
         $cajas = ['efectivo', 'cuenta_bancaria'];
 
         // ── Registrados DESPUÉS con fecha anterior (retrofechados) ─────────
-        foreach (DB::table('entradas')->where('empresa_id', $empresaId)->where('estado', 'confirmado')
+        foreach (DB::table('entradas')->where('empresa_id', $empresaId)->whereIn('estado', ['confirmado', 'en_transito'])
             ->where('fecha', '<=', $fecha)->where('created_at', '>', $foto)
-            ->get(['id', 'numero_documento', 'correlativo', 'fecha', 'created_at', 'total', 'user_id']) as $e) {
-            $agregar(['stock', 'cxp'], 'Compra registrada después del cierre',
+            ->get(['id', 'numero_documento', 'correlativo', 'fecha', 'fecha_recepcion', 'created_at', 'total', 'user_id', 'estado']) as $e) {
+            // Confirmada pero recibida después de ese día: ese día era tránsito.
+            $enTransito = $e->estado === 'en_transito'
+                || ($e->fecha_recepcion && substr((string) $e->fecha_recepcion, 0, 10) > $fecha);
+            $agregar($enTransito ? ['mercaderia_transito', 'cxp'] : ['stock', 'cxp'],
+                $enTransito ? 'Compra en tránsito registrada después del cierre' : 'Compra registrada después del cierre',
                 $e->numero_documento ?: ($e->correlativo ?: "#{$e->id}"), $e->fecha, $e->created_at, $e->total, $e->user_id);
         }
 
@@ -161,9 +165,23 @@ class CambiosCierreService
 
         foreach (DB::table('cliente_anticipo_aplicaciones as ca')->join('cliente_anticipos as c', 'c.id', '=', 'ca.cliente_anticipo_id')
             ->where('c.empresa_id', $empresaId)->where('ca.fecha', '<=', $fecha)->where('ca.created_at', '>', $foto)
-            ->get(['ca.id', 'ca.numero', 'c.id as anticipo_id', 'ca.fecha', 'ca.created_at', 'ca.monto', 'ca.user_id']) as $a) {
-            $agregar(['anticipo_cliente', 'stock'], 'Entrega de pedido registrada después',
+            ->get(['ca.id', 'ca.numero', 'c.id as anticipo_id', 'ca.fecha', 'ca.created_at', 'ca.monto', 'ca.user_id',
+                   'ca.metodo_pago_id', 'ca.cuenta_id']) as $a) {
+            // Entrega en DINERO (con método/cuenta): sale de caja/banco (egreso
+            // 'cliente_anticipo_entrega'), no del almacén.
+            $enDinero = $a->metodo_pago_id || $a->cuenta_id;
+            $agregar($enDinero ? array_merge(['anticipo_cliente'], $cajas) : ['anticipo_cliente', 'stock'],
+                $enDinero ? 'Entrega de dinero de anticipo registrada después' : 'Entrega de pedido registrada después',
                 $a->numero ?: "Anticipo #{$a->anticipo_id}", $a->fecha, $a->created_at, $a->monto, $a->user_id);
+        }
+
+        // Cancelación de pendiente cargada después con fecha del día: baja el
+        // pasivo del anticipo (y la venta; si fue de contado, devolvió dinero).
+        foreach (DB::table('cliente_anticipo_cancelaciones')->where('empresa_id', $empresaId)
+            ->where('fecha', '<=', $fecha)->where('created_at', '>', $foto)
+            ->get(['id', 'cliente_anticipo_id', 'fecha', 'created_at', 'monto', 'cuenta_id', 'metodo_pago_id', 'user_id']) as $c) {
+            $agregar(array_merge(['anticipo_cliente', 'cxc'], ($c->cuenta_id || $c->metodo_pago_id) ? $cajas : []),
+                'Cancelación de pendiente registrada después', "Anticipo #{$c->cliente_anticipo_id}", $c->fecha, $c->created_at, $c->monto, $c->user_id);
         }
 
         foreach (DB::table('proveedor_adelantos')->where('empresa_id', $empresaId)
@@ -185,7 +203,7 @@ class CambiosCierreService
             ->get(['p.id', 'd.nombre', 'p.tipo', 'p.fecha', 'p.created_at', 'p.deleted_at', 'p.monto', 'p.user_id']) as $p) {
             $borrado = $p->deleted_at && Carbon::parse($p->deleted_at)->gt($foto);
             $agregar(array_merge(['deuda', 'personal', 'prestamo_otorgado'], $cajas),
-                ($borrado ? 'Movimiento de deuda eliminado: ' : 'Movimiento de deuda registrado después: ') . ($p->tipo === 'amortizacion' ? 'amortización' : $p->tipo),
+                ($borrado ? 'Movimiento de deuda eliminado: ' : 'Movimiento de deuda registrado después: ') . (['amortizacion' => 'amortización', 'compensacion' => 'compensación'][$p->tipo] ?? $p->tipo),
                 $p->nombre, $p->fecha, $borrado ? $p->deleted_at : $p->created_at, $p->monto, $p->user_id);
         }
 
@@ -216,7 +234,10 @@ class CambiosCierreService
             'venta.anulada'               => [['stock', 'cxc', 'anticipo_cliente', 'efectivo', 'cuenta_bancaria'], 'Venta anulada', 'ventas', 'fecha_venta', 'numero'],
             'venta.editada'               => [['stock', 'cxc', 'anticipo_cliente', 'efectivo', 'cuenta_bancaria'], 'Venta editada', 'ventas', 'fecha_venta', 'numero'],
             'venta.pedido_modificado'     => [['stock', 'anticipo_cliente', 'cxc'], 'Pedido pendiente modificado', 'ventas', 'fecha_venta', 'numero'],
-            'entrada.anulada'             => [['stock', 'cxp', 'efectivo', 'cuenta_bancaria'], 'Compra anulada', 'entradas', 'fecha', 'numero_documento'],
+            'entrada.anulada'             => [['stock', 'mercaderia_transito', 'cxp', 'efectivo', 'cuenta_bancaria'], 'Compra anulada', 'entradas', 'fecha', 'numero_documento'],
+            // Recibir una compra en tránsito la mete al kardex (y la saca del
+            // tránsito) con su fecha de RECEPCIÓN: ese es el día que cambia.
+            'entrada.recibida'            => [['stock', 'mercaderia_transito'], 'Compra en tránsito recibida', 'entradas', 'fecha_recepcion', 'numero_documento'],
             'entrada.pago_anulado'        => [['cxp', 'efectivo', 'cuenta_bancaria'], 'Pago a proveedor anulado', 'entradas', 'fecha', 'numero_documento'],
             'entrada.pago_editado'        => [['cxp', 'efectivo', 'cuenta_bancaria'], 'Pago a proveedor editado', 'entradas', 'fecha', 'numero_documento'],
             'cxc.abono_anulado'           => [['cxc', 'efectivo', 'cuenta_bancaria'], 'Cobro de crédito anulado', 'ventas', 'fecha_venta', 'numero'],
@@ -224,13 +245,16 @@ class CambiosCierreService
             'anticipo_cliente.anulado'    => [['anticipo_cliente', 'efectivo', 'cuenta_bancaria'], 'Anticipo anulado', 'cliente_anticipos', 'fecha', null],
             'anticipo_cliente.devuelto'   => [['anticipo_cliente', 'efectivo', 'cuenta_bancaria'], 'Anticipo devuelto', 'cliente_anticipos', 'fecha', null],
             'anticipo_cliente.editado'    => [['anticipo_cliente'], 'Anticipo editado', 'cliente_anticipos', 'fecha', null],
-            'anticipo_cliente.entrega_anulada' => [['anticipo_cliente', 'stock'], 'Entrega de pedido anulada', 'cliente_anticipos', 'fecha', null],
-            'anticipo_cliente.entrega_editada' => [['anticipo_cliente', 'stock'], 'Entrega de pedido editada', 'cliente_anticipos', 'fecha', null],
+            // Las entregas en dinero reasientan tesorería al editarse/anularse.
+            'anticipo_cliente.entrega_anulada' => [['anticipo_cliente', 'stock', 'efectivo', 'cuenta_bancaria'], 'Entrega de pedido anulada', 'cliente_anticipos', 'fecha', null],
+            'anticipo_cliente.entrega_editada' => [['anticipo_cliente', 'stock', 'efectivo', 'cuenta_bancaria'], 'Entrega de pedido editada', 'cliente_anticipos', 'fecha', null],
             'adelanto_proveedor.editado'  => [['adelanto_proveedor', 'efectivo', 'cuenta_bancaria'], 'Adelanto editado', 'proveedor_adelantos', 'fecha', null],
             'adelanto_proveedor.devuelto' => [['adelanto_proveedor', 'efectivo', 'cuenta_bancaria'], 'Adelanto devuelto', 'proveedor_adelantos', 'fecha', null],
             'adelanto_proveedor.anulado'  => [['adelanto_proveedor', 'efectivo', 'cuenta_bancaria'], 'Adelanto anulado', 'proveedor_adelantos', 'fecha', null],
             'deuda.editada'               => [['deuda', 'personal', 'prestamo_otorgado'], 'Deuda editada', 'deudas', 'fecha_inicio', 'nombre'],
-            'deuda.anulada'               => [['deuda', 'personal', 'prestamo_otorgado'], 'Deuda anulada', 'deudas', 'fecha_inicio', 'nombre'],
+            // Anular revierte su tesorería y reactivar la vuelve a asentar.
+            'deuda.anulada'               => [['deuda', 'personal', 'prestamo_otorgado', 'efectivo', 'cuenta_bancaria'], 'Deuda anulada', 'deudas', 'fecha_inicio', 'nombre'],
+            'deuda.reactivada'            => [['deuda', 'personal', 'prestamo_otorgado', 'efectivo', 'cuenta_bancaria'], 'Deuda reactivada', 'deudas', 'fecha_inicio', 'nombre'],
             'deuda.restaurada'            => [['deuda', 'personal', 'prestamo_otorgado'], 'Deuda eliminada y restaurada', 'deudas', 'fecha_inicio', 'nombre'],
             'ajuste_inventario.anulado'   => [['stock'], 'Ajuste de inventario anulado', 'ajustes_inventario', 'fecha', 'numero'],
             'gasto.editado'               => [['efectivo', 'cuenta_bancaria'], 'Gasto editado', 'gastos', 'fecha', null],

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Inventario;
 
 use App\Support\EnEmpresa;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Inventario\Concerns\ResuelveFactorPresentacion;
 use App\Models\Almacen;
 use App\Models\Producto;
 use App\Models\Salida;
@@ -13,11 +14,14 @@ use App\Models\Turno;
 use App\Services\LocalScopeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use RuntimeException;
 
 class SalidaController extends Controller
 {
+    use ResuelveFactorPresentacion;
+
     public function __construct(private LocalScopeService $scope) {}
 
     public function index(Request $request)
@@ -88,21 +92,24 @@ class SalidaController extends Controller
 
         $data = $request->validate([
             'almacen_id'       => ['required', EnEmpresa::existe('almacenes')],
-            'salida_tipo_id'   => 'required|exists:salida_tipos,id',
+            'salida_tipo_id'   => ['required', EnEmpresa::existe('salida_tipos')],
             'turno_id'         => ['nullable', EnEmpresa::existe('turnos')],
             'numero_documento' => 'nullable|string|max:50',
-            'fecha'            => 'required|date',
+            'fecha'            => ['required', 'date', new \App\Rules\NoFutura],
             'observacion'      => 'nullable|string',
             'detalles'         => 'required|array|min:1',
             'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
             'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
-            'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
+            // Se ignora: el factor sale del catálogo del producto (resolverFactores).
+            'detalles.*.factor_conversion' => 'nullable|numeric',
             'detalles.*.observacion'       => 'nullable|string',
         ]);
 
         $almacen = Almacen::findOrFail($data['almacen_id']);
         abort_unless($this->scope->puedeAccederAlmacen($user, $almacen), 403);
+
+        $data['detalles'] = $this->resolverFactores($data['detalles']);
 
         // Validar que el turno (si viene) sea del usuario, esté abierto y corresponda al local del almacén
         if (!empty($data['turno_id'])) {
@@ -196,17 +203,26 @@ class SalidaController extends Controller
 
         $data = $request->validate([
             'almacen_id'       => ['required', EnEmpresa::existe('almacenes')],
-            'salida_tipo_id'   => 'required|exists:salida_tipos,id',
+            'salida_tipo_id'   => ['required', EnEmpresa::existe('salida_tipos')],
             'numero_documento' => 'nullable|string|max:50',
-            'fecha'            => 'required|date',
+            'fecha'            => ['required', 'date', new \App\Rules\NoFutura],
             'observacion'      => 'nullable|string',
             'detalles'         => 'required|array|min:1',
             'detalles.*.producto_id'       => ['required', EnEmpresa::existe('productos')],
             'detalles.*.unidad_medida_id'  => ['required', EnEmpresa::existe('unidades_medida')],
             'detalles.*.cantidad'          => 'required|numeric|min:0.0001',
-            'detalles.*.factor_conversion' => 'required|numeric|min:0.0001',
+            // Se ignora: el factor sale del catálogo del producto (resolverFactores).
+            'detalles.*.factor_conversion' => 'nullable|numeric',
             'detalles.*.observacion'       => 'nullable|string',
         ]);
+
+        // Mismo control que store(): el almacén NUEVO también debe ser accesible
+        // para el usuario (antes se podía mover la salida a cualquier almacén).
+        $almacen = Almacen::findOrFail($data['almacen_id']);
+        abort_unless($this->scope->puedeAccederAlmacen($request->user(), $almacen), 403);
+
+        // Las líneas que siguen igual conservan el factor con que se registraron.
+        $data['detalles'] = $this->resolverFactores($data['detalles'], guardadas: $salida->detalles()->get());
 
         DB::transaction(function () use ($data, $salida) {
             $salida->update([
@@ -247,6 +263,9 @@ class SalidaController extends Controller
             $salida->confirmar();
         } catch (RuntimeException $e) {
             return back()->withErrors(['confirmar' => $e->getMessage()]);
+        } catch (\LogicException $e) {
+            // Doble clic o ya confirmada: aviso claro, no un 500.
+            throw ValidationException::withMessages(['estado' => $e->getMessage()]);
         }
 
         return redirect()->back()->with('success', 'Salida confirmada. Stock descontado.');

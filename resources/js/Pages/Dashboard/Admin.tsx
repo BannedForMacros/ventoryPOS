@@ -6,6 +6,7 @@ import {
 import AppLayout from '@/Layouts/AppLayout';
 import { AreaChart, DonutChart } from '@/Components/UI/Charts';
 import type { PageProps } from '@/types';
+import { soles } from '@/lib/dinero';
 
 interface KpiBlock { cant: number; total: number; }
 interface Kpis {
@@ -66,8 +67,7 @@ interface Props extends PageProps {
     ultimasVentas: UltimaVentaRow[];
 }
 
-const sol = (n: number | string) =>
-    `S/. ${Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const sol = (n: number | string) => soles(n);
 
 const fechaCorta = (iso: string) => {
     const d = new Date(iso);

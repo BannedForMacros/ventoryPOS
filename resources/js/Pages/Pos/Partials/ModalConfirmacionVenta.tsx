@@ -6,6 +6,7 @@ import type { Cliente, DescuentoConcepto, MetodoPago } from '@/types';
 import type { LineaCarrito } from './CarritoItem';
 import type { LineaPago } from './PanelPago';
 import { etiquetaComprobante } from '@/lib/comprobanteElectronico';
+import { soles } from '@/lib/dinero';
 
 interface Props {
     isOpen:              boolean;
@@ -33,9 +34,9 @@ interface Props {
     despachoAlmacen?:    boolean;
     // Monto cubierto con anticipo de efectivo del cliente.
     anticipoMonto?:      number;
+    // Símbolo de la moneda de la venta ("S/" o "US$").
+    simbolo?:            string;
 }
-
-function money(n: number) { return `S/ ${n.toFixed(2)}`; }
 
 function SectionLabel({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
     return (
@@ -54,7 +55,9 @@ export default function ModalConfirmacionVenta({
     subtotal, igv, total, metodosPago, conceptos,
     entregaPendiente, pendienteDe, fechaEntrega, despachoAlmacen,
     anticipoMonto = 0,
+    simbolo = 'S/',
 }: Props) {
+    const money = (n: number) => soles(n, simbolo);
     const pendientes = entregaPendiente && pendienteDe
         ? items.map(i => ({ item: i, pendiente: pendienteDe(i) })).filter(p => p.pendiente > 0)
         : [];
@@ -196,7 +199,7 @@ export default function ModalConfirmacionVenta({
                                     <span className="ml-1" style={{ color: 'var(--color-text-muted)' }}>({item.unidad_nombre})</span>
                                     {item.descuento_item > 0 && (
                                         <span className="ml-1.5 text-[11px] font-medium" style={{ color: 'var(--color-danger)' }}>
-                                            -S/{item.descuento_item.toFixed(2)}/u
+                                            -{simbolo}{item.descuento_item.toFixed(2)}/u
                                         </span>
                                     )}
                                     {entregaPendiente && pendienteDe && pendienteDe(item) > 0 && (
@@ -205,7 +208,7 @@ export default function ModalConfirmacionVenta({
                                         </span>
                                     )}
                                 </div>
-                                <span className="font-bold ml-3 flex-shrink-0">S/ {item.subtotal.toFixed(2)}</span>
+                                <span className="font-bold ml-3 flex-shrink-0">{simbolo} {item.subtotal.toFixed(2)}</span>
                             </div>
                         ))}
                     </div>
@@ -280,7 +283,7 @@ export default function ModalConfirmacionVenta({
                 >
                     <div className="flex justify-between text-xs">
                         <span style={{ color: 'var(--color-text-muted)' }}>Subtotal</span>
-                        <span style={{ color: 'var(--color-text)' }}>S/ {subtotal.toFixed(2)}</span>
+                        <span style={{ color: 'var(--color-text)' }}>{simbolo} {subtotal.toFixed(2)}</span>
                     </div>
                     {descuentoTotal > 0 && (
                         <div className="flex justify-between text-xs">
@@ -290,19 +293,19 @@ export default function ModalConfirmacionVenta({
                                     <span className="ml-1 text-[11px]">({conceptos.find(c => c.id === descuentoConceptoId)?.nombre})</span>
                                 )}
                             </span>
-                            <span className="font-medium" style={{ color: 'var(--color-danger)' }}>-S/ {descuentoTotal.toFixed(2)}</span>
+                            <span className="font-medium" style={{ color: 'var(--color-danger)' }}>-{simbolo} {descuentoTotal.toFixed(2)}</span>
                         </div>
                     )}
                     <div className="flex justify-between text-xs">
                         <span style={{ color: 'var(--color-text-muted)' }}>IGV (18%)</span>
-                        <span style={{ color: 'var(--color-text)' }}>S/ {igv.toFixed(2)}</span>
+                        <span style={{ color: 'var(--color-text)' }}>{simbolo} {igv.toFixed(2)}</span>
                     </div>
                     <div
                         className="flex justify-between font-bold text-base pt-2 mt-1"
                         style={{ borderTop: '2px solid var(--color-border)', color: 'var(--color-text)' }}
                     >
                         <span>Total a cobrar</span>
-                        <span style={{ color: 'var(--color-primary)' }}>S/ {total.toFixed(2)}</span>
+                        <span style={{ color: 'var(--color-primary)' }}>{simbolo} {total.toFixed(2)}</span>
                     </div>
                 </div>
 
@@ -336,7 +339,7 @@ export default function ModalConfirmacionVenta({
                                         {metodo?.nombre ?? '—'}
                                         {p.referencia && <span className="ml-1" style={{ color: 'var(--color-text-muted)' }}>· {p.referencia}</span>}
                                     </span>
-                                    <span className="font-bold" style={{ color: 'var(--color-success)' }}>S/ {p.monto.toFixed(2)}</span>
+                                    <span className="font-bold" style={{ color: 'var(--color-success)' }}>{simbolo} {p.monto.toFixed(2)}</span>
                                 </div>
                             );
                         })}

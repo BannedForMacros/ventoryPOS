@@ -3,6 +3,7 @@ import { ChevronDown, Copy, FileSpreadsheet, History, Search, UserRound } from '
 import toast from 'react-hot-toast';
 import Collapse from '@/Components/UI/Collapse';
 import { descargarExcel } from '@/lib/exportarExcel';
+import { soles } from '@/lib/dinero';
 
 /**
  * F11 — Componente NORMALIZADO para los detalles financieros.
@@ -59,8 +60,7 @@ interface Props {
     exportNombre?: string;     // nombre base del archivo Excel (ej. "Efectivo", "BCP")
 }
 
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
+const money = (v: unknown) => soles(v);
 const fFecha = (s: string) =>
     new Date(s.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 

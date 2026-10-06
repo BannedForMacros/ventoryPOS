@@ -116,10 +116,11 @@ interface Props extends PageProps {
     anticiposClientes: AnticipoCliente[];
 }
 
-import { hoyLocal } from '@/lib/fechas';
+import { hoyLocal, esFutura } from '@/lib/fechas';
+import { soles } from '@/lib/dinero';
 
 const hoy = () => hoyLocal();
-const money = (v: unknown) => `S/ ${Number(v ?? 0).toFixed(2)}`;
+const money = (v: unknown) => soles(v);
 const nombreCliente = (v: VentaCxc) =>
     v.cliente?.razon_social ?? (`${v.cliente?.nombres ?? ''} ${v.cliente?.apellidos ?? ''}`.trim() || '—');
 
@@ -275,6 +276,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
                 anticipoSaldo < saldoVenta ? 'del saldo del anticipo' : 'del saldo de la venta');
             if (pm) return pm;
             if (!form.fecha) return { texto: 'Elige la fecha del cobro', campo: 'fecha' };
+            if (esFutura(form.fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
             if (pagoAdicional) {
                 const pa = problemaMonto(montoAdicional, Math.max(0, Math.round((saldoVenta - tomaAnticipo) * 100) / 100),
                     'monto_adicional', 'el monto del pago adicional', 'de lo que falta:');
@@ -289,11 +291,13 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
             const pm = problemaMonto(form.monto, topeCompensar, 'monto', 'el monto a compensar', 'del menor de los dos saldos:');
             if (pm) return pm;
             if (!form.fecha) return { texto: 'Elige la fecha', campo: 'fecha' };
+            if (esFutura(form.fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
             return null;
         }
         const pm = problemaMonto(form.monto, saldoVenta, 'monto', 'el monto del abono', 'del saldo');
         if (pm) return pm;
         if (!form.fecha) return { texto: 'Elige la fecha del abono', campo: 'fecha' };
+        if (esFutura(form.fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
         return problemaMetodo(form.metodo_pago_id, form.cuenta_id, 'pago-abono');
     }
     const problemaAb = problemaAbono();
@@ -304,6 +308,7 @@ export default function CuentasPorCobrar({ ventas, totalPendiente, kpis, estado,
         const pm = problemaMonto(formAbono.monto, topeEditar, 'monto', 'el monto del abono', 'del máximo permitido');
         if (pm) return pm;
         if (!formAbono.fecha) return { texto: 'Elige la fecha del abono', campo: 'fecha' };
+        if (esFutura(formAbono.fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
         return problemaMetodo(formAbono.metodo_pago_id, formAbono.cuenta_id, 'pago-editar-abono');
     }
     const problemaEd = problemaEditarAbono();

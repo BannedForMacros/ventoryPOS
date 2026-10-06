@@ -18,6 +18,7 @@ import Callout from '@/Components/UI/Callout';
 import { hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 import { useTiempoReal } from '@/lib/useTiempoReal';
+import { soles } from '@/lib/dinero';
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
 interface ProductoUnidad { es_base: boolean; unidad_medida?: UnidadMedida; }
@@ -85,8 +86,7 @@ interface Props extends PageProps {
     } | null;
 }
 
-const money = (v: number) => `S/ ${Number(v ?? 0).toFixed(2)}`;
-
+const money = (v: unknown) => soles(v);
 const num = (v: number, max = 4) =>
     Number(v ?? 0).toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: max });
 

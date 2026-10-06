@@ -15,7 +15,7 @@ interface ItemEdit {
     producto_id: number;
     codigo: string | null;
     nombre: string;
-    stock_sistema: number;   // limpio, fresco (sin este cierre)
+    stock_sistema: number;   // con el que se hizo el conteo (guardado en el ítem)
     stock_declarado: number;
     diferencia: number;
     costo: number;
@@ -58,7 +58,9 @@ export default function CierreEdit({ cierre, items, precarga }: Props) {
 
     function guardar() {
         const itemsArr = filas.filter(f => f.declarado !== '').map(f => ({
-            producto_id: f.producto_id, stock_declarado: f.declarado, observacion: f.obs || null,
+            // stock_sistema = el que se vio al contar: en modo precargado el servidor
+            // aplica solo lo que se cambió respecto de él.
+            producto_id: f.producto_id, stock_sistema: f.stock_sistema, stock_declarado: f.declarado, observacion: f.obs || null,
         }));
         if (itemsArr.length === 0) { toast.error('Declara al menos un producto.'); return; }
         setSaving(true);

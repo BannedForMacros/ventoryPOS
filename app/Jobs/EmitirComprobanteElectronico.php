@@ -57,8 +57,26 @@ class EmitirComprobanteElectronico implements ShouldQueue
      */
     public function handle(VentaAContrato $mapper, FacturacionEmpresa $facturacion): void
     {
-        $venta     = $this->venta;
+        // Se relee: entre encolar y ejecutar (backoff de hasta 10 min, o un
+        // reintento manual) la venta pudo anularse. Una venta anulada NO se
+        // declara: emitirla dejaría ante SUNAT un comprobante por algo que no
+        // ocurrió, y solo se podría deshacer con una nota de crédito.
+        $venta = $this->venta->fresh() ?? $this->venta;
         $empresaId = (int) $venta->empresa_id;
+
+        if ($venta->estado === 'anulada') {
+            $ce = $venta->comprobanteElectronico()->first();
+            if ($ce && !$ce->esEmitido()) {
+                $this->registrarFallo($ce, VentaComprobante::ESTADO_NO_EMITIDO,
+                    'La venta fue anulada antes de emitirse: no se informa a SUNAT.');
+            }
+            Log::info('Comprobante no emitido: la venta está anulada', [
+                'venta_id' => $venta->id,
+                'numero'   => $venta->numero,
+            ]);
+
+            return;
+        }
 
         // Interruptor POR EMPRESA: sin emisión activa el POS funciona exactamente
         // como antes de que existiera (todo el flujo histórico es `ticket`).

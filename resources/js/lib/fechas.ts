@@ -45,3 +45,8 @@ export function fmtFecha(iso?: string | null): string {
     if (isNaN(date.getTime())) return iso;
     return date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
+/** ¿La fecha (YYYY-MM-DD) es posterior a hoy? Los movimientos de dinero y stock no pueden serlo. */
+export function esFutura(ymd?: string | null): boolean {
+    return !!ymd && ymd.slice(0, 10) > hoyLocal();
+}

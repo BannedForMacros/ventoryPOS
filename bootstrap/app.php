@@ -16,6 +16,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
+            // Antes que Inertia: una sesión de usuario o empresa desactivados
+            // se cierra aquí mismo.
+            \App\Http\Middleware\UsuarioActivo::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);

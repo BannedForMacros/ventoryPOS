@@ -121,8 +121,9 @@ it('el POS recibe el tipo e icono de cada método de pago, con efectivo primero'
 
 it('una venta con 100 % de descuento se cobra sin ningún método de pago', function () {
     $producto = $this->env->crearProducto(['precio_venta' => 20, 'stock_inicial' => 10]);
+    // Con motivo: un descuento sin motivo ya no puede dejar la línea bajo el costo.
     $payload = payloadPos($producto, $this->env->metodo('efectivo'), [
-        'items' => [['descuento_item' => 20]],
+        'items' => [['descuento_item' => 20, 'descuento_concepto_id' => $this->env->descuentoConcepto->id]],
     ]);
     $payload['pagos'] = [];
 

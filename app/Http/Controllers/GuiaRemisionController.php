@@ -6,6 +6,7 @@ use App\Jobs\EmitirGuiaRemision;
 use App\Models\Guia;
 use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\Guias\GuiaAContrato;
+use App\Support\EnEmpresa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -113,6 +114,15 @@ class GuiaRemisionController extends Controller
             'items'               => 'required|array|min:1',
             'items.*.descripcion' => 'required|string|max:500',
             'items.*.cantidad'    => 'required|numeric|min:0.001',
+            // Los vínculos se guardan en la guía tal cual: un id de OTRA empresa
+            // colgaría esta guía de una venta, cliente o transferencia ajenos.
+            'venta_id'            => ['nullable', 'integer', EnEmpresa::existe('ventas')],
+            'cliente_id'          => ['nullable', 'integer', EnEmpresa::existe('clientes')],
+            'transferencia_id'    => ['nullable', 'integer', EnEmpresa::existe('transferencias')],
+        ], [
+            'venta_id.exists'         => 'La venta indicada no existe en tu empresa.',
+            'cliente_id.exists'       => 'El cliente indicado no existe en tu empresa.',
+            'transferencia_id.exists' => 'La transferencia indicada no existe en tu empresa.',
         ]);
 
         $form = $request->all();
@@ -130,9 +140,9 @@ class GuiaRemisionController extends Controller
 
         $guia = DB::transaction(fn () => Guia::create([
             'empresa_id'         => $empresaId,
-            'venta_id'           => $request->input('venta_id'),
-            'transferencia_id'   => $request->input('transferencia_id'),
-            'cliente_id'         => $request->input('cliente_id'),
+            'venta_id'           => $datos['venta_id'] ?? null,
+            'transferencia_id'   => $datos['transferencia_id'] ?? null,
+            'cliente_id'         => $datos['cliente_id'] ?? null,
             'estado'             => 'pendiente',
             'puede_trasladar'    => false,
             'payload'            => $payload,

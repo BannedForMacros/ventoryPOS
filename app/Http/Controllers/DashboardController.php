@@ -63,11 +63,12 @@ class DashboardController extends Controller
             ->where('fecha', '>=', $mesIni)
             ->sum('monto');
 
-        // Stock valorizado total
+        // Stock valorizado: el MISMO valor de la línea de stock del balance de hoy
+        // (kardex por almacén sin negativos × costo del día; incluye productos
+        // desactivados que aún tienen saldo).
         $almacenIds = Almacen::where('empresa_id', $empresaId)->pluck('id');
-        $stockValor = (float) Stock::whereIn('almacen_id', $almacenIds)
-            ->selectRaw('COALESCE(SUM(cantidad * costo_promedio),0) as v')
-            ->value('v');
+        $stockValor = round(array_sum(array_column(
+            app(\App\Services\BalanceDiarioService::class)->desgloseStock($empresaId, Carbon::today()->toDateString()), 'monto')), 2);
 
         // Productos en alerta de stock bajo (stock = 0 en algún almacén con producto activo)
         // Como el modelo no tiene stock_minimo, contamos los que están en 0
@@ -89,8 +90,9 @@ class DashboardController extends Controller
             ->where('ventas.fecha_venta', '>=', $mesIni)
             ->select('venta_items.producto_id',
                      DB::raw('MIN(venta_items.producto_nombre) as nombre'),
-                     DB::raw('SUM(venta_items.cantidad) as cantidad'),
-                     DB::raw('SUM(venta_items.subtotal) as total'))
+                     // Unidad base (no mezcla presentaciones) y neto del descuento global.
+                     DB::raw('SUM(venta_items.cantidad_base) as cantidad'),
+                     DB::raw('SUM(' . \App\Services\UtilidadService::lineaNeta('venta_items') . ') as total'))
             ->groupBy('venta_items.producto_id')
             ->orderByDesc('total')
             ->limit(8)
@@ -106,7 +108,8 @@ class DashboardController extends Controller
             ->where('ventas.fecha_venta', '>=', $mesIni)
             ->select('metodos_pago.nombre',
                      DB::raw('tipos_metodo_pago.slug as tipo'),
-                     DB::raw('SUM(venta_pagos.monto) as total'))
+                     // Lo que QUEDÓ por el método: el vuelto se devolvió en efectivo.
+                     DB::raw('SUM(venta_pagos.monto - COALESCE(venta_pagos.vuelto, 0)) as total'))
             ->groupBy('metodos_pago.id', 'metodos_pago.nombre', 'tipos_metodo_pago.slug')
             ->orderByDesc('total')
             ->get();
@@ -254,7 +257,8 @@ class DashboardController extends Controller
                 ->where('ventas.estado', 'completada')
                 ->select('metodos_pago.nombre',
                          DB::raw('tipos_metodo_pago.slug as tipo'),
-                         DB::raw('SUM(venta_pagos.monto) as total'))
+                         // Lo que QUEDÓ por el método: el vuelto se devolvió en efectivo.
+                     DB::raw('SUM(venta_pagos.monto - COALESCE(venta_pagos.vuelto, 0)) as total'))
                 ->groupBy('metodos_pago.id', 'metodos_pago.nombre', 'tipos_metodo_pago.slug')
                 ->orderByDesc('total')
                 ->get();

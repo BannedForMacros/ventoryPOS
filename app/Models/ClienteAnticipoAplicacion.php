@@ -54,4 +54,36 @@ class ClienteAnticipoAplicacion extends Model
     public function metodoPago(): BelongsTo { return $this->belongsTo(MetodoPago::class, 'metodo_pago_id'); }
     public function cuenta(): BelongsTo     { return $this->belongsTo(Cuenta::class, 'cuenta_id'); }
     public function items(): HasMany      { return $this->hasMany(ClienteAnticipoAplicacionItem::class, 'cliente_anticipo_aplicacion_id'); }
+
+    /**
+     * Si este consumo del anticipo lo creó OTRO módulo, dice cuál (para el
+     * mensaje); si es una entrega hecha aquí, null.
+     *
+     * Esos consumos (cobro de una CxC, cuota de una deuda, pago en el POS) van
+     * en pareja con su documento: anularlos o editarlos desde Anticipos
+     * devolvería el saldo y dejaría vivo el abono/pago, o registraría un egreso
+     * de caja que nunca existió. Se anulan desde su módulo.
+     */
+    public function origenExterno(): ?string
+    {
+        if ($this->venta_abono_id) {
+            return 'Cuentas por cobrar (es el cobro de un crédito con este anticipo)';
+        }
+        if ($this->deuda_pago_id) {
+            return 'Deudas (es el cobro de una cuota con este anticipo)';
+        }
+
+        // Pago en el POS: anticipo en dinero aplicado a una venta, sin método de
+        // salida (no salió dinero: se usó como forma de pago). Las entregas de
+        // un pedido pendiente (multi-producto) también llevan venta_id, pero
+        // esas sí se gestionan aquí.
+        $anticipo = $this->anticipo;
+        if ($this->venta_id && !$this->metodo_pago_id && $anticipo
+            && $anticipo->tipo_valorizacion === 'monto'
+            && !($anticipo->relationLoaded('items') ? $anticipo->items->isNotEmpty() : $anticipo->items()->exists())) {
+            return 'Ventas (se usó para pagar una venta: anula o edita esa venta)';
+        }
+
+        return null;
+    }
 }
