@@ -38,9 +38,13 @@ class RestablecerVenta
         }
         $nueva = ' Si hace falta, regístrala de nuevo en el POS.';
 
-        // Una boleta o factura electrónica anulada ya no tiene comprobante válido.
-        if (in_array($venta->tipo_comprobante, ['boleta', 'factura'], true)) {
-            return 'Es una boleta o factura electrónica: al anularla su comprobante dejó de valer y no se puede revivir.' . $nueva;
+        // Con comprobante NO se restablece (regla del dueño): una boleta o factura
+        // —electrónica o emitida por fuera— anulada ya no vale ante SUNAT, y
+        // revivir la venta dejaría ingresos sin documento. Solo tickets / notas de venta.
+        $tieneComprobante = $venta->tipo_comprobante !== 'ticket'
+            || (\Illuminate\Support\Facades\Schema::hasTable('venta_comprobantes') && $venta->comprobanteElectronico()->exists());
+        if ($tieneComprobante) {
+            return 'Esta venta tiene comprobante (boleta o factura): una venta con comprobante no se puede restablecer.' . $nueva;
         }
         if ($venta->abonos()->exists()) {
             return 'Tenía cobros de crédito: esos cobros se revirtieron al anularla.' . $nueva;

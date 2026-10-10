@@ -101,7 +101,17 @@ it('el detalle le dice al admin si puede restablecerla; a nadie más le llega', 
     $this->get(route('ventas.show', $venta))->assertInertia(fn ($p) => $p->where('restablecer.bloqueo', null));
 
     $boleta = ventaAnulada($this, ['tipo_comprobante' => 'boleta']);
-    $this->get(route('ventas.show', $boleta))->assertInertia(fn ($p) => $p->where('restablecer.bloqueo', fn ($m) => str_contains($m, 'boleta o factura')));
+    $this->get(route('ventas.show', $boleta))->assertInertia(fn ($p) => $p->where('restablecer.bloqueo', fn ($m) => str_contains($m, 'tiene comprobante')));
+});
+
+it('ninguna venta con comprobante se restablece: electrónica ni emitida por fuera', function () {
+    foreach ([['tipo_comprobante' => 'boleta'], ['tipo_comprobante' => 'boleta_externa', 'numero_comprobante' => 'B099-123']] as $tipo) {
+        $venta = ventaAnulada($this, $tipo);
+        $stock = stockProducto($this);
+        $this->post(route('ventas.restablecer', $venta), ['motivo' => 'La anulé por equivocación'])
+            ->assertSessionHasErrors(['venta' => 'Esta venta tiene comprobante (boleta o factura): una venta con comprobante no se puede restablecer. Si hace falta, regístrala de nuevo en el POS.']);
+        expect($venta->fresh()->estado)->toBe('anulada')->and(stockProducto($this))->toBe($stock);
+    }
 });
 
 it('el kardex queda igual que antes de anular: Recalcular no deshace la venta restablecida', function () {
