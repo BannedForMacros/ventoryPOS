@@ -5,8 +5,9 @@ import toast from 'react-hot-toast';
 import {
     Eye, ShoppingCart, Calendar, Receipt, Pencil, Trash2, KeyRound,
     AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins, ListChecks, PackageMinus,
-    Send, MessageCircle, Mail, FileSpreadsheet, RotateCcw,
+    Send, MessageCircle, Mail, FileSpreadsheet, RotateCcw, ChevronLeft, ChevronRight, CalendarRange,
 } from 'lucide-react';
+import { fechaLocal, hoyLocal } from '@/lib/fechas';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -59,6 +60,10 @@ interface ResumenMetodo {
     slug:        string | null;
     es_efectivo: boolean;
     total:       number;
+    /** Solo en el resumen por fechas: de dónde sale el total. */
+    ventas?:       number;
+    abonos?:       number;
+    devoluciones?: number;
     cuentas:     ResumenMetodoCuenta[];
 }
 
@@ -71,9 +76,12 @@ interface ResumenRango {
     rango:         { desde: string | null; hasta: string | null };
     metodos:       ResumenMetodo[];
     total_vendido: number;
+    devoluciones:  number;
+    total_neto:    number;
     cobrado:       number;
     por_cobrar:    number;
     num_ventas:    number;
+    num_anuladas:  number;
     abonos:        number;
     gastos:        number;
     turnos_abiertos_antes: TurnoAbiertoAntes[];
@@ -90,6 +98,8 @@ interface Resumen {
     efectivo_abonos:  number;   // efectivo de abonos de crédito del turno
     anticipos_efectivo: number; // anticipos de clientes en efectivo (entran a caja)
     total_vendido:    number;   // cobrado + por cobrar
+    devoluciones?:    number;   // devoluciones / anulaciones con NC de estas cajas
+    total_neto?:      number;   // total vendido − devoluciones
     por_cobrar:       number;   // crédito pendiente del turno
     abonos:           number;   // cobros de crédito recibidos en el turno
     gastos:           number;
@@ -162,10 +172,24 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
     useEffect(() => {
         if (filters.fechas_por_defecto) hoyPorDefecto.current = { desde: filters.fecha_desde, hasta: filters.fecha_hasta };
     }, [filters.fechas_por_defecto, filters.fecha_desde, filters.fecha_hasta]);
+    // Cada filtro se aplica al cambiarlo (sin botón "Aplicar"); la búsqueda de
+    // texto espera a que dejen de escribir (ver efecto de abajo).
     function set<K extends keyof Filters>(k: K, v: string) {
         if (k === 'fecha_desde' || k === 'fecha_hasta') hoyPorDefecto.current = null;   // las eligió ella
-        setLocal(prev => ({ ...prev, [k]: v }));
+        const nuevo = { ...local, [k]: v };
+        setLocal(nuevo);
+        if (k !== 'q') aplicar(nuevo);
     }
+
+    // Buscar mientras escribe: medio segundo sin teclear y busca (Enter, al toque).
+    const [buscando, setBuscando] = useState(false);
+    useEffect(() => {
+        if ((local.q ?? '') === (filters.q ?? '')) return;
+        setBuscando(true);
+        const t = setTimeout(() => aplicar(), 500);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [local.q]);
 
     // Estado del modal de anulación.
     const [anular, setAnular]   = useState<Venta | null>(null);
@@ -209,15 +233,18 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         return ahora - new Date(v.created_at).getTime() < editWindowMs;
     }
     // El admin edita/anula sin límite; la cajera solo si la empresa se lo permite.
+    // Vigente = completada y NO anulada con nota de crédito (que por dentro sigue
+    // 'completada' con su devolución total, pero para la cajera está anulada).
+    const vigente = (v: Venta) => v.estado === 'completada' && !v.anulada_nc_devolucion_id;
     function puedeEditar(v: Venta): boolean {
-        if (v.estado !== 'completada') return false;
+        if (!vigente(v)) return false;
         if (esAdmin) return true;
         if (!cajeraPuedeEditar) return false;
         return !edicionConContador || dentroPlazo(v);
     }
     // ¿Puede anular esta venta? Admin siempre; cajera según config y plazo.
     function puedeAnular(v: Venta): boolean {
-        if (v.estado !== 'completada') return false;
+        if (!vigente(v)) return false;
         if (esAdmin) return true;
         return cajeraPuedeAnular;
     }
@@ -280,14 +307,40 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         return resto;
     }
 
-    function aplicar() {
+    function aplicar(filtros: Filters = local) {
         const params = Object.fromEntries(
-            Object.entries(sinFechasPorDefecto(local)).filter(([, v]) => v !== '' && v != null),
+            Object.entries(sinFechasPorDefecto(filtros)).filter(([, v]) => v !== '' && v != null),
         );
-        router.get(route('ventas.index'), params, { preserveState: true, replace: true, preserveScroll: true });
+        router.get(route('ventas.index'), params, {
+            preserveState: true, replace: true, preserveScroll: true,
+            onFinish: () => setBuscando(false),
+        });
+    }
+
+    // ── Fecha: por defecto UN día (con flechas al anterior/siguiente); el
+    //    botón "Rango de fechas" abre el Desde / Hasta. Cambiar el día filtra al
+    //    toque: es lo que más se hace ("¿cuánto vendí el 09?").
+    const [porRango, setPorRango] = useState(
+        !!filters.fecha_desde && !!filters.fecha_hasta && filters.fecha_desde !== filters.fecha_hasta,
+    );
+    const diaActual = local.fecha_desde || local.fecha_hasta || hoyLocal();
+    function irAlDia(dia: string) {
+        hoyPorDefecto.current = null;   // lo eligió ella
+        const nuevo = { ...local, fecha_desde: dia, fecha_hasta: dia };
+        setLocal(nuevo);
+        aplicar(nuevo);
+    }
+    function moverDia(delta: number) {
+        const [y, m, d] = diaActual.split('-').map(Number);
+        irAlDia(fechaLocal(new Date(y, m - 1, d + delta)));
+    }
+    function modoUnDia() {
+        setPorRango(false);
+        irAlDia(local.fecha_hasta || local.fecha_desde || hoyLocal());
     }
     function limpiar() {
         setLocal({ estado: '', fecha_desde: '', fecha_hasta: '', local_id: '', turno_id: '', q: '' });
+        setPorRango(false);
         router.get(route('ventas.index'), {}, { preserveState: true, replace: true });
     }
 
@@ -369,30 +422,12 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 onClear={limpiar}
                 actions={
                     <>
-                        <Button variant="primary" size="sm" onClick={aplicar} startContent={<Search size={13} />}>
-                            Aplicar filtros
-                        </Button>
                         <Button variant="secondary" size="sm" onClick={exportarExcel} startContent={<FileSpreadsheet size={13} />}>
                             Excel
                         </Button>
                     </>
                 }
             >
-                <div className="col-span-2">
-                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Buscar</label>
-                    <div className="relative">
-                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
-                        <input
-                            value={local.q ?? ''}
-                            onChange={e => set('q', e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') aplicar(); }}
-                            placeholder="N° de venta, cliente, documento o monto..."
-                            className="w-full text-sm border rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2"
-                            style={inputStyle}
-                        />
-                    </div>
-                </div>
-
                 <div>
                     <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Estado</label>
                     <Select ariaLabel="Estado" value={local.estado ?? ''} onChange={v => set('estado', String(v))}
@@ -403,15 +438,46 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                         ]} />
                 </div>
 
-                <div>
-                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Desde</label>
-                    <input type="date" value={local.fecha_desde ?? ''} onChange={e => set('fecha_desde', e.target.value)} className={inputCls} style={inputStyle} />
-                </div>
-
-                <div>
-                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Hasta</label>
-                    <input type="date" value={local.fecha_hasta ?? ''} onChange={e => set('fecha_hasta', e.target.value)} className={inputCls} style={inputStyle} />
-                </div>
+                {porRango ? (
+                    <>
+                        <div>
+                            <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Desde</label>
+                            <input type="date" value={local.fecha_desde ?? ''} onChange={e => set('fecha_desde', e.target.value)} className={inputCls} style={inputStyle} />
+                        </div>
+                        <div>
+                            <label className="flex items-center justify-between text-xs font-semibold mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                                Hasta
+                                <button type="button" onClick={modoUnDia} className="font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>
+                                    Un solo día
+                                </button>
+                            </label>
+                            <input type="date" value={local.fecha_hasta ?? ''} onChange={e => set('fecha_hasta', e.target.value)} className={inputCls} style={inputStyle} />
+                        </div>
+                    </>
+                ) : (
+                    <div>
+                        <label className="flex items-center justify-between text-xs font-semibold mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                            Día
+                            <button type="button" onClick={() => setPorRango(true)}
+                                className="inline-flex items-center gap-1 font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>
+                                <CalendarRange size={12} /> Rango de fechas
+                            </button>
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                            <button type="button" onClick={() => moverDia(-1)} aria-label="Día anterior" title="Día anterior"
+                                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border hover:bg-black/5" style={inputStyle}>
+                                <ChevronLeft size={16} />
+                            </button>
+                            <input type="date" value={diaActual} max={hoyLocal()} onChange={e => e.target.value && irAlDia(e.target.value)}
+                                aria-label="Día" className={inputCls} style={inputStyle} />
+                            <button type="button" onClick={() => moverDia(1)} aria-label="Día siguiente" title="Día siguiente"
+                                disabled={diaActual >= hoyLocal()}
+                                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border hover:bg-black/5 disabled:opacity-30" style={inputStyle}>
+                                <ChevronRight size={16} />
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Filtro por turno: clave para el admin (ya no ve todo mezclado). */}
                 {esAdmin && turnos.length > 0 && (
@@ -430,6 +496,23 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                     </div>
                 )}
             </FiltrosCard>
+
+            {/* Buscador junto a la tabla: busca solo, mientras escribes. */}
+            <div className="relative mb-3">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
+                <input
+                    value={local.q ?? ''}
+                    onChange={e => set('q', e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') aplicar(); }}
+                    placeholder="Buscar por N° de venta, cliente, documento o monto…"
+                    aria-label="Buscar ventas"
+                    className="w-full text-sm border rounded-xl pl-10 pr-24 h-11 focus:outline-none focus:ring-2"
+                    style={inputStyle}
+                />
+                {buscando && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs" style={{ color: 'var(--color-text-muted)' }}>Buscando…</span>
+                )}
+            </div>
 
             {/* ── Tabla desktop ─────────────────────────────────────── */}
             <div
@@ -489,8 +572,8 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     <ChipsPago metodos={metodosDePago(v)} esCredito={Boolean(v.es_credito)} debe={saldo(v)} />
                                 </td>
                                 <td className="px-4 py-3">
-                                    <Badge variant={v.estado === 'completada' ? 'success' : 'danger'}>
-                                        {v.estado === 'completada' ? 'Completada' : 'Anulada'}
+                                    <Badge variant={vigente(v) ? 'success' : 'danger'}>
+                                        {vigente(v) ? 'Completada' : v.anulada_nc_devolucion_id ? 'Anulada · NC' : 'Anulada'}
                                     </Badge>
                                 </td>
                                 <td className="px-4 py-3">
@@ -617,8 +700,8 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                         style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', color: 'var(--color-primary)' }}>
                                         {v.numero}
                                     </span>
-                                    <Badge variant={v.estado === 'completada' ? 'success' : 'danger'}>
-                                        {v.estado === 'completada' ? 'Completada' : 'Anulada'}
+                                    <Badge variant={vigente(v) ? 'success' : 'danger'}>
+                                        {vigente(v) ? 'Completada' : v.anulada_nc_devolucion_id ? 'Anulada · NC' : 'Anulada'}
                                     </Badge>
                                 </div>
                                 <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
@@ -1185,35 +1268,134 @@ function AvisoTurnosAbiertos({ turnos }: { turnos: TurnoAbiertoAntes[] }) {
     );
 }
 
-/** Cards de un rango de fechas: lo vendido y cobrado por método esos días. */
+/**
+ * Resumen de un rango de fechas. Arriba, cuatro cifras (lo vendido, lo cobrado,
+ * lo que falta cobrar y los gastos); abajo, SIEMPRE, cómo entró el dinero por
+ * cada medio de pago: ventas + cobros de crédito − devoluciones.
+ */
 function ResumenRangoCards({ resumen }: { resumen: ResumenRango }) {
+    const [detalle, setDetalle] = useState(false);
     const { desde, hasta } = resumen.rango;
     const titulo = desde && hasta && desde === hasta
         ? `Ventas del ${fechaCorta(desde)}`
         : `Ventas del ${fechaCorta(desde) || '…'} al ${fechaCorta(hasta) || 'hoy'}`;
-    const efectivo = resumen.metodos.find(m => m.es_efectivo);
-    const otros = resumen.metodos.filter(m => !m.es_efectivo);
+    const hayDevoluciones = resumen.devoluciones > 0;
 
     return (
-        <div className="mb-5">
-            <div className="flex items-center gap-2 mb-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+        <div className="mb-5 space-y-3">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
                 <Calendar size={13} />
                 <span className="font-semibold uppercase tracking-wide">{titulo}</span>
-                <span className="hidden sm:inline">· {resumen.num_ventas} {resumen.num_ventas === 1 ? 'venta' : 'ventas'} · cobros por medio de pago en esas fechas</span>
+                <span>
+                    · {resumen.num_ventas} {resumen.num_ventas === 1 ? 'venta' : 'ventas'}
+                    {resumen.num_anuladas > 0 && <> · {resumen.num_anuladas} {resumen.num_anuladas === 1 ? 'anulada' : 'anuladas'}</>}
+                </span>
+                <button onClick={() => setDetalle(true)} className="ml-auto inline-flex items-center gap-1 font-semibold hover:underline"
+                    style={{ color: 'var(--color-primary)' }}>
+                    <ListChecks size={13} /> Ver detalle
+                </button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                <Card destacado icon={<Wallet size={18} />} label="Cobrado en efectivo"
-                    valor={money(efectivo?.total ?? 0)} sub="Ventas y cobros de crédito, neto de vuelto" color="primary" />
-                {otros.map((m, i) => (
-                    <Card key={`${m.metodo}-${i}`} icon={<CreditCard size={18} />} label={m.metodo} valor={money(m.total)} sub={subCuenta(m)} />
-                ))}
-                <Card icon={<Clock size={18} />} label="Cuentas por cobrar" valor={money(resumen.por_cobrar)} sub="Ventas al crédito (pendiente)" color="warning" />
-                <Card icon={<HandCoins size={18} />} label="Abonos recibidos" valor={money(resumen.abonos)} sub="Cobros de crédito en esas fechas" color="success" />
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <Card destacado icon={<Coins size={18} />} label="Total vendido" valor={money(resumen.total_neto)} color="primary"
+                    sub={hayDevoluciones
+                        ? `Vendido ${money(resumen.total_vendido)} − devoluciones ${money(resumen.devoluciones)}`
+                        : 'Toca para ver el detalle'}
+                    onClick={() => setDetalle(true)} />
+                <Card icon={<Wallet size={18} />} label="Cobrado" valor={money(resumen.cobrado)}
+                    sub="Por todos los medios de pago" color="success" onClick={() => setDetalle(true)} />
+                <Card icon={<Clock size={18} />} label="Por cobrar" valor={money(resumen.por_cobrar)} sub="Ventas al crédito pendientes" color="warning" />
                 <Card icon={<TrendingDown size={18} />} label="Gastos" valor={money(resumen.gastos)} sub="Registrados en esas fechas" color="danger" />
-                <Card icon={<Coins size={18} />} label="Total vendido" valor={money(resumen.total_vendido)}
-                    sub={`Cobrado ${money(resumen.cobrado)} + por cobrar ${money(resumen.por_cobrar)}`} />
             </div>
+
+            <MediosDePago metodos={resumen.metodos} onVer={() => setDetalle(true)} />
+
+            <Modal isOpen={detalle} onClose={() => setDetalle(false)} title={`Detalle — ${titulo}`} size="lg">
+                <div className="space-y-4 text-sm">
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 tabular-nums">
+                        <dt style={{ color: 'var(--color-text-muted)' }}>Vendido ({resumen.num_ventas} {resumen.num_ventas === 1 ? 'venta' : 'ventas'})</dt>
+                        <dd className="text-right font-semibold">{money(resumen.total_vendido)}</dd>
+                        {hayDevoluciones && <>
+                            <dt style={{ color: 'var(--color-text-muted)' }}>Devoluciones y anulaciones con nota de crédito</dt>
+                            <dd className="text-right font-semibold" style={{ color: 'var(--color-danger)' }}>−{money(resumen.devoluciones)}</dd>
+                        </>}
+                        <dt className="font-bold">Total vendido</dt>
+                        <dd className="text-right font-bold">{money(resumen.total_neto)}</dd>
+                        <dt style={{ color: 'var(--color-text-muted)' }}>Cobrado (todos los medios)</dt>
+                        <dd className="text-right">{money(resumen.cobrado)}</dd>
+                        <dt style={{ color: 'var(--color-text-muted)' }}>Por cobrar (crédito)</dt>
+                        <dd className="text-right">{money(resumen.por_cobrar)}</dd>
+                        {resumen.abonos > 0 && <>
+                            <dt style={{ color: 'var(--color-text-muted)' }}>Incluye cobros de crédito</dt>
+                            <dd className="text-right">{money(resumen.abonos)}</dd>
+                        </>}
+                        <dt style={{ color: 'var(--color-text-muted)' }}>Gastos</dt>
+                        <dd className="text-right">{money(resumen.gastos)}</dd>
+                    </dl>
+                    <MediosDePago metodos={resumen.metodos} conCuentas />
+                </div>
+            </Modal>
         </div>
+    );
+}
+
+/** Tabla de medios de pago: ventas + cobros de crédito − devoluciones = total. */
+function MediosDePago({ metodos, onVer, conCuentas = false }: { metodos: ResumenMetodo[]; onVer?: () => void; conCuentas?: boolean }) {
+    const total = metodos.reduce((s, m) => s + m.total, 0);
+    const hayAbonos = metodos.some(m => (m.abonos ?? 0) > 0);
+    const hayDev = metodos.some(m => (m.devoluciones ?? 0) > 0);
+    return (
+        <section className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}>
+            <header className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                    <CreditCard size={15} /> Medios de pago
+                </span>
+                {onVer && (
+                    <button onClick={onVer} className="text-xs font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>Ver detalle</button>
+                )}
+            </header>
+            {metodos.length === 0 ? (
+                <p className="px-4 py-4 text-sm" style={{ color: 'var(--color-text-muted)' }}>No hubo cobros en estas fechas.</p>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm tabular-nums">
+                        <thead>
+                            <tr className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                <th className="text-left font-semibold px-4 py-2">Medio</th>
+                                <th className="text-right font-semibold px-3 py-2">Ventas</th>
+                                {hayAbonos && <th className="text-right font-semibold px-3 py-2">Cobros de crédito</th>}
+                                {hayDev && <th className="text-right font-semibold px-3 py-2">Devoluciones</th>}
+                                <th className="text-right font-semibold px-4 py-2">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {metodos.map(m => (
+                                <tr key={m.metodo} style={{ borderTop: '1px solid var(--color-border)' }}>
+                                    <td className="px-4 py-2">
+                                        <span className="font-semibold" style={{ color: 'var(--color-text)' }}>{m.metodo}</span>
+                                        {(conCuentas || m.cuentas.length === 1) && m.cuentas.some(c => c.cuenta) && (
+                                            <span className="block text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                                {m.cuentas.map(c => conCuentas && m.cuentas.length > 1 ? `${c.cuenta ?? 'Sin cuenta'} ${money(c.total)}` : (c.cuenta ?? 'Sin cuenta')).join(' · ')}
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="text-right px-3 py-2">{money(m.ventas ?? m.total)}</td>
+                                    {hayAbonos && <td className="text-right px-3 py-2">{(m.abonos ?? 0) > 0 ? money(m.abonos!) : '—'}</td>}
+                                    {hayDev && <td className="text-right px-3 py-2" style={{ color: (m.devoluciones ?? 0) > 0 ? 'var(--color-danger)' : undefined }}>
+                                        {(m.devoluciones ?? 0) > 0 ? `−${money(m.devoluciones!)}` : '—'}
+                                    </td>}
+                                    <td className="text-right px-4 py-2 font-bold" style={{ color: 'var(--color-text)' }}>{money(m.total)}</td>
+                                </tr>
+                            ))}
+                            <tr style={{ borderTop: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg)' }}>
+                                <td className="px-4 py-2 font-bold" colSpan={1 + 1 + (hayAbonos ? 1 : 0) + (hayDev ? 1 : 0)}>Total cobrado</td>
+                                <td className="text-right px-4 py-2 font-bold">{money(total)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
     );
 }
 
@@ -1326,8 +1508,11 @@ function ResumenCards({ resumen }: { resumen: Resumen }) {
                 <Card
                     icon={<Coins size={18} />}
                     label="Total vendido"
-                    valor={money(resumen.total_vendido)}
-                    sub={`Cobrado ${money(resumen.cobrado)} + por cobrar ${money(resumen.por_cobrar)}`}
+                    valor={money(resumen.total_neto ?? resumen.total_vendido)}
+                    sub={(resumen.devoluciones ?? 0) > 0
+                        ? `Vendido ${money(resumen.total_vendido)} − devoluciones ${money(resumen.devoluciones!)}`
+                        : `Cobrado ${money(resumen.cobrado)} + por cobrar ${money(resumen.por_cobrar)}`}
+                    onClick={() => setDetalle(true)}
                 />
             </div>
 

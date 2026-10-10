@@ -686,14 +686,19 @@ class VentaController extends Controller
     }
 
     /**
-     * Cards de un RANGO de fechas: lo vendido y cobrado por método en esos días
-     * (mismo alcance que la lista: la cajera, lo suyo; el local fijo, su local).
-     * No hay "efectivo en caja": eso es de un turno, no de unas fechas.
+     * Cards de un RANGO de fechas: lo vendido y cobrado por medio de pago en esos
+     * días (mismo alcance que la lista: la cajera, lo suyo; el local fijo, su
+     * local). Las devoluciones (y anulaciones con nota de crédito) de esas fechas
+     * se restan con su fecha, igual que en el balance diario. No hay "efectivo en
+     * caja": eso es de un turno, no de unas fechas.
      */
     private function resumenDeRango(User $user, bool $esAdmin, Request $request, ?string $desde, ?string $hasta): array
     {
         $local = $user->local_id ?: ($request->local_id ?: null);
-        $ventas = Venta::deEmpresa($user->empresa_id)->where('estado', 'completada')
+        // Ventas VIGENTES: una anulada con nota de crédito no cuenta (ni su
+        // devolución, abajo), igual que una anulada. Así "Ventas del 09" son las
+        // que siguen en pie, aunque se hayan anulado otro día.
+        $ventas = Venta::deEmpresa($user->empresa_id)->where('estado', 'completada')->whereNull('anulada_nc_devolucion_id')
             ->when(!$esAdmin, fn ($qq) => $qq->where('user_id', $user->id))
             ->when($desde, fn ($qq, $v) => $qq->where('fecha_venta', '>=', $v))
             ->when($hasta, fn ($qq, $v) => $qq->where('fecha_venta', '<=', $v . ' 23:59:59'))
@@ -704,18 +709,21 @@ class VentaController extends Controller
             ->selectRaw('cmp.metodo_pago_id, MIN(c.nombre) as nombre, MIN(c.banco) as banco')
             ->groupBy('cmp.metodo_pago_id')->havingRaw('COUNT(*) = 1')
             ->get()->keyBy('metodo_pago_id');
-
-        $pagos = \App\Models\VentaPago::query()
-            ->leftJoin('cuenta_metodo_pago as cmp', 'cmp.id', '=', 'venta_pagos.cuenta_metodo_pago_id')
-            ->leftJoin('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
-            ->leftJoin('metodos_pago as mp', 'mp.id', '=', 'venta_pagos.metodo_pago_id')
+        $conMetodo = fn ($q, string $alias, string $cuentaJoin) => $q
+            ->leftJoin('metodos_pago as mp', 'mp.id', '=', "{$alias}.metodo_pago_id")
             ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
-            ->whereIn('venta_pagos.venta_id', (clone $ventas)->select('ventas.id'))
-            ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
-            ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(venta_pagos.monto - COALESCE(venta_pagos.vuelto, 0)) as total')
+            ->tap($cuentaJoin === 'pivote'
+                ? fn ($x) => $x->leftJoin('cuenta_metodo_pago as cmp', 'cmp.id', '=', "{$alias}.cuenta_metodo_pago_id")->leftJoin('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
+                : fn ($x) => $x->leftJoin('cuentas as c', 'c.id', '=', "{$alias}.cuenta_id"))
+            ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco');
+
+        // 1) Lo cobrado en las ventas de esas fechas (neto del vuelto).
+        $pagos = $conMetodo(\App\Models\VentaPago::query()->from('venta_pagos as vp')
+            ->whereIn('vp.venta_id', (clone $ventas)->select('ventas.id')), 'vp', 'pivote')
+            ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(vp.monto - COALESCE(vp.vuelto, 0)) as total')
             ->get();
 
-        // Cobros de crédito HECHOS en esas fechas (de ventas vivas).
+        // 2) Cobros de crédito HECHOS en esas fechas (de ventas vivas).
         $abonosQ = \App\Models\VentaAbono::query()->from('venta_abonos as va')
             ->join('ventas as v', 'v.id', '=', 'va.venta_id')
             ->where('v.empresa_id', $user->empresa_id)->where('v.estado', 'completada')
@@ -723,26 +731,44 @@ class VentaController extends Controller
             ->when($desde, fn ($qq, $v) => $qq->where('va.fecha', '>=', $v))
             ->when($hasta, fn ($qq, $v) => $qq->where('va.fecha', '<=', $v))
             ->when($local, fn ($qq, $v) => $qq->where('v.local_id', $v));
-        $abonosPorMetodo = (clone $abonosQ)
-            ->leftJoin('metodos_pago as mp', 'mp.id', '=', 'va.metodo_pago_id')
-            ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
-            ->leftJoin('cuentas as c', 'c.id', '=', 'va.cuenta_id')
-            ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
+        $abonos = $conMetodo(clone $abonosQ, 'va', 'directa')
             ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(va.monto) as total')
             ->get();
 
+        // 3) Devoluciones (y anulaciones con nota de crédito) completadas en esas
+        //    fechas: lo devuelto sale por el medio con que se devolvió.
+        $devQ = \App\Models\Devolucion::query()->from('devoluciones as d')
+            ->where('d.empresa_id', $user->empresa_id)->where('d.estado', 'completada')
+            ->whereNotIn('d.id', Venta::where('empresa_id', $user->empresa_id)->whereNotNull('anulada_nc_devolucion_id')->select('anulada_nc_devolucion_id'))
+            ->when(!$esAdmin, fn ($qq) => $qq->where('d.user_id', $user->id))
+            ->when($desde, fn ($qq, $v) => $qq->where('d.fecha', '>=', $v))
+            ->when($hasta, fn ($qq, $v) => $qq->where('d.fecha', '<=', $v . ' 23:59:59'))
+            ->when($local, fn ($qq, $v) => $qq->where('d.local_id', $v));
+        $reembolsos = $conMetodo(\App\Models\DevolucionPago::query()->from('devolucion_pagos as dp')
+            ->whereIn('dp.devolucion_id', (clone $devQ)->select('d.id')), 'dp', 'pivote')
+            ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(dp.monto) as total')
+            ->get();
+
         $porMetodo = [];
-        foreach ($pagos->concat($abonosPorMetodo) as $f) {
-            [$cuenta, $banco] = $this->resolverCuentaMetodo($f, $cuentaDefault);
-            $m = $f->metodo ?? 'Otro';
-            $porMetodo[$m] ??= ['metodo' => $m, 'slug' => $f->slug, 'es_efectivo' => $f->slug === 'efectivo', 'total' => 0.0, 'cuentas' => []];
-            $porMetodo[$m]['total'] += (float) $f->total;
-            $k = $cuenta ?? '—';
-            $porMetodo[$m]['cuentas'][$k] ??= ['cuenta' => $cuenta, 'banco' => $banco, 'total' => 0.0];
-            $porMetodo[$m]['cuentas'][$k]['total'] += (float) $f->total;
-        }
+        $sumar = function ($filas, string $tipo, int $signo) use (&$porMetodo, $cuentaDefault) {
+            foreach ($filas as $f) {
+                [$cuenta, $banco] = $this->resolverCuentaMetodo($f, $cuentaDefault);
+                $m = $f->metodo ?? 'Otro';
+                $porMetodo[$m] ??= ['metodo' => $m, 'slug' => $f->slug, 'es_efectivo' => $f->slug === 'efectivo',
+                    'ventas' => 0.0, 'abonos' => 0.0, 'devoluciones' => 0.0, 'total' => 0.0, 'cuentas' => []];
+                $monto = (float) $f->total;
+                $porMetodo[$m][$tipo] += $monto;
+                $porMetodo[$m]['total'] += $signo * $monto;
+                $k = $cuenta ?? '—';
+                $porMetodo[$m]['cuentas'][$k] ??= ['cuenta' => $cuenta, 'banco' => $banco, 'total' => 0.0];
+                $porMetodo[$m]['cuentas'][$k]['total'] += $signo * $monto;
+            }
+        };
+        $sumar($pagos, 'ventas', 1);
+        $sumar($abonos, 'abonos', 1);
+        $sumar($reembolsos, 'devoluciones', -1);
         $metodos = array_map(function ($m) {
-            $m['total']   = round($m['total'], 2);
+            foreach (['ventas', 'abonos', 'devoluciones', 'total'] as $k) $m[$k] = round($m[$k], 2);
             $m['cuentas'] = array_values(array_map(fn ($c) => ['total' => round($c['total'], 2)] + $c, $m['cuentas']));
             return $m;
         }, array_values($porMetodo));
@@ -764,14 +790,26 @@ class VentaController extends Controller
             ->with('user:id,name')->orderBy('fecha_apertura')->get()
             ->map(fn ($t) => ['id' => $t->id, 'cajera' => $t->user?->name, 'desde' => $t->fecha_apertura]);
 
+        $vendido      = (float) (clone $ventas)->sum('total');
+        $devuelto     = (float) (clone $devQ)->sum('d.monto_devolucion');
+
         return [
             'modo'          => 'rango',
             'rango'         => ['desde' => $desde, 'hasta' => $hasta],
             'metodos'       => $metodos,
-            'total_vendido' => round((float) (clone $ventas)->sum('total'), 2),
-            'cobrado'       => round((float) (clone $ventas)->sum('monto_pagado'), 2),
+            'total_vendido' => round($vendido, 2),
+            'devoluciones'  => round($devuelto, 2),
+            'total_neto'    => round($vendido - $devuelto, 2),
+            'cobrado'       => round((float) array_sum(array_column($metodos, 'total')), 2),
             'por_cobrar'    => round((float) (clone $ventas)->sum('saldo_pendiente'), 2),
             'num_ventas'    => (clone $ventas)->count(),
+            'num_anuladas'  => Venta::deEmpresa($user->empresa_id)
+                ->when(!$esAdmin, fn ($qq) => $qq->where('user_id', $user->id))
+                ->when($desde, fn ($qq, $v) => $qq->where('fecha_venta', '>=', $v))
+                ->when($hasta, fn ($qq, $v) => $qq->where('fecha_venta', '<=', $v . ' 23:59:59'))
+                ->when($local, fn ($qq, $v) => $qq->where('local_id', $v))
+                ->where(fn ($w) => $w->where('estado', 'anulada')->orWhereNotNull('anulada_nc_devolucion_id'))
+                ->count(),
             'abonos'        => round((float) (clone $abonosQ)->sum('va.monto'), 2),
             'gastos'        => round($gastos, 2),
             'turnos_abiertos_antes' => $abiertosAntes,
@@ -812,7 +850,13 @@ class VentaController extends Controller
                 $conCpe ? ['comprobanteElectronico:id,venta_id,tipo,numero,estado'] : [],
             ))
             ->when(!$esAdmin, fn($qq) => $qq->where('user_id', $user->id))
-            ->when($request->estado, fn($qq, $v) => $qq->where('estado', $v))
+            // "Anuladas" incluye las anuladas con nota de crédito (que por dentro
+            // siguen 'completada' con su devolución total); "Completadas", no.
+            ->when($request->estado, fn($qq, $v) => match ($v) {
+                'anulada'    => $qq->where(fn ($w) => $w->where('estado', 'anulada')->orWhereNotNull('anulada_nc_devolucion_id')),
+                'completada' => $qq->where('estado', 'completada')->whereNull('anulada_nc_devolucion_id'),
+                default      => $qq->where('estado', $v),
+            })
             ->when($fechaDesde, fn($qq, $v) => $qq->where('fecha_venta', '>=', $v))
             ->when($fechaHasta, fn($qq, $v) => $qq->where('fecha_venta', '<=', $v . ' 23:59:59'))
             ->when($request->local_id, fn($qq, $v) => $qq->where('local_id', $v))
@@ -1331,6 +1375,10 @@ class VentaController extends Controller
             'efectivo_abonos'  => round($efectivoAbonos, 2),
             'anticipos_efectivo' => round($anticiposEfectivo, 2), // anticipos en efectivo (entran a caja)
             'total_vendido'    => round($totalVendido, 2),    // cobrado + por cobrar
+            // Devoluciones (y anulaciones con nota de crédito) de estas cajas: el
+            // total neto es lo que de verdad quedó vendido.
+            'devoluciones'     => $devTurno = round((float) \App\Models\Devolucion::whereIn('turno_id', $turnoIds)->where('estado', 'completada')->sum('monto_devolucion'), 2),
+            'total_neto'       => round($totalVendido - $devTurno, 2),
             'por_cobrar'       => round($porCobrar, 2),       // crédito pendiente del turno
             'abonos'           => round($abonos, 2),          // cobros de crédito recibidos en el turno
             'gastos'           => round($gastos, 2),
@@ -1564,7 +1612,11 @@ class VentaController extends Controller
         return Inertia::render('Ventas/Show', [
             'venta' => $venta,
             // "Modificar pedido": cambiar lo pendiente por entregar días después.
-            'puedeModificarPedido' => $request->user()->tienePermiso('ventas', 'crear')
+            // Anulada con nota de crédito: se muestra como anulada (sin acciones).
+            'anuladaConNc' => $venta->anulada_nc_devolucion_id
+                ? \App\Models\Devolucion::whereKey($venta->anulada_nc_devolucion_id)->first(['id', 'numero', 'fecha', 'nota_credito_numero', 'nota_credito_estado'])
+                : null,
+            'puedeModificarPedido' => !$venta->anulada_nc_devolucion_id && $request->user()->tienePermiso('ventas', 'crear')
                 && app(\App\Services\ModificarPedidoPendienteService::class)->motivoBloqueo($venta) === null,
             'modificacionesPedido' => \App\Models\Auditoria::where('modelo_tipo', Venta::class)
                 ->where('modelo_id', $venta->id)

@@ -48,6 +48,8 @@ interface Props extends PageProps {
      */
     bloqueoFiscal?: string | null;
     /** Comprobante en SUNAT: anular emite la Nota de Crédito (cuánto vuelve y por qué medio). */
+    /** Anulada con nota de crédito (devolución total): se ve y trata como anulada. */
+    anuladaConNc?: { id: number; numero: string; fecha: string; nota_credito_numero: string | null; nota_credito_estado: string | null } | null;
     /** Solo para el admin, con la venta anulada: null = puede restablecerla; texto = por qué no. */
     restablecer?: { bloqueo: string | null } | null;
     anulacionNc?: { comprobante: string; reembolso: number; cxc: number; pagos: { metodo: string; monto: number }[]; bloqueo: string | null } | null;
@@ -203,7 +205,7 @@ function CuantoGanaste({ u }: { u: UtilidadVenta }) {
     );
 }
 
-export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, anulacionNc = null, restablecer = null, avisoExterno = null, utilidad = null }: Props) {
+export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, anulacionNc = null, anuladaConNc = null, restablecer = null, avisoExterno = null, utilidad = null }: Props) {
     // Tiempo real: la respuesta de SUNAT, un abono o una edición se ven sin recargar.
     useTiempoReal(['ventas'], () => router.reload());
     const [modalPedido, setModalPedido] = useState(false);
@@ -324,7 +326,10 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
     const items    = (venta.items   ?? []) as VentaItem[];
     const pagos    = (venta.pagos   ?? []) as VentaPago[];
     const descLogs = (venta.descuentos_log ?? []) as DescuentoLog[];
-    const anulada  = venta.estado === 'anulada';
+    // Anulada con nota de crédito: por dentro sigue 'completada' con su devolución
+    // total (así el stock y el dinero no se devuelven dos veces), pero para quien
+    // la mira está anulada: sin anular, editar, devolver ni restablecer.
+    const anulada  = venta.estado === 'anulada' || !!anuladaConNc;
 
     function clienteNombre() {
         if (!venta.cliente) return 'Cliente general';
@@ -425,6 +430,18 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
 
             {/* Comprobante de fuera: no bloquea nada, pero conviene saberlo antes
                 de anular, no después de que el cliente ya tenga el papel. */}
+            {anuladaConNc && (
+                <Callout variant="danger" title="Venta anulada con nota de crédito" className="mb-4">
+                    Se anuló el {new Date(anuladaConNc.fecha).toLocaleDateString('es-PE')} con la devolución{' '}
+                    <Link href={route('devoluciones.show', anuladaConNc.id)} className="font-semibold underline">{anuladaConNc.numero}</Link>
+                    {anuladaConNc.nota_credito_numero
+                        ? <> y la nota de crédito <strong>{anuladaConNc.nota_credito_numero}</strong>.</>
+                        : anuladaConNc.nota_credito_estado === 'emitida' ? <> y su nota de crédito ya fue emitida.</>
+                        : <>; la nota de crédito está {anuladaConNc.nota_credito_estado === 'pendiente' ? 'en camino a SUNAT' : 'por emitirse'}.</>}
+                    {' '}Volvió el stock y el dinero salió de la caja. No se puede restablecer.
+                </Callout>
+            )}
+
             {anulada && restablecer?.bloqueo && (
                 <Callout variant="info" title="Esta venta anulada no se puede restablecer" className="mb-4">
                     {restablecer.bloqueo}

@@ -21,7 +21,7 @@ class Venta extends Model
 
     protected $fillable = [
         'empresa_id', 'local_id', 'turno_id', 'caja_id', 'user_id', 'cliente_id',
-        'numero', 'idempotency_key', 'tipo_comprobante', 'numero_comprobante',
+        'numero', 'idempotency_key', 'tipo_comprobante', 'numero_comprobante', 'anulada_nc_devolucion_id',
         'subtotal', 'descuento_total', 'descuento_concepto_id', 'igv', 'total',
         'estado', 'observacion', 'fecha_venta',
         // Fecha con la que se emite el comprobante. NULL = la de la venta. Ver

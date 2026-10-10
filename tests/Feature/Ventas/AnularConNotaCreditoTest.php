@@ -120,3 +120,38 @@ it('una venta sin comprobante en SUNAT se anula como siempre (sin devolución)',
     expect($venta->fresh()->estado)->toBe('anulada')
         ->and(Devolucion::where('venta_id', $venta->id)->exists())->toBeFalse();
 });
+
+it('la venta anulada con nota de crédito se ve como anulada: en el detalle, en la lista y sin restablecer', function () {
+    $venta = ventaConBoletaEnSunat($this);
+    $this->post(route('ventas.anular', $venta), ['motivo' => 'El cliente se arrepintió de la compra'])->assertSessionHasNoErrors();
+
+    $venta->refresh();
+    $dev = Devolucion::where('venta_id', $venta->id)->first();
+    expect($venta->estado)->toBe('completada')                      // por dentro: stock y dinero no se revierten dos veces
+        ->and($venta->anulada_nc_devolucion_id)->toBe($dev->id);   // pero se marca anulada
+
+    $this->get(route('ventas.show', $venta))->assertInertia(fn ($p) => $p
+        ->where('anuladaConNc.id', $dev->id)
+        ->where('puedeModificarPedido', false)
+        ->where('restablecer', null));
+
+    $hoy = now()->toDateString();
+    $ids = fn (string $estado) => collect($this->get(route('ventas.index', ['estado' => $estado, 'fecha_desde' => $hoy, 'fecha_hasta' => $hoy]))
+        ->viewData('page')['props']['ventas']['data'])->pluck('id');
+    expect($ids('anulada'))->toContain($venta->id)
+        ->and($ids('completada'))->not->toContain($venta->id);
+});
+
+it('las cards por fecha no cuentan la venta anulada con nota de crédito (ni su devolución)', function () {
+    $venta = ventaConBoletaEnSunat($this);
+    $this->post(route('ventas.anular', $venta), ['motivo' => 'El cliente se arrepintió de la compra'])->assertSessionHasNoErrors();
+
+    $hoy = now()->toDateString();
+    $this->get(route('ventas.index', ['fecha_desde' => $hoy, 'fecha_hasta' => $hoy]))->assertInertia(fn ($p) => $p
+        ->where('resumen.total_vendido', 0)
+        ->where('resumen.devoluciones', 0)
+        ->where('resumen.total_neto', 0)
+        ->where('resumen.num_ventas', 0)
+        ->where('resumen.num_anuladas', 1)
+        ->where('resumen.metodos', []));
+});

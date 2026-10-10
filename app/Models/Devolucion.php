@@ -368,6 +368,12 @@ class Devolucion extends Model
             }
 
             $this->update(['estado' => 'completada']);
+
+            // "Anular" una boleta/factura en SUNAT = esta devolución total: la
+            // venta queda marcada para verse como anulada (ver AnulacionConNotaCredito).
+            if ($this->motivo?->slug === 'anulacion_venta') {
+                $venta->update(['anulada_nc_devolucion_id' => $this->id]);
+            }
         });
     }
 
@@ -549,6 +555,9 @@ class Devolucion extends Model
             }
 
             $this->update(['estado' => 'anulada']);
+            // Si era la que "anulaba" la venta, la venta vuelve a verse vigente.
+            Venta::where('id', $this->venta_id)->where('anulada_nc_devolucion_id', $this->id)
+                ->update(['anulada_nc_devolucion_id' => null]);
 
             \App\Services\AuditoriaService::log('devolucion.anulada', $this, [
                 'numero'                  => $this->numero,
