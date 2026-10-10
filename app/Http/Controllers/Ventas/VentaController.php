@@ -679,6 +679,105 @@ class VentaController extends Controller
     }
 
     /** ¿Las fechas son el "hoy" por defecto (nadie las eligió)? */
+    /** ¿La usuaria eligió fechas (y no un turno)? Entonces las cards siguen esas fechas. */
+    private function filtraPorFechas(Request $request, string $q): bool
+    {
+        return ($request->filled('fecha_desde') || $request->filled('fecha_hasta')) && !$request->filled('turno_id');
+    }
+
+    /**
+     * Cards de un RANGO de fechas: lo vendido y cobrado por método en esos días
+     * (mismo alcance que la lista: la cajera, lo suyo; el local fijo, su local).
+     * No hay "efectivo en caja": eso es de un turno, no de unas fechas.
+     */
+    private function resumenDeRango(User $user, bool $esAdmin, Request $request, ?string $desde, ?string $hasta): array
+    {
+        $local = $user->local_id ?: ($request->local_id ?: null);
+        $ventas = Venta::deEmpresa($user->empresa_id)->where('estado', 'completada')
+            ->when(!$esAdmin, fn ($qq) => $qq->where('user_id', $user->id))
+            ->when($desde, fn ($qq, $v) => $qq->where('fecha_venta', '>=', $v))
+            ->when($hasta, fn ($qq, $v) => $qq->where('fecha_venta', '<=', $v . ' 23:59:59'))
+            ->when($local, fn ($qq, $v) => $qq->where('local_id', $v));
+
+        $cuentaDefault = DB::table('cuenta_metodo_pago as cmp')
+            ->join('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
+            ->selectRaw('cmp.metodo_pago_id, MIN(c.nombre) as nombre, MIN(c.banco) as banco')
+            ->groupBy('cmp.metodo_pago_id')->havingRaw('COUNT(*) = 1')
+            ->get()->keyBy('metodo_pago_id');
+
+        $pagos = \App\Models\VentaPago::query()
+            ->leftJoin('cuenta_metodo_pago as cmp', 'cmp.id', '=', 'venta_pagos.cuenta_metodo_pago_id')
+            ->leftJoin('cuentas as c', 'c.id', '=', 'cmp.cuenta_id')
+            ->leftJoin('metodos_pago as mp', 'mp.id', '=', 'venta_pagos.metodo_pago_id')
+            ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
+            ->whereIn('venta_pagos.venta_id', (clone $ventas)->select('ventas.id'))
+            ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
+            ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(venta_pagos.monto - COALESCE(venta_pagos.vuelto, 0)) as total')
+            ->get();
+
+        // Cobros de crédito HECHOS en esas fechas (de ventas vivas).
+        $abonosQ = \App\Models\VentaAbono::query()->from('venta_abonos as va')
+            ->join('ventas as v', 'v.id', '=', 'va.venta_id')
+            ->where('v.empresa_id', $user->empresa_id)->where('v.estado', 'completada')
+            ->when(!$esAdmin, fn ($qq) => $qq->where('va.user_id', $user->id))
+            ->when($desde, fn ($qq, $v) => $qq->where('va.fecha', '>=', $v))
+            ->when($hasta, fn ($qq, $v) => $qq->where('va.fecha', '<=', $v))
+            ->when($local, fn ($qq, $v) => $qq->where('v.local_id', $v));
+        $abonosPorMetodo = (clone $abonosQ)
+            ->leftJoin('metodos_pago as mp', 'mp.id', '=', 'va.metodo_pago_id')
+            ->leftJoin('tipos_metodo_pago as tmp', 'tmp.id', '=', 'mp.tipo_id')
+            ->leftJoin('cuentas as c', 'c.id', '=', 'va.cuenta_id')
+            ->groupBy('mp.id', 'mp.nombre', 'tmp.slug', 'c.nombre', 'c.banco')
+            ->selectRaw('mp.id as metodo_id, mp.nombre as metodo, tmp.slug as slug, c.nombre as cuenta, c.banco as banco, SUM(va.monto) as total')
+            ->get();
+
+        $porMetodo = [];
+        foreach ($pagos->concat($abonosPorMetodo) as $f) {
+            [$cuenta, $banco] = $this->resolverCuentaMetodo($f, $cuentaDefault);
+            $m = $f->metodo ?? 'Otro';
+            $porMetodo[$m] ??= ['metodo' => $m, 'slug' => $f->slug, 'es_efectivo' => $f->slug === 'efectivo', 'total' => 0.0, 'cuentas' => []];
+            $porMetodo[$m]['total'] += (float) $f->total;
+            $k = $cuenta ?? '—';
+            $porMetodo[$m]['cuentas'][$k] ??= ['cuenta' => $cuenta, 'banco' => $banco, 'total' => 0.0];
+            $porMetodo[$m]['cuentas'][$k]['total'] += (float) $f->total;
+        }
+        $metodos = array_map(function ($m) {
+            $m['total']   = round($m['total'], 2);
+            $m['cuentas'] = array_values(array_map(fn ($c) => ['total' => round($c['total'], 2)] + $c, $m['cuentas']));
+            return $m;
+        }, array_values($porMetodo));
+        usort($metodos, fn ($a, $b) => $b['total'] <=> $a['total']);
+
+        $gastos = (float) \App\Models\Gasto::where('empresa_id', $user->empresa_id)
+            ->when(!$esAdmin, fn ($qq) => $qq->where('user_id', $user->id))
+            ->when($desde, fn ($qq, $v) => $qq->where('fecha', '>=', $v))
+            ->when($hasta, fn ($qq, $v) => $qq->where('fecha', '<=', $v))
+            ->when($local, fn ($qq, $v) => $qq->where('local_id', $v))
+            ->sum('monto');
+
+        // Turnos que siguen abiertos desde ANTES de estas fechas: su caja mezcla
+        // varios días. Se avisa para cerrarlos (la causa típica del descuadre).
+        $abiertosAntes = \App\Models\Turno::deEmpresa($user->empresa_id)->where('estado', 'abierto')
+            ->when(!$esAdmin, fn ($qq) => $qq->where('user_id', $user->id))
+            ->when($user->local_id, fn ($qq) => $qq->where('local_id', $user->local_id))
+            ->whereDate('fecha_apertura', '<', $desde ?? $hasta ?? today()->toDateString())
+            ->with('user:id,name')->orderBy('fecha_apertura')->get()
+            ->map(fn ($t) => ['id' => $t->id, 'cajera' => $t->user?->name, 'desde' => $t->fecha_apertura]);
+
+        return [
+            'modo'          => 'rango',
+            'rango'         => ['desde' => $desde, 'hasta' => $hasta],
+            'metodos'       => $metodos,
+            'total_vendido' => round((float) (clone $ventas)->sum('total'), 2),
+            'cobrado'       => round((float) (clone $ventas)->sum('monto_pagado'), 2),
+            'por_cobrar'    => round((float) (clone $ventas)->sum('saldo_pendiente'), 2),
+            'num_ventas'    => (clone $ventas)->count(),
+            'abonos'        => round((float) (clone $abonosQ)->sum('va.monto'), 2),
+            'gastos'        => round($gastos, 2),
+            'turnos_abiertos_antes' => $abiertosAntes,
+        ];
+    }
+
     private function fechasPorDefecto(Request $request, string $q): bool
     {
         return !$request->filled('fecha_desde') && !$request->filled('fecha_hasta')
@@ -783,7 +882,12 @@ class VentaController extends Controller
             'locales' => $locales,
             'esAdmin' => $esAdmin,
             'turnos'  => $this->turnosParaFiltro($user, $esAdmin, $request, $fechaDesde, $fechaHasta),
-            'resumen' => $turnosResumen->isNotEmpty() ? $this->resumenDeTurnos($turnosResumen) : null,
+            // Fechas elegidas a mano (sin turno): las cards muestran LO VENDIDO en
+            // esas fechas, no la caja del turno abierto (que puede venir de días
+            // atrás si no se cerró). Sin filtro o con turno: la caja, como siempre.
+            'resumen' => $this->filtraPorFechas($request, $q)
+                ? $this->resumenDeRango($user, $esAdmin, $request, $fechaDesde, $fechaHasta)
+                : ($turnosResumen->isNotEmpty() ? $this->resumenDeTurnos($turnosResumen) : null),
             // Reflejar en la UI las fechas efectivas (incluye el default de hoy).
             'filters' => array_merge(
                 $request->only(['estado', 'fecha_desde', 'fecha_hasta', 'local_id', 'turno_id', 'q']),
@@ -1245,6 +1349,10 @@ class VentaController extends Controller
             'compras_detalle'  => $comprasDetalle,
             'deuda_detalle'    => $deudaDetalle,
             'devolucion_anticipos_detalle' => $devolucionAnticiposDetalle,
+            // Cajas abiertas desde un día anterior: su "efectivo en caja" suma
+            // varios días. Se avisa para que se cierren al final de cada día.
+            'turnos_abiertos_antes' => $turnos->filter(fn ($t) => $t->estado === 'abierto' && $t->fecha_apertura?->lt(today()))
+                ->map(fn ($t) => ['id' => $t->id, 'cajera' => $t->user?->name, 'desde' => $t->fecha_apertura])->values(),
         ];
     }
 

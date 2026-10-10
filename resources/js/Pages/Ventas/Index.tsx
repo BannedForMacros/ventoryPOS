@@ -62,7 +62,26 @@ interface ResumenMetodo {
     cuentas:     ResumenMetodoCuenta[];
 }
 
+/** Turno abierto desde un día anterior: su caja suma varios días. */
+interface TurnoAbiertoAntes { id: number; cajera: string | null; desde: string }
+
+/** Cards cuando se filtra por FECHAS: lo vendido esos días (no la caja de un turno). */
+interface ResumenRango {
+    modo:          'rango';
+    rango:         { desde: string | null; hasta: string | null };
+    metodos:       ResumenMetodo[];
+    total_vendido: number;
+    cobrado:       number;
+    por_cobrar:    number;
+    num_ventas:    number;
+    abonos:        number;
+    gastos:        number;
+    turnos_abiertos_antes: TurnoAbiertoAntes[];
+}
+
 interface Resumen {
+    modo?:            undefined;
+    turnos_abiertos_antes?: TurnoAbiertoAntes[];
     turno:            { id: number; fecha: string; cajera: string | null; caja: string | null; estado: string };
     metodos:          ResumenMetodo[];
     cobrado:          number;   // suma de métodos de pago
@@ -93,7 +112,7 @@ interface Props extends PageProps {
     ventas:  Paginado<Venta>;
     locales: Local[];
     turnos:  TurnoLite[];
-    resumen: Resumen | null;
+    resumen: Resumen | ResumenRango | null;
     filters: Filters;
 }
 
@@ -336,9 +355,12 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
             />
 
             {/* ── Cards de resumen del turno ───────────────────────────── */}
-            {resumen && (
-                <ResumenCards resumen={resumen} />
+            {resumen && resumen.turnos_abiertos_antes && resumen.turnos_abiertos_antes.length > 0 && (
+                <AvisoTurnosAbiertos turnos={resumen.turnos_abiertos_antes} />
             )}
+            {resumen && (resumen.modo === 'rango'
+                ? <ResumenRangoCards resumen={resumen} />
+                : <ResumenCards resumen={resumen} />)}
 
             {/* ── Filtros (aplican con el botón o Enter, no al tipear) ── */}
             <FiltrosCard
@@ -1130,6 +1152,67 @@ function ChipsPago({ metodos, esCredito, debe }: { metodos: string[]; esCredito:
                     Crédito{debe > 0 ? ` · debe ${money(debe)}` : ''}
                 </span>
             )}
+        </div>
+    );
+}
+
+// ── Turno que quedó abierto de un día anterior ──────────────────────────────
+
+const fechaCorta = (f: string | null) => f ? new Date(f.length <= 10 ? `${f}T00:00:00` : f).toLocaleDateString('es-PE') : '';
+
+/**
+ * El turno que no se cerró junta en su caja el dinero de varios días: es la
+ * causa típica de "las cards no cuadran con lo vendido hoy". Se dice cuál, desde
+ * cuándo, y se lleva a cerrarlo.
+ */
+function AvisoTurnosAbiertos({ turnos }: { turnos: TurnoAbiertoAntes[] }) {
+    return (
+        <Callout variant="warning" className="mb-4"
+            title={turnos.length === 1 ? 'Hay un turno abierto desde otro día' : `Hay ${turnos.length} turnos abiertos desde otro día`}>
+            <ul className="space-y-1">
+                {turnos.map(t => (
+                    <li key={t.id} className="flex flex-wrap items-center gap-x-2">
+                        <span>
+                            Turno <strong>#{t.id}</strong>{t.cajera ? ` de ${t.cajera}` : ''} sigue abierto desde el <strong>{fechaCorta(t.desde)}</strong>:
+                            su caja suma el dinero de todos esos días.
+                        </span>
+                        <Link href={route('turnos.cerrar.page', t.id)} className="font-semibold underline">Cerrar ese turno →</Link>
+                    </li>
+                ))}
+            </ul>
+            <span className="block mt-1 text-xs">Ciérralo al final de cada día para que la caja de cada día salga sola.</span>
+        </Callout>
+    );
+}
+
+/** Cards de un rango de fechas: lo vendido y cobrado por método esos días. */
+function ResumenRangoCards({ resumen }: { resumen: ResumenRango }) {
+    const { desde, hasta } = resumen.rango;
+    const titulo = desde && hasta && desde === hasta
+        ? `Ventas del ${fechaCorta(desde)}`
+        : `Ventas del ${fechaCorta(desde) || '…'} al ${fechaCorta(hasta) || 'hoy'}`;
+    const efectivo = resumen.metodos.find(m => m.es_efectivo);
+    const otros = resumen.metodos.filter(m => !m.es_efectivo);
+
+    return (
+        <div className="mb-5">
+            <div className="flex items-center gap-2 mb-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                <Calendar size={13} />
+                <span className="font-semibold uppercase tracking-wide">{titulo}</span>
+                <span className="hidden sm:inline">· {resumen.num_ventas} {resumen.num_ventas === 1 ? 'venta' : 'ventas'} · cobros por medio de pago en esas fechas</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <Card destacado icon={<Wallet size={18} />} label="Cobrado en efectivo"
+                    valor={money(efectivo?.total ?? 0)} sub="Ventas y cobros de crédito, neto de vuelto" color="primary" />
+                {otros.map((m, i) => (
+                    <Card key={`${m.metodo}-${i}`} icon={<CreditCard size={18} />} label={m.metodo} valor={money(m.total)} sub={subCuenta(m)} />
+                ))}
+                <Card icon={<Clock size={18} />} label="Cuentas por cobrar" valor={money(resumen.por_cobrar)} sub="Ventas al crédito (pendiente)" color="warning" />
+                <Card icon={<HandCoins size={18} />} label="Abonos recibidos" valor={money(resumen.abonos)} sub="Cobros de crédito en esas fechas" color="success" />
+                <Card icon={<TrendingDown size={18} />} label="Gastos" valor={money(resumen.gastos)} sub="Registrados en esas fechas" color="danger" />
+                <Card icon={<Coins size={18} />} label="Total vendido" valor={money(resumen.total_vendido)}
+                    sub={`Cobrado ${money(resumen.cobrado)} + por cobrar ${money(resumen.por_cobrar)}`} />
+            </div>
         </div>
     );
 }
