@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     Eye, ShoppingCart, Calendar, Receipt, Pencil, Trash2, KeyRound,
     AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins, ListChecks, PackageMinus,
-    Send, MessageCircle, Mail, FileSpreadsheet,
+    Send, MessageCircle, Mail, FileSpreadsheet, RotateCcw,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -150,6 +150,26 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
 
     // Estado del modal de anulación.
     const [anular, setAnular]   = useState<Venta | null>(null);
+    // Restablecer una venta anulada por error (solo admin; lo decide el servidor).
+    const [restablecer, setRestablecer] = useState<Venta | null>(null);
+    const [motivoRest, setMotivoRest]   = useState('');
+    const [errRest, setErrRest]         = useState<Record<string, string>>({});
+    const [restableciendo, setRestableciendo] = useState(false);
+    // undefined = no es anulada o no es admin (no se muestra); null = se puede; texto = por qué no.
+    const bloqueoRest = (v: Venta) => v.restablecer_bloqueo as string | null | undefined;
+    function abrirRestablecer(v: Venta) {
+        setRestablecer(v); setMotivoRest(''); setErrRest({});
+    }
+    function confirmarRestablecer() {
+        if (!restablecer) return;
+        setRestableciendo(true);
+        setErrRest({});
+        router.post(route('ventas.restablecer', restablecer.id), { motivo: motivoRest }, {
+            preserveScroll: true,
+            onSuccess: () => { setRestableciendo(false); setRestablecer(null); },
+            onError:   (errs) => { setRestableciendo(false); setErrRest(errs as Record<string, string>); },
+        });
+    }
     const [motivo, setMotivo]   = useState('');
     const [codigo, setCodigo]   = useState('');
     const [saving, setSaving]   = useState(false);
@@ -527,6 +547,18 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                                 <Trash2 size={14} />
                                             </button>
                                         )}
+                                        {esAdmin && bloqueoRest(v) !== undefined && (
+                                            <button
+                                                onClick={() => abrirRestablecer(v)}
+                                                disabled={!!bloqueoRest(v)}
+                                                title={bloqueoRest(v) ?? 'Restablecer venta (deshace la anulación)'}
+                                                aria-label={`Restablecer venta ${v.numero}`}
+                                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:opacity-80 disabled:opacity-35 disabled:cursor-not-allowed"
+                                                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)', color: 'var(--color-primary)' }}
+                                            >
+                                                <RotateCcw size={14} />
+                                            </button>
+                                        )}
                                     </div>
                                 </td>
                             </tr>
@@ -657,6 +689,17 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     <Trash2 size={14} /> Anular
                                 </button>
                             )}
+                            {esAdmin && bloqueoRest(v) !== undefined && (
+                                <button
+                                    onClick={() => abrirRestablecer(v)}
+                                    disabled={!!bloqueoRest(v)}
+                                    title={bloqueoRest(v) ?? 'Restablecer venta (deshace la anulación)'}
+                                    className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg disabled:opacity-35 disabled:cursor-not-allowed"
+                                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)', color: 'var(--color-primary)' }}
+                                >
+                                    <RotateCcw size={14} /> Restablecer
+                                </button>
+                            )}
                         </div>
                     </div>
                 ))}
@@ -712,6 +755,42 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
             </Modal>
 
             {/* ── Modal anular ─────────────────────────────────────── */}
+            <Modal
+                isOpen={restablecer !== null}
+                onClose={() => { if (!restableciendo) setRestablecer(null); }}
+                title={`Restablecer venta ${restablecer?.numero ?? ''}`}
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setRestablecer(null)} disabled={restableciendo}>Cancelar</Button>
+                        <Button variant="primary" onClick={confirmarRestablecer} loading={restableciendo}>Restablecer venta</Button>
+                    </>
+                }
+            >
+                {restablecer && (
+                    <div className="space-y-3">
+                        <Callout variant="info">
+                            <p style={{ color: 'var(--color-text)' }}>
+                                La venta vuelve a quedar como el día que se cobró: se descuenta otra vez el stock, se registra
+                                de nuevo su dinero (con su fecha original){restablecer.es_credito ? ' y vuelve la deuda del cliente' : ''}.
+                            </p>
+                        </Callout>
+                        <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                                Motivo <span style={{ color: 'var(--color-danger)' }}>*</span>
+                            </label>
+                            <textarea rows={2} value={motivoRest} onChange={e => setMotivoRest(e.target.value)} disabled={restableciendo}
+                                placeholder="Por qué se restablece (mín. 10 caracteres)"
+                                className="w-full rounded-xl px-3 py-2 text-sm resize-none"
+                                style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                            {errRest.motivo && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errRest.motivo}</p>}
+                            {(errRest.venta || errRest.aviso) && (
+                                <p className="text-sm mt-2 font-semibold" role="alert" style={{ color: 'var(--color-danger)' }}>{errRest.venta || errRest.aviso}</p>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
             <Modal
                 isOpen={anular !== null}
                 onClose={() => setAnular(null)}

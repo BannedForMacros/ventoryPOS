@@ -763,6 +763,15 @@ class VentaController extends Controller
             ] : null);
         });
 
+        // Ventas anuladas: el admin puede restablecerlas desde la lista. Viaja por
+        // qué NO (o null si sí), para que el botón lo diga antes de intentarlo.
+        if ($esAdmin) {
+            $restablecer = app(\App\Services\RestablecerVenta::class);
+            $ventas->getCollection()
+                ->filter(fn (Venta $v) => $v->estado === 'anulada')
+                ->each(fn (Venta $v) => $v->setAttribute('restablecer_bloqueo', $restablecer->motivoBloqueo($v)));
+        }
+
         $locales = $this->scope->localesVisibles($user);
 
         // Turno a resumir en las cards: el filtrado explícitamente, o el turno

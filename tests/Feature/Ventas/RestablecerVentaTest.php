@@ -129,3 +129,15 @@ it('el kardex queda igual que antes de anular: Recalcular no deshace la venta re
 
     expect((float) $kardex())->toBe((float) $original);
 });
+
+it('la lista de ventas le dice al admin, por cada anulada, si puede restablecerla', function () {
+    $ticket = ventaAnulada($this);
+    $boleta = ventaAnulada($this, ['tipo_comprobante' => 'boleta']);
+
+    $this->get(route('ventas.index', ['estado' => 'anulada']))->assertInertia(function ($p) use ($ticket, $boleta) {
+        $filas = collect($p->toArray()['props']['ventas']['data'])->keyBy('id');
+        expect($filas[$ticket->id])->toHaveKey('restablecer_bloqueo')
+            ->and($filas[$ticket->id]['restablecer_bloqueo'])->toBeNull()
+            ->and($filas[$boleta->id]['restablecer_bloqueo'])->toContain('tiene comprobante');
+    });
+});
