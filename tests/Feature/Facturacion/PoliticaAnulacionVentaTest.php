@@ -187,6 +187,12 @@ it('la pantalla recibe el mismo motivo que corta en el servidor', function () {
     $motivo = app(VentaService::class)->motivoBloqueoFiscal($venta);
     expect($motivo)->toContain('B002-00000077');
 
+    // Un comprobante aceptado ya no bloquea la pantalla: "Anular" emite la Nota
+    // de Crédito en un paso (AnulacionConNotaCredito). Uno dado de baja sí.
     $this->get(route('ventas.show', $venta))
-        ->assertInertia(fn ($page) => $page->where('bloqueoFiscal', $motivo));
+        ->assertInertia(fn ($page) => $page->where('bloqueoFiscal', null)->where('anulacionNc.comprobante', 'B002-00000077'));
+
+    $baja = conComprobante(ventaDePrueba(), 'anulado');
+    $this->get(route('ventas.show', $baja))
+        ->assertInertia(fn ($page) => $page->where('bloqueoFiscal', app(VentaService::class)->motivoBloqueoFiscal($baja))->where('anulacionNc', null));
 });

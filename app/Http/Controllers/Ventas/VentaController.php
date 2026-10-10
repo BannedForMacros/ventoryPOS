@@ -755,6 +755,8 @@ class VentaController extends Controller
                 'numero' => $ce->numero,
                 'tipo'   => $ce->tipo,
                 'estado' => $ce->estado,
+                // Admite Nota de Crédito: "Anular" la emite (AnulacionConNotaCredito).
+                'emitido' => in_array($ce->estado, \App\Models\VentaComprobante::estadosAcreditables(), true),
                 // Lo decide el modelo (ESTADOS_TERMINALES): la lista no debe
                 // tener su propia copia de esa lista.
                 'final'  => $ce->esFinal(),
@@ -1456,7 +1458,16 @@ class VentaController extends Controller
             // Lo contesta el MISMO método que corta en el servidor: si la pantalla
             // llevara su propia lista de estados, las dos acabarían discrepando —
             // que es como nacieron tres bugs fiscales en este módulo.
-            'bloqueoFiscal' => app(VentaService::class)->motivoBloqueoFiscal($venta),
+            // Con comprobante ya informado a SUNAT no hay bloqueo: anular emite la
+            // Nota de Crédito (anulacionNc dice cuánto vuelve y por qué medio).
+            'anulacionNc'   => $anulacionNc = app(\App\Services\AnulacionConNotaCredito::class)->plan($venta),
+            'bloqueoFiscal' => $anulacionNc
+                ? match (true) {
+                    $anulacionNc['bloqueo'] === null => null,
+                    str_contains($anulacionNc['bloqueo'], 'ya se devolvió') => "Ya se devolvió todo lo de esta venta con nota de crédito del comprobante {$anulacionNc['comprobante']}: no queda nada por anular.",
+                    default => "La venta tiene el comprobante {$anulacionNc['comprobante']} informado a SUNAT y no se puede anular en un paso: {$anulacionNc['bloqueo']}",
+                }
+                : app(VentaService::class)->motivoBloqueoFiscal($venta),
             // Factura/boleta cargada a mano: NO bloquea, pero hay que avisar de que
             // su nota de crédito se emite por fuera.
             'avisoExterno'  => VentaService::avisoComprobanteExterno($venta),
@@ -1667,6 +1678,26 @@ class VentaController extends Controller
                         : 'Anular ventas requiere el código de autorización de un administrador.',
                 ]);
             }
+        }
+
+        // Boleta o factura ya informada a SUNAT: anular = Nota de Crédito. Se hace
+        // sola en un paso (devolución total: vuelve el stock, sale el dinero por el
+        // mismo medio y se emite la NC), igual que por Devoluciones. Va DESPUÉS de
+        // las reglas de arriba: la cajera solo si la empresa se lo permite (y con
+        // código fuera de plazo); el admin siempre.
+        if (\App\Services\AnulacionConNotaCredito::comprobante($venta)) {
+            try {
+                $devolucion = app(\App\Services\AnulacionConNotaCredito::class)->ejecutar($venta, $user, $request->validated('motivo'));
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                return back()->withErrors(['venta' => collect($e->errors())->flatten()->first()]);
+            } catch (\RuntimeException $e) {
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) throw $e;
+                return back()->withErrors(['venta' => $e->getMessage()]);
+            }
+
+            return redirect()->back()->with('success', $devolucion->estado === 'pendiente'
+                ? "Se registró la devolución {$devolucion->numero} de {$venta->numero}: queda pendiente de aprobación y la nota de crédito se emitirá al aprobarla."
+                : "Venta {$venta->numero} anulada con nota de crédito: volvió el stock, se devolvió S/ " . number_format((float) $devolucion->monto_reembolso, 2) . ' y la nota de crédito se está enviando a SUNAT.');
         }
 
         // Los rechazos de negocio (abort 422) los convierte en "aviso" el manejador

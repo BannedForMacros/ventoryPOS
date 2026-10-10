@@ -719,17 +719,29 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAnular(null)} disabled={saving}>Cancelar</Button>
-                        <Button variant="danger" onClick={confirmarAnular} loading={saving}>Anular venta</Button>
+                        <Button variant="danger" onClick={confirmarAnular} loading={saving}>
+                            {anular?.comprobante_electronico?.emitido ? 'Anular con nota de crédito' : 'Anular venta'}
+                        </Button>
                     </>
                 }
             >
                 {anular && (
                     <div className="space-y-3">
-                        <Callout variant="danger">
-                            <p style={{ color: 'var(--color-text)' }}>
-                                Anular revierte el stock y el dinero de esta venta. Es una acción irreversible.
-                            </p>
-                        </Callout>
+                        {anular.comprobante_electronico?.emitido ? (
+                            <Callout variant="warning" title={`Se emitirá la nota de crédito de ${anular.comprobante_electronico.numero}`}>
+                                <p style={{ color: 'var(--color-text)' }}>
+                                    El comprobante ya está en SUNAT. Al anular, el sistema registra la devolución de todo,
+                                    devuelve el stock, saca el dinero de tu caja por el mismo medio con que se pagó y envía
+                                    la nota de crédito a SUNAT. Es una acción irreversible.
+                                </p>
+                            </Callout>
+                        ) : (
+                            <Callout variant="danger">
+                                <p style={{ color: 'var(--color-text)' }}>
+                                    Anular revierte el stock y el dinero de esta venta. Es una acción irreversible.
+                                </p>
+                            </Callout>
+                        )}
 
                         <div>
                             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
@@ -745,6 +757,10 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                 style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
                             />
                             {errAnular.motivo && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errAnular.motivo}</p>}
+                            {/* Rechazos del servidor que no son de un campo (p. ej. "tiene pendientes por entregar"). */}
+                            {(errAnular.venta || errAnular.aviso) && (
+                                <p className="text-sm mt-2 font-semibold" role="alert" style={{ color: 'var(--color-danger)' }}>{errAnular.venta || errAnular.aviso}</p>
+                            )}
                         </div>
 
                         {/* Código de admin: solo cuando la cajera anula fuera del plazo de edición */}

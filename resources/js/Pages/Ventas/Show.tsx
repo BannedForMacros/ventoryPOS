@@ -46,6 +46,8 @@ interface Props extends PageProps {
      * nacieron los bugs fiscales de este módulo.
      */
     bloqueoFiscal?: string | null;
+    /** Comprobante en SUNAT: anular emite la Nota de Crédito (cuánto vuelve y por qué medio). */
+    anulacionNc?: { comprobante: string; reembolso: number; cxc: number; pagos: { metodo: string; monto: number }[]; bloqueo: string | null } | null;
     /** Factura/boleta emitida fuera del sistema: se avisa, no se bloquea. */
     avisoExterno?: string | null;
     /** Cuánto dejó la venta; null si el usuario no puede ver utilidad o si está anulada. */
@@ -198,7 +200,7 @@ function CuantoGanaste({ u }: { u: UtilidadVenta }) {
     );
 }
 
-export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, avisoExterno = null, utilidad = null }: Props) {
+export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, anulacionNc = null, avisoExterno = null, utilidad = null }: Props) {
     // Tiempo real: la respuesta de SUNAT, un abono o una edición se ven sin recargar.
     useTiempoReal(['ventas'], () => router.reload());
     const [modalPedido, setModalPedido] = useState(false);
@@ -296,13 +298,10 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Siempre por el modal: el servidor exige el motivo (y, con comprobante en
+    // SUNAT, el modal dice qué nota de crédito se emitirá y cuánto vuelve).
     function anular() {
-        if (requiereCodigo()) {
-            abrirAnular();
-            return;
-        }
-        if (!confirm('¿Confirmas la anulación de esta venta? Esta acción restaurará el stock.')) return;
-        confirmarAnular();
+        abrirAnular();
     }
 
     const items    = (venta.items   ?? []) as VentaItem[];
@@ -656,16 +655,31 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setModalAnular(false)} disabled={anulando}>Cancelar</Button>
-                        <Button variant="danger" onClick={confirmarAnular} loading={anulando}>Anular venta</Button>
+                        <Button variant="danger" onClick={confirmarAnular} loading={anulando}>
+                            {anulacionNc ? 'Anular con nota de crédito' : 'Anular venta'}
+                        </Button>
                     </>
                 }
             >
                 <div className="space-y-3">
-                    <Callout variant="danger">
-                        <p style={{ color: 'var(--color-text)' }}>
-                            Anular revierte el stock y el dinero de esta venta. Es una acción irreversible.
-                        </p>
-                    </Callout>
+                    {anulacionNc ? (
+                        <Callout variant="warning" title={`Se emitirá la nota de crédito de ${anulacionNc.comprobante}`}>
+                            <p style={{ color: 'var(--color-text)' }}>
+                                El comprobante ya está en SUNAT. Al anular se registra la devolución de todo, vuelve el stock
+                                {anulacionNc.pagos.length > 0
+                                    ? <>, sale de tu caja <strong>{anulacionNc.pagos.map(p => `${p.metodo} S/ ${p.monto.toFixed(2)}`).join(' + ')}</strong></>
+                                    : null}
+                                {anulacionNc.cxc > 0.009 ? <> y se cancela la deuda de <strong>S/ {anulacionNc.cxc.toFixed(2)}</strong></> : null}
+                                {' '}y la nota de crédito se envía a SUNAT. Es una acción irreversible.
+                            </p>
+                        </Callout>
+                    ) : (
+                        <Callout variant="danger">
+                            <p style={{ color: 'var(--color-text)' }}>
+                                Anular revierte el stock y el dinero de esta venta. Es una acción irreversible.
+                            </p>
+                        </Callout>
+                    )}
 
                     <div>
                         <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
@@ -681,6 +695,10 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                             style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
                         />
                         {errAnular.motivo && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errAnular.motivo}</p>}
+                        {/* Rechazos del servidor que no son de un campo (p. ej. "tiene pendientes por entregar"). */}
+                        {(errAnular.venta || errAnular.aviso) && (
+                            <p className="text-sm mt-2 font-semibold" role="alert" style={{ color: 'var(--color-danger)' }}>{errAnular.venta || errAnular.aviso}</p>
+                        )}
                     </div>
 
                     {requiereCodigo() && (
