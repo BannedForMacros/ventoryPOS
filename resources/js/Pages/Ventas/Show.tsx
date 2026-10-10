@@ -6,6 +6,7 @@ import {
     ArrowLeft, XCircle, Receipt, User, ShoppingBag,
     CreditCard, Percent, Calendar, Store, UserCheck, Printer,
     FileCheck2, Download, RefreshCw, KeyRound, FileText, PackageOpen, History, Undo2,
+    RotateCcw,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
@@ -47,6 +48,8 @@ interface Props extends PageProps {
      */
     bloqueoFiscal?: string | null;
     /** Comprobante en SUNAT: anular emite la Nota de Crédito (cuánto vuelve y por qué medio). */
+    /** Solo para el admin, con la venta anulada: null = puede restablecerla; texto = por qué no. */
+    restablecer?: { bloqueo: string | null } | null;
     anulacionNc?: { comprobante: string; reembolso: number; cxc: number; pagos: { metodo: string; monto: number }[]; bloqueo: string | null } | null;
     /** Factura/boleta emitida fuera del sistema: se avisa, no se bloquea. */
     avisoExterno?: string | null;
@@ -200,7 +203,7 @@ function CuantoGanaste({ u }: { u: UtilidadVenta }) {
     );
 }
 
-export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, anulacionNc = null, avisoExterno = null, utilidad = null }: Props) {
+export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, anulacionNc = null, restablecer = null, avisoExterno = null, utilidad = null }: Props) {
     // Tiempo real: la respuesta de SUNAT, un abono o una edición se ven sin recargar.
     useTiempoReal(['ventas'], () => router.reload());
     const [modalPedido, setModalPedido] = useState(false);
@@ -212,6 +215,20 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
 
     // Estados para anular desde el detalle.
     const [modalAnular, setModalAnular] = useState(false);
+    // Restablecer una venta anulada por error (solo admin).
+    const [modalRestablecer, setModalRestablecer] = useState(false);
+    const [motivoRest, setMotivoRest] = useState('');
+    const [restableciendo, setRestableciendo] = useState(false);
+    const [errRest, setErrRest] = useState<Record<string, string>>({});
+    function confirmarRestablecer() {
+        setRestableciendo(true);
+        setErrRest({});
+        router.post(route('ventas.restablecer', venta.id), { motivo: motivoRest }, {
+            preserveScroll: true,
+            onSuccess: () => { setRestableciendo(false); setModalRestablecer(false); },
+            onError:   (errs) => { setRestableciendo(false); setErrRest(errs as Record<string, string>); },
+        });
+    }
     const [motivoAnular, setMotivoAnular] = useState('');
     const [codigoAnular, setCodigoAnular] = useState('');
     const [errAnular, setErrAnular] = useState<Record<string, string>>({});
@@ -373,6 +390,13 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                             <span className="hidden sm:inline">Anular</span>
                         </Button>
                     )}
+                    {anulada && restablecer && !restablecer.bloqueo && (
+                        <Button variant="primary" size="sm" startContent={<RotateCcw size={15} />}
+                            onClick={() => { setMotivoRest(''); setErrRest({}); setModalRestablecer(true); }}
+                            title="Deshace la anulación: vuelve a descontar el stock y a registrar el dinero">
+                            <span className="hidden sm:inline">Restablecer venta</span>
+                        </Button>
+                    )}
                     {/* La salida, en el mismo sitio donde antes estaba Anular:
                         quien viene a corregir la venta encuentra qué hacer, en
                         vez de un botón que le va a decir que no. */}
@@ -401,6 +425,12 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
 
             {/* Comprobante de fuera: no bloquea nada, pero conviene saberlo antes
                 de anular, no después de que el cliente ya tenga el papel. */}
+            {anulada && restablecer?.bloqueo && (
+                <Callout variant="info" title="Esta venta anulada no se puede restablecer" className="mb-4">
+                    {restablecer.bloqueo}
+                </Callout>
+            )}
+
             {!!avisoExterno && !anulada && (
                 <Callout variant="info" title="Ojo: el comprobante de esta venta se emitió fuera del sistema" className="mb-4">
                     {avisoExterno}
@@ -646,6 +676,41 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                     )}
                 </div>
             </div>
+
+            <Modal
+                isOpen={modalRestablecer}
+                onClose={() => { if (!restableciendo) setModalRestablecer(false); }}
+                title={`Restablecer venta ${venta.numero}`}
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setModalRestablecer(false)} disabled={restableciendo}>Cancelar</Button>
+                        <Button variant="primary" onClick={confirmarRestablecer} loading={restableciendo}>Restablecer venta</Button>
+                    </>
+                }
+            >
+                <div className="space-y-3">
+                    <Callout variant="info">
+                        <p style={{ color: 'var(--color-text)' }}>
+                            La venta vuelve a quedar como el día que se cobró: se descuenta otra vez el stock, se registra
+                            de nuevo su dinero (con su fecha original){venta.es_credito ? ' y vuelve la deuda del cliente' : ''}.
+                        </p>
+                    </Callout>
+                    <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                            Motivo <span style={{ color: 'var(--color-danger)' }}>*</span>
+                        </label>
+                        <textarea rows={2} value={motivoRest} onChange={e => setMotivoRest(e.target.value)} disabled={restableciendo}
+                            placeholder="Por qué se restablece (mín. 10 caracteres)"
+                            className="w-full rounded-xl px-3 py-2 text-sm resize-none"
+                            style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                        {errRest.motivo && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errRest.motivo}</p>}
+                        {(errRest.venta || errRest.aviso) && (
+                            <p className="text-sm mt-2 font-semibold" role="alert" style={{ color: 'var(--color-danger)' }}>{errRest.venta || errRest.aviso}</p>
+                        )}
+                    </div>
+                </div>
+            </Modal>
 
             <Modal
                 isOpen={modalAnular}

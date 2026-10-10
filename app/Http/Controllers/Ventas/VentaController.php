@@ -1471,6 +1471,11 @@ class VentaController extends Controller
             // Factura/boleta cargada a mano: NO bloquea, pero hay que avisar de que
             // su nota de crédito se emite por fuera.
             'avisoExterno'  => VentaService::avisoComprobanteExterno($venta),
+            // Venta anulada por error: el administrador puede restablecerla (o se
+            // dice por qué no). Solo viaja para el admin.
+            'restablecer'   => $venta->estado === 'anulada' && $request->user()->rol?->es_admin
+                ? ['bloqueo' => app(\App\Services\RestablecerVenta::class)->motivoBloqueo($venta)]
+                : null,
             // Payload listo para el agente local de impresión (VentoryPrint.exe).
             'ticketImpresion' => app(TicketPrintService::class)->payloadDeVenta($venta),
             // Cuánto dejó la venta. Revela costos: solo para quien puede ver el
@@ -1714,6 +1719,33 @@ class VentaController extends Controller
         }
 
         return redirect()->back()->with('success', "Venta {$venta->numero} anulada correctamente.");
+    }
+
+    /**
+     * Restablece una venta anulada por error: vuelve a descontar el stock, a
+     * registrar su dinero y su deuda (RestablecerVenta). Solo el administrador.
+     */
+    public function restablecer(Request $request, Venta $venta)
+    {
+        $user = $request->user();
+        abort_if($venta->empresa_id !== $user->empresa_id, 403);
+        abort_unless((bool) $user->rol?->es_admin, 403, 'Solo un administrador puede restablecer una venta anulada.');
+
+        $data = $request->validate(
+            ['motivo' => ['required', 'string', 'min:10', 'max:500']],
+            ['motivo.required' => 'Escribe por qué se restablece la venta.', 'motivo.min' => 'El motivo debe tener al menos 10 caracteres.'],
+        );
+
+        try {
+            app(\App\Services\RestablecerVenta::class)->ejecutar($venta, $user, $data['motivo']);
+        } catch (\App\Exceptions\InsufficientStockException $e) {
+            return back()->withErrors(['venta' => 'No hay stock suficiente para volver a descontar esta venta: ' . $e->getMessage()]);
+        } catch (\RuntimeException $e) {
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) throw $e;
+            return back()->withErrors(['venta' => $e->getMessage()]);
+        }
+
+        return redirect()->back()->with('success', "Venta {$venta->numero} restablecida: se volvió a descontar el stock y a registrar su dinero.");
     }
 
     // ── Búsqueda server-side para el POS ─────────────────────────────────────────

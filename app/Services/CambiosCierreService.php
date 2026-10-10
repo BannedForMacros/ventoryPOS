@@ -232,6 +232,7 @@ class CambiosCierreService
         // ── Acciones auditadas DESPUÉS sobre documentos de fecha anterior ──
         $acciones = [
             'venta.anulada'               => [['stock', 'cxc', 'anticipo_cliente', 'efectivo', 'cuenta_bancaria'], 'Venta anulada', 'ventas', 'fecha_venta', 'numero'],
+            'venta.restablecida'          => [['stock', 'cxc', 'efectivo', 'cuenta_bancaria'], 'Venta restablecida', 'ventas', 'fecha_venta', 'numero'],
             'venta.editada'               => [['stock', 'cxc', 'anticipo_cliente', 'efectivo', 'cuenta_bancaria'], 'Venta editada', 'ventas', 'fecha_venta', 'numero'],
             'venta.pedido_modificado'     => [['stock', 'anticipo_cliente', 'cxc'], 'Pedido pendiente modificado', 'ventas', 'fecha_venta', 'numero'],
             'entrada.anulada'             => [['stock', 'mercaderia_transito', 'cxp', 'efectivo', 'cuenta_bancaria'], 'Compra anulada', 'entradas', 'fecha', 'numero_documento'],

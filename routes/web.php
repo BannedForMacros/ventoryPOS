@@ -451,6 +451,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // (el guard de tiempo lo aplica el controlador). Reutiliza el editor del POS.
         Route::middleware(['permiso:ventas,editar', 'throttle:60,1'])->put('/{venta}', [VentaController::class, 'update'])->name('update');
         Route::middleware('permiso:ventas,editar')->post('/{venta}/anular', [VentaController::class, 'anular'])->name('anular');
+        // Restablecer una venta anulada por error: solo el administrador (lo exige el controlador).
+        Route::middleware('permiso:ventas,editar')->post('/{venta}/restablecer', [VentaController::class, 'restablecer'])->name('restablecer');
         // Modificar el pedido PENDIENTE POR ENTREGAR días después (la cajera, sin
         // límite de tiempo: la diferencia se liquida HOY y la caja original no se toca).
         Route::middleware('permiso:ventas,crear')->get('/{venta}/pedido-pendiente', [\App\Http\Controllers\Ventas\PedidoPendienteController::class, 'datos'])->name('pedido-pendiente');
