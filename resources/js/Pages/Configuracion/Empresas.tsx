@@ -429,7 +429,7 @@ export default function Empresas({ empresas }: Props) {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <Input label="Dirección" value={data.direccion} onChange={e => setData('direccion', e.target.value)} error={errors.direccion} />
-                        <Input label="Teléfono" value={data.telefono} onChange={e => setData('telefono', e.target.value)} error={errors.telefono} />
+                        <Input label="Teléfono" value={data.telefono} onChange={e => setData('telefono', e.target.value)} error={errors.telefono} placeholder="987654321 - 912345678" hint="Puedes poner más de un número, separados por «-»." />
                     </div>
 
                     {/* Logo de la empresa (PNG/JPG). Se sube un archivo; no se usa URL. */}

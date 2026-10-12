@@ -18,7 +18,7 @@ class LocalRequest extends FormRequest
             // desde el usuario autenticado.
             'nombre'                   => 'required|string|max:255',
             'direccion'                => 'nullable|string|max:255',
-            'telefono'                 => 'nullable|string|max:20',
+            'telefono'                 => 'nullable|string|max:40',
             'es_principal'             => 'boolean',
             'activo'                   => 'boolean',
             'descuenta_stock_en_venta'        => 'nullable|boolean',

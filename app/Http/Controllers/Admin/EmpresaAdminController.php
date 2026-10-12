@@ -38,7 +38,7 @@ class EmpresaAdminController extends Controller
             'nombre_comercial' => 'nullable|string|max:255',
             'ruc'              => ['required', 'string', 'size:11', Rule::unique('empresas', 'ruc')],
             'direccion'        => 'nullable|string|max:255',
-            'telefono'         => 'nullable|string|max:20',
+            'telefono'         => 'nullable|string|max:40',
             'email'            => 'nullable|email|max:255',
             'admin_name'       => 'required|string|max:255',
             'admin_email'      => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
@@ -70,7 +70,7 @@ class EmpresaAdminController extends Controller
             'nombre_comercial' => 'nullable|string|max:255',
             'ruc'              => ['required', 'string', 'size:11', Rule::unique('empresas', 'ruc')->ignore($empresa->id)],
             'direccion'        => 'nullable|string|max:255',
-            'telefono'         => 'nullable|string|max:20',
+            'telefono'         => 'nullable|string|max:40',
             'email'            => 'nullable|email|max:255',
             'activo'           => 'boolean',
             // Visor de ventas: función del plan (gasta créditos de la API).

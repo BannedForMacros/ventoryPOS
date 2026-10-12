@@ -305,6 +305,8 @@ export default function Locales({ locales, empresas }: Props) {
                             value={data.telefono}
                             onChange={e => setData('telefono', e.target.value)}
                             error={errors.telefono}
+                            placeholder="987654321 - 912345678"
+                            hint="Puedes poner más de un número, separados por «-»."
                         />
                     </div>
 
