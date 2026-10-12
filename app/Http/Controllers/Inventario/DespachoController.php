@@ -37,7 +37,8 @@ class DespachoController extends Controller
         $cuando  = in_array($request->input('cuando'), self::CUANDO, true) ? $request->input('cuando') : 'todos';
         $fecha   = $request->date('fecha')?->toDateString();
         $rutaId  = $request->integer('ruta_id') ?: null;
-        $usaEntregas = ConfigEntregas::de($user->empresa)['activo'];
+        $cfgEntregas = ConfigEntregas::de($user->empresa);
+        $usaEntregas = $cfgEntregas['activo'];
 
         $base = fn () => ClienteAnticipo::query()
             ->where('cliente_anticipos.empresa_id', $user->empresa_id)
@@ -78,6 +79,8 @@ class DespachoController extends Controller
             'buscar'      => $buscar,
             'filtros'     => ['cuando' => $fecha ? 'fecha' : $cuando, 'fecha' => $fecha, 'ruta_id' => $rutaId],
             'usaEntregas' => $usaEntregas,
+            'momento'     => $cfgEntregas['momento'],
+            'franjas'     => $cfgEntregas['franjas'],
             'conteos'     => $usaEntregas
                 ? collect(self::CUANDO)->mapWithKeys(fn ($c) => [$c => $this->filtrarCuando($base(), $c)->count()])
                 : null,

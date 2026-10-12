@@ -8,6 +8,7 @@ use App\Models\Cotizacion;
 use App\Models\Empresa;
 use App\Models\Turno;
 use App\Models\Venta;
+use App\Support\ConfigEntregas;
 use App\Support\NumeroEnLetras;
 use App\Support\PlantillaTicket;
 use Illuminate\Support\Carbon;
@@ -120,13 +121,16 @@ class TicketPrintService
         if (!$venta || !$venta->tipo_entrega) {
             return null;
         }
-        $venta->loadMissing('rutaEntrega');
+        $venta->loadMissing('rutaEntrega', 'empresa');
+        $cfg = ConfigEntregas::de($venta->empresa);
 
         return [
             'tipo'       => $venta->tipo_entrega,
             'ruta'       => $venta->rutaEntrega?->nombre,
             'zona'       => $venta->rutaEntrega?->zona,
-            'programada' => $venta->entrega_programada ? self::fechaHoraCorta($venta->entrega_programada) : null,
+            'programada' => $venta->entrega_programada
+                ? (ConfigEntregas::etiquetaProgramada($venta->entrega_programada, $cfg) ?? self::fechaHoraCorta($venta->entrega_programada))
+                : null,
         ];
     }
 

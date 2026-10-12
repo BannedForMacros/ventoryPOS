@@ -38,6 +38,7 @@ import type {
 } from '@/types';
 import { avisoError } from '@/lib/avisoError';
 import { estadoAgente } from '@/lib/ticketPrinter';
+import { franjaDe, type FranjaEntrega, type MomentoEntrega } from '@/lib/entregas';
 
 interface MetodoPagoConCuentas extends MetodoPago { cuentas?: Cuenta[]; }
 
@@ -47,6 +48,8 @@ interface EntregasPos {
     ruta_obligatoria:       boolean;
     fecha_obligatoria:      boolean;
     envio_sale_al_entregar: boolean;
+    momento:                MomentoEntrega;
+    franjas:                FranjaEntrega[];
     texto_recojo:           string;
     texto_envio:            string;
     rutas:                  { id: number; nombre: string; zona: string | null }[];
@@ -3726,6 +3729,62 @@ function ModalidadVenta({ esCredito, onCredito, entrega, onEntrega, credito, pen
 const comoFrase = (t: string) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
 
 /**
+ * Entrega por momento del día: el día y una franja (mañana, tarde, noche…, las
+ * que defina la empresa). Se registra como fecha y hora —la hora de la franja—,
+ * así Despachos sigue ordenándose igual.
+ */
+function MomentoDelDia({ franjas, obligatoria, programada, onProgramada, campo, estilo }: {
+    franjas: FranjaEntrega[];
+    obligatoria: boolean;
+    programada: string;
+    onProgramada: (v: string) => void;
+    campo: string;
+    estilo: React.CSSProperties;
+}) {
+    const [fecha, setFecha] = useState(programada.slice(0, 10));
+    const [hora, setHora]   = useState(programada ? (franjaDe(programada.slice(11, 16), franjas)?.hora ?? '') : '');
+
+    // Si el formulario cambia la entrega por fuera (venta nueva, edición), se sigue.
+    useEffect(() => {
+        if (programada) {
+            setFecha(programada.slice(0, 10));
+            setHora(franjaDe(programada.slice(11, 16), franjas)?.hora ?? '');
+        } else if (fecha && hora) {
+            setFecha('');
+            setHora('');
+        }
+    }, [programada]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Se avisa al formulario solo con el día y la franja completos.
+    const emitir = (f: string, h: string) => onProgramada(f && h ? `${f}T${h}` : '');
+
+    return (
+        <div className="space-y-1.5">
+            <span className="block text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                Día y momento de entrega{obligatoria ? '' : ' (opcional)'}
+            </span>
+            <input data-envio-fecha type="date" value={fecha} aria-label="Día de entrega" className={campo} style={estilo}
+                onChange={e => { setFecha(e.target.value); emitir(e.target.value, hora); }} />
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Momento del día">
+                {franjas.map(f => {
+                    const activo = hora === f.hora;
+                    return (
+                        <button key={f.hora} type="button" role="radio" aria-checked={activo}
+                            onClick={() => { setHora(f.hora); emitir(fecha, f.hora); }}
+                            className="flex-1 min-w-[5.5rem] rounded-lg px-3 py-1.5 text-sm font-semibold border transition-colors"
+                            style={activo
+                                ? { backgroundColor: 'var(--vp-navy)', borderColor: 'var(--vp-navy)', color: '#fff' }
+                                : { borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}>
+                            {f.nombre}
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+/**
  * Recojo en tienda o envío. En un envío se piden la ruta y la fecha y hora
  * programadas; la dirección y el teléfono se piden aquí solo si la empresa no
  * los pide ya en la franja de datos del cliente.
@@ -3769,12 +3828,17 @@ function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onPr
                                 </select>
                             </label>
                         )}
-                        <label className="block">
-                            <span className="block text-xs font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
-                                Fecha y hora de entrega{entregas.fecha_obligatoria ? '' : ' (opcional)'}
-                            </span>
-                            <input data-envio-fecha type="datetime-local" value={programada} onChange={e => onProgramada(e.target.value)} className={campo} style={estilo} />
-                        </label>
+                        {entregas.momento === 'franja' ? (
+                            <MomentoDelDia franjas={entregas.franjas} obligatoria={entregas.fecha_obligatoria}
+                                programada={programada} onProgramada={onProgramada} campo={campo} estilo={estilo} />
+                        ) : (
+                            <label className="block">
+                                <span className="block text-xs font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
+                                    Fecha y hora de entrega{entregas.fecha_obligatoria ? '' : ' (opcional)'}
+                                </span>
+                                <input data-envio-fecha type="datetime-local" value={programada} onChange={e => onProgramada(e.target.value)} className={campo} style={estilo} />
+                            </label>
+                        )}
                         {pedirDatosAqui && (
                             <>
                                 <label className="block">

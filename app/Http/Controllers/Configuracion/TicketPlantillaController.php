@@ -99,7 +99,8 @@ class TicketPlantillaController extends Controller
             'tipo'       => 'envio',
             'ruta'       => $ruta?->nombre ?? 'Ruta 1',
             'zona'       => $ruta ? $ruta->zona : 'Centro',
-            'programada' => TicketPrintService::fechaHoraCorta(now()->addDay()->setTime(9, 0)),
+            'programada' => ConfigEntregas::etiquetaProgramada($ejemploEntrega = now()->addDay()->setTime(14, 0), ConfigEntregas::de($empresa))
+                ?? TicketPrintService::fechaHoraCorta($ejemploEntrega),
         ];
 
         $muestras = [

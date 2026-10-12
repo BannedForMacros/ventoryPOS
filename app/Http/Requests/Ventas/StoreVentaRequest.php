@@ -560,7 +560,9 @@ class StoreVentaRequest extends FormRequest
         }
 
         if ($cfg['fecha_obligatoria'] && !$this->filled('entrega_programada')) {
-            $validator->errors()->add('entrega_programada', 'Indica la fecha y la hora programadas del envío.');
+            $validator->errors()->add('entrega_programada', $cfg['momento'] === \App\Support\ConfigEntregas::MOMENTO_FRANJA
+                ? 'Indica el día y el momento programados del envío.'
+                : 'Indica la fecha y la hora programadas del envío.');
         }
     }
 

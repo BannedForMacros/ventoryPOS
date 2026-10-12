@@ -41,6 +41,11 @@ class EntregaConfigController extends Controller
             'ruta_obligatoria'       => ['required', 'boolean'],
             'fecha_obligatoria'      => ['required', 'boolean'],
             'envio_sale_al_entregar' => ['required', 'boolean'],
+            'momento'                => ['nullable', Rule::in([ConfigEntregas::MOMENTO_HORA, ConfigEntregas::MOMENTO_FRANJA])],
+            'franjas'                => ['nullable', 'array', 'max:6'],
+            'franjas.*.nombre'       => ['nullable', 'string', 'max:20'],
+            'franjas.*.hora'         => ['nullable', 'date_format:H:i'],
+            'franjas.*.frase'        => ['nullable', 'string', 'max:30'],
             'textos'                 => ['nullable', 'array'],
             'textos.*'               => ['nullable', 'string', 'max:40'],
         ]);
@@ -53,6 +58,8 @@ class EntregaConfigController extends Controller
                 'ruta_obligatoria'       => $data['ruta_obligatoria'],
                 'fecha_obligatoria'      => $data['fecha_obligatoria'],
                 'envio_sale_al_entregar' => $data['envio_sale_al_entregar'],
+                'momento'                => $data['momento'] ?? ConfigEntregas::MOMENTO_HORA,
+                'franjas'                => ConfigEntregas::franjas($data['franjas'] ?? null),
                 // Se guardan completos; vacío = el texto por defecto.
                 'textos'                 => ConfigEntregas::textos((array) ($data['textos'] ?? [])),
             ],

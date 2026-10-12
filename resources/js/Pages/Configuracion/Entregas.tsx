@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ArrowDown, ArrowUp, BellRing, Check, ListChecks, MapPinned, Pencil, Plus, Trash2, Truck, Type, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, BellRing, CalendarClock, Check, ListChecks, MapPinned, Pencil, Plus, Trash2, Truck, Type, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Switch from '@/Components/UI/Switch';
@@ -9,6 +9,7 @@ import Modal from '@/Components/UI/Modal';
 import { plural } from '@/Components/Reportes/ReportUI';
 import type { PageProps } from '@/types';
 import { avisoError } from '@/lib/avisoError';
+import type { FranjaEntrega, MomentoEntrega } from '@/lib/entregas';
 
 interface Config {
     activo: boolean;
@@ -16,8 +17,12 @@ interface Config {
     ruta_obligatoria: boolean;
     fecha_obligatoria: boolean;
     envio_sale_al_entregar: boolean;
+    momento: MomentoEntrega;
+    franjas: FranjaEntrega[];
     textos: Record<string, string>;
 }
+const CAMPO = 'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2';
+const ESTILO_CAMPO: React.CSSProperties = { borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' };
 interface DefTexto { clave: string; nombre: string; defecto: string; max: number; }
 interface Ruta { id: number; nombre: string; zona: string | null; orden: number; activo: boolean; ventas_count: number; }
 
@@ -38,11 +43,19 @@ export default function Entregas({ config, catalogoTextos, rutas, puedeEditar }:
 
     const [form, setForm] = useState({ ...config, aviso: config.aviso_monto !== null, monto: config.aviso_monto !== null ? String(config.aviso_monto) : '500' });
     const [guardando, setGuardando] = useState(false);
+    const cambiarFranja = (i: number, cambio: Partial<FranjaEntrega>) =>
+        setForm(f => ({ ...f, franjas: f.franjas.map((fr, j) => (j === i ? { ...fr, ...cambio } : fr)) }));
+    const franjasValidas = form.momento !== 'franja' || (
+        form.franjas.every(f => f.nombre.trim() !== '' && /^\d{2}:\d{2}$/.test(f.hora))
+        && new Set(form.franjas.map(f => f.hora)).size === form.franjas.length
+    );
     const hayCambios = useMemo(() =>
         form.activo !== config.activo
         || form.ruta_obligatoria !== config.ruta_obligatoria
         || form.fecha_obligatoria !== config.fecha_obligatoria
         || form.envio_sale_al_entregar !== config.envio_sale_al_entregar
+        || form.momento !== config.momento
+        || JSON.stringify(form.franjas) !== JSON.stringify(config.franjas)
         || (form.aviso ? Number(form.monto) || 0 : null) !== config.aviso_monto
         || catalogoTextos.some(t => (form.textos[t.clave] ?? '').trim() !== (config.textos[t.clave] ?? '')),
     [form, config, catalogoTextos]);
@@ -55,6 +68,8 @@ export default function Entregas({ config, catalogoTextos, rutas, puedeEditar }:
             ruta_obligatoria: form.ruta_obligatoria,
             fecha_obligatoria: form.fecha_obligatoria,
             envio_sale_al_entregar: form.envio_sale_al_entregar,
+            momento: form.momento,
+            franjas: form.franjas,
             textos: form.textos,
         }, {
             preserveScroll: true,
@@ -75,7 +90,7 @@ export default function Entregas({ config, catalogoTextos, rutas, puedeEditar }:
                 {puedeEditar && (
                     <div className="flex items-center gap-3">
                         {hayCambios && <span className="text-sm font-semibold" style={{ color: 'var(--vp-amber-ink)' }}>Hay cambios sin guardar</span>}
-                        <Button onClick={guardar} loading={guardando} disabled={!hayCambios} startContent={<Check size={16} />}>Guardar</Button>
+                        <Button onClick={guardar} loading={guardando} disabled={!hayCambios || !franjasValidas} startContent={<Check size={16} />}>Guardar</Button>
                     </div>
                 )}
             </div>
@@ -114,6 +129,67 @@ export default function Entregas({ config, catalogoTextos, rutas, puedeEditar }:
                             La dirección de entrega siempre se exige. El teléfono, la dirección y la observación se piden en la venta si lo activas en{' '}
                             <Link href={route('configuracion.ticket.index')} className="font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>Ticket</Link>.
                         </p>
+                    </Tarjeta>
+
+                    <Tarjeta icono={<CalendarClock size={18} />} titulo="Cómo se programa la entrega" color="var(--vp-sky)" tinta="var(--vp-navy)">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Cómo se programa la entrega">
+                            {([
+                                ['hora', 'Fecha y hora exactas', 'La cajera elige el día y la hora. El ticket dice «Jue 08/10/2026 - 2:00 p. m.».'],
+                                ['franja', 'Día y momento del día', 'La cajera elige el día y un momento (mañana, tarde…). El ticket dice «Jueves por la tarde».'],
+                            ] as const).map(([valor, titulo, detalle]) => {
+                                const activo = form.momento === valor;
+                                return (
+                                    <button key={valor} type="button" role="radio" aria-checked={activo} disabled={!puedeEditar}
+                                        onClick={() => setForm(f => ({ ...f, momento: valor }))}
+                                        className="text-left rounded-xl p-3 border transition-colors disabled:cursor-default"
+                                        style={{
+                                            borderColor: activo ? 'var(--vp-navy)' : 'var(--color-border)',
+                                            backgroundColor: activo ? 'color-mix(in srgb, var(--vp-navy) 6%, var(--color-surface))' : 'var(--color-surface)',
+                                            boxShadow: activo ? 'inset 0 0 0 1px var(--vp-navy)' : undefined,
+                                        }}>
+                                        <span className="block text-sm font-bold" style={{ color: 'var(--color-text)' }}>{titulo}</span>
+                                        <span className="block text-[13px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{detalle}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {form.momento === 'franja' && (
+                            <div className="mt-4">
+                                <p className="text-sm font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Momentos del día</p>
+                                <p className="text-[13px] mb-2.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    La hora es la que se registra en la venta y con la que se ordena Despachos. «En el ticket» es cómo se lee.
+                                </p>
+                                <div className="space-y-2">
+                                    {form.franjas.map((fr, i) => (
+                                        <div key={i} className="grid grid-cols-[minmax(0,1fr)_5.75rem_minmax(0,1.3fr)_auto] gap-2 items-center">
+                                            <input type="text" maxLength={20} disabled={!puedeEditar} value={fr.nombre} placeholder="Nombre" aria-label="Nombre del momento"
+                                                onChange={e => cambiarFranja(i, { nombre: e.target.value })} className={CAMPO} style={ESTILO_CAMPO} />
+                                            <input type="time" disabled={!puedeEditar} value={fr.hora} aria-label="Hora con que se registra"
+                                                onChange={e => cambiarFranja(i, { hora: e.target.value })} className={CAMPO} style={ESTILO_CAMPO} />
+                                            <input type="text" maxLength={30} disabled={!puedeEditar} value={fr.frase} placeholder="En el ticket (ej.: por la tarde)" aria-label="Cómo sale en el ticket"
+                                                onChange={e => cambiarFranja(i, { frase: e.target.value })} className={CAMPO} style={ESTILO_CAMPO} />
+                                            {puedeEditar && (
+                                                <button type="button" aria-label={`Quitar ${fr.nombre || 'momento'}`} title="Quitar" disabled={form.franjas.length <= 2}
+                                                    onClick={() => setForm(f => ({ ...f, franjas: f.franjas.filter((_, j) => j !== i) }))}
+                                                    className="p-2 rounded-lg hover:opacity-70 disabled:opacity-25" style={{ color: 'var(--color-text-muted)' }}><Trash2 size={15} /></button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                {puedeEditar && form.franjas.length < 6 && (
+                                    <Button size="sm" variant="secondary" className="mt-2.5" startContent={<Plus size={15} />}
+                                        onClick={() => setForm(f => ({ ...f, franjas: [...f.franjas, { nombre: '', hora: '12:00', frase: '' }] }))}>
+                                        Agregar momento
+                                    </Button>
+                                )}
+                                {!franjasValidas && (
+                                    <p className="text-[13px] mt-2" style={{ color: 'var(--color-danger)' }}>
+                                        Cada momento necesita nombre y una hora distinta.
+                                    </p>
+                                )}
+                            </div>
+                        )}
                     </Tarjeta>
 
                     <Tarjeta icono={<BellRing size={18} />} titulo="Aviso para no olvidar el envío" color="var(--vp-amber)" tinta="var(--vp-amber-ink)">

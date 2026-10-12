@@ -2325,6 +2325,8 @@ class VentaController extends Controller
             'ruta_obligatoria'       => $cfg['ruta_obligatoria'],
             'fecha_obligatoria'      => $cfg['fecha_obligatoria'],
             'envio_sale_al_entregar' => $cfg['envio_sale_al_entregar'],
+            'momento'                => $cfg['momento'],
+            'franjas'                => $cfg['franjas'],
             'texto_recojo'           => $cfg['textos']['recojo'],
             'texto_envio'            => $cfg['textos']['envio'],
             'rutas'                  => \App\Models\RutaEntrega::deEmpresa($empresa->id)->activa()

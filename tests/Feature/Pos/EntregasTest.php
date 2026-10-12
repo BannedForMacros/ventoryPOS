@@ -300,3 +300,44 @@ it('Configuración → Entregas guarda la configuración y las rutas', function 
     $ajena = RutaEntrega::create(['empresa_id' => TestEnv::crear()->empresa->id, 'nombre' => 'Ajena']);
     $this->put(route('configuracion.entregas.rutas.update', $ajena->id), ['nombre' => 'Mía'])->assertForbidden();
 });
+
+it('una empresa puede programar el envío por momento del día y el ticket lo dice así', function () {
+    enActivar($this);
+    $this->env->empresa->update(['ticket_plantilla' => ['plantilla' => 'detallada']]);
+    $this->put(route('configuracion.entregas.update'), [
+        'activo' => true, 'aviso_monto' => null, 'ruta_obligatoria' => false, 'fecha_obligatoria' => true, 'envio_sale_al_entregar' => true,
+        'momento' => 'franja',
+        'franjas' => [
+            ['nombre' => 'Tarde', 'hora' => '14:00', 'frase' => 'por la tarde'],
+            ['nombre' => 'Mañana', 'hora' => '08:00', 'frase' => ''],
+            ['nombre' => 'Repetida', 'hora' => '14:00', 'frase' => 'x'],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    // Quedan ordenadas por hora, sin la repetida; sin frase usa el nombre
+    $pos = $this->get(route('pos.index'))->original->getData()['page']['props']['entregas'];
+    expect($pos['momento'])->toBe('franja')
+        ->and($pos['franjas'])->toBe([
+            ['nombre' => 'Mañana', 'hora' => '08:00', 'frase' => 'Mañana'],
+            ['nombre' => 'Tarde', 'hora' => '14:00', 'frase' => 'por la tarde'],
+        ]);
+
+    // Un envío sin día y momento se rechaza con el mensaje de la franja
+    $this->post(route('ventas.store'), enVenta($this, ['tipo_entrega' => 'envio', 'cliente_direccion' => 'Obra']))
+        ->assertSessionHasErrors(['entrega_programada' => 'Indica el día y el momento programados del envío.']);
+
+    $jueves = now()->next('Thursday')->setTime(14, 0);
+    $this->post(route('ventas.store'), enVenta($this, [
+        'tipo_entrega' => 'envio', 'cliente_direccion' => 'Obra', 'entrega_programada' => $jueves->format('Y-m-d\TH:i'),
+    ]))->assertSessionHasNoErrors();
+
+    $bloques = app(TicketPrintService::class)->payloadDeVenta(enUltimaVenta($this))['bloques'];
+    expect(json_encode($bloques, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES))->toContain('Jueves por la tarde')->not->toContain($jueves->format('d/m/Y'));
+
+    // Con hora exacta (lo normal) el ticket sigue con fecha y hora
+    $this->put(route('configuracion.entregas.update'), [
+        'activo' => true, 'aviso_monto' => null, 'ruta_obligatoria' => false, 'fecha_obligatoria' => true, 'envio_sale_al_entregar' => true,
+    ])->assertSessionHasNoErrors();
+    $bloques = app(TicketPrintService::class)->payloadDeVenta(enUltimaVenta($this)->fresh())['bloques'];
+    expect(json_encode($bloques, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES))->toContain(TicketPrintService::fechaHoraCorta($jueves));
+});

@@ -15,6 +15,7 @@ import { hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 import { useTiempoReal } from '@/lib/useTiempoReal';
 import { avisoError } from '@/lib/avisoError';
+import { franjaDe, type FranjaEntrega, type MomentoEntrega } from '@/lib/entregas';
 
 interface ClienteLite {
     id: number;
@@ -77,6 +78,8 @@ interface Props extends PageProps {
     buscar?: string;
     filtros: { cuando: Cuando; fecha: string | null; ruta_id: number | null };
     usaEntregas: boolean;
+    momento: MomentoEntrega;
+    franjas: FranjaEntrega[];
     conteos: Record<Exclude<Cuando, 'fecha'>, number> | null;
     rutas: { id: number; nombre: string; zona: string | null }[];
 }
@@ -96,7 +99,7 @@ const dia = (iso: string) => new Date(iso).toLocaleDateString('es-PE', { weekday
 const esHoy = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();
 const atrasado = (iso: string) => new Date(iso).getTime() < new Date().setHours(0, 0, 0, 0);
 
-export default function Despachos({ pendientes, buscar = '', filtros, usaEntregas, conteos, rutas }: Props) {
+export default function Despachos({ pendientes, buscar = '', filtros, usaEntregas, momento, franjas, conteos, rutas }: Props) {
     const { flash } = usePage<Props>().props;
 
     // Tiempo real: un pedido nuevo o una entrega hecha en otra PC aparece sola.
@@ -264,7 +267,7 @@ export default function Despachos({ pendientes, buscar = '', filtros, usaEntrega
                 </section>
             ) : (
                 <ul className="grid grid-cols-1 2xl:grid-cols-2 gap-3">
-                    {pendientes.data.map(p => <Tarjeta key={p.id} p={p} usaEntregas={usaEntregas} onDespachar={() => abrirDespacho(p)} />)}
+                    {pendientes.data.map(p => <Tarjeta key={p.id} p={p} usaEntregas={usaEntregas} porFranja={momento === 'franja'} franjas={franjas} onDespachar={() => abrirDespacho(p)} />)}
                 </ul>
             )}
 
@@ -352,7 +355,7 @@ export default function Despachos({ pendientes, buscar = '', filtros, usaEntrega
     );
 }
 
-function Tarjeta({ p, usaEntregas, onDespachar }: { p: Pendiente; usaEntregas: boolean; onDespachar: () => void }) {
+function Tarjeta({ p, usaEntregas, porFranja, franjas, onDespachar }: { p: Pendiente; usaEntregas: boolean; porFranja: boolean; franjas: FranjaEntrega[]; onDespachar: () => void }) {
     const v = p.venta;
     const prog = v?.entrega_programada ?? null;
     const envio = v?.tipo_entrega === 'envio';
@@ -371,7 +374,7 @@ function Tarjeta({ p, usaEntregas, onDespachar }: { p: Pendiente; usaEntregas: b
                     style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 4%, var(--color-surface))', borderRight: '1px solid var(--color-border)' }}>
                     {prog ? (
                         <>
-                            <span className="font-display text-xl font-extrabold tabular-nums leading-tight" style={{ color: tarde ? 'var(--vp-coral-ink)' : 'var(--vp-navy)' }}>{hora(prog)}</span>
+                            <span className="font-display text-xl font-extrabold tabular-nums leading-tight" style={{ color: tarde ? 'var(--vp-coral-ink)' : 'var(--vp-navy)' }}>{porFranja ? (franjaDe(new Date(prog).toTimeString().slice(0, 5), franjas)?.nombre ?? '') : hora(prog)}</span>
                             <span className="text-[13px] font-semibold" style={{ color: tarde ? 'var(--vp-coral-ink)' : 'var(--color-text-muted)' }}>
                                 {esHoy(prog) ? 'hoy' : dia(prog)}
                             </span>
