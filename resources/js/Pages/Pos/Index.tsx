@@ -1841,11 +1841,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         nuevaLineaPrecioKey,
         onAutoFocusPrecio:     () => setNuevaLineaPrecioKey(null),
         pulsos,
-        // Resumen de las opciones de la venta (pie del carrito) y si deben verse
-        // abiertas: un envío tiene datos que llenar (ruta, fecha, dirección).
         totalCuaderno,
-        resumenEntrega:        entregas ? comoFrase(tipoEntrega === 'envio' ? entregas.texto_envio : entregas.texto_recojo) : null,
-        forzarOpciones:        esEnvio,
         // Símbolo de la moneda de la venta (carrito, pago y total).
         simbolo:               sim,
     };
@@ -3042,10 +3038,6 @@ interface CarritoPanelProps {
     slotComprobante?: React.ReactNode;
     // Línea recién agregada → se ilumina (ver CarritoItem).
     pulsos: Record<string, number>;
-    // "Recojo en tienda" / "Puesto en obra" (null si la empresa no usa entregas).
-    resumenEntrega: string | null;
-    // Las opciones se muestran abiertas sí o sí (envío con datos por llenar).
-    forzarOpciones: boolean;
     simbolo: string;
     // Total anotado en el cuaderno de la venta cargada por el visor.
     totalCuaderno: number | null;
@@ -3066,23 +3058,13 @@ function CarritoPanel({
     usaDespachoAlmacen, envioPendiente, envioSaleAlEntregar, slotEntrega,
     nuevaLineaPrecioKey, onAutoFocusPrecio,
     anticipoSeleccionado, montoAnticipoUsado,
-    slotComprobante, pulsos, resumenEntrega, forzarOpciones, simbolo, totalCuaderno,
+    slotComprobante, pulsos, simbolo, totalCuaderno,
 }: CarritoPanelProps) {
-    // Opciones de la venta (recojo/envío, crédito, por entregar, despacho): casi
-    // siempre quedan en su valor normal, así que van RESUMIDAS en una línea del
-    // pie con "Cambiar". Se abren al pedirlo o si hay datos que llenar.
-    const [verOpciones, setVerOpciones] = useState(false);
-    const opcionesRef = useRef<HTMLDivElement | null>(null);
+    // Opciones de la venta (recojo/envío, crédito, por entregar, despacho):
+    // siempre a la vista, ya marcadas en su valor normal. Escondidas tras un
+    // "Cambiar" costaban un clic de más justo cuando la cajera las necesita.
     const hayModalidad = permitirCredito || permitirPendiente || usaDespachoAlmacen || envioSaleAlEntregar;
     const hayOpciones  = hayModalidad || !!slotEntrega;
-    const mostrarOpciones = verOpciones || forzarOpciones;
-    useEffect(() => {
-        if (verOpciones) opcionesRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }, [verOpciones]);
-    const especiales = [
-        esCredito && MODALIDADES.credito,
-        entrega !== 'completa' && MODALIDADES[entrega],
-    ].filter(Boolean) as (typeof MODALIDADES)[keyof typeof MODALIDADES][];
 
     const hayInactivos = inactivosCount > 0;
 
@@ -3232,9 +3214,9 @@ function CarritoPanel({
                             onChange={onSetDescuento}
                         />
 
-                        {/* Opciones de la venta: se abren desde "Cambiar" en el pie. */}
-                        {hayOpciones && mostrarOpciones && (
-                            <div ref={opcionesRef} className="flex flex-col gap-3 scroll-mt-2">
+                        {/* Opciones de la venta: siempre a la vista. */}
+                        {hayOpciones && (
+                            <div className="flex flex-col gap-3">
                                 {slotEntrega}
                                 {hayModalidad && (
                                     <ModalidadVenta
@@ -3247,13 +3229,6 @@ function CarritoPanel({
                                         despacho={usaDespachoAlmacen}
                                         envio={envioSaleAlEntregar}
                                     />
-                                )}
-                                {verOpciones && !forzarOpciones && (
-                                    <button type="button" onClick={() => setVerOpciones(false)}
-                                        className="self-end text-[12px] font-semibold px-2 py-1 rounded-md hover:bg-black/5"
-                                        style={{ color: 'var(--color-primary)' }}>
-                                        Listo
-                                    </button>
                                 )}
                             </div>
                         )}
@@ -3433,32 +3408,6 @@ function CarritoPanel({
                 {/* Opciones y pago con su propio scroll: con un pago dividido (cuentas,
                     n.º de operación) crece, pero el TOTAL y Cobrar nunca salen de la vista. */}
                 <div className="flex flex-col gap-2 bajo:gap-1.5 overflow-y-auto max-h-[40vh] bajo:max-h-[30vh] -mx-1 px-1 empty:hidden">
-                {/* Opciones de la venta, resumidas: lo normal en gris, lo especial
-                    (crédito, por entregar, despacho) con su color. */}
-                {carrito.length > 0 && hayOpciones && (
-                    <div className="flex items-center gap-2 px-1 min-h-[28px]">
-                        <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5 text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
-                            {resumenEntrega && <span className="font-medium">{resumenEntrega}</span>}
-                            {especiales.length === 0 ? (
-                                <span>{resumenEntrega ? '· ' : ''}Contado, se lleva todo</span>
-                            ) : especiales.map(m => (
-                                <span key={m.label} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold"
-                                    style={{ backgroundColor: m.fondo, color: m.texto }}>
-                                    <m.Icono size={12} /> {m.label}
-                                </span>
-                            ))}
-                        </div>
-                        {!forzarOpciones && (
-                            <button type="button" onClick={() => setVerOpciones(v => !v)} aria-expanded={verOpciones}
-                                className="flex items-center gap-0.5 flex-shrink-0 text-[12px] font-semibold px-2 py-1 rounded-md hover:bg-black/5"
-                                style={{ color: 'var(--color-primary)' }}>
-                                {verOpciones ? 'Ocultar' : 'Cambiar'}
-                                <ChevronDown size={14} className={`transition-transform ${verOpciones ? 'rotate-180' : ''}`} />
-                            </button>
-                        )}
-                    </div>
-                )}
-
                 {/* Cómo paga: SIEMPRE a la vista, pegado al total. Antes quedaba
                     al fondo del scroll y con 3 productos ya no se veía. */}
                 {carrito.length > 0 && (
