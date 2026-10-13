@@ -194,6 +194,7 @@ export default function ModalConfirmacionVenta({
                             >
                                 <div className="flex-1 min-w-0">
                                     <span className="font-medium">{item.producto_nombre}</span>
+                                    {item.descripcion?.trim() && <span style={{ color: 'var(--color-text-muted)' }}> · {item.descripcion.trim()}</span>}
                                     <span className="mx-1.5" style={{ color: 'var(--color-text-muted)' }}>×</span>
                                     <span className="font-bold">{item.cantidad}</span>
                                     <span className="ml-1" style={{ color: 'var(--color-text-muted)' }}>({item.unidad_nombre})</span>

@@ -276,6 +276,7 @@ class VentaService
                 'producto_unidad_id'   => $unidad->id,
                 'producto_nombre'      => $producto->nombre,
                 'unidad_nombre'        => $unidad->unidadMedida->nombre ?? '',
+                'descripcion'          => self::texto($itemData['descripcion'] ?? null),
                 'cantidad'             => $cantidad,
                 'factor_conversion'    => $unidad->factor_conversion,
                 'cantidad_base'        => $cantidadBase,

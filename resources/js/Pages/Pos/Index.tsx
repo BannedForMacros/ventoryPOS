@@ -106,6 +106,7 @@ interface VentaEnEdicionItem {
     producto_unidad_id:    number;
     producto_nombre:       string;
     unidad_nombre:         string;
+    descripcion?:          string | null;
     cantidad:              number;
     cantidad_pendiente?:   number;
     // Ya entregado del pendiente: se conserva al editar (piso de la línea).
@@ -483,6 +484,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
             producto_unidad_id:    it.producto_unidad_id,
             producto_nombre:       it.producto_nombre,
             unidad_nombre:         it.unidad_nombre,
+            descripcion:           it.descripcion ?? '',
             precio_unitario:       it.precio_unitario,
             precio_original:       uni ? r2(parseFloat(uni.precio_venta) / tcEdicion) : it.precio_unitario,
             costo_minimo:          prod && uni ? r2(costoMinimoDe(prod, uni) / tcEdicion) : 0,
@@ -1372,6 +1374,10 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         setMoneda(nueva);
     }
 
+    function cambiarDescripcion(key: string, descripcion: string) {
+        setCarrito(prev => prev.map(i => (i.key === key ? { ...i, descripcion } : i)));
+    }
+
     function eliminarItem(key: string) {
         setCarrito(prev => prev.filter(i => i.key !== key));
     }
@@ -1657,6 +1663,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 descuento_item:        i.descuento_item,
                 descuento_concepto_id: i.descuento_concepto_id,
                 incluye_igv:           i.incluye_igv,
+                descripcion:           i.descripcion?.trim() || null,
             })),
             // Un pago en S/ 0 no es dinero: pasa cuando el anticipo cubre todo y
             // el efectivo automático quedó en cero. El servidor exige 0.01.
@@ -2655,6 +2662,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                         onCambiarPrecio={cambiarPrecio}
                         onAplicarDescuentoItem={aplicarDescuentoItem}
                         onEliminarItem={eliminarItem}
+                        conDescripcion={permiteDuplicarItems}
+                        onCambiarDescripcion={cambiarDescripcion}
                         onLimpiarCarrito={limpiarCarrito}
                         onSetDescuento={(d, cid) => { setDescuentoTotal(d); setDescuentoConceptoId(cid); }}
                         onSetPagos={setPagos}
@@ -2733,6 +2742,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                                 onCambiarPrecio={cambiarPrecio}
                                 onAplicarDescuentoItem={aplicarDescuentoItem}
                                 onEliminarItem={eliminarItem}
+                                conDescripcion={permiteDuplicarItems}
+                                onCambiarDescripcion={cambiarDescripcion}
                                 onLimpiarCarrito={limpiarCarrito}
                                 onSetDescuento={(d, cid) => { setDescuentoTotal(d); setDescuentoConceptoId(cid); }}
                                 onSetPagos={setPagos}
@@ -2993,6 +3004,9 @@ interface CarritoPanelProps {
     onCambiarPrecio: (key: string, precio: number) => void;
     onAplicarDescuentoItem: (key: string, valor: number, modo: DescModo, tipo: DescTipo, cid: number | null) => void;
     onEliminarItem: (key: string) => void;
+    // Mismo producto en varias líneas: cada una admite una descripción.
+    conDescripcion: boolean;
+    onCambiarDescripcion: (key: string, descripcion: string) => void;
     onLimpiarCarrito: () => void;
     onSetDescuento: (d: number, cid: number | null) => void;
     onSetPagos: (pagos: LineaPago[]) => void;
@@ -3049,6 +3063,7 @@ function CarritoPanel({
     descuentoTotal, descuentoConceptoId,
     subtotal, igv, total, baseGravada, baseExonerada, tasaIgv, inactivosCount,
     onCambiarCantidad, onEstablecerCantidad, onCambiarPrecio, onAplicarDescuentoItem, onEliminarItem,
+    conDescripcion, onCambiarDescripcion,
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar, problemaCobro,
     puedeVender, razonNoVender, bloqueoComprobante,
     esCredito, fechaVencimiento, onSetEsCredito, onSetFechaVencimiento,
@@ -3194,6 +3209,8 @@ function CarritoPanel({
                                     onPrecio={onCambiarPrecio}
                                     onDescuento={onAplicarDescuentoItem}
                                     onEliminar={onEliminarItem}
+                                    conDescripcion={conDescripcion}
+                                    onDescripcion={onCambiarDescripcion}
                                     pulso={pulsos[item.key]}
                                     simbolo={simbolo}
                                 />

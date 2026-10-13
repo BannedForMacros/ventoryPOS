@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Trash2, Minus, Plus, Percent, X, AlertTriangle, History } from 'lucide-react';
+import { Trash2, Minus, Plus, Percent, X, AlertTriangle, History, StickyNote } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
 import Select from '@/Components/UI/Select';
 
@@ -25,6 +25,8 @@ export interface LineaCarrito {
     producto_unidad_id:   number;
     producto_nombre:      string;
     unidad_nombre:        string;
+    /** Nota de la cajera para distinguir líneas del mismo producto ("roja", "talla M"). Sale en el ticket interno. */
+    descripcion?:         string;
     precio_unitario:      number;
     precio_original:      number;
     // Piso del precio editable: costo de la presentación (costo de la unidad,
@@ -72,13 +74,21 @@ interface Props {
     onPrecio:           (key: string, precio: number) => void;
     onDescuento:        (key: string, valor: number, modo: DescModo, tipo: DescTipo, conceptoId: number | null) => void;
     onEliminar:         (key: string) => void;
+    /** La empresa vende el mismo producto en varias líneas: cada una admite una descripción. */
+    conDescripcion?:    boolean;
+    onDescripcion?:     (key: string, descripcion: string) => void;
     /** Cambia cada vez que se agrega (o suma) este producto: la fila se ilumina y se hace visible. */
     pulso?:             number;
     /** Símbolo de la moneda de la venta ("S/" o "US$"). */
     simbolo?:           string;
 }
 
-export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar, pulso, simbolo = 'S/' }: Props) {
+export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar, conDescripcion = false, onDescripcion, pulso, simbolo = 'S/' }: Props) {
+    // Descripción de la línea: el campo se ve si ya tiene texto o si la cajera
+    // lo abre con el botón de nota. Vacía, no ocupa lugar en el carrito.
+    const [abrirDescripcion, setAbrirDescripcion] = useState(false);
+    const verDescripcion = conDescripcion && (abrirDescripcion || !!item.descripcion);
+
     // Recién agregado: la fila se ilumina un instante y queda a la vista. Así la
     // cajera ve QUÉ entró sin un aviso flotante que tape la barra superior.
     const filaRef = useRef<HTMLLIElement | null>(null);
@@ -343,6 +353,28 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                 </span>
             </div>
 
+            {/* Descripción opcional: distingue esta línea de otras del mismo producto. */}
+            {verDescripcion && (
+                <input
+                    type="text"
+                    maxLength={120}
+                    value={item.descripcion ?? ''}
+                    autoFocus={abrirDescripcion && !item.descripcion}
+                    // Abierto mientras escribe: borrarla toda no debe cerrar el campo en sus manos.
+                    onChange={e => { setAbrirDescripcion(true); onDescripcion?.(item.key, e.target.value); }}
+                    onBlur={() => { if (!item.descripcion?.trim()) { onDescripcion?.(item.key, ''); setAbrirDescripcion(false); } }}
+                    onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                    placeholder="Descripción (opcional): color, talla, modelo…"
+                    aria-label={`Descripción de ${item.producto_nombre}`}
+                    className="mt-1 w-full h-7 px-2 rounded-md text-[12px] focus:outline-none"
+                    style={{
+                        color: 'var(--color-text)',
+                        backgroundColor: 'var(--color-surface)',
+                        border: '1px dashed var(--color-border)',
+                    }}
+                />
+            )}
+
             {/* Fila 2: cantidad × precio, stock y acciones */}
             <div className="flex items-center gap-2 mt-1.5 bajo:mt-1">
                 <div
@@ -506,6 +538,19 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                                 </>
                             )}
                         </div>
+                    )}
+                    {conDescripcion && !item.descripcion && (
+                        <button
+                            type="button"
+                            onClick={() => setAbrirDescripcion(v => !v)}
+                            aria-pressed={abrirDescripcion}
+                            aria-label={`Agregar descripción a ${item.producto_nombre}`}
+                            title="Agregar descripción (sale en el ticket)"
+                            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-black/5"
+                            style={{ color: abrirDescripcion ? 'var(--color-primary)' : 'var(--color-text-muted)' }}
+                        >
+                            <StickyNote size={15} />
+                        </button>
                     )}
                     <button
                         onClick={() => showDescuento ? quitarDescuento() : setShowDescuento(true)}

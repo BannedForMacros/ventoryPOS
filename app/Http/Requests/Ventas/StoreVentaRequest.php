@@ -232,6 +232,8 @@ class StoreVentaRequest extends FormRequest
             'items.*.cantidad_pendiente'      => ['nullable', 'numeric', 'min:0'],
             'items.*.precio_unitario'         => ['required', 'numeric', 'min:0'],
             'items.*.descuento_item'          => ['nullable', 'numeric', 'min:0'],
+            // Nota de la cajera para distinguir líneas del mismo producto.
+            'items.*.descripcion'             => ['nullable', 'string', 'max:120'],
             'items.*.descuento_concepto_id'   => [
                 'nullable', 'integer',
                 Rule::exists('descuento_conceptos', 'id')

@@ -534,7 +534,9 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                                             <tr key={item.id} style={{ borderTop: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
                                                 <td className="px-4 py-3">
                                                     <p className="font-semibold" style={{ color: 'var(--color-text)' }}>{item.producto_nombre}</p>
-                                                    <p className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>{item.unidad_nombre}</p>
+                                                    <p className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
+                                                        {item.unidad_nombre}{item.descripcion && <> · <span style={{ color: 'var(--color-text)' }}>{item.descripcion}</span></>}
+                                                    </p>
                                                 </td>
                                                 <td className="px-3 py-3 text-right tabular-nums font-semibold" style={{ color: 'var(--color-text)' }}>{fmtCant(num(item.cantidad))}</td>
                                                 <td className="px-3 py-3 text-right tabular-nums" style={{ color: 'var(--color-text)' }}>{fmtS(num(item.precio_unitario))}</td>
@@ -571,6 +573,7 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                                             <p className="text-sm font-semibold min-w-0" style={{ color: 'var(--color-text)' }}>{item.producto_nombre}</p>
                                             <span className="text-sm font-bold tabular-nums whitespace-nowrap" style={{ color: 'var(--color-text)' }}>{fmtS(num(item.subtotal))}</span>
                                         </div>
+                                        {item.descripcion && <p className="text-[13px]" style={{ color: 'var(--color-text)' }}>{item.descripcion}</p>}
                                         <p className="text-[13px] mt-0.5 tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
                                             {fmtCant(num(item.cantidad))} {item.unidad_nombre} a {fmtS(num(item.precio_unitario))}
                                             {num(item.descuento_item) > 0 && <span style={{ color: 'var(--vp-coral-ink)' }}>, desc. {fmtS(num(item.descuento_item))} c/u</span>}

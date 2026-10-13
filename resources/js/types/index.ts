@@ -397,6 +397,8 @@ export interface VentaItem extends Record<string, unknown> {
     producto_unidad_id:    number;
     producto_nombre:       string;
     unidad_nombre:         string;
+    /** Nota de la cajera que distingue líneas del mismo producto. */
+    descripcion?:          string | null;
     cantidad:              string;
     factor_conversion:     string;
     cantidad_base:         string;

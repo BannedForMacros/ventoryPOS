@@ -441,6 +441,7 @@ class VentaController extends Controller
                         'producto_unidad_id'    => $it->producto_unidad_id,
                         'producto_nombre'       => $it->producto_nombre,
                         'unidad_nombre'         => $it->unidad_nombre,
+                        'descripcion'           => $it->descripcion,
                         'cantidad'              => (float) $it->cantidad,
                         'cantidad_pendiente'    => (float) ($pendPorItem[$it->id] ?? 0),
                         'entregado'             => (float) ($entregadoPorItem[$it->id] ?? 0),

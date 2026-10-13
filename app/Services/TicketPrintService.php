@@ -277,7 +277,12 @@ class TicketPrintService
 
             'items' => $venta->items->map(fn ($item) => [
                 'cant'    => (float) $item->cantidad,
-                'desc'    => $item->producto_nombre,
+                // La descripción de la cajera distingue líneas del mismo producto
+                // en el ticket interno; el comprobante electrónico lleva solo el
+                // nombre, igual que lo declarado a SUNAT.
+                'desc'    => !$cpe && $item->descripcion
+                    ? $item->producto_nombre . ' - ' . $item->descripcion
+                    : $item->producto_nombre,
                 'precio'  => (float) $item->precio_unitario,
                 // subtotal del item = (precio - descuento_item) * cantidad
                 'importe' => (float) $item->subtotal,
