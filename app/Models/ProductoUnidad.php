@@ -40,7 +40,7 @@ class ProductoUnidad extends Model
             'es_base'           => 'boolean',
             'factor_conversion' => 'decimal:4',
             'precio_venta'      => 'decimal:2',
-            'precio_costo'      => 'decimal:2',
+            'precio_costo'      => 'decimal:4',
             'activo'            => 'boolean',
         ];
     }

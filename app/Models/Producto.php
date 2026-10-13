@@ -36,7 +36,7 @@ class Producto extends Model
     {
         return [
             'precio_venta'   => 'decimal:2',
-            'precio_costo'   => 'decimal:2',
+            'precio_costo'   => 'decimal:4',
             'activo'         => 'boolean',
             'incluye_igv'    => 'boolean',
             'controla_stock' => 'boolean',
