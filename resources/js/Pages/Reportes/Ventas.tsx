@@ -3,7 +3,7 @@ import { router, Link } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import {
     ShoppingCart, Wallet, Package, UserRound, ChevronDown, Search, X,
-    Clock3, Receipt, FileText, Scale, Users,
+    Clock3, Receipt, FileText, Scale, Users, ListOrdered,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { CHART_COLORS } from '@/Components/UI/Charts';
@@ -152,13 +152,20 @@ export default function ReportesVentas({
         <AppLayout title="Reporte de ventas">
             <EncabezadoReporte titulo="Reporte de ventas" fechaDesde={filters.fecha_desde} fechaHasta={filters.fecha_hasta}
                 filtrar={filtrar} avanzados={filtrosAvanzados} onLimpiar={limpiar}
-                acciones={
+                acciones={<>
                     <a href={route('reportes.ventas.pdf', pdfParams)} target="_blank" rel="noopener"
                         title="Resumen para el dueño: ventas, utilidad, cobros, horarios, productos, clientes y vendedores"
                         className="inline-flex items-center gap-2 text-sm font-semibold px-3.5 py-2 rounded-xl text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                         style={{ backgroundColor: 'var(--vp-navy)', outlineColor: 'var(--color-primary)' }}>
                         <FileText size={16} /> PDF para el dueño
                     </a>
+                    <a href={route('reportes.ventas.pdf-items', pdfParams)} target="_blank" rel="noopener"
+                        title="Para mandar al cliente: resumen por producto y cada ítem vendido, día por día"
+                        className="inline-flex items-center gap-2 text-sm font-semibold px-3.5 py-2 rounded-xl border transition-colors hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        style={{ borderColor: 'var(--vp-navy)', color: 'var(--vp-navy)', outlineColor: 'var(--color-primary)' }}>
+                        <ListOrdered size={16} /> PDF ítem por ítem
+                    </a>
+                </>
                 }>
                 <FieldSelect label="Estado" value={filters.estado ?? ''}
                     onChange={v => filtrar({ estado: v || undefined })}

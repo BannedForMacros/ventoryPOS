@@ -240,6 +240,27 @@ class ReporteVentaController extends Controller
         return $pdf->stream("Reporte de ventas {$desde} al {$hasta}.pdf");
     }
 
+    /**
+     * PDF ítem por ítem para mandar al cliente: resumen por producto y detalle
+     * de cada línea vendida por día. Mismos filtros que el PDF del dueño.
+     */
+    public function pdfItems(Request $request, \App\Services\ReporteVentasItemsService $reporte)
+    {
+        $user  = $request->user();
+        $desde = $request->fecha_desde ?: now()->startOfMonth()->toDateString();
+        $hasta = $request->fecha_hasta ?: now()->toDateString();
+        if ($hasta < $desde) [$desde, $hasta] = [$hasta, $desde];
+
+        $request->merge(['estado' => null]);
+        $datos = $reporte->armar($user->empresa, $desde, $hasta, $this->consulta($request),
+            $this->filtrosLegibles($request), ! $request->boolean('solo_resumen'));
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.reporte-ventas-items', $datos)->setPaper('a4')
+            ->setOption('enable_font_subsetting', true);
+
+        return $pdf->stream("Ventas item por item {$desde} al {$hasta}.pdf");
+    }
+
     /** fn(desde, hasta): ventas de la empresa con los filtros de la pantalla (sin buscador). */
     private function consulta(Request $request): \Closure
     {
