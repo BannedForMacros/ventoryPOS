@@ -88,14 +88,14 @@ export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, loc
         setModalGasto(true);
     }
 
-    // Editar/eliminar/reactivar (igual que valida el backend): nadie toca un
-    // gasto de un turno ya cerrado (se reabre el turno); el admin, cualquier
-    // otro; el no-admin solo los de SU turno abierto.
+    // Editar/eliminar/reactivar (igual que valida el backend): el admin, cualquier
+    // gasto, aunque su turno esté cerrado (el cuadre se recalcula al guardar; si
+    // el turno está consolidado o se cerró entregando el efectivo, el backend
+    // pide reabrirlo); el no-admin solo los de SU turno abierto.
     const puedeModificar = (g: Gasto) => {
         const turno = g.turno as any;
-        if (g.turno_id !== null && turno?.estado !== 'abierto') return false;
         if (esAdmin) return true;
-        return g.turno_id !== null && turno?.user_id === auth?.user?.id;
+        return g.turno_id !== null && turno?.estado === 'abierto' && turno?.user_id === auth?.user?.id;
     };
 
     const puedeNuevoTurno   = !!turno_activo;
