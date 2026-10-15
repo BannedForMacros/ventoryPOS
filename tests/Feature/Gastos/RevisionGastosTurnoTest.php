@@ -161,3 +161,41 @@ it('DIN-4 un turno ya consolidado no se recuadra solo: pide reabrir', function (
     $this->put(route('gastos.update', $gasto), rgDatos($this, 20))->assertSessionHasErrors();
     expect((float) $gasto->fresh()->monto)->toBe(200.0);
 });
+
+it('el admin cambia SOLO el comentario de un gasto de turno consolidado sin reabrirlo y sin mover la caja', function () {
+    [$turno, $gasto] = rgTurnoCerradoConGastoMalo($this);
+    \App\Models\TurnoConsolidacion::create([
+        'turno_id' => $turno->id, 'empresa_id' => $turno->empresa_id, 'user_id' => $this->env->admin->id,
+        'fecha' => now()->toDateString(), 'efectivo_declarado' => 80, 'efectivo_esperado' => -100,
+        'caja_chica' => 0, 'efectivo_contado' => 80,
+    ]);
+    $antes = [
+        'diferencia'  => (float) $turno->fresh()->diferencia,
+        'movimientos' => \App\Models\CuentaMovimiento::where('empresa_id', $this->env->empresa->id)->count(),
+    ];
+
+    $this->actingAs($this->env->admin);
+    $this->put(route('gastos.update', $gasto), rgDatos($this, 200) + ['comentario' => 'Pasajes a Chiclayo'])
+        ->assertSessionHasNoErrors();
+
+    $gasto->refresh();
+    expect($gasto->comentario)->toBe('Pasajes a Chiclayo');
+    expect((float) $gasto->monto)->toBe(200.0);
+    expect((float) $turno->fresh()->diferencia)->toBe($antes['diferencia']);
+    expect(\App\Models\CuentaMovimiento::where('empresa_id', $this->env->empresa->id)->count())->toBe($antes['movimientos']);
+
+    // Si además cambia el monto, sigue pidiendo reabrir.
+    $this->put(route('gastos.update', $gasto), rgDatos($this, 20) + ['comentario' => 'Otro'])->assertSessionHasErrors();
+    expect($gasto->fresh()->comentario)->toBe('Pasajes a Chiclayo');
+});
+
+it('una cajera no cambia el comentario de un gasto de su turno cerrado', function () {
+    $ana = rgCajera($this, 'Ana');
+    $turno = $this->env->abrirTurno($ana);
+    $gasto = rgGasto($this, $ana, $turno->id);
+    $turno->update(['estado' => 'cerrado', 'fecha_cierre' => now()]);
+
+    $this->actingAs($ana);
+    $this->put(route('gastos.update', $gasto), rgDatos($this, 20) + ['comentario' => 'cambio'])->assertSessionHasErrors();
+    expect($gasto->fresh()->comentario)->toBeNull();
+});

@@ -184,6 +184,21 @@ class GastoController extends Controller
     {
         $user = $request->user();
         abort_if($gasto->empresa_id !== $user->empresa_id, 403);
+
+        // Solo cambia el comentario: no mueve caja ni tesorería, así que el
+        // admin lo corrige aunque el turno esté consolidado o cerrado con
+        // entrega del efectivo (sin reabrirlo). El no-admin, con sus reglas.
+        if ($user->rol?->es_admin && $this->soloCambiaComentario($request, $gasto)) {
+            $antes = $gasto->comentario;
+            $gasto->update(['comentario' => $request->input('comentario')]);
+            AuditoriaService::log('gasto.editado', $gasto, [
+                'antes'   => ['comentario' => $antes],
+                'despues' => ['comentario' => $gasto->comentario],
+            ], $user);
+
+            return redirect()->back()->with('success', 'Comentario del gasto actualizado.');
+        }
+
         $this->autorizarModificacion($gasto, $user);
         $this->validarFechaEnTurno($gasto->turno_id, $request->input('fecha'));
 
@@ -305,6 +320,16 @@ class GastoController extends Controller
         });
 
         return redirect()->back()->with('success', 'Gasto reactivado. Volvió a descontarse de tesorería.');
+    }
+
+    /** ¿La edición deja igual todo lo que afecta dinero (tipo, concepto, monto, fecha y cuenta)? */
+    private function soloCambiaComentario(Request $request, Gasto $gasto): bool
+    {
+        return ! $request->input('metodo_pago_id')
+            && (int) $request->input('gasto_tipo_id') === (int) $gasto->gasto_tipo_id
+            && (int) $request->input('gasto_concepto_id') === (int) $gasto->gasto_concepto_id
+            && round((float) $request->input('monto'), 2) === round((float) $gasto->monto, 2)
+            && $request->input('fecha') === optional($gasto->fecha)->toDateString();
     }
 
     /**
