@@ -90,6 +90,7 @@ class EmpresaRequest extends FormRequest
             'cajera_puede_editar'             => 'boolean',
             'cajera_puede_anular'             => 'boolean',
             'venta_whatsapp_pdf'              => 'boolean',
+            'venta_pdf_formato'               => 'sometimes|in:a4,ticket',
             // Despacho en almacén: la mercadería se reserva y el stock sale solo al confirmar.
             'usa_despacho_almacen'            => 'boolean',
             // Mercadería en tránsito (comprada/facturada pero que aún no llega).

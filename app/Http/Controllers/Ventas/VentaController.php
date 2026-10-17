@@ -1539,7 +1539,7 @@ class VentaController extends Controller
     {
         $this->autorizarVerVenta($request->user(), $venta);
 
-        return $this->respuestaPdf($venta, $request->boolean('interno'), false);
+        return $this->respuestaPdf($venta, $request->boolean('interno'));
     }
 
     /**
@@ -1566,16 +1566,40 @@ class VentaController extends Controller
      * (no tiene usuario en el POS). La firma la valida el middleware `signed`.
      * Si la empresa apagó la opción o la venta se anuló, el enlace deja de abrir.
      */
-    public function pdfPublico(Venta $venta)
+    public function pdfPublico(Request $request, Venta $venta, \App\Services\VentaPdfCliente $pdfCliente)
     {
         abort_unless((bool) $venta->empresa?->venta_whatsapp_pdf
             && $venta->estado === 'completada' && ! $venta->anulada_nc_devolucion_id, 404,
             'Este documento ya no está disponible.');
 
-        return $this->respuestaPdf($venta, false, true);
+        // Boleta/factura ya emitida: el documento válido es el OFICIAL de FacturaMac.
+        $cpe = $this->cpeEmitido($venta);
+        if ($cpe) {
+            return redirect()->away(app(\App\Services\Facturacion\CompartirComprobante::class)->enlaceFirmado($cpe));
+        }
+
+        $formato = \App\Services\VentaPdfCliente::formatoDe($request->query('formato') ?? $venta->empresa?->venta_pdf_formato);
+        $numero  = $venta->numero_comprobante ?: $venta->numero;
+
+        return $pdfCliente->generar($venta, $formato)->stream("Venta-{$numero}.pdf");
     }
 
-    private function respuestaPdf(Venta $venta, bool $interno, bool $publico)
+    /** Comprobante electrónico ya emitido en FacturaMac (o null). Nunca rompe el PDF. */
+    private function cpeEmitido(Venta $venta): ?\App\Models\VentaComprobante
+    {
+        if ($venta->tipo_comprobante === 'ticket' || ! method_exists($venta, 'comprobanteElectronico')) {
+            return null;
+        }
+        try {
+            $cpe = $venta->comprobanteElectronico()->first();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $cpe && trim((string) $cpe->numero) !== '' && $cpe->facturamac_id ? $cpe : null;
+    }
+
+    private function respuestaPdf(Venta $venta, bool $interno)
     {
         $venta->load([
             'empresa', 'local', 'caja', 'turno.caja', 'user', 'cliente',
@@ -1604,9 +1628,7 @@ class VentaController extends Controller
         // representación impresa OFICIAL (QR, hash, leyenda SUNAT), no esta
         // plantilla interna. ?interno=1 fuerza la interna si hiciera falta.
         if ($cpe && $cpe->facturamac_id && !$interno) {
-            return $publico
-                ? redirect()->away(app(\App\Services\Facturacion\CompartirComprobante::class)->enlaceFirmado($cpe))
-                : redirect()->route('ventas.comprobante.pdf', $venta);
+            return redirect()->route('ventas.comprobante.pdf', $venta);
         }
 
         // Logo incrustado en base64 (mismo motivo que la proforma: que la

@@ -25,18 +25,21 @@ class CompartirVentaPdf
 {
     public function __construct(private CompartirComprobante $comprobante) {}
 
-    /** URL pública y firmada del PDF de la venta, válida los mismos 30 días. */
-    public function enlaceFirmado(Venta $venta): string
+    /**
+     * URL pública y firmada del PDF de la venta, válida los mismos 30 días.
+     * El formato (a4 / ticket) va DENTRO de la firma: no se puede cambiar a mano.
+     */
+    public function enlaceFirmado(Venta $venta, string $formato = 'a4'): string
     {
         return URL::temporarySignedRoute(
             'venta.publica.pdf',
             now()->addDays(CompartirComprobante::DIAS_VIGENCIA),
-            ['venta' => $venta->id],
+            ['venta' => $venta->id, 'formato' => VentaPdfCliente::formatoDe($formato)],
         );
     }
 
     /** Mensaje corto para WhatsApp, con el enlace al PDF. */
-    public function mensaje(Venta $venta): string
+    public function mensaje(Venta $venta, string $formato = 'a4'): string
     {
         $empresa = $venta->empresa;
         $negocio = $empresa?->nombre_comercial ?: $empresa?->razon_social ?: 'tu tienda';
@@ -47,7 +50,7 @@ class CompartirVentaPdf
             . "🧾 Venta {$doc}\n"
             . "💰 Total: S/ {$total}\n\n"
             . "Descárgala en PDF:\n"
-            . $this->enlaceFirmado($venta) . "\n\n"
+            . $this->enlaceFirmado($venta, $formato) . "\n\n"
             . 'El enlace estará disponible ' . CompartirComprobante::DIAS_VIGENCIA . ' días. ¡Gracias por tu compra!';
     }
 
@@ -55,15 +58,22 @@ class CompartirVentaPdf
      * Lo que necesita el botón WhatsApp de la lista de ventas. El enlace `wa.me`
      * lo arma el navegador con el número que se escriba en el diálogo; aquí va
      * el número del cliente ya normalizado (con 51) para precargarlo.
+     * Se mandan los dos formatos: el de la empresa viene marcado y en el
+     * diálogo se puede cambiar sin volver a pedir nada al servidor.
      */
     public function payload(Venta $venta): array
     {
         $venta->loadMissing('cliente', 'empresa');
         $cliente = $venta->cliente;
 
+        $enlaces = [];
+        foreach (VentaPdfCliente::FORMATOS as $f) {
+            $enlaces[$f] = ['pdf' => $this->enlaceFirmado($venta, $f), 'mensaje' => $this->mensaje($venta, $f)];
+        }
+
         return [
-            'mensaje'  => $this->mensaje($venta),
-            'pdf'      => $this->enlaceFirmado($venta),
+            'formato'  => VentaPdfCliente::formatoDe($venta->empresa?->venta_pdf_formato),
+            'enlaces'  => $enlaces,
             'telefono' => $cliente?->es_cliente_general
                 ? ''
                 : $this->comprobante->normalizarTelefono($cliente?->telefono),

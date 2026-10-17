@@ -34,6 +34,8 @@ export interface Empresa extends Record<string, unknown> {
     pos_fecha_emision_factura?: boolean;
     /** Botón WhatsApp en la lista de ventas (envía el PDF de la venta). */
     venta_whatsapp_pdf?: boolean;
+    /** Formato por defecto de ese PDF. */
+    venta_pdf_formato?: 'a4' | 'ticket';
     /** Permite agregar el mismo producto/presentación varias veces en una venta. */
     permite_duplicar_items_venta: boolean;
     modo_cierre_caja: ModoCierreCaja;

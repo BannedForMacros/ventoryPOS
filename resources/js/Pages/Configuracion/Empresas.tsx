@@ -61,6 +61,7 @@ type FormData = {
     venta_edicion_minutos: number | '';
     cajera_puede_anular: boolean;
     venta_whatsapp_pdf: boolean;
+    venta_pdf_formato: 'a4' | 'ticket';
     // Despacho en almacén: stock diferido hasta que el almacenero confirme.
     usa_despacho_almacen: boolean;
     // Manejo de efectivo (opt-in por empresa)
@@ -124,6 +125,7 @@ const emptyForm: FormData = {
     venta_edicion_minutos: 3,
     cajera_puede_anular: true,
     venta_whatsapp_pdf: false,
+    venta_pdf_formato: 'a4',
     usa_despacho_almacen: false,
     modo_apertura_caja: 'libre',
     apertura_editable: true,
@@ -155,7 +157,7 @@ type TabEmpresa = 'datos' | 'venta' | 'caja' | 'inventario' | 'ticket';
 /** Campos de cada pestaña: si el servidor devuelve un error, se salta a su pestaña. */
 const CAMPOS_POR_TAB: Record<TabEmpresa, string[]> = {
     datos: ["activo", "direccion", "email", "logo", "nombre_comercial", "razon_social", "ruc", "telefono"],
-    venta: ["agenda_recordatorio_plantilla", "cajera_puede_anular", "cajera_puede_editar", "dias_max_devolucion", "permite_devoluciones", "permite_duplicar_items_venta", "pos_fecha_emision_factura", "pos_permite_credito", "pos_permite_pendiente_entrega", "requiere_aprobacion_devolucion", "restock_default", "tasa_igv", "usa_despacho_almacen", "venta_edicion_con_contador", "venta_edicion_minutos", "venta_whatsapp_pdf"],
+    venta: ["agenda_recordatorio_plantilla", "cajera_puede_anular", "cajera_puede_editar", "dias_max_devolucion", "permite_devoluciones", "permite_duplicar_items_venta", "pos_fecha_emision_factura", "pos_permite_credito", "pos_permite_pendiente_entrega", "requiere_aprobacion_devolucion", "restock_default", "tasa_igv", "usa_despacho_almacen", "venta_edicion_con_contador", "venta_edicion_minutos", "venta_pdf_formato", "venta_whatsapp_pdf"],
     caja: ["afecta_caja_config", "apertura_editable", "cierre_pregunta_destino", "fondos_iniciales_en_declaracion", "modo_apertura_caja", "modo_cierre_caja", "modo_turno", "requiere_consolidacion_caja", "retiro_requiere_aprobacion", "turno_cierre_automatico", "usa_caja_grande", "usa_fondos_iniciales", "usa_planilla_caja", "usa_retiros_caja", "venta_correlativo_alcance"],
     inventario: ["cierre_precarga_stock", "descuenta_stock_en_venta", "modo_almacen", "modo_cierre_inventario", "permite_stock_negativo", "usa_mercaderia_transito", "vende_mercaderia_transito"],
     ticket: ["ticket_cliente_celular", "ticket_cliente_direccion", "ticket_lineas_extra", "ticket_logo_escala", "ticket_mostrar_caja", "ticket_mostrar_cajero", "ticket_mostrar_igv", "ticket_mostrar_igv_cierre", "ticket_mostrar_ruc", "ticket_pie"],
@@ -283,6 +285,7 @@ export default function Empresas({ empresas }: Props) {
             venta_edicion_minutos: emp.venta_edicion_minutos ?? 3,
             cajera_puede_anular: emp.cajera_puede_anular ?? true,
             venta_whatsapp_pdf: emp.venta_whatsapp_pdf ?? false,
+            venta_pdf_formato: emp.venta_pdf_formato === 'ticket' ? 'ticket' : 'a4',
             usa_despacho_almacen: emp.usa_despacho_almacen ?? false,
             modo_apertura_caja: (emp.modo_apertura_caja as ModoApertura) ?? 'libre',
             apertura_editable: emp.apertura_editable ?? true,
@@ -752,6 +755,33 @@ export default function Empresas({ empresas }: Props) {
                                 </span>
                             </span>
                         </label>
+
+                        {data.venta_whatsapp_pdf && (
+                            <div className="pl-6 flex flex-col gap-2">
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Formato del PDF</span>
+                                {([
+                                    { value: 'a4' as const,     label: 'Hoja A4',        hint: 'Documento completo con logo, datos del cliente y detalle en tabla. Ideal para empresas y facturas.' },
+                                    { value: 'ticket' as const, label: 'Ticket (80 mm)', hint: 'Como el ticket impreso de caja: angosto y del largo justo. Se lee cómodo en el celular.' },
+                                ]).map(opt => (
+                                    <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="venta_pdf_formato"
+                                            checked={data.venta_pdf_formato === opt.value}
+                                            onChange={() => setData('venta_pdf_formato', opt.value)}
+                                            className="mt-0.5 accent-[var(--color-primary)]"
+                                        />
+                                        <span>
+                                            <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{opt.label}</span>
+                                            <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{opt.hint}</span>
+                                        </span>
+                                    </label>
+                                ))}
+                                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                    Es el formato por defecto; al enviar se puede cambiar. Las boletas y facturas ya emitidas a SUNAT se envían con su PDF oficial.
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                         </div>

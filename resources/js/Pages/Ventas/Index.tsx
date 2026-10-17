@@ -1244,7 +1244,13 @@ function CompartirComprobanteBody({ venta, onEnviado }: { venta: Venta; onEnviad
     );
 }
 
-interface WhatsappVentaResp { mensaje: string; pdf: string; telefono: string; cliente: string | null }
+type FormatoPdf = 'a4' | 'ticket';
+interface WhatsappVentaResp {
+    formato:  FormatoPdf;
+    enlaces:  Record<FormatoPdf, { pdf: string; mensaje: string }>;
+    telefono: string;
+    cliente:  string | null;
+}
 
 /**
  * `wa.me` exige el número internacional sin '+': un móvil peruano de 9 dígitos
@@ -1266,13 +1272,15 @@ function numeroWhatsapp(telefono: string): string {
  *   · «Compartir el archivo PDF» (solo donde el navegador puede compartir
  *     archivos, sobre todo celulares): manda el PDF como adjunto; el contacto
  *     se elige dentro de WhatsApp.
- * El PDF se descarga al abrir el diálogo para que `navigator.share` se llame
- * dentro del clic (Safari lo rechaza si antes hay una espera).
+ * El PDF se descarga al abrir el diálogo (y al cambiar de formato) para que
+ * `navigator.share` se llame dentro del clic: Safari lo rechaza si antes hay
+ * una espera. Se descarga el MISMO enlace firmado que recibe el cliente.
  */
 function WhatsappVentaBody({ venta }: { venta: Venta }) {
     const [resp, setResp]         = useState<WhatsappVentaResp | null>(null);
     const [fallo, setFallo]       = useState<string | null>(null);
     const [telefono, setTelefono] = useState('');
+    const [formato, setFormato]   = useState<FormatoPdf>('a4');
     const [archivo, setArchivo]   = useState<File | null>(null);
     const puedeCompartir = typeof navigator !== 'undefined' && typeof navigator.canShare === 'function'
         && navigator.canShare({ files: [new File([''], 'x.pdf', { type: 'application/pdf' })] });
@@ -1280,24 +1288,33 @@ function WhatsappVentaBody({ venta }: { venta: Venta }) {
     useEffect(() => {
         let vivo = true;
         axios.get<WhatsappVentaResp>(route('ventas.whatsapp-pdf', venta.id))
-            .then(({ data }) => { if (vivo) { setResp(data); setTelefono(data.telefono ?? ''); } })
+            .then(({ data }) => {
+                if (!vivo) return;
+                setResp(data); setTelefono(data.telefono ?? ''); setFormato(data.formato ?? 'a4');
+            })
             .catch(e => {
                 if (!vivo) return;
                 const msg = axios.isAxiosError(e) ? (e.response?.data as { message?: string } | undefined)?.message : null;
                 setFallo(msg || 'No se pudo preparar el envío. Revisa la conexión e inténtalo de nuevo.');
             });
-        if (puedeCompartir) {
-            axios.get<Blob>(route('ventas.pdf', venta.id), { responseType: 'blob' })
-                .then(({ data }) => {
-                    if (vivo && data.type.includes('pdf')) {
-                        setArchivo(new File([data], `Venta-${venta.numero}.pdf`, { type: 'application/pdf' }));
-                    }
-                })
-                .catch(() => { /* sin archivo: queda el enlace por wa.me */ });
-        }
+        return () => { vivo = false; };
+    }, [venta.id]);
+
+    const enlacePdf = resp?.enlaces?.[formato]?.pdf ?? null;
+    useEffect(() => {
+        if (!puedeCompartir || !enlacePdf) return;
+        let vivo = true;
+        setArchivo(null);
+        axios.get<Blob>(enlacePdf, { responseType: 'blob' })
+            .then(({ data }) => {
+                if (vivo && data.type.includes('pdf')) {
+                    setArchivo(new File([data], `Venta-${venta.numero_comprobante || venta.numero}.pdf`, { type: 'application/pdf' }));
+                }
+            })
+            .catch(() => { /* sin archivo: queda el enlace por wa.me */ });
         return () => { vivo = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [venta.id]);
+    }, [enlacePdf]);
 
     async function compartirArchivo() {
         if (!archivo) return;
@@ -1315,8 +1332,9 @@ function WhatsappVentaBody({ venta }: { venta: Venta }) {
         return <p className="text-sm py-2" style={{ color: 'var(--color-text-muted)' }}>Preparando el envío...</p>;
     }
 
-    const numero = numeroWhatsapp(telefono);
-    const enlace = `https://wa.me/${numero}?text=${encodeURIComponent(resp.mensaje)}`;
+    const numero  = numeroWhatsapp(telefono);
+    const mensaje = resp.enlaces[formato]?.mensaje ?? '';
+    const enlace  = `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`;
 
     return (
         <div className="space-y-4">
@@ -1327,6 +1345,29 @@ function WhatsappVentaBody({ venta }: { venta: Venta }) {
                 <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                     {resp.cliente ?? 'Cliente general'} · S/ {parseFloat(venta.total).toFixed(2)}
                 </p>
+            </div>
+
+            <div>
+                <span className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text)' }}>Formato del PDF</span>
+                <div className="grid grid-cols-2 gap-2">
+                    {([['a4', 'Hoja A4'], ['ticket', 'Ticket 80 mm']] as const).map(([valor, texto]) => (
+                        <button
+                            key={valor}
+                            type="button"
+                            onClick={() => setFormato(valor)}
+                            className="rounded-xl px-3 py-2 text-sm font-medium transition-colors"
+                            style={formato === valor
+                                ? { backgroundColor: 'var(--color-primary)', color: '#fff', border: '1px solid var(--color-primary)' }
+                                : { backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+                        >
+                            {texto}
+                        </button>
+                    ))}
+                </div>
+                <a href={resp.enlaces[formato]?.pdf} target="_blank" rel="noopener noreferrer"
+                    className="inline-block text-[11px] mt-1 underline" style={{ color: 'var(--color-primary)' }}>
+                    Ver cómo queda el PDF
+                </a>
             </div>
 
             <div>

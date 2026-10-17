@@ -57,6 +57,7 @@ class Empresa extends Model
         'cajera_puede_anular',
         // Botón WhatsApp en la lista de ventas: manda el PDF de la venta al cliente.
         'venta_whatsapp_pdf',
+        'venta_pdf_formato',
         // Despacho en almacén: el stock solo descuenta al confirmar el despacho.
         'usa_despacho_almacen',
         // Manejo de efectivo (todo opt-in; defaults = comportamiento clásico)
