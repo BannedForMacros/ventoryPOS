@@ -32,6 +32,8 @@ export interface Empresa extends Record<string, unknown> {
     pos_permite_credito?: boolean;
     pos_permite_pendiente_entrega?: boolean;
     pos_fecha_emision_factura?: boolean;
+    /** Botón WhatsApp en la lista de ventas (envía el PDF de la venta). */
+    venta_whatsapp_pdf?: boolean;
     /** Permite agregar el mismo producto/presentación varias veces en una venta. */
     permite_duplicar_items_venta: boolean;
     modo_cierre_caja: ModoCierreCaja;

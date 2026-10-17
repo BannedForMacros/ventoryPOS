@@ -60,6 +60,7 @@ type FormData = {
     venta_edicion_con_contador: boolean;
     venta_edicion_minutos: number | '';
     cajera_puede_anular: boolean;
+    venta_whatsapp_pdf: boolean;
     // Despacho en almacén: stock diferido hasta que el almacenero confirme.
     usa_despacho_almacen: boolean;
     // Manejo de efectivo (opt-in por empresa)
@@ -122,6 +123,7 @@ const emptyForm: FormData = {
     venta_edicion_con_contador: true,
     venta_edicion_minutos: 3,
     cajera_puede_anular: true,
+    venta_whatsapp_pdf: false,
     usa_despacho_almacen: false,
     modo_apertura_caja: 'libre',
     apertura_editable: true,
@@ -153,7 +155,7 @@ type TabEmpresa = 'datos' | 'venta' | 'caja' | 'inventario' | 'ticket';
 /** Campos de cada pestaña: si el servidor devuelve un error, se salta a su pestaña. */
 const CAMPOS_POR_TAB: Record<TabEmpresa, string[]> = {
     datos: ["activo", "direccion", "email", "logo", "nombre_comercial", "razon_social", "ruc", "telefono"],
-    venta: ["agenda_recordatorio_plantilla", "cajera_puede_anular", "cajera_puede_editar", "dias_max_devolucion", "permite_devoluciones", "permite_duplicar_items_venta", "pos_fecha_emision_factura", "pos_permite_credito", "pos_permite_pendiente_entrega", "requiere_aprobacion_devolucion", "restock_default", "tasa_igv", "usa_despacho_almacen", "venta_edicion_con_contador", "venta_edicion_minutos"],
+    venta: ["agenda_recordatorio_plantilla", "cajera_puede_anular", "cajera_puede_editar", "dias_max_devolucion", "permite_devoluciones", "permite_duplicar_items_venta", "pos_fecha_emision_factura", "pos_permite_credito", "pos_permite_pendiente_entrega", "requiere_aprobacion_devolucion", "restock_default", "tasa_igv", "usa_despacho_almacen", "venta_edicion_con_contador", "venta_edicion_minutos", "venta_whatsapp_pdf"],
     caja: ["afecta_caja_config", "apertura_editable", "cierre_pregunta_destino", "fondos_iniciales_en_declaracion", "modo_apertura_caja", "modo_cierre_caja", "modo_turno", "requiere_consolidacion_caja", "retiro_requiere_aprobacion", "turno_cierre_automatico", "usa_caja_grande", "usa_fondos_iniciales", "usa_planilla_caja", "usa_retiros_caja", "venta_correlativo_alcance"],
     inventario: ["cierre_precarga_stock", "descuenta_stock_en_venta", "modo_almacen", "modo_cierre_inventario", "permite_stock_negativo", "usa_mercaderia_transito", "vende_mercaderia_transito"],
     ticket: ["ticket_cliente_celular", "ticket_cliente_direccion", "ticket_lineas_extra", "ticket_logo_escala", "ticket_mostrar_caja", "ticket_mostrar_cajero", "ticket_mostrar_igv", "ticket_mostrar_igv_cierre", "ticket_mostrar_ruc", "ticket_pie"],
@@ -280,6 +282,7 @@ export default function Empresas({ empresas }: Props) {
             venta_edicion_con_contador: emp.venta_edicion_con_contador ?? true,
             venta_edicion_minutos: emp.venta_edicion_minutos ?? 3,
             cajera_puede_anular: emp.cajera_puede_anular ?? true,
+            venta_whatsapp_pdf: emp.venta_whatsapp_pdf ?? false,
             usa_despacho_almacen: emp.usa_despacho_almacen ?? false,
             modo_apertura_caja: (emp.modo_apertura_caja as ModoApertura) ?? 'libre',
             apertura_editable: emp.apertura_editable ?? true,
@@ -733,6 +736,19 @@ export default function Empresas({ empresas }: Props) {
                                 <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Cajera puede anular ventas</span>
                                 <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                                     Si se desactiva, solo un administrador podrá anular ventas. Si está activo, la cajera puede anular dentro del plazo configurado; fuera de él requiere código de admin.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <Checkbox
+                                checked={data.venta_whatsapp_pdf}
+                                onChange={e => setData('venta_whatsapp_pdf', e.target.checked)}
+                            />
+                            <span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Envío de ventas en PDF por WhatsApp</span>
+                                <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                    En la lista de ventas aparece el botón WhatsApp: abre WhatsApp con el número del cliente y un mensaje con el enlace al PDF de la venta (válido 30 días). En celular también se puede compartir el archivo PDF directamente. Si lo desactivas, los enlaces ya enviados dejan de abrir.
                                 </span>
                             </span>
                         </label>

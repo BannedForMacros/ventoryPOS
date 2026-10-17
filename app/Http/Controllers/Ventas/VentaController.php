@@ -1539,6 +1539,44 @@ class VentaController extends Controller
     {
         $this->autorizarVerVenta($request->user(), $venta);
 
+        return $this->respuestaPdf($venta, $request->boolean('interno'), false);
+    }
+
+    /**
+     * Datos para el botón WhatsApp de la lista de ventas: mensaje con el enlace
+     * firmado al PDF y el teléfono del cliente. Solo si la empresa lo activó.
+     */
+    public function whatsappPdf(Request $request, Venta $venta, \App\Services\CompartirVentaPdf $compartir)
+    {
+        $this->autorizarVerVenta($request->user(), $venta);
+        abort_unless((bool) $venta->empresa?->venta_whatsapp_pdf, 403, 'El envío por WhatsApp no está activado para esta empresa.');
+        abort_unless($venta->estado === 'completada' && ! $venta->anulada_nc_devolucion_id, 422,
+            'Solo se pueden enviar ventas vigentes.');
+
+        \App\Services\AuditoriaService::log('whatsapp.venta_pdf', $venta, [
+            'venta_numero' => $venta->numero,
+            'cliente_id'   => $venta->cliente_id,
+        ], $request->user());
+
+        return response()->json($compartir->payload($venta));
+    }
+
+    /**
+     * El MISMO PDF por URL firmada, para el cliente que lo recibe por WhatsApp
+     * (no tiene usuario en el POS). La firma la valida el middleware `signed`.
+     * Si la empresa apagó la opción o la venta se anuló, el enlace deja de abrir.
+     */
+    public function pdfPublico(Venta $venta)
+    {
+        abort_unless((bool) $venta->empresa?->venta_whatsapp_pdf
+            && $venta->estado === 'completada' && ! $venta->anulada_nc_devolucion_id, 404,
+            'Este documento ya no está disponible.');
+
+        return $this->respuestaPdf($venta, false, true);
+    }
+
+    private function respuestaPdf(Venta $venta, bool $interno, bool $publico)
+    {
         $venta->load([
             'empresa', 'local', 'caja', 'turno.caja', 'user', 'cliente',
             'items',
@@ -1565,8 +1603,10 @@ class VentaController extends Controller
         // Factura/boleta ya emitida en FacturaMac: el PDF válido es la
         // representación impresa OFICIAL (QR, hash, leyenda SUNAT), no esta
         // plantilla interna. ?interno=1 fuerza la interna si hiciera falta.
-        if ($cpe && $cpe->facturamac_id && !$request->boolean('interno')) {
-            return redirect()->route('ventas.comprobante.pdf', $venta);
+        if ($cpe && $cpe->facturamac_id && !$interno) {
+            return $publico
+                ? redirect()->away(app(\App\Services\Facturacion\CompartirComprobante::class)->enlaceFirmado($cpe))
+                : redirect()->route('ventas.comprobante.pdf', $venta);
         }
 
         // Logo incrustado en base64 (mismo motivo que la proforma: que la

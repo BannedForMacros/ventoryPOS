@@ -140,11 +140,14 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         venta_edicion_con_contador?: boolean;
         venta_edicion_minutos?: number;
         cajera_puede_anular?: boolean;
+        venta_whatsapp_pdf?: boolean;
     } | undefined;
     const cajeraPuedeEditar = empresa?.cajera_puede_editar ?? true;
     const edicionConContador = empresa?.venta_edicion_con_contador ?? true;
     const editWindowMs = (Number(empresa?.venta_edicion_minutos ?? 3) || 0) * 60 * 1000;
     const cajeraPuedeAnular = empresa?.cajera_puede_anular ?? true;
+    // Botón WhatsApp (PDF de la venta): opcional por empresa.
+    const usaWhatsappPdf = empresa?.venta_whatsapp_pdf ?? false;
 
     // Reloj para que el gate de edición se actualice en vivo (edición desaparece).
     const [ahora, setAhora] = useState(() => Date.now());
@@ -220,6 +223,8 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
     const [imprimiendo, setImprimiendo] = useState<number | null>(null);
     // Venta cuyo comprobante se está compartiendo (null = diálogo cerrado).
     const [compartir, setCompartir] = useState<Venta | null>(null);
+    // Venta cuyo PDF se está mandando por WhatsApp (null = diálogo cerrado).
+    const [whatsapp, setWhatsapp] = useState<Venta | null>(null);
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -621,6 +626,17 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                                 <Send size={14} />
                                             </button>
                                         )}
+                                        {usaWhatsappPdf && vigente(v) && (
+                                            <button
+                                                onClick={() => setWhatsapp(v)}
+                                                title="Enviar el PDF de la venta por WhatsApp"
+                                                aria-label={`Enviar venta ${v.numero} por WhatsApp`}
+                                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:opacity-80"
+                                                style={{ backgroundColor: 'color-mix(in srgb, #25D366 14%, transparent)', color: '#1da851' }}
+                                            >
+                                                <MessageCircle size={14} />
+                                            </button>
+                                        )}
                                         {v.estado === 'completada' && (
                                             <button
                                                 onClick={() => imprimir(v)}
@@ -765,6 +781,15 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     <Send size={14} /> Enviar
                                 </button>
                             )}
+                            {usaWhatsappPdf && vigente(v) && (
+                                <button
+                                    onClick={() => setWhatsapp(v)}
+                                    className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg"
+                                    style={{ backgroundColor: 'color-mix(in srgb, #25D366 14%, transparent)', color: '#1da851' }}
+                                >
+                                    <MessageCircle size={14} /> WhatsApp
+                                </button>
+                            )}
                             {v.estado === 'completada' && (
                                 <button
                                     onClick={() => imprimir(v)}
@@ -857,6 +882,17 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                         onEnviado={() => setCompartir(null)}
                     />
                 )}
+            </Modal>
+
+            {/* ── Modal WhatsApp (PDF de la venta) ─────────────────── */}
+            <Modal
+                isOpen={whatsapp !== null}
+                onClose={() => setWhatsapp(null)}
+                title={whatsapp ? `Enviar ${whatsapp.numero} por WhatsApp` : 'Enviar por WhatsApp'}
+                size="sm"
+                footer={<Button variant="ghost" onClick={() => setWhatsapp(null)}>Cerrar</Button>}
+            >
+                {whatsapp && <WhatsappVentaBody key={whatsapp.id} venta={whatsapp} />}
             </Modal>
 
             {/* ── Modal anular ─────────────────────────────────────── */}
@@ -1204,6 +1240,140 @@ function CompartirComprobanteBody({ venta, onEnviado }: { venta: Venta; onEnviad
                     </p>
                 )}
             </div>
+        </div>
+    );
+}
+
+interface WhatsappVentaResp { mensaje: string; pdf: string; telefono: string; cliente: string | null }
+
+/**
+ * `wa.me` exige el número internacional sin '+': un móvil peruano de 9 dígitos
+ * sin el 51 abre un chat con un contacto inexistente. Mismo criterio que
+ * CompartirComprobante::normalizarTelefono en el backend.
+ */
+function numeroWhatsapp(telefono: string): string {
+    const d = telefono.replace(/\D/g, '');
+    return d.length === 9 && !d.startsWith('51') ? `51${d}` : d;
+}
+
+/**
+ * Contenido del diálogo «Enviar por WhatsApp» (PDF de la venta).
+ *
+ * Dos caminos, porque WhatsApp no deja adjuntar un archivo a un número desde
+ * un enlace:
+ *   · «Abrir WhatsApp» (todos los dispositivos): wa.me con el número y el
+ *     mensaje ya escritos; el mensaje lleva el enlace firmado al PDF.
+ *   · «Compartir el archivo PDF» (solo donde el navegador puede compartir
+ *     archivos, sobre todo celulares): manda el PDF como adjunto; el contacto
+ *     se elige dentro de WhatsApp.
+ * El PDF se descarga al abrir el diálogo para que `navigator.share` se llame
+ * dentro del clic (Safari lo rechaza si antes hay una espera).
+ */
+function WhatsappVentaBody({ venta }: { venta: Venta }) {
+    const [resp, setResp]         = useState<WhatsappVentaResp | null>(null);
+    const [fallo, setFallo]       = useState<string | null>(null);
+    const [telefono, setTelefono] = useState('');
+    const [archivo, setArchivo]   = useState<File | null>(null);
+    const puedeCompartir = typeof navigator !== 'undefined' && typeof navigator.canShare === 'function'
+        && navigator.canShare({ files: [new File([''], 'x.pdf', { type: 'application/pdf' })] });
+
+    useEffect(() => {
+        let vivo = true;
+        axios.get<WhatsappVentaResp>(route('ventas.whatsapp-pdf', venta.id))
+            .then(({ data }) => { if (vivo) { setResp(data); setTelefono(data.telefono ?? ''); } })
+            .catch(e => {
+                if (!vivo) return;
+                const msg = axios.isAxiosError(e) ? (e.response?.data as { message?: string } | undefined)?.message : null;
+                setFallo(msg || 'No se pudo preparar el envío. Revisa la conexión e inténtalo de nuevo.');
+            });
+        if (puedeCompartir) {
+            axios.get<Blob>(route('ventas.pdf', venta.id), { responseType: 'blob' })
+                .then(({ data }) => {
+                    if (vivo && data.type.includes('pdf')) {
+                        setArchivo(new File([data], `Venta-${venta.numero}.pdf`, { type: 'application/pdf' }));
+                    }
+                })
+                .catch(() => { /* sin archivo: queda el enlace por wa.me */ });
+        }
+        return () => { vivo = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [venta.id]);
+
+    async function compartirArchivo() {
+        if (!archivo) return;
+        try {
+            await navigator.share({ files: [archivo], title: `Venta ${venta.numero}` });
+        } catch (e) {
+            if ((e as DOMException)?.name !== 'AbortError') toast.error('No se pudo compartir el archivo.');
+        }
+    }
+
+    if (fallo) {
+        return <p className="text-sm py-2" style={{ color: 'var(--color-danger)' }}>{fallo}</p>;
+    }
+    if (!resp) {
+        return <p className="text-sm py-2" style={{ color: 'var(--color-text-muted)' }}>Preparando el envío...</p>;
+    }
+
+    const numero = numeroWhatsapp(telefono);
+    const enlace = `https://wa.me/${numero}?text=${encodeURIComponent(resp.mensaje)}`;
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <p className="font-mono text-base font-bold leading-tight" style={{ color: 'var(--color-text)' }}>
+                    {venta.numero_comprobante || venta.numero}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                    {resp.cliente ?? 'Cliente general'} · S/ {parseFloat(venta.total).toFixed(2)}
+                </p>
+            </div>
+
+            <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+                    Número de WhatsApp
+                </label>
+                <input
+                    type="tel"
+                    inputMode="tel"
+                    value={telefono}
+                    onChange={e => setTelefono(e.target.value)}
+                    placeholder="987 654 321"
+                    className="w-full rounded-xl px-3 py-2 text-sm"
+                    style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
+                />
+                <p className="text-[11px] mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                    {numero
+                        ? `Se abrirá el chat con +${numero}.`
+                        : 'Sin número: WhatsApp te dejará elegir el contacto.'}
+                </p>
+            </div>
+
+            <a
+                href={enlace}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+                style={{ backgroundColor: '#25D366' }}
+            >
+                <MessageCircle size={16} /> Abrir WhatsApp
+            </a>
+
+            {puedeCompartir && (
+                <Button
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => void compartirArchivo()}
+                    disabled={!archivo}
+                    title="Comparte el archivo PDF; el contacto se elige en WhatsApp"
+                >
+                    {archivo ? 'Compartir el archivo PDF' : 'Preparando el PDF...'}
+                </Button>
+            )}
+
+            <p className="text-[11px] leading-snug" style={{ color: 'var(--color-text-muted)' }}>
+                El mensaje lleva un enlace al PDF válido 30 días. El envío lo haces tú desde WhatsApp.
+            </p>
         </div>
     );
 }

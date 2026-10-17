@@ -55,6 +55,8 @@ class Empresa extends Model
         'venta_edicion_con_contador',
         'cajera_puede_editar',
         'cajera_puede_anular',
+        // Botón WhatsApp en la lista de ventas: manda el PDF de la venta al cliente.
+        'venta_whatsapp_pdf',
         // Despacho en almacén: el stock solo descuenta al confirmar el despacho.
         'usa_despacho_almacen',
         // Manejo de efectivo (todo opt-in; defaults = comportamiento clásico)
@@ -108,6 +110,7 @@ class Empresa extends Model
             'venta_edicion_con_contador'      => 'boolean',
             'cajera_puede_editar'             => 'boolean',
             'cajera_puede_anular'             => 'boolean',
+            'venta_whatsapp_pdf'              => 'boolean',
             'usa_despacho_almacen'            => 'boolean',
             'apertura_editable'               => 'boolean',
             'usa_retiros_caja'                => 'boolean',

@@ -90,6 +90,13 @@ Route::middleware(['signed', 'throttle:30,1'])
     ->get('/comprobante/{ventaComprobante}/pdf', [ComprobanteElectronicoController::class, 'pdfPublico'])
     ->name('comprobante.publico.pdf');
 
+// Mismo criterio para el PDF de la VENTA (ticket, boleta o factura) que se manda
+// por WhatsApp desde la lista de ventas. Solo abre si la empresa tiene activado
+// `venta_whatsapp_pdf`. Ver App\Services\CompartirVentaPdf.
+Route::middleware(['signed', 'throttle:30,1'])
+    ->get('/venta/{venta}/pdf', [VentaController::class, 'pdfPublico'])
+    ->name('venta.publica.pdf');
+
 // ── AGENTE DE IMPRESIÓN — MANIFIESTO DE ACTUALIZACIÓN ────────────────────────
 // Los VentoryPrint 1.2.0 o anteriores buscan sus actualizaciones en
 // {POS}/agent/version.json. Antes era un archivo estático en public/agent que
@@ -447,6 +454,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:ventas,ver')->get('/{venta}/ticket', [VentaController::class, 'ticket'])->name('ticket');
         // PDF A4 de la venta (detalle completo, descargable desde el detalle).
         Route::middleware('permiso:ventas,ver')->get('/{venta}/pdf', [VentaController::class, 'pdf'])->name('pdf');
+        // Enlace firmado al PDF + teléfono del cliente para el botón WhatsApp (opcional por empresa).
+        Route::middleware(['permiso:ventas,ver', 'throttle:30,1'])->get('/{venta}/whatsapp-pdf', [VentaController::class, 'whatsappPdf'])->name('whatsapp-pdf');
         // Edición completa de la venta, permitida solo dentro de los 3 min de creada
         // (el guard de tiempo lo aplica el controlador). Reutiliza el editor del POS.
         Route::middleware(['permiso:ventas,editar', 'throttle:60,1'])->put('/{venta}', [VentaController::class, 'update'])->name('update');
