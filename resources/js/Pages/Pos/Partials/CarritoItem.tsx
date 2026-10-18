@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Trash2, Minus, Plus, Percent, X, AlertTriangle, History, StickyNote } from 'lucide-react';
+import { Trash2, Minus, Plus, Percent, X, AlertTriangle, History } from 'lucide-react';
 import type { DescuentoConcepto } from '@/types';
 import Select from '@/Components/UI/Select';
 
@@ -84,10 +84,11 @@ interface Props {
 }
 
 export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar, conDescripcion = false, onDescripcion, pulso, simbolo = 'S/' }: Props) {
-    // Descripción de la línea: el campo se ve si ya tiene texto o si la cajera
-    // lo abre con el botón de nota. Vacía, no ocupa lugar en el carrito.
-    const [abrirDescripcion, setAbrirDescripcion] = useState(false);
-    const verDescripcion = conDescripcion && (abrirDescripcion || !!item.descripcion);
+    // Descripción de la línea: en las empresas que venden el mismo producto en
+    // varias líneas, es lo que distingue cada una. Por eso el campo está SIEMPRE
+    // a la vista desde que se agrega el producto (antes se escondía tras un
+    // icono de nota que nadie relacionaba con "descripción").
+    const [descFoco, setDescFoco] = useState(false);
 
     // Recién agregado: la fila se ilumina un instante y queda a la vista. Así la
     // cajera ve QUÉ entró sin un aviso flotante que tape la barra superior.
@@ -354,25 +355,39 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
             </div>
 
             {/* Descripción opcional: distingue esta línea de otras del mismo producto. */}
-            {verDescripcion && (
-                <input
-                    type="text"
-                    maxLength={120}
-                    value={item.descripcion ?? ''}
-                    autoFocus={abrirDescripcion && !item.descripcion}
-                    // Abierto mientras escribe: borrarla toda no debe cerrar el campo en sus manos.
-                    onChange={e => { setAbrirDescripcion(true); onDescripcion?.(item.key, e.target.value); }}
-                    onBlur={() => { if (!item.descripcion?.trim()) { onDescripcion?.(item.key, ''); setAbrirDescripcion(false); } }}
-                    onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                    placeholder="Descripción (opcional): color, talla, modelo…"
-                    aria-label={`Descripción de ${item.producto_nombre}`}
-                    className="mt-1 w-full h-7 px-2 rounded-md text-[12px] focus:outline-none"
+            {conDescripcion && (
+                <label
+                    className="mt-1.5 flex items-center h-8 rounded-lg overflow-hidden transition-shadow"
                     style={{
-                        color: 'var(--color-text)',
+                        border: `1px solid ${descFoco ? 'var(--color-primary)' : item.descripcion?.trim() ? 'color-mix(in srgb, var(--color-primary) 45%, var(--color-border))' : 'var(--color-border)'}`,
+                        boxShadow: descFoco ? '0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent)' : 'none',
                         backgroundColor: 'var(--color-surface)',
-                        border: '1px dashed var(--color-border)',
                     }}
-                />
+                >
+                    <span
+                        className="flex items-center h-full px-2 text-[11px] font-bold uppercase tracking-wide flex-shrink-0"
+                        style={{
+                            color: 'var(--color-primary)',
+                            backgroundColor: 'color-mix(in srgb, var(--color-primary) 9%, transparent)',
+                            borderRight: '1px solid var(--color-border)',
+                        }}
+                    >
+                        Descripción
+                    </span>
+                    <input
+                        type="text"
+                        maxLength={120}
+                        value={item.descripcion ?? ''}
+                        onChange={e => onDescripcion?.(item.key, e.target.value)}
+                        onFocus={() => setDescFoco(true)}
+                        onBlur={() => { setDescFoco(false); if (item.descripcion && !item.descripcion.trim()) onDescripcion?.(item.key, ''); }}
+                        onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                        placeholder="Ej.: color, talla, modelo, para quién…"
+                        aria-label={`Descripción de ${item.producto_nombre}`}
+                        className="flex-1 min-w-0 h-full px-2 text-[13px] font-medium bg-transparent border-0 focus:outline-none"
+                        style={{ color: 'var(--color-text)' }}
+                    />
+                </label>
             )}
 
             {/* Fila 2: cantidad × precio, stock y acciones */}
@@ -538,19 +553,6 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                                 </>
                             )}
                         </div>
-                    )}
-                    {conDescripcion && !item.descripcion && (
-                        <button
-                            type="button"
-                            onClick={() => setAbrirDescripcion(v => !v)}
-                            aria-pressed={abrirDescripcion}
-                            aria-label={`Agregar descripción a ${item.producto_nombre}`}
-                            title="Agregar descripción (sale en el ticket)"
-                            className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-black/5"
-                            style={{ color: abrirDescripcion ? 'var(--color-primary)' : 'var(--color-text-muted)' }}
-                        >
-                            <StickyNote size={15} />
-                        </button>
                     )}
                     <button
                         onClick={() => showDescuento ? quitarDescuento() : setShowDescuento(true)}
