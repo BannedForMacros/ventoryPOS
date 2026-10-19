@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     Eye, ShoppingCart, Calendar, Receipt, Pencil, Trash2, KeyRound,
     AlertTriangle, Search, Printer, Wallet, CreditCard, TrendingDown, Coins, Clock, HandCoins, ListChecks, PackageMinus,
-    Send, MessageCircle, Mail, FileSpreadsheet, RotateCcw, ChevronLeft, ChevronRight, CalendarRange,
+    Send, MessageCircle, Mail, ArrowLeftRight, FileSpreadsheet, RotateCcw, ChevronLeft, ChevronRight, CalendarRange,
 } from 'lucide-react';
 import { fechaLocal, hoyLocal } from '@/lib/fechas';
 import AppLayout from '@/Layouts/AppLayout';
@@ -24,6 +24,7 @@ import Select from '@/Components/UI/Select';
 import { useTiempoReal } from '@/lib/useTiempoReal';
 import Callout from '@/Components/UI/Callout';
 import { soles } from '@/lib/dinero';
+import ModalCorregirPago from '@/Components/Ventas/ModalCorregirPago';
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
@@ -148,6 +149,9 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
     const cajeraPuedeAnular = empresa?.cajera_puede_anular ?? true;
     // Botón WhatsApp (PDF de la venta): opcional por empresa.
     const usaWhatsappPdf = empresa?.venta_whatsapp_pdf ?? false;
+    // Corregir solo el método de pago (también con boleta/factura emitida).
+    const [corregirPago, setCorregirPago] = useState<number | null>(null);
+    const puedeCorregirPago = (v: Venta) => vigente(v) && (esAdmin || cajeraPuedeEditar);
 
     // Reloj para que el gate de edición se actualice en vivo (edición desaparece).
     const [ahora, setAhora] = useState(() => Date.now());
@@ -648,6 +652,17 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                                 <Printer size={14} />
                                             </button>
                                         )}
+                                        {puedeCorregirPago(v) && (
+                                            <button
+                                                onClick={() => setCorregirPago(v.id)}
+                                                title="Corregir solo el método de pago (el comprobante no cambia)"
+                                                aria-label={`Corregir método de pago de la venta ${v.numero}`}
+                                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:opacity-80"
+                                                style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 10%, transparent)', color: 'var(--vp-navy)' }}
+                                            >
+                                                <ArrowLeftRight size={14} />
+                                            </button>
+                                        )}
                                         {puedeEditar(v) && (
                                             <Link
                                                 href={route('pos.index', { venta_id: v.id })}
@@ -798,6 +813,15 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                                     style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-muted) 12%, transparent)', color: 'var(--color-text)' }}
                                 >
                                     <Printer size={14} /> Imprimir
+                                </button>
+                            )}
+                            {puedeCorregirPago(v) && (
+                                <button
+                                    onClick={() => setCorregirPago(v.id)}
+                                    className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg"
+                                    style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 10%, transparent)', color: 'var(--vp-navy)' }}
+                                >
+                                    <ArrowLeftRight size={14} /> Pago
                                 </button>
                             )}
                             {puedeEditar(v) && (
@@ -1013,6 +1037,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                     </div>
                 )}
             </Modal>
+            <ModalCorregirPago ventaId={corregirPago} onClose={() => setCorregirPago(null)} />
         </AppLayout>
     );
 }

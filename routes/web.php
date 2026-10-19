@@ -460,6 +460,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // (el guard de tiempo lo aplica el controlador). Reutiliza el editor del POS.
         Route::middleware(['permiso:ventas,editar', 'throttle:60,1'])->put('/{venta}', [VentaController::class, 'update'])->name('update');
         Route::middleware('permiso:ventas,editar')->post('/{venta}/anular', [VentaController::class, 'anular'])->name('anular');
+        // Corregir SOLO el método de pago (también con boleta/factura emitida: el
+        // comprobante no informa el medio de pago). Montos, ítems y comprobante no cambian.
+        Route::middleware('permiso:ventas,editar')->get('/{venta}/metodo-pago', [VentaController::class, 'datosMetodoPago'])->name('metodo-pago.datos');
+        Route::middleware(['permiso:ventas,editar', 'throttle:30,1'])->put('/{venta}/metodo-pago', [VentaController::class, 'cambiarMetodoPago'])->name('metodo-pago');
         // Restablecer una venta anulada por error: solo el administrador (lo exige el controlador).
         Route::middleware('permiso:ventas,editar')->post('/{venta}/restablecer', [VentaController::class, 'restablecer'])->name('restablecer');
         // Modificar el pedido PENDIENTE POR ENTREGAR días después (la cajera, sin

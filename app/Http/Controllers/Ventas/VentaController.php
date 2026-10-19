@@ -1708,6 +1708,10 @@ class VentaController extends Controller
             'restablecer'   => $venta->estado === 'anulada' && $request->user()->rol?->es_admin
                 ? ['bloqueo' => app(\App\Services\RestablecerVenta::class)->motivoBloqueo($venta)]
                 : null,
+            // Corregir solo el método de pago (también con comprobante emitido).
+            'cambioPago' => $request->user()->tienePermiso('ventas', 'editar') && $venta->estado === 'completada' && $venta->pagos->isNotEmpty()
+                ? ['bloqueo' => app(\App\Services\CambiarMetodoPagoVenta::class)->motivoBloqueo($venta, $request->user())]
+                : null,
             // Payload listo para el agente local de impresión (VentoryPrint.exe).
             'ticketImpresion' => app(TicketPrintService::class)->payloadDeVenta($venta),
             // Cuánto dejó la venta. Revela costos: solo para quien puede ver el
@@ -1881,6 +1885,39 @@ class VentaController extends Controller
             // registrar la venta (no al volver a abrir la venta después). Solo si
             // el cajero usó el botón "Crear e imprimir"; con "Confirmar venta" no.
             ->with('imprimir_ticket', $request->boolean('imprimir'));
+    }
+
+    // ── Cambiar solo el método de pago ─────────────────────────────────────────
+
+    public function datosMetodoPago(Request $request, Venta $venta, \App\Services\CambiarMetodoPagoVenta $servicio)
+    {
+        abort_if($venta->empresa_id !== $request->user()->empresa_id, 403);
+
+        return response()->json($servicio->datos($venta, $request->user()));
+    }
+
+    public function cambiarMetodoPago(Request $request, Venta $venta, \App\Services\CambiarMetodoPagoVenta $servicio)
+    {
+        $user = $request->user();
+        abort_if($venta->empresa_id !== $user->empresa_id, 403);
+
+        $data = $request->validate([
+            'pagos'                         => ['required', 'array', 'min:1'],
+            'pagos.*.id'                    => ['required', 'integer'],
+            'pagos.*.metodo_pago_id'        => ['required', 'integer'],
+            'pagos.*.cuenta_metodo_pago_id' => ['nullable', 'integer'],
+            'pagos.*.referencia'            => ['nullable', 'string', 'max:100'],
+            'motivo'                        => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $servicio->aplicar($venta, $data['pagos'], $user, $data['motivo'] ?? null);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            if ($e->getStatusCode() !== 422) throw $e;
+            return back()->withErrors(['metodo_pago' => $e->getMessage()]);
+        }
+
+        return back()->with('success', "Método de pago de la venta {$venta->numero} corregido.");
     }
 
     // ── Anular ─────────────────────────────────────────────────────────────────

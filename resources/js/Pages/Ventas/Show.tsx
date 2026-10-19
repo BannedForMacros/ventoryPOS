@@ -6,12 +6,13 @@ import {
     ArrowLeft, XCircle, Receipt, User, ShoppingBag,
     CreditCard, Percent, Calendar, Store, UserCheck, Printer,
     FileCheck2, Download, RefreshCw, KeyRound, FileText, PackageOpen, History, Undo2,
-    RotateCcw,
+    RotateCcw, ArrowLeftRight,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
+import ModalCorregirPago from '@/Components/Ventas/ModalCorregirPago';
 import ModalModificarPedido from '@/Components/Ventas/ModalModificarPedido';
 import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import {
@@ -52,6 +53,8 @@ interface Props extends PageProps {
     anuladaConNc?: { id: number; numero: string; fecha: string; nota_credito_numero: string | null; nota_credito_estado: string | null } | null;
     /** Solo para el admin, con la venta anulada: null = puede restablecerla; texto = por qué no. */
     restablecer?: { bloqueo: string | null } | null;
+    /** Corregir solo el método de pago (también con comprobante emitido). null = sin permiso. */
+    cambioPago?: { bloqueo: string | null } | null;
     anulacionNc?: { comprobante: string; reembolso: number; cxc: number; pagos: { metodo: string; monto: number }[]; bloqueo: string | null } | null;
     /** Factura/boleta emitida fuera del sistema: se avisa, no se bloquea. */
     avisoExterno?: string | null;
@@ -79,7 +82,7 @@ const fmtCant = (n: number) => n.toLocaleString('es-PE', { maximumFractionDigits
 const fmtPct = (n: number | null) => (n === null ? '—' : `${n.toLocaleString('es-PE', { maximumFractionDigits: 1 })}%`);
 
 /** Tarjeta de la página: título legible con ícono (sin mayúsculas diminutas). */
-function SectionCard({ icon: Icon, title, children, flush = false }: { icon: React.ElementType; title: string; children: React.ReactNode; flush?: boolean }) {
+function SectionCard({ icon: Icon, title, children, flush = false, accion }: { icon: React.ElementType; title: string; children: React.ReactNode; flush?: boolean; accion?: React.ReactNode }) {
     return (
         <section className="rounded-2xl overflow-hidden"
             style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: '0 6px 16px -10px rgb(15 76 129 / 0.12)' }}>
@@ -89,6 +92,7 @@ function SectionCard({ icon: Icon, title, children, flush = false }: { icon: Rea
                     <Icon size={16} />
                 </span>
                 <h2 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>{title}</h2>
+                {accion && <div className="ml-auto">{accion}</div>}
             </header>
             <div className={flush ? '' : 'px-4 pb-4'}>{children}</div>
         </section>
@@ -205,7 +209,7 @@ function CuantoGanaste({ u }: { u: UtilidadVenta }) {
     );
 }
 
-export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, anulacionNc = null, anuladaConNc = null, restablecer = null, avisoExterno = null, utilidad = null }: Props) {
+export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, anulacionNc = null, anuladaConNc = null, restablecer = null, avisoExterno = null, utilidad = null, cambioPago = null }: Props) {
     // Tiempo real: la respuesta de SUNAT, un abono o una edición se ven sin recargar.
     useTiempoReal(['ventas'], () => router.reload());
     const [modalPedido, setModalPedido] = useState(false);
@@ -219,6 +223,7 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
     const [modalAnular, setModalAnular] = useState(false);
     // Restablecer una venta anulada por error (solo admin).
     const [modalRestablecer, setModalRestablecer] = useState(false);
+    const [modalPago, setModalPago] = useState(false);
     const [motivoRest, setMotivoRest] = useState('');
     const [restableciendo, setRestableciendo] = useState(false);
     const [errRest, setErrRest] = useState<Record<string, string>>({});
@@ -653,7 +658,13 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                         />
                     )}
 
-                    <SectionCard icon={CreditCard} title="Pagos">
+                    <SectionCard icon={CreditCard} title="Pagos" accion={cambioPago && !anulada && (
+                        <Button variant="ghost" size="sm" startContent={<ArrowLeftRight size={14} />}
+                            onClick={() => setModalPago(true)} disabled={!!cambioPago.bloqueo}
+                            title={cambioPago.bloqueo ?? 'Corrige solo el medio de pago (efectivo, Yape, tarjeta…). El monto y el comprobante no cambian.'}>
+                            Corregir método
+                        </Button>
+                    )}>
                         {pagos.length === 0 ? (
                             <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
                                 {venta.es_credito ? 'Venta al crédito sin pago inicial.' : 'Sin pagos registrados.'}
@@ -813,6 +824,8 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                     )}
                 </div>
             </Modal>
+            {cambioPago && <ModalCorregirPago ventaId={modalPago ? venta.id : null} onClose={() => setModalPago(false)} />}
+
             <ModalModificarPedido isOpen={modalPedido} onClose={() => setModalPedido(false)} ventaId={venta.id} />
         </AppLayout>
     );

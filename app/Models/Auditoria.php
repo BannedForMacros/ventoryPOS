@@ -49,6 +49,7 @@ class Auditoria extends Model
         return [
             'venta.anulada'           => 'Venta anulada',
             'venta.restablecida'      => 'Venta restablecida',
+            'venta.metodo_pago_cambiado' => 'Método de pago corregido',
             'devolucion.creada'       => 'Devolución creada',
             'devolucion.aprobada'     => 'Devolución aprobada',
             'devolucion.rechazada'    => 'Devolución rechazada',
