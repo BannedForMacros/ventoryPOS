@@ -15,7 +15,8 @@ use Illuminate\Support\Facades\DB;
  * Arma el balance diario replicando el Excel del cliente:
  *
  *   A FAVOR  : cuentas bancarias + efectivo (manuales, conciliadas contra el
- *              banco real), stock valorizado a costo del día, deudas por
+ *              banco real), stock valorizado a COSTO PROMEDIO (el mismo
+ *              de Inventario > Stock), deudas por
  *              cobrar (ventas a crédito + préstamos otorgados), adelantos
  *              a proveedores.
  *   EN CONTRA: proveedores por pagar, anticipos de clientes (a precio del
@@ -365,7 +366,7 @@ class BalanceDiarioService
         return round(array_sum(array_column($desglose, 'monto')), 2);
     }
 
-    /** Por producto: saldo a la fecha × costo conocido a esa fecha (kardex). */
+    /** Por producto: saldo a la fecha × costo promedio a esa fecha (kardex). */
     public function desgloseStock(int $empresaId, string $fechaCorte): array
     {
         if (!$this->tieneKardex($empresaId, $fechaCorte) && $fechaCorte >= now()->toDateString()) {
@@ -376,7 +377,7 @@ class BalanceDiarioService
                 ->where('productos.empresa_id', $empresaId)->where('productos.activo', true)
                 ->groupBy('productos.id', 'productos.nombre')
                 ->selectRaw('productos.id, productos.nombre, SUM(stock.cantidad) as cantidad,
-                             SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)) as valor')
+                             SUM(stock.cantidad * COALESCE(NULLIF(stock.costo_promedio, 0), productos.precio_costo, 0)) as valor')
                 ->orderBy('productos.nombre')->get() as $f) {
                 if (abs((float) $f->cantidad) < 0.00005 && abs((float) $f->valor) < 0.005) continue;
                 $cant = (float) $f->cantidad;
@@ -402,45 +403,35 @@ class BalanceDiarioService
         $corte = $fechaCorte . ' 23:59:59';
         $filas = DB::select(
             'WITH saldos AS (
-                SELECT DISTINCT ON (mi.almacen_id, mi.producto_id) mi.producto_id, mi.saldo_cantidad
+                SELECT DISTINCT ON (mi.almacen_id, mi.producto_id) mi.producto_id, mi.saldo_cantidad, mi.costo_promedio
                 FROM movimientos_inventario mi
                 WHERE mi.empresa_id = ? AND mi.fecha <= ?
                 ORDER BY mi.almacen_id, mi.producto_id, mi.fecha DESC, mi.id DESC
-            ),
-            compra_dia AS (
-                SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_unitario
-                FROM movimientos_inventario mi
-                WHERE mi.empresa_id = ? AND mi.fecha <= ?
-                  AND mi.tipo IN (\'entrada\', \'transferencia_recepcion\') AND mi.costo_unitario > 0
-                ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
-            ),
-            cpp AS (
-                SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_promedio
-                FROM movimientos_inventario mi
-                WHERE mi.empresa_id = ? AND mi.fecha <= ?
-                ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
             )
+            -- COSTO PROMEDIO de cada almacén a la fecha (el de Inventario >
+            -- Stock); sin promedio aún, el precio_costo del producto.
             SELECT s.producto_id, p.nombre,
                    SUM(s.saldo_cantidad) AS cantidad,
-                   MAX(COALESCE(cd.costo_unitario, NULLIF(p.precio_costo, 0), cp.costo_promedio, 0)) AS costo,
-                   SUM(GREATEST(s.saldo_cantidad, 0) * COALESCE(cd.costo_unitario, NULLIF(p.precio_costo, 0), cp.costo_promedio, 0)) AS valor
+                   SUM(GREATEST(s.saldo_cantidad, 0)) AS cantidad_valorizada,
+                   MAX(COALESCE(NULLIF(s.costo_promedio, 0), NULLIF(p.precio_costo, 0), 0)) AS costo,
+                   SUM(GREATEST(s.saldo_cantidad, 0) * COALESCE(NULLIF(s.costo_promedio, 0), NULLIF(p.precio_costo, 0), 0)) AS valor
             FROM saldos s
-            LEFT JOIN compra_dia cd ON cd.producto_id = s.producto_id
-            LEFT JOIN cpp cp ON cp.producto_id = s.producto_id
             -- Sin filtrar p.activo: un producto desactivado HOY seguía en el
             -- almacén en días pasados (su saldo del kardex manda; en 0 no suma).
             JOIN productos p ON p.id = s.producto_id
             GROUP BY s.producto_id, p.nombre',
-            [$empresaId, $corte, $empresaId, $corte, $empresaId, $corte],
+            [$empresaId, $corte],
         );
 
         $out = [];
         foreach ($filas as $f) {
             if (abs((float) $f->cantidad) < 0.00005 && abs((float) $f->valor) < 0.005) continue;
+            // Costo mostrado = promedio ponderado entre almacenes (valor / cantidad).
+            $costo = (float) $f->cantidad_valorizada > 0.00005 ? (float) $f->valor / (float) $f->cantidad_valorizada : (float) $f->costo;
             $out['p' . $f->producto_id] = [
                 'descripcion' => $f->nombre,
                 'monto'       => (float) $f->valor,
-                'detalle'     => $this->cant((float) $f->cantidad) . ' und × S/ ' . number_format((float) $f->costo, 2)
+                'detalle'     => $this->cant((float) $f->cantidad) . ' und × S/ ' . number_format($costo, 4)
                     . ((float) $f->cantidad < 0 ? ' (negativo: no suma)' : ''),
             ];
         }
@@ -738,8 +729,8 @@ class BalanceDiarioService
      *
      * El stock es una tabla viva (sin kardex), así que para fechas pasadas se
      * parte del stock ACTUAL y se revierten los movimientos POSTERIORES al
-     * corte, valorizados con el mismo costo canónico (precio_costo del
-     * producto, o costo_promedio real si está en 0):
+     * corte, valorizados con el mismo costo canónico (costo_promedio real;
+     * si está en 0, el precio_costo del producto):
      *
      *   valor(F) = valor_actual − entradas_post + ventas_post + salidas_post
      *              − devoluciones_post − ajustes_de_cierre_post
@@ -765,41 +756,26 @@ class BalanceDiarioService
         if ($this->tieneKardex($empresaId, $fechaCorte)) {
             // CANTIDAD a la fecha: última fila del kardex de cada (almacén,
             // producto) hasta el fin del día (histórica, exacta).
-            // COSTO "precio del día" CONOCIDO A ESA FECHA (misma base del Excel,
-            // pero congelada): última COMPRA hasta la fecha; sin compras aún, el
-            // precio_costo del producto; último recurso, el CPP histórico.
-            // Compras posteriores ya no re-valorizan días pasados.
+            // COSTO = COSTO PROMEDIO de ese almacén a esa fecha (la misma fila
+            // del kardex; es el de Inventario > Stock). Sin promedio aún, el
+            // precio_costo del producto. Una compra chica y cara ya no
+            // re-valoriza todo el stock, y las posteriores no tocan días pasados.
             $corte = $fechaCorte . ' 23:59:59';
             $v = DB::selectOne(
                 'WITH saldos AS (
-                    SELECT DISTINCT ON (mi.almacen_id, mi.producto_id) mi.producto_id, mi.saldo_cantidad
+                    SELECT DISTINCT ON (mi.almacen_id, mi.producto_id) mi.producto_id, mi.saldo_cantidad, mi.costo_promedio
                     FROM movimientos_inventario mi
                     WHERE mi.empresa_id = ? AND mi.fecha <= ?
                     ORDER BY mi.almacen_id, mi.producto_id, mi.fecha DESC, mi.id DESC
-                ),
-                compra_dia AS (
-                    SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_unitario
-                    FROM movimientos_inventario mi
-                    WHERE mi.empresa_id = ? AND mi.fecha <= ?
-                      AND mi.tipo IN (\'entrada\', \'transferencia_recepcion\') AND mi.costo_unitario > 0
-                    ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
-                ),
-                cpp AS (
-                    SELECT DISTINCT ON (mi.producto_id) mi.producto_id, mi.costo_promedio
-                    FROM movimientos_inventario mi
-                    WHERE mi.empresa_id = ? AND mi.fecha <= ?
-                    ORDER BY mi.producto_id, mi.fecha DESC, mi.id DESC
                 )
                 -- GREATEST(...,0): el stock NEGATIVO es un error de registro
                 -- (ventas antes de ingresar la compra), no inventario real; nunca
                 -- debe restar valor fantasma al balance. Se avisa aparte para
                 -- corregirlo (ver alerta de stock negativo en el controlador).
-                SELECT COALESCE(SUM(GREATEST(s.saldo_cantidad, 0) * COALESCE(cd.costo_unitario, NULLIF(p.precio_costo, 0), cp.costo_promedio, 0)), 0) AS v
+                SELECT COALESCE(SUM(GREATEST(s.saldo_cantidad, 0) * COALESCE(NULLIF(s.costo_promedio, 0), NULLIF(p.precio_costo, 0), 0)), 0) AS v
                 FROM saldos s
-                LEFT JOIN compra_dia cd ON cd.producto_id = s.producto_id
-                LEFT JOIN cpp cp ON cp.producto_id = s.producto_id
                 JOIN productos p ON p.id = s.producto_id',
-                [$empresaId, $corte, $empresaId, $corte, $empresaId, $corte],
+                [$empresaId, $corte],
             );
 
             return round((float) $v->v, 2);
@@ -810,7 +786,7 @@ class BalanceDiarioService
             ->join('productos', 'productos.id', '=', 'stock.producto_id')
             ->where('productos.empresa_id', $empresaId)
             ->where('productos.activo', true)
-            ->selectRaw('COALESCE(SUM(stock.cantidad * COALESCE(NULLIF(productos.precio_costo, 0), stock.costo_promedio)), 0) as v')
+            ->selectRaw('COALESCE(SUM(stock.cantidad * COALESCE(NULLIF(stock.costo_promedio, 0), productos.precio_costo, 0)), 0) as v')
             ->value('v');
 
         if ($fechaCorte >= now()->toDateString()) {
@@ -818,8 +794,8 @@ class BalanceDiarioService
         }
 
         // Costo canónico por producto (mismo criterio que la línea de stock).
-        $costo = "COALESCE(NULLIF(p.precio_costo, 0),
-            (SELECT s2.costo_promedio FROM stock s2 WHERE s2.producto_id = p.id AND s2.costo_promedio > 0 ORDER BY s2.id LIMIT 1), 0)";
+        $costo = "COALESCE((SELECT s2.costo_promedio FROM stock s2 WHERE s2.producto_id = p.id AND s2.costo_promedio > 0 ORDER BY s2.id LIMIT 1),
+            NULLIF(p.precio_costo, 0), 0)";
 
         // Ventas posteriores al corte (salieron DESPUÉS → se devuelven).
         $ventasPost = (float) DB::table('venta_items as vi')

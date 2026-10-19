@@ -481,16 +481,16 @@ class BalanceDiarioController extends Controller
      * Movimientos que cambian el VALOR del inventario de la empresa en una fecha.
      * Une las fuentes que suben/bajan el stock total (las transferencias internas
      * se excluyen porque no cambian el valor total de la empresa). El valor de
-     * cada movimiento se calcula con productos.precio_costo (igual que el balance).
+     * cada movimiento se calcula con el costo promedio (igual que el balance).
      *
      * Devuelve filas con: tipo, producto, documento, cantidad (± base), valor (±), usuario.
      */
     private function movimientosStockDia(int $empresaId, string $fecha): \Illuminate\Support\Collection
     {
-        // Costo efectivo del producto: precio_costo, y si está en 0 el
-        // costo_promedio real (mismo criterio que valoriza el balance). Así una
+        // Costo efectivo del producto: su costo_promedio real (mismo criterio
+        // que valoriza el balance), y si está en 0 el precio_costo. Así una
         // venta de un producto sin costo registrado no aparece en 0.
-        $costo = "COALESCE(NULLIF(p.precio_costo, 0), (SELECT s2.costo_promedio FROM stock s2 WHERE s2.producto_id = p.id AND s2.costo_promedio > 0 LIMIT 1), 0)";
+        $costo = "COALESCE((SELECT s2.costo_promedio FROM stock s2 WHERE s2.producto_id = p.id AND s2.costo_promedio > 0 ORDER BY s2.id LIMIT 1), NULLIF(p.precio_costo, 0), 0)";
 
         // Ventas (−)
         $ventas = DB::table('venta_items as vi')
@@ -892,7 +892,7 @@ class BalanceDiarioController extends Controller
             // ── Stock A LA FECHA del balance: producto por producto ─────
             // Sale del MISMO desglose que la línea (BalanceDiarioService::
             // desgloseStock): saldo del kardex por almacén sin negativos × costo
-            // conocido a la fecha. Así el modal suma exactamente la línea.
+            // promedio a la fecha. Así el modal suma exactamente la línea.
             case 'stock': {
                 $desglose = $this->service->desgloseStock($empresaId, $fecha);
                 $filas = collect($desglose)->sortByDesc('monto');
@@ -906,7 +906,7 @@ class BalanceDiarioController extends Controller
                     'grupos' => $filas->map(fn ($f, $clave) => [
                         'id'        => (string) $clave,
                         'titulo'    => $f['descripcion'],
-                        'subtitulo' => $f['detalle'] ? $f['detalle'] . ' (costo del día)' : null,
+                        'subtitulo' => $f['detalle'] ? $f['detalle'] . ' (costo promedio)' : null,
                         'monto'     => round((float) $f['monto'], 2),
                         'items'     => [],
                     ])->values(),

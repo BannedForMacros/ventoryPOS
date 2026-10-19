@@ -89,10 +89,11 @@ it('la variación del stock se explica producto por producto con sus movimientos
     $r = $this->auditoria->comparar($this->env->empresa->id, 'stock', $this->ayer, $this->hoy);
     $fila = collect($r['filas'])->firstWhere('descripcion', 'Fierro auditado');
 
-    // Ayer: 10 und a S/5 = 50. Hoy: 12 und a la última compra (S/8) = 96.
+    // Ayer: 10 und a S/5 = 50. Hoy: 12 und al costo promedio
+    // ((10×5 + 5×8) / 15 = S/6) = 72, no a la última compra (S/8).
     expect($fila['antes'])->toBe(50.0);
-    expect($fila['despues'])->toBe(96.0);
-    expect($fila['variacion'])->toBe(46.0);
+    expect($fila['despues'])->toBe(72.0);
+    expect($fila['variacion'])->toBe(22.0);
     expect($fila['eventos'])->toHaveCount(2);
 });
 

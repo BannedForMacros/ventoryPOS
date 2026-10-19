@@ -64,7 +64,7 @@ class DashboardController extends Controller
             ->sum('monto');
 
         // Stock valorizado: el MISMO valor de la línea de stock del balance de hoy
-        // (kardex por almacén sin negativos × costo del día; incluye productos
+        // (kardex por almacén sin negativos × costo promedio; incluye productos
         // desactivados que aún tienen saldo).
         $almacenIds = Almacen::where('empresa_id', $empresaId)->pluck('id');
         $stockValor = round(array_sum(array_column(
