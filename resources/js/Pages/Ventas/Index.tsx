@@ -25,6 +25,7 @@ import { useTiempoReal } from '@/lib/useTiempoReal';
 import Callout from '@/Components/UI/Callout';
 import { soles } from '@/lib/dinero';
 import ModalCorregirPago from '@/Components/Ventas/ModalCorregirPago';
+import EleccionAnulacionBoleta, { type ViaAnulacion } from '@/Components/Ventas/EleccionAnulacionBoleta';
 
 interface Paginado<T> { data: T[]; total: number; current_page: number; last_page: number; per_page: number; }
 
@@ -221,6 +222,8 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         });
     }
     const [motivo, setMotivo]   = useState('');
+    // Boleta: ¿baja sin nota de crédito o nota de crédito? (ver EleccionAnulacionBoleta)
+    const [via, setVia]         = useState<ViaAnulacion | null>(null);
     const [codigo, setCodigo]   = useState('');
     const [saving, setSaving]   = useState(false);
     const [errAnular, setErrAnular] = useState<Record<string, string>>({});
@@ -267,6 +270,9 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         setMotivo('');
         setCodigo('');
         setErrAnular({});
+        // Baja ya pedida en FacturaMac: solo queda esa salida.
+        const estado = v.comprobante_electronico?.estado;
+        setVia(v.comprobante_electronico?.baja && (estado === 'pendiente_anulacion' || estado === 'anulado') ? 'baja' : null);
     }
 
     function confirmarAnular() {
@@ -275,6 +281,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         setErrAnular({});
         router.post(route('ventas.anular', anular.id), {
             motivo,
+            via: anular.comprobante_electronico?.baja ? via ?? undefined : undefined,
             codigo_autorizacion: requiereCodigo(anular) ? codigo : undefined,
         }, {
             preserveScroll: true,
@@ -963,15 +970,36 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setAnular(null)} disabled={saving}>Cancelar</Button>
-                        <Button variant="danger" onClick={confirmarAnular} loading={saving}>
-                            {anular?.comprobante_electronico?.emitido ? 'Anular con nota de crédito' : 'Anular venta'}
+                        <Button variant="danger" onClick={confirmarAnular} loading={saving}
+                            disabled={!!anular?.comprobante_electronico?.baja && !via}>
+                            {anular?.comprobante_electronico?.baja && via === 'baja'
+                                ? 'Anular boleta sin nota de crédito'
+                                : anular?.comprobante_electronico?.emitido ? 'Anular con nota de crédito' : 'Anular venta'}
                         </Button>
                     </>
                 }
             >
                 {anular && (
                     <div className="space-y-3">
-                        {anular.comprobante_electronico?.emitido ? (
+                        {anular.comprobante_electronico?.baja && !['pendiente_anulacion', 'anulado'].includes(anular.comprobante_electronico.estado) && (
+                            <EleccionAnulacionBoleta
+                                comprobante={anular.comprobante_electronico.numero ?? ''}
+                                valor={via}
+                                onChange={setVia}
+                                disabled={saving}
+                                motivoSinNc={anular.comprobante_electronico.emitido
+                                    ? null
+                                    : 'La boleta todavía no llega a SUNAT (sale en el resumen del día): la nota de crédito se podrá emitir cuando SUNAT la acepte.'}
+                            />
+                        )}
+                        {anular.comprobante_electronico?.baja && via === 'baja' ? (
+                            <Callout variant="warning" title={`Se anulará la boleta ${anular.comprobante_electronico.numero ?? ''} sin nota de crédito`}>
+                                <p style={{ color: 'var(--color-text)' }}>
+                                    Se comunica la baja a SUNAT al instante (queda anulada en unos minutos), vuelve el stock y
+                                    se revierte el cobro de esta venta. Úsalo solo si el cliente no se llevó la boleta. Es una acción irreversible.
+                                </p>
+                            </Callout>
+                        ) : anular.comprobante_electronico?.baja && !via ? null : anular.comprobante_electronico?.emitido ? (
                             <Callout variant="warning" title={`Se emitirá la nota de crédito de ${anular.comprobante_electronico.numero}`}>
                                 <p style={{ color: 'var(--color-text)' }}>
                                     El comprobante ya está en SUNAT. Al anular, el sistema registra la devolución de todo,

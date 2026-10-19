@@ -839,11 +839,19 @@ class VentaService
      * la exige via AnularVentaRequest (mín 10 chars). Se acepta null solo en
      * llamadas internas/legacy; en ese caso el contexto de auditoría lo refleja.
      */
-    public function anular(Venta $venta, User $user, ?string $motivo = null): void
+    /**
+     * @param ?\Closure $bajaBoleta Solo AnulacionConBajaBoleta: la boleta se da de baja
+     *        ante SUNAT (sin nota de crédito) en vez de bloquear por estar informada. Se
+     *        llama DENTRO de la transacción, después de revertir todo: si FacturaMac la
+     *        rechaza y lanza, no queda nada revertido.
+     */
+    public function anular(Venta $venta, User $user, ?string $motivo = null, ?\Closure $bajaBoleta = null): void
     {
-        $this->bloquearSiTieneComprobanteEmitido($venta); // V14
+        if (! $bajaBoleta) {
+            $this->bloquearSiTieneComprobanteEmitido($venta); // V14
+        }
 
-        DB::transaction(function () use ($venta, $user, $motivo) {
+        DB::transaction(function () use ($venta, $user, $motivo, $bajaBoleta) {
             // Releer con bloqueo: dos anulaciones simultáneas (doble clic, dos
             // pestañas) llegaban las dos con la venta "completada" en memoria y
             // devolvían el stock y el dinero dos veces.
@@ -947,6 +955,10 @@ class VentaService
 
             $this->liberarOrigenesDeVenta($venta, $user);
 
+            if ($bajaBoleta) {
+                $bajaBoleta($venta);
+            }
+
             \App\Services\AuditoriaService::log('venta.anulada', $venta, [
                 'numero'           => $venta->numero,
                 'total'            => (float) $venta->total,
@@ -954,6 +966,8 @@ class VentaService
                 'turno_id'         => $venta->turno_id,
                 'cliente_id'       => $venta->cliente_id,
                 'motivo'           => $motivo,
+                // Anulada con baja de la boleta ante SUNAT, sin nota de crédito.
+                ...($bajaBoleta ? ['baja_boleta' => true] : []),
             ], $user);
         });
     }

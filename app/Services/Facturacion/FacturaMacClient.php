@@ -291,6 +291,30 @@ class FacturaMacClient
     }
 
     /**
+     * Da de baja una BOLETA sin nota de crédito: `POST /api/v1/ventas/{id}/baja`.
+     *
+     * FacturaMac la anula ante SUNAT por Resumen Diario (estado 3); si SUNAT aún no
+     * la conocía, primero la informa. Responde enseguida con `pendiente_anulacion`
+     * (o `anulado`); el resto lo sigue ConsultarEstadoComprobante. Idempotente.
+     *
+     * @throws FacturaMacException `baja_no_permitida` (409, no reintentable) si la
+     *         boleta ya no admite baja: fuera de plazo, con nota de crédito, etc.
+     */
+    public function baja(int $id, ?string $motivo = null): Respuesta
+    {
+        $response = $this->enviar(
+            fn (PendingRequest $req) => $req->post("{$this->baseUrl}/api/v1/ventas/{$id}/baja",
+                // FacturaMac guarda hasta 255; el motivo del POS admite 500.
+                array_filter(['motivo' => $motivo !== null ? mb_substr($motivo, 0, 255) : null])),
+            "dar de baja la boleta {$id}",
+        );
+
+        $this->verificar($response, "dar de baja la boleta {$id}");
+
+        return Respuesta::desdeArray($this->json($response));
+    }
+
+    /**
      * Reenvía a SUNAT un comprobante rechazado. `POST /api/v1/ventas/{id}/reintentar`.
      *
      * Sobre el MISMO comprobante y el mismo correlativo, nunca creando otro: si cada

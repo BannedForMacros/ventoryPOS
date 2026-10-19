@@ -848,7 +848,8 @@ class VentaController extends Controller
                 // página (whereIn sobre las 25 ventas), no una por fila; y se
                 // piden solo las columnas que pinta la tabla. Las ventas
                 // `ticket` simplemente no tienen fila y llegan con null.
-                $conCpe ? ['comprobanteElectronico:id,venta_id,tipo,numero,estado'] : [],
+                // facturamac_id: lo necesita AnulacionConBajaBoleta::admite() (la marca 'baja').
+                $conCpe ? ['comprobanteElectronico:id,venta_id,tipo,numero,estado,facturamac_id'] : [],
             ))
             ->when(!$esAdmin, fn($qq) => $qq->where('user_id', $user->id))
             // "Anuladas" incluye las anuladas con nota de crédito (que por dentro
@@ -901,6 +902,9 @@ class VentaController extends Controller
                 'estado' => $ce->estado,
                 // Admite Nota de Crédito: "Anular" la emite (AnulacionConNotaCredito).
                 'emitido' => in_array($ce->estado, \App\Models\VentaComprobante::estadosAcreditables(), true),
+                // Boleta que admite baja sin nota de crédito (AnulacionConBajaBoleta).
+                // Sin consultas: el servidor vuelve a comprobarlo todo al anular.
+                'baja'   => \App\Services\AnulacionConBajaBoleta::admite($ce, $venta),
                 // Lo decide el modelo (ESTADOS_TERMINALES): la lista no debe
                 // tener su propia copia de esa lista.
                 'final'  => $ce->esFinal(),
@@ -1693,13 +1697,18 @@ class VentaController extends Controller
             // Con comprobante ya informado a SUNAT no hay bloqueo: anular emite la
             // Nota de Crédito (anulacionNc dice cuánto vuelve y por qué medio).
             'anulacionNc'   => $anulacionNc = app(\App\Services\AnulacionConNotaCredito::class)->plan($venta),
-            'bloqueoFiscal' => $anulacionNc
+            // Boleta que se puede anular SIN nota de crédito (baja por Resumen Diario).
+            // Si se puede, no hay bloqueo: el modal pregunta si la boleta se entregó.
+            'anulacionBaja' => $anulacionBaja = app(\App\Services\AnulacionConBajaBoleta::class)->plan($venta),
+            'bloqueoFiscal' => $anulacionBaja && $anulacionBaja['bloqueo'] === null
+                ? null
+                : ($anulacionNc
                 ? match (true) {
                     $anulacionNc['bloqueo'] === null => null,
                     str_contains($anulacionNc['bloqueo'], 'ya se devolvió') => "Ya se devolvió todo lo de esta venta con nota de crédito del comprobante {$anulacionNc['comprobante']}: no queda nada por anular.",
                     default => "La venta tiene el comprobante {$anulacionNc['comprobante']} informado a SUNAT y no se puede anular en un paso: {$anulacionNc['bloqueo']}",
                 }
-                : app(VentaService::class)->motivoBloqueoFiscal($venta),
+                : app(VentaService::class)->motivoBloqueoFiscal($venta)),
             // Factura/boleta cargada a mano: NO bloquea, pero hay que avisar de que
             // su nota de crédito se emite por fuera.
             'avisoExterno'  => VentaService::avisoComprobanteExterno($venta),
@@ -1952,6 +1961,22 @@ class VentaController extends Controller
                         : 'Anular ventas requiere el código de autorización de un administrador.',
                 ]);
             }
+        }
+
+        // Boleta que NO se entregó al cliente: baja ante SUNAT sin nota de crédito,
+        // aunque aún no haya salido en el resumen del día. Solo si quien anula lo
+        // elige ('via' => 'baja'): decide qué documento queda ante SUNAT, así que no
+        // se adivina. Mismas reglas de arriba (permiso, código fuera de plazo).
+        if ($request->validated('via') === 'baja') {
+            try {
+                app(\App\Services\AnulacionConBajaBoleta::class)->ejecutar($venta, $user, $request->validated('motivo'));
+            } catch (\RuntimeException $e) {
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) throw $e;
+                return back()->withErrors(['venta' => $e->getMessage()]);
+            }
+
+            return redirect()->back()->with('success', "Venta {$venta->numero} anulada sin nota de crédito: volvió el stock, "
+                . 'se revirtió el cobro y la baja de la boleta se está comunicando a SUNAT.');
         }
 
         // Boleta o factura ya informada a SUNAT: anular = Nota de Crédito. Se hace

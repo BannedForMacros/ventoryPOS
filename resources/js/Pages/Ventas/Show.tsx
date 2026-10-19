@@ -14,6 +14,7 @@ import Modal from '@/Components/UI/Modal';
 import Callout from '@/Components/UI/Callout';
 import ModalCorregirPago from '@/Components/Ventas/ModalCorregirPago';
 import ModalModificarPedido from '@/Components/Ventas/ModalModificarPedido';
+import EleccionAnulacionBoleta, { type ViaAnulacion } from '@/Components/Ventas/EleccionAnulacionBoleta';
 import { agenteActivo, imprimirTicket, type TicketPayload } from '@/lib/ticketPrinter';
 import {
     rutaComprobante, metaEstado, estadoEnCurso, puedeReintentar, etiquetaTipoSunat, etiquetaComprobante,
@@ -56,6 +57,12 @@ interface Props extends PageProps {
     /** Corregir solo el método de pago (también con comprobante emitido). null = sin permiso. */
     cambioPago?: { bloqueo: string | null } | null;
     anulacionNc?: { comprobante: string; reembolso: number; cxc: number; pagos: { metodo: string; monto: number }[]; bloqueo: string | null } | null;
+    /**
+     * Boleta que se puede anular SIN nota de crédito (baja por Resumen Diario), aunque
+     * aún no haya salido en el resumen. `en_tramite` = la baja ya se pidió en FacturaMac
+     * y solo falta revertir stock y caja aquí.
+     */
+    anulacionBaja?: { comprobante: string; en_tramite: boolean; total: number; pagos: { metodo: string; monto: number }[]; bloqueo: string | null } | null;
     /** Factura/boleta emitida fuera del sistema: se avisa, no se bloquea. */
     avisoExterno?: string | null;
     /** Cuánto dejó la venta; null si el usuario no puede ver utilidad o si está anulada. */
@@ -209,7 +216,7 @@ function CuantoGanaste({ u }: { u: UtilidadVenta }) {
     );
 }
 
-export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, anulacionNc = null, anuladaConNc = null, restablecer = null, avisoExterno = null, utilidad = null, cambioPago = null }: Props) {
+export default function VentasShow({ venta, flash, ticketImpresion, puedeModificarPedido = false, modificacionesPedido = [], bloqueoFiscal = null, anulacionNc = null, anulacionBaja = null, anuladaConNc = null, restablecer = null, avisoExterno = null, utilidad = null, cambioPago = null }: Props) {
     // Tiempo real: la respuesta de SUNAT, un abono o una edición se ven sin recargar.
     useTiempoReal(['ventas'], () => router.reload());
     const [modalPedido, setModalPedido] = useState(false);
@@ -221,6 +228,9 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
 
     // Estados para anular desde el detalle.
     const [modalAnular, setModalAnular] = useState(false);
+    // Boleta: ¿baja sin nota de crédito o nota de crédito? (ver EleccionAnulacionBoleta)
+    const bajaDisponible = !!anulacionBaja && !anulacionBaja.bloqueo;
+    const [via, setVia] = useState<ViaAnulacion | null>(null);
     // Restablecer una venta anulada por error (solo admin).
     const [modalRestablecer, setModalRestablecer] = useState(false);
     const [modalPago, setModalPago] = useState(false);
@@ -275,6 +285,8 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
         setMotivoAnular('');
         setCodigoAnular('');
         setErrAnular({});
+        // Baja ya pedida en FacturaMac: no hay nada que elegir.
+        setVia(anulacionBaja?.en_tramite ? 'baja' : null);
         setModalAnular(true);
     }
 
@@ -283,6 +295,7 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
         setErrAnular({});
         router.post(route('ventas.anular', venta.id), {
             motivo: motivoAnular,
+            via: bajaDisponible ? via ?? undefined : undefined,
             codigo_autorizacion: requiereCodigo() ? codigoAnular : undefined,
         }, {
             preserveScroll: true,
@@ -751,14 +764,42 @@ export default function VentasShow({ venta, flash, ticketImpresion, puedeModific
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setModalAnular(false)} disabled={anulando}>Cancelar</Button>
-                        <Button variant="danger" onClick={confirmarAnular} loading={anulando}>
-                            {anulacionNc ? 'Anular con nota de crédito' : 'Anular venta'}
+                        <Button variant="danger" onClick={confirmarAnular} loading={anulando} disabled={bajaDisponible && !via}>
+                            {bajaDisponible && via === 'baja'
+                                ? 'Anular boleta sin nota de crédito'
+                                : anulacionNc ? 'Anular con nota de crédito' : 'Anular venta'}
                         </Button>
                     </>
                 }
             >
                 <div className="space-y-3">
-                    {anulacionNc ? (
+                    {bajaDisponible && anulacionBaja && !anulacionBaja.en_tramite && (
+                        <EleccionAnulacionBoleta
+                            comprobante={anulacionBaja.comprobante}
+                            valor={via}
+                            onChange={setVia}
+                            disabled={anulando}
+                            motivoSinNc={anulacionNc
+                                ? anulacionNc.bloqueo
+                                : 'La boleta todavía no llega a SUNAT (sale en el resumen del día): la nota de crédito se podrá emitir cuando SUNAT la acepte.'}
+                        />
+                    )}
+                    {bajaDisponible && anulacionBaja && via === 'baja' ? (
+                        <Callout variant="warning" title={anulacionBaja.en_tramite
+                            ? `La boleta ${anulacionBaja.comprobante} ya se anuló en FacturaMac`
+                            : `Se anulará la boleta ${anulacionBaja.comprobante} sin nota de crédito`}>
+                            <p style={{ color: 'var(--color-text)' }}>
+                                {anulacionBaja.en_tramite
+                                    ? 'Falta revertir la venta aquí: '
+                                    : 'Se comunica la baja a SUNAT al instante (queda anulada en unos minutos), '}
+                                vuelve el stock
+                                {anulacionBaja.pagos.length > 0
+                                    ? <> y se revierte el cobro <strong>{anulacionBaja.pagos.map(p => `${p.metodo} S/ ${p.monto.toFixed(2)}`).join(' + ')}</strong></>
+                                    : null}
+                                . Úsalo solo si el cliente no se llevó la boleta. Es una acción irreversible.
+                            </p>
+                        </Callout>
+                    ) : bajaDisponible && !via ? null : anulacionNc ? (
                         <Callout variant="warning" title={`Se emitirá la nota de crédito de ${anulacionNc.comprobante}`}>
                             <p style={{ color: 'var(--color-text)' }}>
                                 El comprobante ya está en SUNAT. Al anular se registra la devolución de todo, vuelve el stock

@@ -21,6 +21,9 @@ class AnularVentaRequest extends FormRequest
             // ingresar para anular fuera del plazo configurable de la empresa.
             // El admin no lo usa.
             'codigo_autorizacion' => ['nullable', 'string', 'max:100'],
+            // Venta con boleta: 'baja' = la boleta NO se entregó y se da de baja sin
+            // nota de crédito (AnulacionConBajaBoleta). Sin valor, lo de siempre.
+            'via' => ['nullable', 'string', 'in:baja,nota_credito'],
         ];
     }
 

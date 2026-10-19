@@ -547,6 +547,8 @@ export interface ComprobanteElectronico extends Record<string, unknown> {
     id?:                number;
     /** Informado a SUNAT: anular la venta emite la Nota de Crédito. */
     emitido?:           boolean;
+    /** Boleta que se puede anular SIN nota de crédito (baja por Resumen Diario). */
+    baja?:              boolean;
     venta_id?:          number;
     /** Catálogo 01 SUNAT: '01' factura · '03' boleta. */
     tipo:               '01' | '03';
