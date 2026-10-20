@@ -804,9 +804,12 @@ class StoreVentaRequest extends FormRequest
             // Piso de precio: el POS permite editar el precio de venta por linea,
             // pero nunca por debajo del costo real de la mercaderia. Orden de
             // prioridad:
-            //   1) costo propio de la presentacion (producto_unidades.precio_costo)
-            //   2) costo promedio del stock del almacen de ventas × factor_conversion
+            //   1) costo promedio del stock del almacen de ventas × factor_conversion
+            //   2) costo propio de la presentacion (producto_unidades.precio_costo)
             //   3) fallback al costo base del producto (productos.precio_costo)
+            // El costo de la presentacion es el del catalogo (el de la carga
+            // inicial) y no sigue a las compras: ponerlo primero dejaba el piso
+            // en un costo viejo. Misma regla que costoMinimoDe() del POS.
             // Costo 0/null = sin piso.
             $factor         = (float) $unidad->factor_conversion;
             $costoUnidad    = (float) ($unidad->precio_costo ?? 0);
@@ -814,10 +817,10 @@ class StoreVentaRequest extends FormRequest
             $costoProducto  = (float) ($unidad->producto->precio_costo ?? 0);
 
             $costoMinimo = 0.0;
-            if ($costoUnidad > 0) {
-                $costoMinimo = $costoUnidad;
-            } elseif ($costoStock > 0 && $factor > 0) {
+            if ($costoStock > 0 && $factor > 0) {
                 $costoMinimo = round($costoStock * $factor, 2);
+            } elseif ($costoUnidad > 0) {
+                $costoMinimo = $costoUnidad;
             } elseif ($costoProducto > 0 && $factor > 0) {
                 $costoMinimo = round($costoProducto * $factor, 2);
             }

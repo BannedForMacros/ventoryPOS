@@ -260,21 +260,23 @@ function clavesDeLineas(items: { producto_id: number; producto_unidad_id: number
 
 /**
  * Costo minimo de una presentacion: el precio de venta editable no puede
- * bajar de este valor. Usa el costo propio de la unidad si esta definido;
- * si no, el costo promedio real del stock del almacen de ventas
- * (unidad base) multiplicado por el factor de conversion; finalmente
- * fallback al costo base del producto. Devuelve 0 cuando no hay costo
- * registrado (sin piso).
+ * bajar de este valor. Usa el costo promedio real del stock del almacen de
+ * ventas (unidad base) multiplicado por el factor de conversion; si no hay
+ * stock con costo, el costo propio de la presentacion; finalmente el costo
+ * base del producto. El costo de la presentacion es el del catalogo (p. ej.
+ * el de la carga inicial) y no sigue a las compras: ponerlo primero dejaba el
+ * piso en un costo viejo. Devuelve 0 cuando no hay costo registrado (sin piso).
+ * Misma regla que StoreVentaRequest.
  */
 function costoMinimoDe(producto: Producto, unidad: ProductoUnidad): number {
-    const costoUnidad = parseFloat(unidad.precio_costo ?? '0') || 0;
-    if (costoUnidad > 0) return costoUnidad;
-
     const costoStock = Number(producto.stock_costo_promedio ?? 0) || 0;
     const factor     = parseFloat(unidad.factor_conversion ?? '1') || 1;
     if (costoStock > 0 && factor > 0) {
         return Math.round(costoStock * factor * 100) / 100;
     }
+
+    const costoUnidad = parseFloat(unidad.precio_costo ?? '0') || 0;
+    if (costoUnidad > 0) return costoUnidad;
 
     const costoBase = Number(producto.precio_costo ?? 0) || 0;
     return Math.round(costoBase * factor * 100) / 100;
