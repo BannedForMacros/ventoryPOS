@@ -292,6 +292,29 @@ class VentaController extends Controller
         // prellenar carrito + cliente con los PRECIOS COTIZADOS (congelados),
         // patrón idéntico al de citaPrellenada.
         $cotizacionPrellenada = null;
+
+        // «Usar el vale ahora» desde una devolución (?vale_anticipo_id=): el POS
+        // arranca con el dueño del vale como cliente y el vale aplicado. Solo
+        // un vale de devolución activo y con saldo, de esta empresa.
+        $valePrellenado = null;
+        if (($valeId = $request->query('vale_anticipo_id')) && !$puedeEditarVenta) {
+            $vale = \App\Models\ClienteAnticipo::deEmpresa($user->empresa_id)
+                ->with('cliente', 'devolucion:id,numero')
+                ->whereKey((int) $valeId)
+                ->whereNotNull('devolucion_id')
+                ->where('tipo_valorizacion', 'monto')
+                ->where('estado', 'activo')
+                ->where('saldo', '>', 0)
+                ->first();
+            if ($vale && $vale->cliente && !$vale->cliente->es_cliente_general) {
+                $valePrellenado = [
+                    'anticipo_id' => $vale->id,
+                    'saldo'       => (float) $vale->saldo,
+                    'devolucion'  => $vale->devolucion?->numero,
+                    'cliente'     => $vale->cliente,
+                ];
+            }
+        }
         if ($cotizacionId = $request->query('cotizacion_id')) {
             $cotizacion = \App\Models\Cotizacion::with(['cliente', 'items.producto', 'items.productoUnidad.unidadMedida'])
                 ->where('id', $cotizacionId)
@@ -535,6 +558,7 @@ class VentaController extends Controller
             'conceptosDescuento' => $conceptosDescuento,
             'citaPrellenada'     => $citaPrellenada,
             'cotizacionPrellenada' => $cotizacionPrellenada,
+            'valePrellenado'       => $valePrellenado,
             'ventaEnEdicion'     => $ventaEnEdicion,
             'turnoBackdate'      => $turnoBackdate,
             'puedeVender'        => $puedeVender,

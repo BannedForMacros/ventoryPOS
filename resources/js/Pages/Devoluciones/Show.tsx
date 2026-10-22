@@ -1,7 +1,7 @@
 import { router, usePage } from '@inertiajs/react';
 import { useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { CheckCircle, XCircle, Ban, RefreshCw } from 'lucide-react';
+import { CheckCircle, XCircle, Ban, RefreshCw, ShoppingCart } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -62,6 +62,8 @@ interface Devolucion {
 
 interface Props extends PageProps {
     devolucion: Devolucion;
+    /** Vale con saldo: «Usar el vale ahora» abre el POS con él aplicado. */
+    usarVale?: { anticipo_id: number; saldo: number; cliente: string | null } | null;
 }
 
 const ESTADO_VARIANT: Record<EstadoDev, 'warning' | 'primary' | 'success' | 'secondary' | 'danger'> = {
@@ -89,7 +91,7 @@ const NC_INFO: Record<EstadoNC, { variant: 'info' | 'success' | 'warning' | 'dan
     fallida:   { variant: 'danger', titulo: 'La nota de crédito NO se emitió', texto: 'La devolución está hecha y es correcta, pero SUNAT sigue viendo declarado el importe original de la venta. Hay que emitirla para que la declaración cuadre.' },
 };
 
-export default function DevolucionShow({ devolucion: d }: Props) {
+export default function DevolucionShow({ devolucion: d, usarVale = null }: Props) {
     const { flash, auth } = usePage<Props>().props;
     const esAdmin = (auth.user as { rol?: { es_admin?: boolean } } | undefined)?.rol?.es_admin ?? false;
 
@@ -144,6 +146,22 @@ export default function DevolucionShow({ devolucion: d }: Props) {
             />
 
             <div className="space-y-6 max-w-6xl">
+                {/* Cambio por otro producto: el vale se usa en una venta nueva de
+                    hoy. La diferencia entra a la caja actual o queda al crédito. */}
+                {usarVale && (
+                    <Callout
+                        variant="success"
+                        title={`Vale de S/ ${usarVale.saldo.toFixed(2)} a favor de ${usarVale.cliente ?? 'el cliente'}`}
+                    >
+                        Si se lleva otro producto, úsalo ahora: el POS abre con el cliente y el vale aplicados. La diferencia se cobra en la caja de hoy o queda al crédito.
+                        <span className="block mt-3">
+                            <Button variant="primary" onClick={() => router.visit(route('pos.index', { vale_anticipo_id: usarVale.anticipo_id }))}>
+                                <ShoppingCart size={14} className="mr-1" />Usar el vale ahora
+                            </Button>
+                        </span>
+                    </Callout>
+                )}
+
                 {/* El estado ante SUNAT va ARRIBA del todo y solo cuando hay algo
                     que contar: una nota fallida deja la declaración descuadrada y
                     antes solo se veía en el log, donde nadie la iba a buscar. */}

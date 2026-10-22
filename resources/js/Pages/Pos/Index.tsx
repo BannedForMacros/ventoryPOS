@@ -196,6 +196,8 @@ interface Props extends PageProps {
     conceptosDescuento: DescuentoConcepto[];
     citaPrellenada?:    CitaPrellenada | null;
     cotizacionPrellenada?: CotizacionPrellenada | null;
+    /** «Usar el vale ahora» desde una devolución: cliente y vale ya aplicados. */
+    valePrellenado?:    { anticipo_id: number; saldo: number; devolucion: string | null; cliente: Cliente } | null;
     ventaEnEdicion?:    VentaEnEdicion | null;
     turnoBackdate?:     TurnoBackdate | null;
     // Casillas que la empresa puede apagar en Configuración → Empresa.
@@ -415,7 +417,7 @@ function calcularTotales(items: LineaCarrito[], descuentoTotal: number, tasaPorc
     return { subtotal, igv, total, baseGravada: baseGravadaFinal, baseExonerada: baseExonFinal };
 }
 
-export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null, puedeCrearProducto = false, ventanaEmision = null, permiteFechaFactura = false, ticketPorPlantilla = false, topeDescuento = null , visorVentas = null }: Props) {
+export default function PosIndex({ turno, productos, productosHasMore, productosCursor, clienteGeneral, categorias, hayServicios, metodosPago, conceptosDescuento, flash, citaPrellenada, cotizacionPrellenada, valePrellenado = null, ventaEnEdicion, turnoBackdate, puedeVender, razonNoVender, monedas, tipoCambioHoy, facturacion, usaTransito, vendeTransito, permiteCredito = true, permitePendienteEntrega = true, pideDatosCliente = false, entregas = null, puedeCrearProducto = false, ventanaEmision = null, permiteFechaFactura = false, ticketPorPlantilla = false, topeDescuento = null , visorVentas = null }: Props) {
     // Configuración de la empresa (configurable por tenant).
     const empresaAuth = usePage().props.auth?.user?.empresa as {
         tasa_igv?: number | string;
@@ -523,7 +525,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     }) ?? [];
 
     const clienteInicial: Cliente | null =
-        ventaEnEdicion?.cliente ?? citaPrellenada?.cliente ?? cotizacionPrellenada?.cliente ?? clienteGeneral;
+        ventaEnEdicion?.cliente ?? citaPrellenada?.cliente ?? cotizacionPrellenada?.cliente ?? valePrellenado?.cliente ?? clienteGeneral;
 
     const [busqueda, setBusqueda]           = useState('');
     const [carrito, setCarrito]             = useState<LineaCarrito[]>(ventaEnEdicion ? carritoEdicion : carritoInicial);
@@ -689,6 +691,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     const [anticiposManual, setAnticiposManual] = useState<number[]>(anticiposEdicion.map(a => a.id));
     // La primera carga del cliente de la venta en edición no debe desmarcarlos.
     const conservarAnticiposEdicion = useRef(anticiposEdicion.length > 0);
+    // Vale de la devolución que se aplica al cargar los anticipos de su dueño.
+    const valePorAplicar = useRef<number | null>(valePrellenado?.anticipo_id ?? null);
     const [cargandoAnticipos, setCargandoAnticipos] = useState(false);
 
     // Totales de la venta (disponibles temprano para efectos y validaciones).
@@ -933,6 +937,15 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                     ].sort((a, b) => (a.fecha === b.fecha ? a.id - b.id : a.fecha < b.fecha ? -1 : 1));
                 }
                 setAnticiposCliente(lista);
+                if (valePorAplicar.current && id === valePrellenado?.cliente.id) {
+                    const valeId = valePorAplicar.current;
+                    valePorAplicar.current = null;
+                    if (lista.some(a => a.id === valeId)) {
+                        setModoAnticipo('manual');
+                        setAnticiposManual([valeId]);
+                        return;
+                    }
+                }
                 if (conservarAnticiposEdicion.current) {
                     conservarAnticiposEdicion.current = false;
                     return;
@@ -2037,6 +2050,31 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                         style={{ color: 'var(--color-primary)' }}>
                         Ver cita
                     </Link>
+                </div>
+            )}
+
+            {/* Banner del vale de devolución («Usar el vale ahora») */}
+            {valePrellenado && anticiposIds.includes(valePrellenado.anticipo_id) && (
+                <div
+                    className="flex items-center gap-2 flex-wrap px-3 sm:px-4 py-2 flex-shrink-0 border-b text-sm"
+                    style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-success) 12%, var(--color-bg))',
+                        borderColor: 'var(--color-success)',
+                        color: 'var(--color-text)',
+                    }}
+                >
+                    <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                        style={{ backgroundColor: 'var(--color-success)', color: '#fff' }}>
+                        Vale {valePrellenado.devolucion ?? ''}
+                    </span>
+                    <span>
+                        <strong>{valePrellenado.cliente.razon_social
+                            ?? `${valePrellenado.cliente.nombres ?? ''} ${valePrellenado.cliente.apellidos ?? ''}`.trim()}</strong>
+                        {' '}tiene S/ {valePrellenado.saldo.toFixed(2)} a favor, ya aplicado a esta venta.
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        · Agrega los productos: la diferencia se cobra aquí o queda al crédito.
+                    </span>
                 </div>
             )}
 

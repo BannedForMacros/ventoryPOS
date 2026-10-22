@@ -80,6 +80,9 @@ class DevolucionService
                 'fecha'               => now(),
                 'motivo_id'           => $motivo->id,
                 'forma_reembolso'     => $data['forma_reembolso'],
+                'vale_cliente_id'     => $data['forma_reembolso'] === 'vale_credito'
+                    ? ($data['vale_cliente_id'] ?? null)
+                    : null,
                 'requiere_aprobacion' => $requiereAprobacion,
                 'fue_aprobada'        => !$requiereAprobacion, // si no requiere, queda aprobada implícitamente
                 'estado'              => $requiereAprobacion ? 'pendiente' : 'aprobada',

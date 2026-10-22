@@ -228,6 +228,7 @@ class DevolucionController extends Controller
                     'id'              => $venta->cliente->id,
                     'nombre_completo' => $venta->cliente->nombre_completo,
                     'numero_documento' => $venta->cliente->numero_documento,
+                    'es_cliente_general' => (bool) $venta->cliente->es_cliente_general,
                 ] : null,
                 'local'          => ['id' => $venta->local->id, 'nombre' => $venta->local->nombre],
                 'pagos'          => $venta->pagos->map(fn($p) => [
@@ -297,10 +298,25 @@ class DevolucionController extends Controller
             'user', 'userAprobacion',
             'detalles.producto', 'detalles.motivo',
             'pagos.metodoPago',
+            'valeAnticipo:id,devolucion_id,cliente_id,monto,saldo,estado',
+            'valeAnticipo.cliente',
         ]);
+
+        // «Usar el vale ahora»: abre el POS con el cliente y su vale ya
+        // aplicados (el cambio por otro producto). Solo con saldo y permiso.
+        $vale = $devolucion->valeAnticipo;
+        $usarVale = $vale && $vale->estado === 'activo' && (float) $vale->saldo > 0.009
+            && $request->user()->tienePermiso('pos', 'ver')
+            ? [
+                'anticipo_id' => $vale->id,
+                'saldo'       => (float) $vale->saldo,
+                'cliente'     => $vale->cliente?->nombre_completo,
+            ]
+            : null;
 
         return Inertia::render('Devoluciones/Show', [
             'devolucion' => $devolucion,
+            'usarVale'   => $usarVale,
         ]);
     }
 

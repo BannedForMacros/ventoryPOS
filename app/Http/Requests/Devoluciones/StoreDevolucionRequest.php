@@ -30,7 +30,14 @@ class StoreDevolucionRequest extends FormRequest
                 'required', 'integer',
                 Rule::exists('devolucion_motivos', 'id')->where('empresa_id', $empresaId),
             ],
-            'forma_reembolso' => ['required', Rule::in(['efectivo', 'mismo_metodo', 'vale_credito', 'cambio_producto', 'sin_reembolso'])],
+            // «cambio_producto» ya no se acepta: era solo una etiqueta, no creaba
+            // vale ni movía caja y el saldo del cliente se perdía. El cambio se
+            // hace con vale y luego una venta en el POS que lo usa.
+            'forma_reembolso' => ['required', Rule::in(['efectivo', 'mismo_metodo', 'vale_credito', 'sin_reembolso'])],
+            'vale_cliente_id' => [
+                'nullable', 'integer',
+                Rule::exists('clientes', 'id')->where('empresa_id', $empresaId)->where('activo', true),
+            ],
             'observacion' => ['nullable', 'string', 'max:500'],
             'turno_id' => ['nullable', 'integer', Rule::exists('turnos', 'id')->where('empresa_id', $empresaId)],
 
@@ -64,7 +71,7 @@ class StoreDevolucionRequest extends FormRequest
             // digan lo mismo al céntimo.
             $venta = Venta::where('id', $this->input('venta_id'))
                 ->where('empresa_id', $this->user()->empresa_id)
-                ->with('items')
+                ->with('items', 'cliente')
                 ->first();
             $totalDevolucion = $venta
                 ? app(DevolucionService::class)->montoADevolver($venta, (array) $this->input('items', []))
@@ -73,6 +80,28 @@ class StoreDevolucionRequest extends FormRequest
                 ? Devolucion::repartoContraCxc($venta, $totalDevolucion)
                 : ['cxc' => 0.0, 'reembolso' => $totalDevolucion];
             $aReembolsar = $reparto['reembolso'];
+
+            // 0. El vale tiene que tener dueño: con la venta a «Cliente General»
+            //    cualquiera lo vería en el POS. Lo que se descuenta de la deuda de
+            //    una venta al crédito es de SU cliente, así que ahí no se cambia.
+            if ($forma === 'vale_credito' && $venta && $validator->errors()->isEmpty()) {
+                $valeClienteId = $this->input('vale_cliente_id') ? (int) $this->input('vale_cliente_id') : null;
+                $dueno = $valeClienteId
+                    ? \App\Models\Cliente::where('empresa_id', $venta->empresa_id)->find($valeClienteId)
+                    : $venta->cliente;
+
+                if (!$dueno || $dueno->es_cliente_general) {
+                    $validator->errors()->add('vale_cliente_id',
+                        'El vale debe quedar a nombre de una persona: busca o registra al cliente (DNI o nombre). '
+                        . 'Con «Cliente General» cualquiera podría usarlo.');
+                    return;
+                }
+                if ($reparto['cxc'] > 0.009 && $valeClienteId && $valeClienteId !== (int) $venta->cliente_id) {
+                    $validator->errors()->add('vale_cliente_id',
+                        'Esta venta es al crédito: lo devuelto primero baja su deuda, así que el vale queda a nombre del cliente de la venta.');
+                    return;
+                }
+            }
 
             // 1. Formas de reembolso que entregan dinero exigen al menos un pago
             //    (salvo que todo lo devuelto se descuente de la deuda de la venta).

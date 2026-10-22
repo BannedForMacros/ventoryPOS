@@ -25,6 +25,7 @@ class Devolucion extends Model
         'fecha',
         'motivo_id',
         'forma_reembolso',
+        'vale_cliente_id',
         'monto_devolucion',
         'monto_reembolso',
         'requiere_aprobacion',
@@ -191,6 +192,9 @@ class Devolucion extends Model
     public function detalles(): HasMany         { return $this->hasMany(DevolucionDetalle::class); }
     public function pagos(): HasMany            { return $this->hasMany(DevolucionPago::class); }
     /** Anticipo creado automáticamente cuando el reembolso fue "vale/crédito a favor". */
+    /** A quién quedó el vale (NULL = el cliente de la venta). */
+    public function valeCliente(): BelongsTo     { return $this->belongsTo(Cliente::class, 'vale_cliente_id'); }
+
     public function valeAnticipo(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
         return $this->hasOne(ClienteAnticipo::class, 'devolucion_id');
@@ -321,7 +325,10 @@ class Devolucion extends Model
             if ($montoAnticipo > 0.009) {
                 $anticipo = ClienteAnticipo::create([
                     'empresa_id'        => $this->empresa_id,
-                    'cliente_id'        => $venta->cliente_id,
+                    // El vale puede quedar a nombre de otra persona (venta a
+                    // Cliente General); lo que cancela deuda es siempre del
+                    // cliente de la venta (la validación no deja mezclarlos).
+                    'cliente_id'        => $this->vale_cliente_id ?? $venta->cliente_id,
                     'user_id'           => $this->user_id,
                     'devolucion_id'     => $this->id,
                     'fecha'             => now()->toDateString(),

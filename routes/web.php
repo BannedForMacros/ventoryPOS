@@ -312,6 +312,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:devoluciones,ver')->get('/', [DevolucionController::class, 'index'])->name('index');
         Route::middleware('permiso:devoluciones,ver')->get('/crear', [DevolucionController::class, 'create'])->name('create');
         Route::middleware('permiso:devoluciones,ver')->get('/buscar-venta', [DevolucionController::class, 'buscarVenta'])->name('buscar-venta');
+        // A nombre de quién queda el vale (misma búsqueda que el POS).
+        Route::middleware(['permiso:devoluciones,crear', 'throttle:60,1'])->get('/clientes', [VentaController::class, 'buscarClientes'])->name('clientes');
         Route::middleware('permiso:devoluciones,crear')->post('/', [DevolucionController::class, 'store'])->name('store');
         Route::middleware('permiso:devoluciones,ver')->get('/{devolucion}', [DevolucionController::class, 'show'])->name('show');
         Route::middleware('permiso:devoluciones,editar')->post('/{devolucion}/aprobar', [DevolucionController::class, 'aprobar'])->name('aprobar');

@@ -11,6 +11,7 @@ import Select from '@/Components/UI/Select';
 import AfectaCajaSelect from '@/Components/AfectaCajaSelect';
 import Badge from '@/Components/UI/Badge';
 import Callout from '@/Components/UI/Callout';
+import ValeClienteSelector, { type ValeCliente } from '@/Components/Devoluciones/ValeClienteSelector';
 import type { MetodoPago, PageProps } from '@/types';
 
 interface Motivo { id: number; nombre: string; afecta_restock_default: 'permite' | 'impide' | 'obliga_merma' }
@@ -40,7 +41,7 @@ interface VentaResultado {
     factor_descuento: number;
     es_credito: boolean;
     saldo_pendiente: number;
-    cliente: { id: number; nombre_completo: string; numero_documento: string | null } | null;
+    cliente: { id: number; nombre_completo: string; numero_documento: string | null; es_cliente_general?: boolean } | null;
     local: { id: number; nombre: string };
     pagos: { metodo_pago_id: number; metodo_pago_nombre: string; metodo_pago_tipo: string; monto: number }[];
     items: VentaItem[];
@@ -103,6 +104,8 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
     const [motivoId, setMotivoId] = useState<number | ''>('');
     const [formaReembolso, setFormaReembolso] = useState<string>('efectivo');
     const [observacion, setObservacion] = useState('');
+    // Dueño del vale: el cliente de la venta, salvo que sea «Cliente General».
+    const [valeCliente, setValeCliente] = useState<ValeCliente | null>(null);
     const [items, setItems] = useState<Record<number, ItemSeleccionado>>({});
     const [pagos, setPagos] = useState<PagoRow[]>([{ metodo_pago_id: '', cuenta_metodo_pago_id: '', monto: '', referencia: '' }]);
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -132,6 +135,10 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
             }
             setVenta(data.venta);
             setConfig(data.configuracion);
+            const cli = (data.venta as VentaResultado).cliente;
+            setValeCliente(cli && !cli.es_cliente_general
+                ? { id: cli.id, nombre: cli.nombre_completo, documento: cli.numero_documento }
+                : null);
             if (!data.configuracion.permite_devoluciones) {
                 toast.error('Las devoluciones están deshabilitadas para este local.');
             }
@@ -200,6 +207,10 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
             toast.error('Selecciona un motivo.');
             return;
         }
+        if (formaReembolso === 'vale_credito' && !valeCliente) {
+            toast.error('Elige a nombre de quién queda el vale (DNI o nombre).');
+            return;
+        }
 
         // Prevalidación: formas de reembolso con dinero deben tener pagos válidos
         // que sumen exactamente el monto a devolver.
@@ -220,6 +231,7 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
             venta_id:        venta.id,
             motivo_id:       motivoId,
             forma_reembolso: formaReembolso,
+            vale_cliente_id: formaReembolso === 'vale_credito' ? (valeCliente?.id ?? null) : null,
             observacion,
             items: Object.values(items).map(i => ({
                 venta_item_id:   i.venta_item_id,
@@ -454,7 +466,6 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
                                         { value: 'efectivo',        label: 'Efectivo' },
                                         { value: 'mismo_metodo',    label: 'Mismo método de pago' },
                                         { value: 'vale_credito',    label: 'Vale / Crédito a favor (se crea como anticipo)' },
-                                        { value: 'cambio_producto', label: 'Cambio por otro producto' },
                                         { value: 'sin_reembolso',   label: 'Sin reembolso (queda registro)' },
                                     ]}
                                 />
@@ -463,9 +474,17 @@ export default function DevolucionCreate({ motivos, metodosPago, turnoActivo, tu
                             {/* El vale ya no es solo una etiqueta: se convierte en un
                                 anticipo REAL del cliente, usable en POS y CxC. */}
                             {formaReembolso === 'vale_credito' && (
-                                <Callout variant="info" title={`Se creará un anticipo de S/ ${aReembolsar.toFixed(2)} a favor de ${venta?.cliente?.nombre_completo ?? 'este cliente'}`}>
-                                    No sale dinero de caja. El crédito quedará registrado en <strong>Finanzas → Anticipos</strong> y el cliente podrá usarlo para pagar en el POS o para cancelar sus cuentas por cobrar. Si se anula la devolución, el vale se anula también (siempre que no se haya usado).
-                                </Callout>
+                                <div className="space-y-3">
+                                    <ValeClienteSelector
+                                        value={valeCliente}
+                                        onChange={setValeCliente}
+                                        error={errors.vale_cliente_id}
+                                        bloqueado={venta?.es_credito && venta.saldo_pendiente > 0.009 ? 'Venta al crédito: el vale es del cliente de la venta' : null}
+                                    />
+                                    <Callout variant="info" title={`Se creará un vale de S/ ${aReembolsar.toFixed(2)} a favor de ${valeCliente?.nombre ?? '…'}`}>
+                                        No sale dinero de caja. Para <strong>cambiarlo por otro producto</strong>, al guardar pulsa «Usar el vale ahora»: el POS abre con el cliente y el vale aplicados; la diferencia se cobra en la caja de hoy o queda al crédito. También queda en <strong>Finanzas → Anticipos</strong>. Si se anula la devolución, el vale se anula también (siempre que no se haya usado).
+                                    </Callout>
+                                </div>
                             )}
 
                             <Input label="Observación general" value={observacion} onChange={e => setObservacion(e.target.value)} />
