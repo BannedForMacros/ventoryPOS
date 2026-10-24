@@ -369,7 +369,7 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
         window.location.href = params.toString() ? `${base}?${params.toString()}` : base;
     }
 
-    const tienesFiltros = !!(filters.estado || filters.local_id || filters.turno_id || filters.q
+    const tienesFiltros = !!((filters.estado && filters.estado !== 'activas') || filters.local_id || filters.turno_id || filters.q
         || (!filters.fechas_por_defecto && (filters.fecha_desde || filters.fecha_hasta)));
 
     function clienteNombre(v: Venta) {
@@ -446,11 +446,12 @@ export default function VentasIndex({ ventas, locales, turnos, resumen, filters,
             >
                 <div>
                     <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Estado</label>
-                    <Select ariaLabel="Estado" value={local.estado ?? ''} onChange={v => set('estado', String(v))}
+                    <Select ariaLabel="Estado" value={local.estado || 'activas'} onChange={v => set('estado', String(v))}
                         options={[
-                            { value: '', label: 'Todos' },
-                            { value: 'completada', label: 'Completadas' },
-                            { value: 'anulada', label: 'Anuladas' },
+                            { value: 'activas', label: 'Activas' },
+                            { value: 'todas', label: 'Todas' },
+                            { value: 'inactivas', label: 'Inactivas (con nota de crédito)' },
+                            { value: 'anuladas', label: 'Anuladas' },
                         ]} />
                 </div>
 

@@ -841,6 +841,30 @@ class VentaController extends Controller
         ];
     }
 
+    /**
+     * Filtro de estado de la lista (y del Excel). Sin elegir nada: solo las
+     * ACTIVAS. «Inactivas» = anuladas con nota de crédito (por dentro siguen
+     * 'completada' con su devolución total); «Anuladas» = anuladas directamente.
+     * 'completada' y 'anulada' son los valores antiguos (enlaces guardados).
+     */
+    private function estadoLista(Request $request): string
+    {
+        $estado = (string) $request->input('estado', '');
+        return in_array($estado, ['activas', 'todas', 'inactivas', 'anuladas', 'completada', 'anulada'], true)
+            ? $estado : 'activas';
+    }
+
+    private function filtrarEstado($qq, string $estado)
+    {
+        return match ($estado) {
+            'todas'     => $qq,
+            'inactivas' => $qq->where('estado', 'completada')->whereNotNull('anulada_nc_devolucion_id'),
+            'anuladas'  => $qq->where('estado', 'anulada'),
+            'anulada'   => $qq->where(fn ($w) => $w->where('estado', 'anulada')->orWhereNotNull('anulada_nc_devolucion_id')),
+            default     => $qq->where('estado', 'completada')->whereNull('anulada_nc_devolucion_id'),
+        };
+    }
+
     private function fechasPorDefecto(Request $request, string $q): bool
     {
         return !$request->filled('fecha_desde') && !$request->filled('fecha_hasta')
@@ -857,6 +881,7 @@ class VentaController extends Controller
         // se cambian las fechas. ver rangoFechas().
         $q = trim((string) $request->input('q', ''));
         [$fechaDesde, $fechaHasta] = $this->rangoFechas($request, $q);
+        $estado = $this->estadoLista($request);
 
         // Con el módulo apagado (o sin migrar) NO se toca `venta_comprobantes`:
         // `/ventas` es la pantalla más usada del POS y no puede caerse por un
@@ -876,13 +901,8 @@ class VentaController extends Controller
                 $conCpe ? ['comprobanteElectronico:id,venta_id,tipo,numero,estado,facturamac_id'] : [],
             ))
             ->when(!$esAdmin, fn($qq) => $qq->where('user_id', $user->id))
-            // "Anuladas" incluye las anuladas con nota de crédito (que por dentro
-            // siguen 'completada' con su devolución total); "Completadas", no.
-            ->when($request->estado, fn($qq, $v) => match ($v) {
-                'anulada'    => $qq->where(fn ($w) => $w->where('estado', 'anulada')->orWhereNotNull('anulada_nc_devolucion_id')),
-                'completada' => $qq->where('estado', 'completada')->whereNull('anulada_nc_devolucion_id'),
-                default      => $qq->where('estado', $v),
-            })
+            // Por defecto solo las activas. Ver estadoLista().
+            ->tap(fn ($qq) => $this->filtrarEstado($qq, $estado))
             ->when($fechaDesde, fn($qq, $v) => $qq->where('fecha_venta', '>=', $v))
             ->when($fechaHasta, fn($qq, $v) => $qq->where('fecha_venta', '<=', $v . ' 23:59:59'))
             ->when($request->local_id, fn($qq, $v) => $qq->where('local_id', $v))
@@ -965,6 +985,7 @@ class VentaController extends Controller
             'filters' => array_merge(
                 $request->only(['estado', 'fecha_desde', 'fecha_hasta', 'local_id', 'turno_id', 'q']),
                 [
+                    'estado'      => $estado,
                     'fecha_desde' => $fechaDesde,
                     'fecha_hasta' => $fechaHasta,
                     // El front no debe reenviar este "hoy" automático al buscar un
@@ -1000,7 +1021,7 @@ class VentaController extends Controller
         $ventas = Venta::deEmpresa($user->empresa_id)
             ->with($with)
             ->when(!$esAdmin, fn($qq) => $qq->where('user_id', $user->id))
-            ->when($request->estado, fn($qq, $v) => $qq->where('estado', $v))
+            ->tap(fn ($qq) => $this->filtrarEstado($qq, $this->estadoLista($request)))
             ->when($fechaDesde, fn($qq, $v) => $qq->where('fecha_venta', '>=', $v))
             ->when($fechaHasta, fn($qq, $v) => $qq->where('fecha_venta', '<=', $v . ' 23:59:59'))
             ->when($request->local_id, fn($qq, $v) => $qq->where('local_id', $v))
@@ -1060,7 +1081,7 @@ class VentaController extends Controller
                 $nombreCliente ?: 'General',
                 $comprobante,
                 $pago,
-                $v->estado === 'completada' ? 'Completada' : 'Anulada',
+                $v->estado === 'anulada' ? 'Anulada' : ($v->anulada_nc_devolucion_id ? 'Anulada con nota de crédito' : 'Completada'),
                 (float) $v->total,
             ];
         }
