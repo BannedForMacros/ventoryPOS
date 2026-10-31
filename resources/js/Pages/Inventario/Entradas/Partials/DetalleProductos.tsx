@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { PackagePlus, Search, Trash2, CornerDownLeft } from 'lucide-react';
+import { PackagePlus, Plus, Search, Trash2, CornerDownLeft } from 'lucide-react';
 import Select from '@/Components/UI/Select';
+import Button from '@/Components/UI/Button';
+import ModalNuevoProducto from '@/Pages/Pos/Partials/ModalNuevoProducto';
 
 /**
  * Sección "Productos" de Nueva / Editar entrada, pensada para cargar muchos
@@ -9,6 +11,7 @@ import Select from '@/Components/UI/Select';
  * Filas compactas en forma de tabla con el nombre COMPLETO (sin cortar), para
  * monitores pequeños. Si el producto ya está en la lista, lleva a su fila en
  * vez de duplicarlo.
+ * Si el producto no existe se crea aquí mismo (modal) y entra directo a la lista.
  */
 
 interface UnidadMedida { id: number; nombre: string; abreviatura: string; }
@@ -38,6 +41,10 @@ interface Props {
     facturaPorItem: boolean;
     errors:         Record<string, string>;
     total:          number;
+    /** Muestra "Nuevo producto" (permiso de crear en Catálogo). */
+    puedeCrearProducto?: boolean;
+    /** El producto recién creado: el padre lo suma a su catálogo. */
+    onProductoCreado?: (p: ProductoEntrada) => void;
 }
 
 /** Minúsculas y sin tildes: "cañería" encuentra "CANERIA" y al revés. */
@@ -48,7 +55,17 @@ const inputCls = 'w-full h-9 rounded-lg border px-2.5 text-sm outline-none trans
 export default function DetalleProductos({
     productos, detalles, setDetalles, setDetalle, setPrecioModo, removeDetalle,
     subtotal, cantidadBase, facturaPorItem, errors, total,
+    puedeCrearProducto = false, onProductoCreado,
 }: Props) {
+    const [modalNuevo, setModalNuevo] = useState(false);
+    const [nombreNuevo, setNombreNuevo] = useState('');
+    const puedeCrear = puedeCrearProducto && !!onProductoCreado;
+
+    function abrirNuevo(nombre: string) {
+        setAbierto(false);
+        setNombreNuevo(nombre.trim());
+        setModalNuevo(true);
+    }
     const [q, setQ] = useState('');
     const [abierto, setAbierto] = useState(false);
     const [activo, setActivo] = useState(0);
@@ -144,6 +161,7 @@ export default function DetalleProductos({
             e.preventDefault();
             const p = resultados[activo];
             if (p) agregar(p);
+            else if (puedeCrear && q.trim()) abrirNuevo(q);
         } else if (e.key === 'Escape') { setAbierto(false); }
     }
 
@@ -163,7 +181,8 @@ export default function DetalleProductos({
     return (
         <div className="space-y-3">
             {/* ── Buscador para agregar ─────────────────────────────────── */}
-            <div className="relative">
+            <div className="flex items-stretch gap-2">
+            <div className="relative flex-1 min-w-0">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--color-text-muted)' }} />
                 <input
                     ref={buscadorRef}
@@ -197,6 +216,27 @@ export default function DetalleProductos({
                         {resultados.length === 0 && (
                             <li className="px-3 py-2.5 text-sm" style={{ color: 'var(--color-text-muted)' }}>No hay productos que coincidan con «{q}».</li>
                         )}
+                        {puedeCrear && (
+                            <li className={resultados.length > 0 ? 'border-t mt-1 pt-1' : ''} style={{ borderColor: 'var(--color-border)' }}>
+                                <button
+                                    type="button"
+                                    onMouseDown={e => { e.preventDefault(); abrirNuevo(q); }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium"
+                                    style={{
+                                        color: 'var(--color-primary)',
+                                        backgroundColor: resultados.length === 0 ? 'color-mix(in srgb, var(--color-primary) 9%, transparent)' : 'transparent',
+                                    }}
+                                >
+                                    <Plus size={15} />
+                                    <span className="flex-1 min-w-0">Crear «{q.trim()}» como producto nuevo</span>
+                                    {resultados.length === 0 && (
+                                        <span className="hidden md:flex items-center gap-1 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                                            <CornerDownLeft size={12} /> Enter
+                                        </span>
+                                    )}
+                                </button>
+                            </li>
+                        )}
                         {resultados.map((p, i) => {
                             const yaEsta = detalles.some(d => d.producto_id === p.id);
                             return (
@@ -224,6 +264,13 @@ export default function DetalleProductos({
                         })}
                     </ul>
                 )}
+            </div>
+            {puedeCrear && (
+                <Button type="button" variant="secondary" className="h-11 flex-shrink-0" onClick={() => abrirNuevo(q)}
+                    title="Crear un producto que aún no está en el catálogo">
+                    <Plus size={15} className="mr-1" /> Nuevo producto
+                </Button>
+            )}
             </div>
 
             {errors.detalles && <p className="text-[13px] font-medium whitespace-pre-line" style={{ color: 'var(--color-danger)' }}>{errors.detalles}</p>}
@@ -386,6 +433,16 @@ export default function DetalleProductos({
                         <span className="text-lg font-bold font-mono" style={{ color: 'var(--color-text)' }}>Total S/ {total.toFixed(2)}</span>
                     </div>
                 </div>
+            )}
+
+            {puedeCrear && (
+                <ModalNuevoProducto<ProductoEntrada>
+                    contexto="entrada"
+                    isOpen={modalNuevo}
+                    onClose={() => { setModalNuevo(false); buscadorRef.current?.focus(); }}
+                    nombreInicial={nombreNuevo}
+                    onCreado={p => { onProductoCreado?.(p); agregar(p); }}
+                />
             )}
         </div>
     );

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Loader2, Package, PackageCheck, ShoppingCart, Wrench } from 'lucide-react';
+import { Loader2, Package, PackageCheck, PackagePlus, ShoppingCart, Wrench } from 'lucide-react';
 import Modal from '@/Components/UI/Modal';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
@@ -30,18 +30,22 @@ interface Form {
 }
 
 /**
- * Alta rápida de un producto sin salir del POS. Se crea igual que en el
- * Catálogo (una sola presentación; las demás se agregan luego allí) y entra
- * directo al carrito.
+ * Alta rápida de un producto sin salir del POS (o de Nueva / Editar entrada).
+ * Se crea igual que en el Catálogo (una sola presentación; las demás se agregan
+ * luego allí) y entra directo al carrito o a la lista de la entrada.
+ * En la entrada solo hay productos físicos y no se pide stock inicial: el
+ * stock lo trae la propia entrada.
  */
-export default function ModalNuevoProducto({ isOpen, onClose, nombreInicial = '', ventaId, onCreado }: {
+export default function ModalNuevoProducto<T extends { id: number; nombre: string } = Producto>({ isOpen, onClose, nombreInicial = '', ventaId, contexto = 'pos', onCreado }: {
     isOpen: boolean;
     onClose: () => void;
     /** Lo que la cajera estaba buscando: suele ser el nombre del producto. */
     nombreInicial?: string;
     ventaId?: number | null;
-    onCreado: (producto: Producto) => void;
+    contexto?: 'pos' | 'entrada';
+    onCreado: (producto: T) => void;
 }) {
+    const enEntrada = contexto === 'entrada';
     const [datos, setDatos] = useState<Datos | null>(null);
     const [form, setForm] = useState<Form>(vacio(''));
     const [errores, setErrores] = useState<Record<string, string>>({});
@@ -73,7 +77,7 @@ export default function ModalNuevoProducto({ isOpen, onClose, nombreInicial = ''
         setGuardando(true);
         setErrores({});
         try {
-            const { data } = await axios.post<{ producto: Producto; aviso: string | null }>(route('pos.productos.crear'), {
+            const payload = {
                 tipo: form.tipo,
                 nombre: form.nombre.trim(),
                 codigo: form.codigo.trim() || null,
@@ -91,9 +95,16 @@ export default function ModalNuevoProducto({ isOpen, onClose, nombreInicial = ''
                 } : {
                     tipo_precio: 'fijo', precio_venta: form.precio_venta || 0,
                 }),
-            });
-            onCreado(data.producto);
-            toast.success(`«${data.producto.nombre}» creado y agregado al carrito.${data.aviso ? ` ${data.aviso}` : ''}`, { duration: 3500 });
+            };
+            if (enEntrada) {
+                const { data } = await axios.post<T>(route('inventario.entradas.productos.crear'), payload);
+                onCreado(data);
+                toast.success(`«${data.nombre}» creado y agregado a la entrada.`, { duration: 3500 });
+            } else {
+                const { data } = await axios.post<{ producto: T; aviso: string | null }>(route('pos.productos.crear'), payload);
+                onCreado(data.producto);
+                toast.success(`«${data.producto.nombre}» creado y agregado al carrito.${data.aviso ? ` ${data.aviso}` : ''}`, { duration: 3500 });
+            }
             onClose();
         } catch (err: unknown) {
             const r = (err as { response?: { status?: number; data?: { errors?: Record<string, string[]>; message?: string } } }).response;
@@ -120,8 +131,9 @@ export default function ModalNuevoProducto({ isOpen, onClose, nombreInicial = ''
         <Modal isOpen={isOpen} onClose={onClose} title="Nuevo producto" size="lg"
             footer={<>
                 <Button variant="ghost" onClick={onClose} disabled={guardando}>Cancelar</Button>
-                <Button onClick={() => guardar()} loading={guardando} disabled={!datos} startContent={<ShoppingCart size={15} />}>
-                    Crear y agregar al carrito
+                <Button onClick={() => guardar()} loading={guardando} disabled={!datos}
+                    startContent={enEntrada ? <PackagePlus size={15} /> : <ShoppingCart size={15} />}>
+                    {enEntrada ? 'Crear y agregar a la entrada' : 'Crear y agregar al carrito'}
                 </Button>
             </>}>
             {!datos ? (
@@ -130,8 +142,8 @@ export default function ModalNuevoProducto({ isOpen, onClose, nombreInicial = ''
                 </div>
             ) : (
                 <form onSubmit={guardar} className="space-y-4">
-                    {/* Tipo */}
-                    <div className="grid grid-cols-2 gap-2 p-1 rounded-xl" style={{ backgroundColor: 'var(--color-bg)' }} role="group" aria-label="Tipo">
+                    {/* Tipo (la entrada solo recibe productos físicos) */}
+                    {!enEntrada && <div className="grid grid-cols-2 gap-2 p-1 rounded-xl" style={{ backgroundColor: 'var(--color-bg)' }} role="group" aria-label="Tipo">
                         {([['producto', 'Producto físico', Package], ['servicio', 'Servicio', Wrench]] as const).map(([v, t, Icono]) => (
                             <button key={v} type="button" onClick={() => set('tipo', v)} aria-pressed={form.tipo === v}
                                 className="flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors"
@@ -143,7 +155,7 @@ export default function ModalNuevoProducto({ isOpen, onClose, nombreInicial = ''
                                 <Icono size={15} /> {t}
                             </button>
                         ))}
-                    </div>
+                    </div>}
 
                     <div>
                         <Input label="Nombre" required autoFocus maxLength={150} value={form.nombre}
@@ -176,7 +188,7 @@ export default function ModalNuevoProducto({ isOpen, onClose, nombreInicial = ''
                     <Switch label="El precio incluye IGV" checked={form.incluye_igv} onChange={v => set('incluye_igv', v)}
                         description="Viene marcado como la mayoría de tus productos." />
 
-                    {esProducto && (
+                    {esProducto && !enEntrada && (
                         <div className="rounded-xl p-3.5 space-y-3" style={{ backgroundColor: 'color-mix(in srgb, var(--vp-mint) 7%, var(--color-surface))', border: '1px solid color-mix(in srgb, var(--vp-mint) 30%, var(--color-border))' }}>
                             <p className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
                                 <PackageCheck size={16} style={{ color: 'var(--vp-mint-ink)' }} />
@@ -198,6 +210,7 @@ export default function ModalNuevoProducto({ isOpen, onClose, nombreInicial = ''
 
                     <p className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
                         Se crea con una sola presentación. Si luego necesitas otras (caja, docena…), agrégalas en Catálogo, Productos.
+                        {enEntrada && ' El stock y el costo los pones en la línea de esta entrada.'}
                     </p>
                     <button type="submit" className="hidden" aria-hidden tabIndex={-1} />
                 </form>

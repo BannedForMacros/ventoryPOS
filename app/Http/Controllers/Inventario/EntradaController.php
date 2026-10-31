@@ -218,6 +218,8 @@ class EntradaController extends Controller
             'modoAlmacen' => $user->empresa->modo_almacen,
             // Habilita el botón "Guardar como en camino" + la fecha estimada.
             'usaTransito' => $this->transito->habilitado($user->empresa),
+            // Alta rápida de producto sin salir de la entrada.
+            'puedeCrearProducto' => $user->tienePermiso('catalogo.productos', 'crear'),
             'productos' => Producto::deEmpresa($empresaId)
                 ->activo()
                 ->productos()
@@ -475,6 +477,7 @@ class EntradaController extends Controller
             'pagoTurnoId' => $pagoTurnoId,
             'almacenes' => $this->scope->almacenesParaCompras($user),
             'modoAlmacen' => $user->empresa->modo_almacen,
+            'puedeCrearProducto' => $user->tienePermiso('catalogo.productos', 'crear'),
             'productos' => Producto::deEmpresa($empresaId)
                 ->activo()
                 ->productos()
@@ -1003,6 +1006,24 @@ class EntradaController extends Controller
      * detalles de TODAS las entradas en cada index (seria N+1 cuando la empresa
      * tiene cientos de entradas con muchos items).
      */
+    /**
+     * Alta rápida de un producto desde Nueva / Editar entrada. Se crea igual que
+     * en el Catálogo, pero SIN stock inicial: el stock lo trae la propia entrada.
+     * Vuelve con la forma del selector de la entrada, listo para agregarlo.
+     */
+    public function crearProducto(\App\Http\Requests\Catalogo\ProductoRequest $request, \App\Services\ProductoCreacionService $creacion)
+    {
+        $user = $request->user();
+        $data = array_merge($request->validated(), ['tipo' => 'producto', 'stock_inicial' => null, 'costo_inicial' => null]);
+        ['producto' => $nuevo] = $creacion->crear($user, $data);
+
+        AuditoriaService::log('producto.creado', $nuevo, ['origen' => 'entrada', 'nombre' => $nuevo->nombre], $user);
+
+        return response()->json(
+            $nuevo->load(['unidades' => fn ($q) => $q->where('activo', true)->orderByDesc('es_base')->with('unidadMedida')])
+        );
+    }
+
     public function detalleJson(Request $request, Entrada $entrada)
     {
         abort_unless($this->scope->puedeAccederAlmacen($request->user(), $entrada->almacen), 403);

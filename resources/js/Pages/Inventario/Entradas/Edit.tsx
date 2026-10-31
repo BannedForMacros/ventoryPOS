@@ -98,6 +98,8 @@ interface Props extends PageProps {
     /** Productos cuya mercadería quedó dentro del inventario inicial (entrada
      *  con fecha <= corte de apertura): editarlos no toca stock → sin restricción. */
     productosAbsorbidos: number[];
+    /** Puede crear productos en el Catálogo (alta rápida desde la entrada). */
+    puedeCrearProducto?: boolean;
     mostrarSelector: boolean;
     modoAlmacen: 'simple' | 'central_y_local';
     /** Adelantos con saldo por proveedor para pagar con ellos. */
@@ -130,7 +132,9 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
     return String(Math.round((t / q) * 10000) / 10000);
 }
 
-export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos, proveedores, clientes, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen, adelantos, permiteStockNegativo }: Props) {
+export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, almacenes, productos: productosIniciales, proveedores, clientes, metodosPago, turnos, pagoTurnoId, stocks, productosAbsorbidos, mostrarSelector, modoAlmacen, adelantos, permiteStockNegativo, puedeCrearProducto = false }: Props) {
+    // Catálogo local: un producto creado desde aquí aparece al instante.
+    const [productos, setProductos] = useState<Producto[]>(productosIniciales);
     // "Afecta caja a:" — arranca en el turno actual de los pagos (si sigue
     // ABIERTO), para reflejar el estado real. Re-imputar solo ocurre si el
     // usuario TOCA el selector (turnoTocado), para no cambiarlo sin querer.
@@ -730,6 +734,8 @@ export default function EntradaEdit({ entrada, pagosPrevios, puedeEditarPagos, a
                         facturaPorItem={facturaPorItem}
                         errors={erroresDetalle}
                         total={total}
+                        puedeCrearProducto={puedeCrearProducto}
+                        onProductoCreado={p => setProductos(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p as Producto])}
                     />
                 </section>
 

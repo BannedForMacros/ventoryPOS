@@ -52,6 +52,8 @@ interface Props extends PageProps {
     usaTransito: boolean;
     /** Adelantos con saldo por proveedor para pagar con ellos. */
     adelantos: Adelanto[];
+    /** Puede crear productos en el Catálogo (alta rápida desde la entrada). */
+    puedeCrearProducto?: boolean;
 }
 
 interface DetalleRow {
@@ -92,7 +94,9 @@ function costoDesdeTotal(totalStr: string, cantidadStr: string): string {
 }
 
 const money = (v: unknown) => soles(v);
-export default function EntradaCreate({ almacenes, productos, proveedores, clientes, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen, usaTransito, adelantos }: Props) {
+export default function EntradaCreate({ almacenes, productos: productosIniciales, proveedores, clientes, metodosPago, turnos, turnoActivoId, mostrarSelector, modoAlmacen, usaTransito, adelantos, puedeCrearProducto = false }: Props) {
+    // Catálogo local: un producto creado desde aquí aparece al instante.
+    const [productos, setProductos] = useState<Producto[]>(productosIniciales);
     // Compra despachada pero que aún no llega: no toca stock hasta que se reciba.
     const [enTransito, setEnTransito] = useState(false);
     const [fechaLlegada, setFechaLlegada] = useState('');
@@ -553,6 +557,8 @@ export default function EntradaCreate({ almacenes, productos, proveedores, clien
                         facturaPorItem={facturaPorItem}
                         errors={erroresDetalle}
                         total={total}
+                        puedeCrearProducto={puedeCrearProducto}
+                        onProductoCreado={p => setProductos(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p as Producto])}
                     />
                 </section>
 
