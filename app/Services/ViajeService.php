@@ -583,6 +583,28 @@ class ViajeService
         });
     }
 
+    // ── Guías del viaje ──────────────────────────────────────────────────────
+
+    /**
+     * Las paradas que todavía necesitan su guía, en el orden del recorrido: con
+     * venta viva, que no quedaron sin entregar y sin guía (o con una que SUNAT
+     * rechazó o que no se pudo preparar, que ya no sirve para trasladar).
+     *
+     * @return Collection<int, ViajeParada>
+     */
+    public function paradasSinGuia(Viaje $viaje): Collection
+    {
+        if ($viaje->estado === 'anulado') {
+            return collect();
+        }
+
+        return $viaje->paradas()->with(['guia', 'venta:id,estado'])->orderBy('orden')->orderBy('id')->get()
+            ->filter(fn (ViajeParada $p) => $p->venta && $p->venta->estado !== 'anulada'
+                && $p->estado !== 'no_entregado'
+                && (!$p->guia || ($p->guia->terminal() && !$p->guia->puede_trasladar)))
+            ->values();
+    }
+
     // ── Desde el POS ─────────────────────────────────────────────────────────
 
     /**

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { router } from '@inertiajs/react';
 import axios from 'axios';
-import { AlertTriangle, MapPin, PackagePlus, Plus, Receipt, Search, Trash2, Truck, Users, Wrench } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { AlertTriangle, FileText, MapPin, PackagePlus, Plus, Receipt, Search, Trash2, Truck, UserPlus, Users, Wrench } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
@@ -13,6 +14,8 @@ import {
     BarraCarga, Pastilla, TIPOS_VIAJE, fmtCantidad, fmtKg,
     type Carga, type EstadoLicencia, type TipoViaje,
 } from '@/Components/Flota/FlotaUI';
+import ModalVehiculo from '@/Components/Flota/ModalVehiculo';
+import ModalConductor, { type TipoConductor } from '@/Components/Flota/ModalConductor';
 import { hoyLocal } from '@/lib/fechas';
 import { soles } from '@/lib/dinero';
 import { avisoError } from '@/lib/avisoError';
@@ -76,6 +79,7 @@ interface Props extends PageProps {
     entradas: (Opcion & { proveedor_id: number | null })[];
     pendientes: PedidoDisp[];
     preseleccion: number | null;
+    puede: { vehiculo: boolean; conductor: boolean; guia: boolean };
 }
 
 const num = (v: string | number | undefined) => {
@@ -83,7 +87,7 @@ const num = (v: string | number | undefined) => {
     return Number.isFinite(n) ? n : 0;
 };
 
-export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, rutas, proveedores, entradas, pendientes, preseleccion }: Props) {
+export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, rutas, proveedores, entradas, pendientes, preseleccion, puede }: Props) {
     const editando = !!viaje;
 
     const [tipo, setTipo] = useState<TipoViaje>(viaje?.tipo ?? 'reparto');
@@ -102,6 +106,9 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
     const [paradas, setParadas] = useState<Parada[]>(() => paradasIniciales(viaje, pendientes, preseleccion));
     const [errores, setErrores] = useState<Record<string, string>>({});
     const [guardando, setGuardando] = useState(false);
+    // Altas sin salir del viaje: el camión o la persona nuevos quedan elegidos.
+    const [nuevoVehiculo, setNuevoVehiculo] = useState(false);
+    const [nuevoConductor, setNuevoConductor] = useState<TipoConductor | null>(null);
 
     const vehiculo = vehiculos.find(v => v.id === vehiculoId) ?? null;
     const choferes = conductores.filter(c => c.tipo === 'chofer');
@@ -172,7 +179,33 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
         setParadas(prev => prev.map((p, i) => i === idx && p.modo === 'pendiente' ? { ...p, cantidades: { ...p.cantidades, [itemId]: valor } } : p));
     }
 
-    function guardar() {
+    /** Lo recién creado es el id que no estaba antes de guardar. */
+    function vehiculoCreado(page: { props: Record<string, unknown> }) {
+        const antes = new Set(vehiculos.map(v => v.id));
+        const nuevo = (page.props.vehiculos as VehiculoOpt[]).find(v => !antes.has(v.id));
+        if (!nuevo) return;
+        setVehiculoId(nuevo.id);
+        if (nuevo.conductor_id && !choferManual.current) setChoferId(nuevo.conductor_id);
+        toast.success(`Camión ${nuevo.placa} agregado y elegido.`);
+    }
+
+    function conductorCreado(page: { props: Record<string, unknown> }) {
+        const antes = new Set(conductores.map(c => c.id));
+        const nuevo = (page.props.conductores as ConductorOpt[]).find(c => !antes.has(c.id));
+        if (!nuevo) return;
+        // Un chofer nuevo va al volante solo si todavía no hay chofer; si no, de ayudante.
+        if (nuevo.tipo === 'chofer' && (nuevoConductor === 'chofer' || !choferId)) {
+            choferManual.current = true;
+            setChoferId(nuevo.id);
+            setAyudantes(a => a.filter(x => x !== nuevo.id));
+            toast.success(`${nuevo.nombre} agregado como chofer del viaje.`);
+        } else {
+            setAyudantes(a => [...a, nuevo.id]);
+            toast.success(`${nuevo.nombre} agregado como ayudante del viaje.`);
+        }
+    }
+
+    function guardar(hacerGuias = false) {
         setGuardando(true);
         setErrores({});
         const payload = {
@@ -183,6 +216,7 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
             paradas: llevaEntregas ? paradas.map(p => p.modo === 'pendiente'
                 ? { cliente_anticipo_id: p.pedido.id, items: p.pedido.items.map(i => ({ cliente_anticipo_item_id: i.id, cantidad: num(p.cantidades[i.id]) })) }
                 : { venta_id: p.venta.id }) : [],
+            hacer_guias: hacerGuias,
         };
         const opts = {
             preserveScroll: true,
@@ -195,6 +229,7 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
     const errorParada = (idx: number) => Object.entries(errores).find(([k]) => k === `paradas.${idx}` || k.startsWith(`paradas.${idx}.`))?.[1];
     const sinVehiculos = vehiculos.length === 0;
     const pasado = carga.porcentaje !== null && carga.porcentaje > 100;
+    const conGuias = puede.guia && llevaEntregas && paradas.length > 0;
 
     return (
         <AppLayout title={editando ? `Editar ${viaje!.numero}` : 'Nuevo viaje'}>
@@ -205,10 +240,9 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
                 icon={<Truck size={20} />}
             />
 
-            {sinVehiculos && (
-                <Callout variant="warning" className="mb-4" title="Primero registra tus vehículos"
-                    accion={{ label: 'Ir a Vehículos', onClick: () => router.visit(route('flota.vehiculos.index')) }}>
-                    Para armar un viaje necesitas al menos un vehículo (y su chofer en Conductores).
+            {sinVehiculos && !puede.vehiculo && (
+                <Callout variant="warning" className="mb-4" title="Todavía no hay vehículos">
+                    Para armar un viaje hace falta al menos un vehículo. Pide a quien administra la flota que lo registre.
                 </Callout>
             )}
 
@@ -280,22 +314,35 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
                                     </button>
                                 );
                             })}
+                            {puede.vehiculo && (
+                                <BotonNuevo onClick={() => setNuevoVehiculo(true)} destacado={sinVehiculos}
+                                    titulo={sinVehiculos ? 'Registra tu primer camión' : 'Nuevo camión'}
+                                    ayuda="Placa y carga máxima; queda elegido" />
+                            )}
                         </div>
                     </Tarjeta>
 
                     <Tarjeta titulo="Quiénes van">
                         <div className="space-y-3">
-                            <Select label="Chofer" value={choferId ?? ''} placeholder="Elegir chofer…" error={errores.conductor_id}
-                                onChange={v => { choferManual.current = true; setChoferId(v === '' ? null : Number(v)); setAyudantes(a => a.filter(x => x !== Number(v))); }}
-                                options={[{ value: '', label: 'Sin chofer todavía' }, ...choferes.map(c => ({ value: c.id, label: c.nombre }))]}
-                                hint="Hace falta para que el viaje salga" />
+                            <div className="flex items-end gap-2">
+                                <div className="flex-1 min-w-0">
+                                    <Select label="Chofer" value={choferId ?? ''} placeholder="Elegir chofer…" error={errores.conductor_id}
+                                        onChange={v => { choferManual.current = true; setChoferId(v === '' ? null : Number(v)); setAyudantes(a => a.filter(x => x !== Number(v))); }}
+                                        options={[{ value: '', label: choferes.length ? 'Sin chofer todavía' : 'No hay choferes: agrega uno →' }, ...choferes.map(c => ({ value: c.id, label: c.nombre }))]} />
+                                </div>
+                                {puede.conductor && (
+                                    <Button variant="secondary" onClick={() => setNuevoConductor('chofer')} startContent={<UserPlus size={15} />}
+                                        className={`flex-shrink-0 ${errores.conductor_id ? 'mb-6' : ''}`} aria-label="Agregar un chofer nuevo">Nuevo</Button>
+                                )}
+                            </div>
+                            {!errores.conductor_id && <p className="-mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>Hace falta para que el viaje salga</p>}
                             {chofer && (chofer.estado_licencia === 'vencida' || chofer.estado_licencia === 'por_vencer') && (
                                 <p className="text-[13px] flex items-start gap-1.5" style={{ color: chofer.estado_licencia === 'vencida' ? 'var(--vp-coral-ink)' : 'var(--vp-amber-ink)' }}>
                                     <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                                     {chofer.estado_licencia === 'vencida' ? 'La licencia de este chofer está vencida.' : 'La licencia de este chofer vence pronto.'}
                                 </p>
                             )}
-                            {conductores.filter(c => c.id !== choferId).length > 0 && (
+                            {(conductores.filter(c => c.id !== choferId).length > 0 || puede.conductor) && (
                                 <div>
                                     <p className="text-sm font-medium mb-1.5 flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}><Users size={14} /> Ayudantes</p>
                                     <div className="flex flex-wrap gap-1.5">
@@ -314,6 +361,13 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
                                                 </button>
                                             );
                                         })}
+                                        {puede.conductor && (
+                                            <button type="button" onClick={() => setNuevoConductor('ayudante')}
+                                                className="px-3 py-1.5 rounded-full text-[13px] font-semibold border border-dashed inline-flex items-center gap-1 transition-colors duration-150 hover:bg-black/[0.03]"
+                                                style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary)' }}>
+                                                <Plus size={13} /> Ayudante
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -410,15 +464,51 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
                         </Callout>
                     )}
 
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                         <Button variant="ghost" onClick={() => router.visit(editando ? route('viajes.show', viaje!.id) : route('viajes.index'))} disabled={guardando}>Cancelar</Button>
-                        <Button onClick={guardar} loading={guardando} disabled={!vehiculoId}>
-                            {editando ? 'Guardar cambios' : 'Programar viaje'}
-                        </Button>
+                        {conGuias ? (
+                            <>
+                                <Button variant="secondary" onClick={() => guardar(false)} loading={guardando} disabled={!vehiculoId}>
+                                    {editando ? 'Guardar cambios' : 'Programar viaje'}
+                                </Button>
+                                <Button onClick={() => guardar(true)} loading={guardando} disabled={!vehiculoId} startContent={<FileText size={15} />}
+                                    title="Guarda el viaje y abre la guía de la primera parada; al emitirla sigue con la siguiente">
+                                    {editando ? 'Guardar y hacer guías' : 'Programar y hacer guías'}
+                                </Button>
+                            </>
+                        ) : (
+                            <Button onClick={() => guardar(false)} loading={guardando} disabled={!vehiculoId}>
+                                {editando ? 'Guardar cambios' : 'Programar viaje'}
+                            </Button>
+                        )}
                     </div>
                 </section>
             </div>
+
+            <ModalVehiculo isOpen={nuevoVehiculo} onClose={() => setNuevoVehiculo(false)} rapido
+                choferes={choferes.map(c => ({ value: c.id, label: c.nombre }))} conductorInicial={choferId}
+                only={['vehiculos']} onGuardado={vehiculoCreado} />
+            <ModalConductor isOpen={nuevoConductor !== null} onClose={() => setNuevoConductor(null)} rapido
+                tipoInicial={nuevoConductor ?? 'chofer'} only={['conductores']} onGuardado={conductorCreado} />
         </AppLayout>
+    );
+}
+
+/** Tarjeta punteada para dar de alta algo sin salir del viaje. */
+function BotonNuevo({ onClick, titulo, ayuda, destacado = false }: { onClick: () => void; titulo: string; ayuda: string; destacado?: boolean }) {
+    return (
+        <button type="button" onClick={onClick}
+            className="rounded-xl p-2.5 border border-dashed text-left flex items-center gap-2.5 transition-[transform,background-color] duration-150 ease-out hover:-translate-y-0.5 hover:bg-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+            style={{ borderColor: destacado ? 'var(--color-primary)' : 'var(--color-border)', minHeight: 76 }}>
+            <span className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)' }}>
+                <Plus size={16} />
+            </span>
+            <span className="min-w-0">
+                <span className="block text-sm font-semibold" style={{ color: 'var(--color-primary)' }}>{titulo}</span>
+                <span className="block text-[12px]" style={{ color: 'var(--color-text-muted)' }}>{ayuda}</span>
+            </span>
+        </button>
     );
 }
 

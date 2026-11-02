@@ -101,7 +101,7 @@ class ViajeController extends Controller
 
         $viaje = $this->viajes->guardar(null, $this->validar($request), $user);
 
-        return redirect()->route('viajes.show', $viaje)->with('success', "Viaje {$viaje->numero} programado.");
+        return $this->despuesDeGuardar($request, $viaje, "Viaje {$viaje->numero} programado.");
     }
 
     public function show(Request $request, Viaje $viaje)
@@ -123,6 +123,8 @@ class ViajeController extends Controller
         return Inertia::render('Viajes/Show', [
             'viaje'    => $this->paraDetalle($viaje),
             'carga'    => $this->viajes->carga($viaje),
+            // Las que faltan, en orden: «Hacer guías» arranca por la primera.
+            'sin_guia' => $this->viajes->paradasSinGuia($viaje)->pluck('id')->all(),
             'puede'    => [
                 'editar' => $user->tienePermiso('viajes', 'editar'),
                 'guia'   => $this->puedeGuia($user),
@@ -151,7 +153,24 @@ class ViajeController extends Controller
 
         $viaje = $this->viajes->guardar($viaje, $this->validar($request), $user);
 
-        return redirect()->route('viajes.show', $viaje)->with('success', "Viaje {$viaje->numero} actualizado.");
+        return $this->despuesDeGuardar($request, $viaje, "Viaje {$viaje->numero} actualizado.");
+    }
+
+    /**
+     * «Programar y hacer guías»: de frente a la guía de la primera parada, ya con
+     * placa, chofer y peso puestos. Al emitirla, la guía sigue con la siguiente.
+     */
+    private function despuesDeGuardar(Request $request, Viaje $viaje, string $mensaje)
+    {
+        if ($request->boolean('hacer_guias') && $this->puedeGuia($request->user())) {
+            $primera = $this->viajes->paradasSinGuia($viaje)->first();
+            if ($primera) {
+                return redirect()->route('guias.create', ['parada' => $primera->id])
+                    ->with('success', "{$mensaje} Ahora la guía de cada parada.");
+            }
+        }
+
+        return redirect()->route('viajes.show', $viaje)->with('success', $mensaje);
     }
 
     public function iniciar(Request $request, Viaje $viaje)
@@ -323,6 +342,12 @@ class ViajeController extends Controller
 
         return [
             'viaje'      => $viaje ? $this->paraFormulario($viaje) : null,
+            // Camión, chofer y ayudante se crean desde el mismo viaje, sin salir.
+            'puede'      => [
+                'vehiculo'  => $user->tienePermiso('flota.vehiculos', 'crear'),
+                'conductor' => $user->tienePermiso('flota.conductores', 'crear'),
+                'guia'      => $this->puedeGuia($user),
+            ],
             'vehiculos'  => Vehiculo::deEmpresa($empresaId)->activo()->with(['conductor:id,nombres,apellidos', 'capacidades'])->orderBy('placa')->get()
                 ->map(fn (Vehiculo $v) => [
                     'id'           => $v->id,

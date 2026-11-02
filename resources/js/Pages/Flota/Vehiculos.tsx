@@ -5,16 +5,12 @@ import { Plus, Truck, Wrench } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
-import Input from '@/Components/UI/Input';
-import Select from '@/Components/UI/Select';
-import Switch from '@/Components/UI/Switch';
 import Table, { Column } from '@/Components/UI/Table';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
 import { MantenimientoChip, Pastilla, fmtKg, type EstadoMantenimiento } from '@/Components/Flota/FlotaUI';
+import ModalVehiculo, { ESTADOS_VEHICULO as ESTADOS, type EstadoVehiculo } from '@/Components/Flota/ModalVehiculo';
 import type { PageProps } from '@/types';
-
-type EstadoVehiculo = 'disponible' | 'taller' | 'fuera_servicio';
 
 interface Vehiculo extends Record<string, unknown> {
     id: number;
@@ -45,32 +41,10 @@ interface Props extends PageProps {
     puede: { crear: boolean; editar: boolean; eliminar: boolean };
 }
 
-interface Form {
-    placa: string; marca: string; modelo: string; anio: string; tipo: string;
-    capacidad_kg: string; tarjeta_circulacion: string; conductor_id: number | '';
-    estado: EstadoVehiculo; km_actual: string; observacion: string; activo: boolean;
-    mant_intervalo_km: string; mant_base_km: string;
-}
-
-const vacio = (): Form => ({
-    placa: '', marca: '', modelo: '', anio: '', tipo: '', capacidad_kg: '', tarjeta_circulacion: '',
-    conductor_id: '', estado: 'disponible', km_actual: '', observacion: '', activo: true,
-    mant_intervalo_km: '8000', mant_base_km: '',
-});
-
-const ESTADOS: { value: EstadoVehiculo; label: string }[] = [
-    { value: 'disponible', label: 'Disponible' },
-    { value: 'taller', label: 'En taller' },
-    { value: 'fuera_servicio', label: 'Fuera de servicio' },
-];
-
 export default function Vehiculos({ vehiculos, choferes, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [abierto, setAbierto] = useState(false);
     const [editando, setEditando] = useState<Vehiculo | null>(null);
-    const [form, setForm] = useState<Form>(vacio());
-    const [errores, setErrores] = useState<Record<string, string>>({});
-    const [guardando, setGuardando] = useState(false);
     const [borrar, setBorrar] = useState<Vehiculo | null>(null);
 
     useEffect(() => {
@@ -78,38 +52,8 @@ export default function Vehiculos({ vehiculos, choferes, puede }: Props) {
         if (flash?.error) toast.error(flash.error as string);
     }, [flash]);
 
-    const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm(f => ({ ...f, [k]: v }));
-
-    function nuevo() {
-        setEditando(null); setForm(vacio()); setErrores({}); setAbierto(true);
-    }
-
-    function editar(v: Vehiculo) {
-        setEditando(v);
-        setForm({
-            placa: v.placa, marca: v.marca ?? '', modelo: v.modelo ?? '', anio: v.anio ? String(v.anio) : '',
-            tipo: v.tipo ?? '', capacidad_kg: v.capacidad_kg != null ? String(v.capacidad_kg) : '',
-            tarjeta_circulacion: v.tarjeta_circulacion ?? '', conductor_id: v.conductor_id ?? '',
-            estado: v.estado, km_actual: v.km_ficha != null ? String(v.km_ficha) : '',
-            observacion: v.observacion ?? '', activo: v.activo,
-            mant_intervalo_km: String(v.mant_intervalo_km ?? 8000), mant_base_km: v.mant_base_km != null ? String(v.mant_base_km) : '',
-        });
-        setErrores({}); setAbierto(true);
-    }
-
-    function guardar() {
-        setGuardando(true);
-        const payload = { ...form, conductor_id: form.conductor_id || null };
-        const opts = {
-            preserveScroll: true,
-            onSuccess: () => setAbierto(false),
-            onError: (e: Record<string, string>) => setErrores(e),
-            onFinish: () => setGuardando(false),
-        };
-        editando
-            ? router.put(route('flota.vehiculos.update', editando.id), payload, opts)
-            : router.post(route('flota.vehiculos.store'), payload, opts);
-    }
+    function nuevo() { setEditando(null); setAbierto(true); }
+    function editar(v: Vehiculo) { setEditando(v); setAbierto(true); }
 
     const columnas: Column<Vehiculo>[] = [
         {
@@ -194,50 +138,7 @@ export default function Vehiculos({ vehiculos, choferes, puede }: Props) {
                 exportFilename="vehiculos"
             />
 
-            <Modal isOpen={abierto} onClose={() => setAbierto(false)} size="xl"
-                title={editando ? `Editar ${editando.placa}` : 'Nuevo vehículo'}
-                footer={<>
-                    <Button variant="ghost" onClick={() => setAbierto(false)} disabled={guardando}>Cancelar</Button>
-                    <Button onClick={guardar} loading={guardando}>Guardar</Button>
-                </>}>
-                <div className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <Input label="Placa" required value={form.placa} placeholder="M9C-822" autoFocus
-                            onChange={e => set('placa', e.target.value.toUpperCase())} error={errores.placa} />
-                        <Input label="Marca" value={form.marca} placeholder="Hyundai" onChange={e => set('marca', e.target.value)} error={errores.marca} />
-                        <Input label="Modelo" value={form.modelo} placeholder="EX10" onChange={e => set('modelo', e.target.value)} error={errores.modelo} />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <Input label="Tipo" value={form.tipo} placeholder="Baranda, volquete, furgón…" onChange={e => set('tipo', e.target.value)} error={errores.tipo} />
-                        <Input label="Año" type="number" inputMode="numeric" value={form.anio} onChange={e => set('anio', e.target.value)} error={errores.anio} />
-                        <Input label="Carga máxima (kg)" type="number" inputMode="decimal" min={0} value={form.capacidad_kg} placeholder="13000"
-                            hint="Para el % de carga del viaje" onChange={e => set('capacidad_kg', e.target.value)} error={errores.capacidad_kg} />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <Select label="Chofer asignado" value={form.conductor_id} placeholder="Sin asignar"
-                            onChange={v => set('conductor_id', v === '' ? '' : Number(v))}
-                            options={[{ value: '', label: 'Sin asignar' }, ...choferes]} error={errores.conductor_id}
-                            hint="Sale propuesto al armar un viaje con este vehículo" />
-                        <Select label="Estado" value={form.estado} onChange={v => set('estado', v as EstadoVehiculo)}
-                            options={ESTADOS} error={errores.estado} hint="En taller o fuera de servicio no se le pueden armar viajes" />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <Input label="Tarjeta de circulación / habilitación MTC" value={form.tarjeta_circulacion}
-                            hint="Va en la guía de remisión si la piden" onChange={e => set('tarjeta_circulacion', e.target.value)} error={errores.tarjeta_circulacion} />
-                        <Input label="Kilometraje actual" type="number" inputMode="decimal" min={0} value={form.km_actual}
-                            hint="Después sube solo con cada carga de combustible" onChange={e => set('km_actual', e.target.value)} error={errores.km_actual} />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <Input label="Preventivo cada (km)" type="number" inputMode="numeric" min={500} value={form.mant_intervalo_km}
-                            onChange={e => set('mant_intervalo_km', e.target.value)} error={errores.mant_intervalo_km} />
-                        <Input label="Km del último preventivo" type="number" inputMode="decimal" min={0} value={form.mant_base_km}
-                            hint="Solo para empezar: luego se toma del último mantenimiento registrado"
-                            onChange={e => set('mant_base_km', e.target.value)} error={errores.mant_base_km} />
-                    </div>
-                    <Input label="Observación" value={form.observacion} onChange={e => set('observacion', e.target.value)} error={errores.observacion} />
-                    {editando && <Switch label="Activo" checked={form.activo} onChange={v => set('activo', v)} />}
-                </div>
-            </Modal>
+            <ModalVehiculo isOpen={abierto} onClose={() => setAbierto(false)} choferes={choferes} editando={editando} />
 
             <Modal isOpen={!!borrar} onClose={() => setBorrar(null)} size="sm" title={`Quitar ${borrar?.placa ?? ''}`}
                 footer={<>

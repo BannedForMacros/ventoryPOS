@@ -57,12 +57,14 @@ interface Viaje {
 interface Props extends PageProps {
     viaje: Viaje;
     carga: Carga;
+    /** Paradas que aún necesitan guía, en el orden del recorrido. */
+    sin_guia: number[];
     puede: { editar: boolean; guia: boolean };
 }
 
 const hora = (iso: string) => new Date(iso).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
 
-export default function ViajeShow({ viaje, carga, puede }: Props) {
+export default function ViajeShow({ viaje, carga, sin_guia, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [entregando, setEntregando] = useState<Parada | null>(null);
     const [noEntregada, setNoEntregada] = useState<Parada | null>(null);
@@ -70,7 +72,7 @@ export default function ViajeShow({ viaje, carga, puede }: Props) {
     const [cerrando, setCerrando] = useState(false);
     const [ocupado, setOcupado] = useState(false);
 
-    useTiempoReal(['viajes'], () => router.reload({ only: ['viaje', 'carga'] }));
+    useTiempoReal(['viajes'], () => router.reload({ only: ['viaje', 'carga', 'sin_guia'] }));
 
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -112,6 +114,13 @@ export default function ViajeShow({ viaje, carga, puede }: Props) {
                 </div>
                 <div className="flex flex-wrap gap-2 print:hidden">
                     <Button variant="ghost" onClick={() => window.print()} startContent={<Printer size={15} />}>Hoja de ruta</Button>
+                    {puede.guia && sin_guia.length > 0 && (
+                        <Link href={route('guias.create', { parada: sin_guia[0] })} title="Una guía tras otra, con la placa, el chofer y el peso ya puestos">
+                            <Button variant="secondary" startContent={<FileText size={15} />}>
+                                {sin_guia.length === 1 ? 'Hacer la guía' : `Hacer guías (${sin_guia.length})`}
+                            </Button>
+                        </Link>
+                    )}
                     {editable && (
                         <Link href={route('viajes.edit', viaje.id)}><Button variant="ghost" startContent={<Pencil size={15} />}>Editar</Button></Link>
                     )}
@@ -195,7 +204,7 @@ export default function ViajeShow({ viaje, carga, puede }: Props) {
                     ) : (
                         <ol className="space-y-3">
                             {viaje.paradas.map((p, i) => (
-                                <TarjetaParada key={p.id} p={p} n={i + 1} abierto={abierto && puede.editar} puedeGuia={puede.guia}
+                                <TarjetaParada key={p.id} p={p} n={i + 1} abierto={abierto && puede.editar} puedeGuia={puede.guia} faltaGuia={sin_guia.includes(p.id)}
                                     onEntregar={() => setEntregando(p)} onNoEntregada={() => setNoEntregada(p)} />
                             ))}
                         </ol>
@@ -245,8 +254,8 @@ function Bloque({ titulo, icono, children }: { titulo: string; icono: React.Reac
     );
 }
 
-function TarjetaParada({ p, n, abierto, puedeGuia, onEntregar, onNoEntregada }: {
-    p: Parada; n: number; abierto: boolean; puedeGuia: boolean; onEntregar: () => void; onNoEntregada: () => void;
+function TarjetaParada({ p, n, abierto, puedeGuia, faltaGuia, onEntregar, onNoEntregada }: {
+    p: Parada; n: number; abierto: boolean; puedeGuia: boolean; faltaGuia: boolean; onEntregar: () => void; onNoEntregada: () => void;
 }) {
     const color = p.estado === 'entregado' ? 'var(--vp-mint)' : p.estado === 'por_entregar' ? 'var(--vp-amber)' : 'var(--color-border)';
     const mapa = p.direccion ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.direccion)}` : null;
@@ -310,13 +319,16 @@ function TarjetaParada({ p, n, abierto, puedeGuia, onEntregar, onNoEntregada }: 
                     ) : <span className="text-[13px] font-semibold" style={{ color: 'var(--vp-mint-ink)' }}>{p.venta ? 'Pagado' : ''}</span>}
 
                     <div className="flex flex-wrap gap-1.5 print:hidden">
-                        {p.guia ? (
+                        {p.guia && (
                             <Link href={route('guias.show', p.guia.id)}>
-                                <Button size="sm" variant="ghost" startContent={<FileText size={14} />}>Guía {p.guia.numero ?? ''}</Button>
+                                <Button size="sm" variant="ghost" startContent={<FileText size={14} />}>
+                                    Guía {p.guia.numero ?? ''}{faltaGuia ? ' · no válida' : ''}
+                                </Button>
                             </Link>
-                        ) : puedeGuia && p.venta && p.estado !== 'no_entregado' && p.estado !== 'anulada' && (
+                        )}
+                        {puedeGuia && faltaGuia && (
                             <Link href={route('guias.create', { parada: p.id })} title="Guía de remisión con la placa, el chofer y el peso ya puestos">
-                                <Button size="sm" variant="ghost" startContent={<FileText size={14} />}>Guía</Button>
+                                <Button size="sm" variant="ghost" startContent={<FileText size={14} />}>{p.guia ? 'Rehacer guía' : 'Hacer guía'}</Button>
                             </Link>
                         )}
                         {abierto && p.modo === 'pendiente' && p.estado === 'por_entregar' && (

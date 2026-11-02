@@ -5,17 +5,13 @@ import { IdCard, Plus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
 import Button from '@/Components/UI/Button';
-import Input from '@/Components/UI/Input';
-import Select from '@/Components/UI/Select';
-import Switch from '@/Components/UI/Switch';
 import Table, { Column } from '@/Components/UI/Table';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
 import Callout from '@/Components/UI/Callout';
 import { LicenciaBadge, Pastilla, type EstadoLicencia } from '@/Components/Flota/FlotaUI';
+import ModalConductor, { type TipoConductor as Tipo } from '@/Components/Flota/ModalConductor';
 import type { PageProps } from '@/types';
-
-type Tipo = 'chofer' | 'ayudante';
 
 interface Conductor extends Record<string, unknown> {
     id: number;
@@ -41,27 +37,10 @@ interface Props extends PageProps {
     puede: { crear: boolean; editar: boolean; eliminar: boolean };
 }
 
-interface Form {
-    tipo: Tipo; nombres: string; apellidos: string; tipo_documento: string; numero_documento: string;
-    telefono: string; licencia: string; licencia_categoria: string; licencia_vence: string;
-    observacion: string; activo: boolean;
-}
-
-const vacio = (tipo: Tipo = 'chofer'): Form => ({
-    tipo, nombres: '', apellidos: '', tipo_documento: 'DNI', numero_documento: '', telefono: '',
-    licencia: '', licencia_categoria: '', licencia_vence: '', observacion: '', activo: true,
-});
-
-/** Categorías de licencia en Perú para transporte de carga. */
-const CATEGORIAS = ['A-I', 'A-IIa', 'A-IIb', 'A-IIIa', 'A-IIIb', 'A-IIIc'];
-
 export default function Conductores({ conductores, puede }: Props) {
     const { flash } = usePage<Props>().props;
     const [abierto, setAbierto] = useState(false);
     const [editando, setEditando] = useState<Conductor | null>(null);
-    const [form, setForm] = useState<Form>(vacio());
-    const [errores, setErrores] = useState<Record<string, string>>({});
-    const [guardando, setGuardando] = useState(false);
     const [borrar, setBorrar] = useState<Conductor | null>(null);
 
     useEffect(() => {
@@ -69,38 +48,11 @@ export default function Conductores({ conductores, puede }: Props) {
         if (flash?.error) toast.error(flash.error as string);
     }, [flash]);
 
-    const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm(f => ({ ...f, [k]: v }));
-    const esChofer = form.tipo === 'chofer';
-
     const alertas = useMemo(() => conductores.filter(c => c.activo && c.tipo === 'chofer'
         && (c.estado_licencia === 'vencida' || c.estado_licencia === 'por_vencer')), [conductores]);
 
-    function nuevo() { setEditando(null); setForm(vacio()); setErrores({}); setAbierto(true); }
-
-    function editar(c: Conductor) {
-        setEditando(c);
-        setForm({
-            tipo: c.tipo, nombres: c.nombres, apellidos: c.apellidos ?? '', tipo_documento: c.tipo_documento,
-            numero_documento: c.numero_documento ?? '', telefono: c.telefono ?? '', licencia: c.licencia ?? '',
-            licencia_categoria: c.licencia_categoria ?? '', licencia_vence: c.licencia_vence ?? '',
-            observacion: c.observacion ?? '', activo: c.activo,
-        });
-        setErrores({}); setAbierto(true);
-    }
-
-    function guardar() {
-        setGuardando(true);
-        const opts = {
-            preserveScroll: true,
-            onSuccess: () => setAbierto(false),
-            onError: (e: Record<string, string>) => setErrores(e),
-            onFinish: () => setGuardando(false),
-        };
-        const payload = { ...form, licencia_vence: form.licencia_vence || null };
-        editando
-            ? router.put(route('flota.conductores.update', editando.id), payload, opts)
-            : router.post(route('flota.conductores.store'), payload, opts);
-    }
+    function nuevo() { setEditando(null); setAbierto(true); }
+    function editar(c: Conductor) { setEditando(c); setAbierto(true); }
 
     const columnas: Column<Conductor>[] = [
         {
@@ -176,64 +128,7 @@ export default function Conductores({ conductores, puede }: Props) {
                 exportFilename="conductores"
             />
 
-            <Modal isOpen={abierto} onClose={() => setAbierto(false)} size="xl"
-                title={editando ? `Editar a ${editando.nombre_completo}` : 'Nuevo conductor'}
-                footer={<>
-                    <Button variant="ghost" onClick={() => setAbierto(false)} disabled={guardando}>Cancelar</Button>
-                    <Button onClick={guardar} loading={guardando}>Guardar</Button>
-                </>}>
-                <div className="space-y-4">
-                    <div role="radiogroup" aria-label="Función" className="grid grid-cols-2 gap-2">
-                        {(['chofer', 'ayudante'] as Tipo[]).map(t => {
-                            const activo = form.tipo === t;
-                            return (
-                                <button key={t} type="button" role="radio" aria-checked={activo} onClick={() => set('tipo', t)}
-                                    className="rounded-xl px-3 py-2.5 text-left border transition-colors duration-150"
-                                    style={{
-                                        borderColor: activo ? 'var(--vp-navy)' : 'var(--color-border)',
-                                        backgroundColor: activo ? 'color-mix(in srgb, var(--vp-navy) 7%, var(--color-surface))' : 'var(--color-surface)',
-                                    }}>
-                                    <span className="block text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{t === 'chofer' ? 'Chofer' : 'Ayudante'}</span>
-                                    <span className="block text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
-                                        {t === 'chofer' ? 'Maneja el camión; lleva licencia' : 'Va en el viaje para cargar y descargar'}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <Input label="Nombres" required value={form.nombres} onChange={e => set('nombres', e.target.value)} error={errores.nombres} autoFocus />
-                        <Input label="Apellidos" value={form.apellidos} onChange={e => set('apellidos', e.target.value)} error={errores.apellidos} />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <Select label="Documento" value={form.tipo_documento} onChange={v => set('tipo_documento', String(v))}
-                            options={[{ value: 'DNI', label: 'DNI' }, { value: 'CE', label: 'Carné de extranjería' }, { value: 'PASAPORTE', label: 'Pasaporte' }]} />
-                        <Input label="Número" required={esChofer} inputMode={form.tipo_documento === 'DNI' ? 'numeric' : undefined}
-                            value={form.numero_documento} error={errores.numero_documento}
-                            onChange={e => set('numero_documento', form.tipo_documento === 'DNI' ? e.target.value.replace(/\D/g, '').slice(0, 8) : e.target.value)} />
-                        <Input label="Teléfono" type="tel" inputMode="tel" value={form.telefono} onChange={e => set('telefono', e.target.value)} error={errores.telefono} />
-                    </div>
-
-                    {esChofer && (
-                        <div className="rounded-xl p-3 space-y-3" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
-                            <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Licencia de conducir</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <Input label="N.º de licencia" required value={form.licencia} onChange={e => set('licencia', e.target.value.toUpperCase())} error={errores.licencia} />
-                                <Select label="Categoría" value={form.licencia_categoria} placeholder="Elegir…"
-                                    onChange={v => set('licencia_categoria', String(v))}
-                                    options={[{ value: '', label: 'Sin indicar' }, ...CATEGORIAS.map(c => ({ value: c, label: c }))]} />
-                                <Input label="Vence" type="date" value={form.licencia_vence} onChange={e => set('licencia_vence', e.target.value)} error={errores.licencia_vence}
-                                    hint="Avisa 30 días antes" />
-                            </div>
-                        </div>
-                    )}
-
-                    <Input label="Observación" value={form.observacion} onChange={e => set('observacion', e.target.value)} error={errores.observacion} />
-                    {errores.tipo && <p className="text-sm" style={{ color: 'var(--color-danger)' }}>{errores.tipo}</p>}
-                    {editando && <Switch label="Activo" checked={form.activo} onChange={v => set('activo', v)} />}
-                </div>
-            </Modal>
+            <ModalConductor isOpen={abierto} onClose={() => setAbierto(false)} editando={editando} />
 
             <Modal isOpen={!!borrar} onClose={() => setBorrar(null)} size="sm" title={`Quitar a ${borrar?.nombre_completo ?? ''}`}
                 footer={<>

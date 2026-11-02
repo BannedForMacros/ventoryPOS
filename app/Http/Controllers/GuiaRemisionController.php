@@ -6,6 +6,7 @@ use App\Jobs\EmitirGuiaRemision;
 use App\Models\Guia;
 use App\Services\Facturacion\FacturacionEmpresa;
 use App\Services\Guias\GuiaAContrato;
+use App\Services\ViajeService;
 use App\Support\EnEmpresa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -135,7 +136,7 @@ class GuiaRemisionController extends Controller
         }
 
         $form = $request->all();
-        unset($form['viaje_parada_id']);
+        unset($form['viaje_parada_id'], $form['seguir']);
 
         // La clave la pone el servidor, nunca el navegador: es lo que impide que un
         // doble clic consuma dos números de SUNAT para el mismo despacho.
@@ -168,6 +169,20 @@ class GuiaRemisionController extends Controller
         ]));
 
         EmitirGuiaRemision::dispatch($guia);
+
+        // Guía de una parada: se sigue con la siguiente del viaje, o se vuelve a él.
+        if ($guia->viaje_parada_id) {
+            $viaje = \App\Models\ViajeParada::find($guia->viaje_parada_id)?->viaje;
+            if ($viaje) {
+                $siguiente = $request->boolean('seguir') ? app(ViajeService::class)->paradasSinGuia($viaje)->first() : null;
+
+                return $siguiente
+                    ? redirect()->route('guias.create', ['parada' => $siguiente->id])
+                        ->with('success', 'Guía registrada y enviándose a SUNAT. Sigue la próxima parada.')
+                    : redirect()->route('viajes.show', $viaje)
+                        ->with('success', 'Guía registrada. Se está enviando a SUNAT: su estado se ve en cada parada.');
+            }
+        }
 
         return redirect()
             ->route('guias.show', $guia)
@@ -293,6 +308,9 @@ class GuiaRemisionController extends Controller
         $venta    = $parada->venta;
         $vehiculo = $parada->viaje->vehiculo;
         $chofer   = $parada->viaje->conductor;
+        // Dónde va esta guía entre las que le faltan al viaje: «Guía 2 de 4».
+        $faltan   = app(ViajeService::class)->paradasSinGuia($parada->viaje)->pluck('id');
+        $posicion = $faltan->search($parada->id);
         $peso     = $parada->items->every(fn ($i) => $i->peso_kg !== null) ? round((float) $parada->items->sum('peso_kg'), 3) : null;
 
         return [
@@ -313,6 +331,12 @@ class GuiaRemisionController extends Controller
             'traslado' => [
                 'viaje_parada_id'   => $parada->id,
                 'viaje'             => $parada->viaje->numero,
+                'viaje_id'          => $parada->viaje->id,
+                'cliente'           => $venta->cliente?->razon_social ?: $venta->cliente?->nombre_completo,
+                // Las que faltan sin contar esta, y su lugar en la cola (null si ya tenía guía).
+                'restantes'         => $faltan->reject(fn ($id) => $id === $parada->id)->count(),
+                'posicion'          => $posicion === false ? null : $posicion + 1,
+                'total'             => $faltan->count(),
                 'fecha'             => $parada->viaje->fecha?->toDateString(),
                 'peso_total'        => $peso,
                 'llegada_direccion' => $venta->cliente_direccion ?? $venta->cliente?->direccion,

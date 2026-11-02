@@ -64,6 +64,9 @@ interface Props extends PageProps {
         viaje_parada_id: number; viaje: string; fecha: string; peso_total: number | null; llegada_direccion: string | null;
         vehiculo: { placa: string; tarjeta_circulacion: string } | null;
         conductor: { tipo_documento: string; numero_documento: string; nombres: string; apellidos: string; licencia: string } | null;
+        viaje_id: number; cliente: string | null;
+        /** Guías que le faltan al viaje sin contar esta, y el lugar de esta en la cola. */
+        restantes: number; posicion: number | null; total: number;
     } | null;
 }
 
@@ -88,7 +91,7 @@ export default function GuiaCreate() {
     const motivos: Motivo[] = catalogos.motivos ?? [];
     const empresa = catalogos.empresa ?? {};
 
-    const { data, setData, post, processing, errors } = useForm<any>({
+    const { data, setData, post, processing, errors, transform } = useForm<any>({
         motivo: motivos[0]?.valor ?? 'VENTA',
         modalidad: 'PRIVADO',
         // Del viaje, salvo que ya pasó: la guía no se emite con fecha de traslado vencida.
@@ -152,10 +155,20 @@ export default function GuiaCreate() {
         return data.items.reduce((s: number, l: Linea) => s + Number(l.peso) * Number(l.cantidad || 0), 0);
     }, [data.items]);
 
+    // Desde un viaje se vuelve al viaje, no al listado de guías.
+    const volver = traslado ? route('viajes.show', traslado.viaje_id) : route('guias.index');
+    const haySiguiente = !!traslado && traslado.restantes > 0;
+
+    /** Con `seguir`, al emitir pasa directo a la guía de la siguiente parada. */
+    function emitir(seguir: boolean) {
+        transform((d: any) => ({ ...d, seguir }));
+        post(route('guias.store'));
+    }
+
     if (!catalogos.disponible) {
         return (
             <AppLayout title="Nueva guía">
-                <PageHeader title="Nueva guía de remisión" icon={<Truck size={20} />} backHref={route('guias.index')} />
+                <PageHeader title="Nueva guía de remisión" icon={<Truck size={20} />} backHref={volver} />
                 <Callout variant="warning" title="No se puede emitir">
                     {catalogos.motivo ?? 'FacturaMac no respondió.'}
                 </Callout>
@@ -169,10 +182,25 @@ export default function GuiaCreate() {
                 title="Nueva guía de remisión"
                 subtitle={traslado ? `Del viaje ${traslado.viaje}, venta ${venta?.numero ?? ''}: placa, chofer y peso ya puestos` : venta ? `Del despacho de la venta ${venta.numero}` : undefined}
                 icon={<Truck size={20} />}
-                backHref={route('guias.index')}
+                backHref={volver}
             />
 
-            <form onSubmit={(e) => { e.preventDefault(); post(route('guias.store')); }} className="space-y-4 pb-10">
+            <form onSubmit={(e) => { e.preventDefault(); emitir(haySiguiente); }} className="space-y-4 pb-10">
+                {traslado?.posicion && traslado.total > 1 && (
+                    <div className="vp-fade-up rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <span className="text-sm font-semibold tabular-nums">
+                            Guía {traslado.posicion} de {traslado.total} del viaje {traslado.viaje}
+                        </span>
+                        <span className="text-sm text-[var(--color-text-muted)] truncate">{traslado.cliente}</span>
+                        <div className="flex gap-1 ml-auto" aria-hidden>
+                            {Array.from({ length: traslado.total }).map((_, i) => (
+                                <span key={i} className="h-1.5 w-6 rounded-full"
+                                    style={{ backgroundColor: i < traslado.posicion! ? 'var(--color-primary)' : 'color-mix(in srgb, var(--color-text-muted) 22%, transparent)' }} />
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {emision.ensayo && <Callout variant="info">{emision.ensayo}</Callout>}
 
                 {Object.keys(errors).length > 0 && (
@@ -453,8 +481,19 @@ export default function GuiaCreate() {
                 </section>
 
                 <div className="flex justify-end gap-2">
-                    <Link href={route('guias.index')}><Button type="button" variant="ghost">Cancelar</Button></Link>
-                    <Button type="submit" loading={processing} disabled={!emision.disponible}>Emitir guía</Button>
+                    <Link href={volver}><Button type="button" variant="ghost">{traslado ? 'Volver al viaje' : 'Cancelar'}</Button></Link>
+                    {haySiguiente ? (
+                        <>
+                            <Button type="button" variant="secondary" loading={processing} disabled={!emision.disponible} onClick={() => emitir(false)}>
+                                Emitir y volver al viaje
+                            </Button>
+                            <Button type="submit" loading={processing} disabled={!emision.disponible}>
+                                Emitir y seguir ({traslado!.restantes} {traslado!.restantes === 1 ? 'falta' : 'faltan'})
+                            </Button>
+                        </>
+                    ) : (
+                        <Button type="submit" loading={processing} disabled={!emision.disponible}>Emitir guía</Button>
+                    )}
                 </div>
             </form>
         </AppLayout>
