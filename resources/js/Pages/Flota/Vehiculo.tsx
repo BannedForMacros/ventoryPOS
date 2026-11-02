@@ -7,6 +7,7 @@ import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Modal from '@/Components/UI/Modal';
 import ModalGasto, { type PresetGasto } from '@/Pages/Gastos/Partials/ModalGasto';
+import SearchableSelect from '@/Components/UI/SearchableSelect';
 import {
     EstadoDocumentoBadge, EstadoViajeBadge, MantenimientoChip, Pastilla, TipoViajeBadge, fmtDia, fmtKg, fmtKm,
     type EstadoMantenimiento, type EstadoViaje, type TipoViaje,
@@ -35,6 +36,8 @@ interface Props extends PageProps {
     mantenimientos: Mant[];
     documentos: Documento[];
     tiposDocumento: string[];
+    capacidades: { producto_id: number; producto: string | null; max_unidades: number; peso_kg: number | null }[];
+    productos: { value: number; label: string; peso_kg: number | null }[];
     viajes: ViajeFila[];
     otrosGastos: { id: number; fecha: string; monto: number; concepto: string | null; comentario: string | null }[];
     utilidad: Utilidad | null;
@@ -44,7 +47,7 @@ interface Props extends PageProps {
     puede: { editar: boolean; gastos: boolean };
 }
 
-type Pestana = 'combustible' | 'mantenimiento' | 'documentos' | 'viajes' | 'gastos';
+type Pestana = 'combustible' | 'mantenimiento' | 'documentos' | 'viajes' | 'gastos' | 'capacidad';
 
 const fecha = (ymd: string) => {
     const [y, m, d] = ymd.slice(0, 10).split('-').map(Number);
@@ -83,6 +86,7 @@ export default function FlotaVehiculo(props: Props) {
         ['documentos', 'Documentos', documentos.length],
         ['viajes', 'Viajes', viajes.length],
         ['gastos', 'Otros gastos', otrosGastos.length],
+        ['capacidad', 'Capacidad', props.capacidades.length],
     ];
 
     return (
@@ -247,6 +251,11 @@ export default function FlotaVehiculo(props: Props) {
                     )} />
                 )}
 
+                {pestana === 'capacidad' && (
+                    <Capacidades vehiculoId={vehiculo.id} capacidadKg={vehiculo.capacidad_kg} inicial={props.capacidades}
+                        productos={props.productos} puedeEditar={puede.editar} />
+                )}
+
                 {pestana === 'gastos' && (
                     <Lista vacio="Sin otros gastos cargados a esta placa (peajes, viáticos, letras…)." filas={otrosGastos} render={g => (
                         <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
@@ -381,5 +390,68 @@ function ModalDocumento({ vehiculoId, doc, tipos, onClose }: { vehiculoId: numbe
                 <Input label="Observación" value={form.observacion} onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} placeholder="Opcional" />
             </div>
         </Modal>
+    );
+}
+
+/**
+ * Unidades máximas por producto en este camión (volumen de tolva o baranda).
+ * El viaje usa el menor entre esto y lo que permite el peso.
+ */
+function Capacidades({ vehiculoId, capacidadKg, inicial, productos, puedeEditar }: {
+    vehiculoId: number; capacidadKg: number | null; inicial: Props['capacidades']; productos: Props['productos']; puedeEditar: boolean;
+}) {
+    const [filas, setFilas] = useState(inicial.map(c => ({ producto_id: c.producto_id as number | '', max_unidades: String(c.max_unidades) })));
+    const [guardando, setGuardando] = useState(false);
+    const [errores, setErrores] = useState<Record<string, string>>({});
+
+    function guardar() {
+        setGuardando(true);
+        router.put(route('flota.vehiculos.capacidades', vehiculoId), {
+            capacidades: filas.filter(f => f.producto_id && Number(f.max_unidades) > 0).map(f => ({ producto_id: f.producto_id, max_unidades: Number(f.max_unidades) })),
+        } as unknown as Record<string, string>, {
+            preserveScroll: true,
+            onError: e => { setErrores(e as Record<string, string>); avisoError(Object.values(e)[0]); },
+            onFinish: () => setGuardando(false),
+        });
+    }
+
+    return (
+        <div className="p-4 space-y-3">
+            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Cuántas unidades de cada producto entran por volumen (tolva o baranda). Al armar un viaje se usa el menor entre esto y lo que permite el peso
+                {capacidadKg ? ` (${fmtKg(capacidadKg)})` : ''}: en el ladrillo de techo el camión se llena antes de llegar al peso.
+            </p>
+            {filas.length === 0 && <p className="text-sm py-4 text-center" style={{ color: 'var(--color-text-muted)' }}>Sin límites por volumen: se usa solo el peso.</p>}
+            {filas.map((f, i) => {
+                const prod = productos.find(p => p.value === f.producto_id);
+                const porPeso = prod?.peso_kg && capacidadKg ? Math.floor(capacidadKg / prod.peso_kg) : null;
+                return (
+                    <div key={i} className="flex flex-wrap items-center gap-3">
+                        <div className="flex-1 min-w-[14rem]">
+                            <SearchableSelect value={f.producto_id} placeholder="Elegir producto…" options={productos} disabled={!puedeEditar}
+                                error={errores[`capacidades.${i}.producto_id`]}
+                                onChange={(v: string | number) => setFilas(fs => fs.map((x, j) => j === i ? { ...x, producto_id: Number(v) || '' } : x))} />
+                        </div>
+                        <input type="number" min={1} inputMode="numeric" aria-label="Unidades máximas por volumen" value={f.max_unidades} disabled={!puedeEditar}
+                            onChange={e => setFilas(fs => fs.map((x, j) => j === i ? { ...x, max_unidades: e.target.value } : x))}
+                            className="w-32 h-10 rounded-lg border px-2 text-right text-sm tabular-nums outline-none focus:ring-2"
+                            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                        <span className="text-[13px] w-40" style={{ color: 'var(--color-text-muted)' }}>
+                            {porPeso ? `por peso entrarían ${porPeso.toLocaleString('es-PE')}` : 'unidades'}
+                        </span>
+                        {puedeEditar && (
+                            <button type="button" aria-label="Quitar" onClick={() => setFilas(fs => fs.filter((_, j) => j !== i))}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-black/5" style={{ color: 'var(--color-danger)' }}><Trash2 size={15} /></button>
+                        )}
+                    </div>
+                );
+            })}
+            {puedeEditar && (
+                <div className="flex justify-between pt-1">
+                    <Button size="sm" variant="ghost" onClick={() => setFilas(fs => [...fs, { producto_id: '', max_unidades: '' }])} startContent={<Plus size={14} />}>Agregar producto</Button>
+                    <Button size="sm" onClick={guardar} loading={guardando}>Guardar capacidad</Button>
+                </div>
+            )}
+        </div>
     );
 }

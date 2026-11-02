@@ -415,7 +415,8 @@ class FlotaService
             ->selectRaw("g.vehiculo_id,
                 SUM(CASE WHEN gc.flota_uso = 'combustible' THEN g.monto ELSE 0 END) combustible,
                 SUM(CASE WHEN gc.flota_uso = 'mantenimiento' THEN g.monto ELSE 0 END) mantenimiento,
-                SUM(CASE WHEN gc.flota_uso IS NULL THEN g.monto ELSE 0 END) otros")
+                SUM(CASE WHEN g.flota_liquidacion_id IS NOT NULL THEN g.monto ELSE 0 END) personal,
+                SUM(CASE WHEN gc.flota_uso IS NULL AND g.flota_liquidacion_id IS NULL THEN g.monto ELSE 0 END) otros")
             ->get()->keyBy('vehiculo_id');
 
         $kmRango = DB::table('vehiculo_combustibles as c')->join('gastos as g', 'g.id', '=', 'c.gasto_id')->whereNull('g.deleted_at')
@@ -429,6 +430,8 @@ class FlotaService
             $comb = round((float) ($g->combustible ?? 0), 2);
             $mant = round((float) ($g->mantenimiento ?? 0), 2);
             $otros = round((float) ($g->otros ?? 0), 2);
+            // Pago a choferes y ayudantes (liquidaciones), separado de los demás gastos.
+            $personal = round((float) ($g->personal ?? 0), 2);
             $margen = round((float) ($l->margen ?? 0), 2);
             $km = (float) ($k->km ?? 0);
 
@@ -444,11 +447,12 @@ class FlotaService
                 'combustible'   => $comb,
                 'mantenimiento' => $mant,
                 'otros'         => $otros,
-                'gastos'        => round($comb + $mant + $otros, 2),
-                'utilidad'      => round($margen - $comb - $mant - $otros, 2),
+                'personal'      => $personal,
+                'gastos'        => round($comb + $mant + $otros + $personal, 2),
+                'utilidad'      => round($margen - $comb - $mant - $otros - $personal, 2),
                 'km'            => $km,
                 'galones'       => round((float) ($k->galones ?? 0), 3),
-                'costo_km'      => $km > 0 ? round(($comb + $mant + $otros) / $km, 3) : null,
+                'costo_km'      => $km > 0 ? round(($comb + $mant + $otros + $personal) / $km, 3) : null,
                 'mant_km'       => $km > 0 ? round($mant / $km, 3) : null,
             ];
         })->filter(fn ($r) => $r['activo'] || $r['viajes'] > 0 || $r['gastos'] > 0)->sortByDesc('utilidad')->values()->all();

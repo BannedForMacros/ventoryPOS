@@ -118,6 +118,7 @@ class HandleInertiaRequests extends Middleware
         'flota.vehiculos'   => 'usa_flota',
         'flota.conductores' => 'usa_flota',
         'flota.resumen'     => 'usa_flota',
+        'flota.pagos'       => 'usa_flota',
     ];
 
     private function formatModulo($modulo, $user): ?array

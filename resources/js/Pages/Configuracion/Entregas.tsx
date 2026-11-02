@@ -24,7 +24,7 @@ interface Config {
 const CAMPO = 'w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2';
 const ESTILO_CAMPO: React.CSSProperties = { borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' };
 interface DefTexto { clave: string; nombre: string; defecto: string; max: number; }
-interface Ruta { id: number; nombre: string; zona: string | null; orden: number; activo: boolean; ventas_count: number; }
+interface Ruta { id: number; nombre: string; zona: string | null; orden: number; activo: boolean; ventas_count: number; margen_monto?: string | number | null; margen_por?: string | number | null }
 
 interface Props extends PageProps {
     config: Config;
@@ -259,7 +259,7 @@ export default function Entregas({ config, catalogoTextos, rutas, usaFlota, pued
                 </div>
 
                 <div className="xl:col-span-6 min-w-0">
-                    <Rutas rutas={rutas} puedeEditar={puedeEditar} />
+                    <Rutas rutas={rutas} puedeEditar={puedeEditar} usaFlota={usaFlota} />
                 </div>
             </div>
         </AppLayout>
@@ -268,15 +268,15 @@ export default function Entregas({ config, catalogoTextos, rutas, usaFlota, pued
 
 /* ── Rutas ─────────────────────────────────────────────────────────────── */
 
-function Rutas({ rutas, puedeEditar }: { rutas: Ruta[]; puedeEditar: boolean }) {
+function Rutas({ rutas, puedeEditar, usaFlota = false }: { rutas: Ruta[]; puedeEditar: boolean; usaFlota?: boolean }) {
     const [editando, setEditando] = useState<number | 'nueva' | null>(null);
-    const [form, setForm] = useState({ nombre: '', zona: '' });
+    const [form, setForm] = useState({ nombre: '', zona: '', margen_monto: '', margen_por: '1000' });
     const [errores, setErrores] = useState<Record<string, string>>({});
     const [borrando, setBorrando] = useState<Ruta | null>(null);
 
     function abrir(r: Ruta | null) {
         setErrores({});
-        setForm({ nombre: r?.nombre ?? '', zona: r?.zona ?? '' });
+        setForm({ nombre: r?.nombre ?? '', zona: r?.zona ?? '', margen_monto: r?.margen_monto != null ? String(Number(r.margen_monto)) : '', margen_por: String(Number(r?.margen_por ?? 1000) || 1000) });
         setEditando(r ? r.id : 'nueva');
     }
 
@@ -286,8 +286,10 @@ function Rutas({ rutas, puedeEditar }: { rutas: Ruta[]; puedeEditar: boolean }) 
             onSuccess: () => setEditando(null),
             onError: (e: Record<string, string>) => setErrores(e),
         };
-        if (editando === 'nueva') router.post(route('configuracion.entregas.rutas.store'), form, opts);
-        else if (editando) router.put(route('configuracion.entregas.rutas.update', editando), form, opts);
+        // El margen por zona solo viaja con Flota: sin ella no se toca.
+        const datos = usaFlota ? form : { nombre: form.nombre, zona: form.zona };
+        if (editando === 'nueva') router.post(route('configuracion.entregas.rutas.store'), datos, opts);
+        else if (editando) router.put(route('configuracion.entregas.rutas.update', editando), datos, opts);
     }
 
     function mover(i: number, d: -1 | 1) {
@@ -320,6 +322,19 @@ function Rutas({ rutas, puedeEditar }: { rutas: Ruta[]; puedeEditar: boolean }) 
                     <button type="button" onClick={() => setEditando(null)} aria-label="Cancelar" className="p-2 rounded-lg hover:opacity-70" style={{ color: 'var(--color-text-muted)' }}><X size={16} /></button>
                 </div>
             </div>
+            {usaFlota && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
+                    <span>Precio por zona: costo +</span>
+                    <input type="number" min={0} step="0.01" inputMode="decimal" value={form.margen_monto} placeholder="90" aria-label="Margen de la zona en soles"
+                        onChange={e => setForm(f => ({ ...f, margen_monto: e.target.value }))}
+                        className="w-24 rounded-lg border px-2 py-1.5 text-right text-sm tabular-nums" style={{ borderColor: errores.margen_monto ? 'var(--color-danger)' : 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                    <span>soles por cada</span>
+                    <input type="number" min={1} inputMode="numeric" value={form.margen_por} aria-label="Cada cuántas unidades"
+                        onChange={e => setForm(f => ({ ...f, margen_por: e.target.value }))}
+                        className="w-24 rounded-lg border px-2 py-1.5 text-right text-sm tabular-nums" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                    <span>unidades (1000 = por millar). Vacío: sin precio sugerido.</span>
+                </div>
+            )}
         </div>
     );
 
@@ -361,7 +376,8 @@ function Rutas({ rutas, puedeEditar }: { rutas: Ruta[]; puedeEditar: boolean }) 
                         <span className="min-w-0 flex-1">
                             <span className="block text-[15px] font-semibold truncate" style={{ color: 'var(--color-text)' }}>{r.nombre}</span>
                             <span className="block text-[13px] truncate" style={{ color: 'var(--color-text-muted)' }}>
-                                {[r.zona, r.ventas_count ? plural(r.ventas_count, 'venta', 'ventas') : null, !r.activo ? 'desactivada' : null].filter(Boolean).join(', ') || 'Sin zona'}
+                                {[r.zona, usaFlota && r.margen_monto != null ? `margen S/ ${Number(r.margen_monto)} por ${Number(r.margen_por ?? 1000).toLocaleString('es-PE')}` : null,
+                                  r.ventas_count ? plural(r.ventas_count, 'venta', 'ventas') : null, !r.activo ? 'desactivada' : null].filter(Boolean).join(', ') || 'Sin zona'}
                             </span>
                         </span>
                         {puedeEditar && (

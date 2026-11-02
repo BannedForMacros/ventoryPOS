@@ -153,20 +153,68 @@ class ViajeService
         })->filter(fn ($a) => collect($a['items'])->sum('disponible') > self::EPS)->values()->all();
     }
 
-    /** Peso cargado, capacidad y % de uso del vehículo. */
+    /**
+     * Peso cargado y % de uso del vehículo.
+     *
+     * Cada producto tiene dos límites en un camión: por PESO (capacidad ÷ peso
+     * de la unidad) y por VOLUMEN (unidades máximas de ese producto en la
+     * tolva o baranda, si se registró). Manda el menor: el ladrillo de techo
+     * llena el camión antes de llegar al peso. En un pedido mixto el uso es la
+     * suma de la fracción que ocupa cada producto.
+     */
     public function carga(Viaje $viaje): array
     {
-        $viaje->loadMissing(['paradas.items', 'vehiculo']);
-        $paradas  = $viaje->paradas->where('estado', '<>', 'no_entregado');
-        $peso     = round((float) $paradas->sum(fn ($p) => $p->pesoKg()), 3);
-        $sinPeso  = $paradas->flatMap->items->contains(fn ($i) => $i->peso_kg === null);
-        $capacidad = (float) ($viaje->vehiculo?->capacidad_kg ?? 0);
+        $viaje->loadMissing(['paradas.items', 'vehiculo.capacidades']);
+        $items = $viaje->paradas->where('estado', '<>', 'no_entregado')->flatMap->items;
+
+        return self::usoDeCarga(
+            $items->map(fn ($i) => [
+                'producto_id' => (int) $i->producto_id,
+                'unidades'    => (float) $i->cantidad * (float) ($i->factor_conversion ?: 1),
+                'peso_kg'     => $i->peso_kg !== null ? (float) $i->peso_kg : null,
+            ])->all(),
+            (float) ($viaje->vehiculo?->capacidad_kg ?? 0),
+            $viaje->vehiculo?->capacidades->pluck('max_unidades', 'producto_id')->map(fn ($m) => (float) $m)->all() ?? [],
+        );
+    }
+
+    /**
+     * @param array<int, array{producto_id:int, unidades:float, peso_kg:?float}> $items
+     * @param array<int, float> $maximos producto_id => unidades máximas por volumen
+     */
+    public static function usoDeCarga(array $items, float $capacidadKg, array $maximos): array
+    {
+        $peso = 0.0;
+        $fraccion = 0.0;
+        $sinPeso = false;
+        $sinLimite = false;
+        $porVolumen = false;
+
+        foreach ($items as $i) {
+            $u = (float) $i['unidades'];
+            if ($u <= 0) continue;
+            if ($i['peso_kg'] === null) $sinPeso = true; else $peso += $i['peso_kg'];
+
+            $limites = [];
+            $pesoUnidad = $i['peso_kg'] !== null ? $i['peso_kg'] / $u : null;
+            if ($capacidadKg > 0 && $pesoUnidad > 0) $limites['peso'] = $capacidadKg / $pesoUnidad;
+            if (($maximos[$i['producto_id']] ?? 0) > 0) $limites['volumen'] = $maximos[$i['producto_id']];
+
+            if (!$limites) { $sinLimite = true; continue; }
+            $limite = min($limites);
+            if (isset($limites['volumen']) && $limites['volumen'] <= ($limites['peso'] ?? INF)) $porVolumen = true;
+            $fraccion += $u / $limite;
+        }
+
+        $hayLimite = $capacidadKg > 0 || !empty($maximos);
 
         return [
-            'peso_kg'      => $peso,
-            'capacidad_kg' => $capacidad > 0 ? $capacidad : null,
-            'porcentaje'   => $capacidad > 0 ? round($peso / $capacidad * 100, 1) : null,
+            'peso_kg'      => round($peso, 3),
+            'capacidad_kg' => $capacidadKg > 0 ? $capacidadKg : null,
+            'porcentaje'   => $hayLimite && !$sinLimite && $items ? round($fraccion * 100, 1)
+                : ($capacidadKg > 0 ? round($peso / $capacidadKg * 100, 1) : null),
             'sin_peso'     => $sinPeso,
+            'por_volumen'  => $porVolumen,
         ];
     }
 

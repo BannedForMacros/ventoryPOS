@@ -26,7 +26,7 @@ class EntregaConfigController extends Controller
             'rutas'  => RutaEntrega::deEmpresa($empresa->id)
                 ->withCount('ventas')
                 ->orderBy('orden')->orderBy('id')
-                ->get(['id', 'nombre', 'zona', 'orden', 'activo']),
+                ->get(['id', 'nombre', 'zona', 'orden', 'activo', 'margen_monto', 'margen_por']),
             // El envío que sale al entregarse se apoya en la bandeja de despachos.
             'usaDespachoAlmacen' => (bool) $empresa->usa_despacho_almacen,
             // Flota y viajes: vehículos, conductores y viajes de reparto.
@@ -100,6 +100,9 @@ class EntregaConfigController extends Controller
             'zona'   => ['nullable', 'string', 'max:120'],
             'orden'  => ['nullable', 'integer', 'min:0', 'max:9999'],
             'activo' => ['nullable', 'boolean'],
+            // Precio por zona (opcional): margen sobre el costo por cada N unidades.
+            'margen_monto' => ['nullable', 'numeric', 'min:0', 'max:9999999'],
+            'margen_por'   => ['nullable', 'numeric', 'min:1', 'max:9999999'],
         ], [
             'nombre.unique' => 'Ya tienes una ruta con ese nombre.',
         ]);
@@ -109,7 +112,10 @@ class EntregaConfigController extends Controller
             'zona'   => trim((string) ($data['zona'] ?? '')) ?: null,
             'activo' => $data['activo'] ?? ($ruta?->activo ?? true),
             'orden'  => $data['orden'] ?? ($ruta?->orden ?? ((int) RutaEntrega::deEmpresa($empresaId)->max('orden') + 1)),
-        ];
+        ] + ($request->has('margen_monto') ? [
+            'margen_monto' => isset($data['margen_monto']) && $data['margen_monto'] !== '' ? round((float) $data['margen_monto'], 2) : null,
+            'margen_por'   => round((float) ($data['margen_por'] ?? 1000), 2) ?: 1000,
+        ] : []);
 
         $ruta ? $ruta->update($valores) : RutaEntrega::create($valores + ['empresa_id' => $empresaId]);
 

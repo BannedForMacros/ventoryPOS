@@ -45,6 +45,7 @@ class Vehiculo extends Model
     public function mantenimientos(): HasMany { return $this->hasMany(VehiculoMantenimiento::class); }
     public function documentos(): HasMany     { return $this->hasMany(VehiculoDocumento::class); }
     public function gastos(): HasMany         { return $this->hasMany(Gasto::class); }
+    public function capacidades(): HasMany    { return $this->hasMany(VehiculoCapacidad::class); }
 
     public function scopeDeEmpresa(Builder $q, int $empresaId): Builder
     {

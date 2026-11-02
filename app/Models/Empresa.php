@@ -80,6 +80,7 @@ class Empresa extends Model
         'usa_mercaderia_transito',
         // Flota y viajes de reparto: vehículos, conductores y viajes (opcional).
         'usa_flota',
+        'flota_config',
         'vende_mercaderia_transito',
         // "Afecta caja" configurable por módulo (JSON). Ver App\Support\AfectaCaja.
         'afecta_caja_config',
@@ -128,6 +129,7 @@ class Empresa extends Model
             'usa_caja_grande'                 => 'boolean',
             'usa_mercaderia_transito'         => 'boolean',
             'usa_flota'                       => 'boolean',
+            'flota_config'                    => 'array',
             'vende_mercaderia_transito'       => 'boolean',
             'afecta_caja_config'              => 'array',
             'pos_permite_credito'             => 'boolean',

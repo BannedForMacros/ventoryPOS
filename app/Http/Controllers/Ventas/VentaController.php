@@ -2500,7 +2500,7 @@ class VentaController extends Controller
             'texto_recojo'           => $cfg['textos']['recojo'],
             'texto_envio'            => $cfg['textos']['envio'],
             'rutas'                  => \App\Models\RutaEntrega::deEmpresa($empresa->id)->activa()
-                ->orderBy('orden')->orderBy('id')->get(['id', 'nombre', 'zona']),
+                ->orderBy('orden')->orderBy('id')->get(['id', 'nombre', 'zona', 'margen_monto', 'margen_por']),
             // Flota: el camión que lleva el envío (solo los que pueden salir).
             'vehiculos'              => \App\Support\Flota::activa($empresa)
                 ? \App\Models\Vehiculo::deEmpresa($empresa->id)->activo()->where('estado', 'disponible')

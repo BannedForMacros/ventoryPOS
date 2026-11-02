@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { AlertTriangle, BadgeDollarSign, CalendarRange, Fuel, Gauge, Settings2, Trophy, Truck, Wrench } from 'lucide-react';
+import { AlertTriangle, BadgeDollarSign, CalendarRange, Fuel, Gauge, MessageCircle, Settings2, Trophy, Truck, Wrench } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Modal from '@/Components/UI/Modal';
@@ -19,7 +19,7 @@ interface Alerta { tipo: 'mantenimiento' | 'documento' | 'licencia'; nivel: 'roj
 
 interface FilaUtilidad {
     vehiculo_id: number; placa: string; descripcion: string; viajes: number; vueltas: number;
-    venta: number; margen: number; combustible: number; mantenimiento: number; otros: number; gastos: number;
+    venta: number; margen: number; combustible: number; mantenimiento: number; otros: number; personal: number; gastos: number;
     utilidad: number; km: number; galones: number; costo_km: number | null; mant_km: number | null;
 }
 
@@ -86,10 +86,18 @@ export default function FlotaResumen({ alertas, utilidad, periodo, conceptos, pu
 
             {/* ── Alertas ── */}
             <section className="mb-5">
-                <h2 className="text-base font-bold mb-2 flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
-                    <AlertTriangle size={16} style={{ color: alertas.length ? 'var(--vp-coral-ink)' : 'var(--vp-mint-ink)' }} />
-                    {alertas.length ? `${alertas.length} ${alertas.length === 1 ? 'cosa por atender' : 'cosas por atender'}` : 'Todo al día'}
-                </h2>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <h2 className="text-base font-bold flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
+                        <AlertTriangle size={16} style={{ color: alertas.length ? 'var(--vp-coral-ink)' : 'var(--vp-mint-ink)' }} />
+                        {alertas.length ? `${alertas.length} ${alertas.length === 1 ? 'cosa por atender' : 'cosas por atender'}` : 'Todo al día'}
+                    </h2>
+                    {alertas.length > 0 && (
+                        // Abre WhatsApp con el resumen escrito: se elige a quién mandarlo.
+                        <a href={`https://wa.me/?text=${encodeURIComponent(textoAlertas(alertas))}`} target="_blank" rel="noreferrer">
+                            <Button size="sm" variant="ghost" startContent={<MessageCircle size={14} />}>Enviar por WhatsApp</Button>
+                        </a>
+                    )}
+                </div>
                 {alertas.length === 0 ? (
                     <p className="text-sm rounded-2xl px-4 py-3" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
                         Sin documentos, licencias ni mantenimientos por vencer.
@@ -178,6 +186,7 @@ export default function FlotaResumen({ alertas, utilidad, periodo, conceptos, pu
                                         <th className="px-3 py-2.5 font-semibold text-right">Margen despachado</th>
                                         <th className="px-3 py-2.5 font-semibold text-right">Combustible</th>
                                         <th className="px-3 py-2.5 font-semibold text-right">Mantenimiento</th>
+                                        <th className="px-3 py-2.5 font-semibold text-right">Choferes</th>
                                         <th className="px-3 py-2.5 font-semibold text-right">Otros gastos</th>
                                         <th className="px-3 py-2.5 font-semibold text-right">Km · costo/km</th>
                                         <th className="px-4 py-2.5 font-semibold text-right">Utilidad</th>
@@ -200,6 +209,7 @@ export default function FlotaResumen({ alertas, utilidad, periodo, conceptos, pu
                                             <td className="px-3 py-3 text-right tabular-nums">{soles(f.margen)}</td>
                                             <td className="px-3 py-3 text-right tabular-nums" style={{ color: f.combustible ? 'var(--color-text)' : 'var(--color-text-muted)' }}>{soles(f.combustible)}</td>
                                             <td className="px-3 py-3 text-right tabular-nums" style={{ color: f.mantenimiento ? 'var(--color-text)' : 'var(--color-text-muted)' }}>{soles(f.mantenimiento)}</td>
+                                            <td className="px-3 py-3 text-right tabular-nums" style={{ color: f.personal ? 'var(--color-text)' : 'var(--color-text-muted)' }}>{soles(f.personal)}</td>
                                             <td className="px-3 py-3 text-right tabular-nums" style={{ color: f.otros ? 'var(--color-text)' : 'var(--color-text-muted)' }}>{soles(f.otros)}</td>
                                             <td className="px-3 py-3 text-right tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
                                                 {f.km > 0 ? <>{fmtKm(f.km)}{f.costo_km !== null ? ` · ${soles(f.costo_km)}` : ''}</> : '—'}
@@ -220,7 +230,7 @@ export default function FlotaResumen({ alertas, utilidad, periodo, conceptos, pu
                                             <span className="tabular-nums font-bold" style={{ color: f.utilidad >= 0 ? 'var(--vp-mint-ink)' : 'var(--vp-coral-ink)' }}>{soles(f.utilidad)}</span>
                                         </div>
                                         <p className="text-[13px] mt-1" style={{ color: 'var(--color-text-muted)' }}>
-                                            {f.viajes} viajes · margen {soles(f.margen)} · combustible {soles(f.combustible)} · mant. {soles(f.mantenimiento)}
+                                            {f.viajes} viajes · margen {soles(f.margen)} · combustible {soles(f.combustible)} · mant. {soles(f.mantenimiento)} · choferes {soles(f.personal)}
                                         </p>
                                     </Link>
                                 </li>
@@ -229,14 +239,19 @@ export default function FlotaResumen({ alertas, utilidad, periodo, conceptos, pu
                     </>
                 )}
                 <p className="px-4 py-3 text-[12px]" style={{ borderTop: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
-                    Margen = lo cobrado por lo que el camión entregó menos su costo. Los gastos son los que se registraron con su placa (combustible, mantenimiento, peajes…).
-                    El pago a choferes y ayudantes se sumará en la siguiente fase.
+                    Margen = lo cobrado por lo que el camión entregó menos su costo. Los gastos son los que se registraron con su placa (combustible, mantenimiento, peajes…)
+                    y el pago a choferes y ayudantes de Pago a choferes.
                 </p>
             </section>
 
             <ModalConceptos abierto={config} onClose={() => setConfig(false)} conceptos={conceptos} />
         </AppLayout>
     );
+}
+
+function textoAlertas(alertas: Alerta[]): string {
+    const lineas = alertas.map(a => `${a.nivel === 'rojo' ? '🔴' : '🟡'} ${a.titulo}: ${a.detalle}`);
+    return `*Flota: ${alertas.length} ${alertas.length === 1 ? 'cosa por atender' : 'cosas por atender'}*\n\n${lineas.join('\n')}`;
 }
 
 function ModalConceptos({ abierto, onClose, conceptos }: { abierto: boolean; onClose: () => void; conceptos: Concepto[] }) {

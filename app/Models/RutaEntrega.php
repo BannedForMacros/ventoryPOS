@@ -15,11 +15,12 @@ class RutaEntrega extends Model
 {
     protected $table = 'rutas_entrega';
 
-    protected $fillable = ['empresa_id', 'nombre', 'zona', 'orden', 'activo'];
+    // margen_monto por cada margen_por unidades: precio sugerido por zona (Flota).
+    protected $fillable = ['empresa_id', 'nombre', 'zona', 'orden', 'activo', 'margen_monto', 'margen_por'];
 
     protected function casts(): array
     {
-        return ['activo' => 'boolean', 'orden' => 'integer'];
+        return ['activo' => 'boolean', 'orden' => 'integer', 'margen_monto' => 'decimal:2', 'margen_por' => 'decimal:2'];
     }
 
     public function empresa(): BelongsTo { return $this->belongsTo(Empresa::class); }

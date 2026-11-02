@@ -52,7 +52,7 @@ interface EntregasPos {
     franjas:                FranjaEntrega[];
     texto_recojo:           string;
     texto_envio:            string;
-    rutas:                  { id: number; nombre: string; zona: string | null }[];
+    rutas:                  { id: number; nombre: string; zona: string | null; margen_monto?: string | number | null; margen_por?: string | number | null }[];
     /** Flota activa: camiones que pueden llevar el envío (vacío si no usa flota). */
     vehiculos?:             { id: number; placa: string; conductor: string | null }[];
 }
@@ -1850,6 +1850,13 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         // En un envío que sale al entregarse no existe "se lleva todo".
         envioPendiente,
         envioSaleAlEntregar,
+        // Precio por zona: margen de la ruta elegida en un envío, por unidad base.
+        margenZonaBase: (() => {
+            const r = esEnvio ? entregas?.rutas.find(x => x.id === rutaEntregaId) : null;
+            const monto = r?.margen_monto != null ? Number(r.margen_monto) : NaN;
+            const por = Number(r?.margen_por ?? 1000) || 1000;
+            return Number.isFinite(monto) && monto > 0 ? monto / por : null;
+        })(),
         // Recojo o envío (solo si la empresa usa Entregas).
         slotEntrega: entregas ? (
             <EntregaVenta
@@ -3056,6 +3063,8 @@ interface CarritoPanelProps {
     // Mismo producto en varias líneas: cada una admite una descripción.
     conDescripcion: boolean;
     onCambiarDescripcion: (key: string, descripcion: string) => void;
+    /** Precio por zona: margen de la ruta del envío por unidad BASE (null = sin precio sugerido). */
+    margenZonaBase?: number | null;
     onLimpiarCarrito: () => void;
     onSetDescuento: (d: number, cid: number | null) => void;
     onSetPagos: (pagos: LineaPago[]) => void;
@@ -3112,7 +3121,7 @@ function CarritoPanel({
     descuentoTotal, descuentoConceptoId,
     subtotal, igv, total, baseGravada, baseExonerada, tasaIgv, inactivosCount,
     onCambiarCantidad, onEstablecerCantidad, onCambiarPrecio, onAplicarDescuentoItem, onEliminarItem,
-    conDescripcion, onCambiarDescripcion,
+    conDescripcion, onCambiarDescripcion, margenZonaBase = null,
     onLimpiarCarrito, onSetDescuento, onSetPagos, onConfirmar, problemaCobro,
     puedeVender, razonNoVender, bloqueoComprobante,
     esCredito, fechaVencimiento, onSetEsCredito, onSetFechaVencimiento,
@@ -3262,6 +3271,9 @@ function CarritoPanel({
                                     onDescripcion={onCambiarDescripcion}
                                     pulso={pulsos[item.key]}
                                     simbolo={simbolo}
+                                    precioZona={margenZonaBase != null && item.costo_minimo > 0
+                                        ? Math.round((item.costo_minimo + margenZonaBase * (item.factor_conversion || 1)) * 100) / 100
+                                        : null}
                                 />
                             ))}
                         </ul>

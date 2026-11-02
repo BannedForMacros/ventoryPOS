@@ -55,6 +55,7 @@ use App\Http\Controllers\GuiaRemisionController;
 use App\Http\Controllers\Inventario\DespachoController;
 use App\Http\Controllers\Flota\ConductorController;
 use App\Http\Controllers\Flota\FlotaController;
+use App\Http\Controllers\Flota\PagoChoferesController;
 use App\Http\Controllers\Flota\VehiculoController;
 use App\Http\Controllers\Flota\ViajeController;
 use App\Http\Controllers\Inventario\EntradaController;
@@ -320,6 +321,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:flota.vehiculos,editar')->post('vehiculos/{vehiculo}/documentos/{documento}', [FlotaController::class, 'guardarDocumento'])->name('documentos.update');
         Route::middleware('permiso:flota.vehiculos,editar')->delete('documentos/{documento}', [FlotaController::class, 'eliminarDocumento'])->name('documentos.destroy');
         Route::middleware('permiso:flota.vehiculos,ver')->get('documentos/{documento}/archivo', [FlotaController::class, 'archivoDocumento'])->name('documentos.archivo');
+        Route::middleware('permiso:flota.vehiculos,editar')->put('vehiculos/{vehiculo}/capacidades', [FlotaController::class, 'capacidades'])->name('vehiculos.capacidades');
+
+        // Fase C: pago a choferes y ayudantes. El pago son gastos de siempre (GastoService).
+        Route::middleware('permiso:flota.pagos,ver')->get('pagos', [PagoChoferesController::class, 'index'])->name('pagos.index');
+        Route::middleware('permiso:flota.pagos,editar')->put('pagos/tarifas', [PagoChoferesController::class, 'tarifas'])->name('pagos.tarifas');
+        Route::middleware('permiso:flota.pagos,crear')->post('pagos', [PagoChoferesController::class, 'pagar'])->name('pagos.pagar');
+        Route::middleware('permiso:flota.pagos,editar')->post('pagos/{liquidacion}/anular', [PagoChoferesController::class, 'anular'])->name('pagos.anular');
 
         Route::middleware('permiso:flota.vehiculos,ver')->get('vehiculos', [VehiculoController::class, 'index'])->name('vehiculos.index');
         Route::middleware('permiso:flota.vehiculos,crear')->post('vehiculos', [VehiculoController::class, 'store'])->name('vehiculos.store');

@@ -144,6 +144,11 @@ class FlotaController extends Controller
             'mantenimientos' => $mantenimientos,
             'documentos'     => $documentos,
             'tiposDocumento' => VehiculoDocumento::TIPOS,
+            'capacidades'    => $vehiculo->capacidades()->with('producto:id,nombre,peso_kg')->get()
+                ->map(fn ($c) => ['producto_id' => $c->producto_id, 'producto' => $c->producto?->nombre, 'max_unidades' => (float) $c->max_unidades,
+                    'peso_kg' => $c->producto?->peso_kg !== null ? (float) $c->producto->peso_kg : null]),
+            'productos'      => \App\Models\Producto::where('empresa_id', $user->empresa_id)->where('activo', true)->where('tipo', 'producto')
+                ->orderBy('nombre')->get(['id', 'nombre', 'peso_kg'])->map(fn ($p) => ['value' => $p->id, 'label' => $p->nombre, 'peso_kg' => $p->peso_kg !== null ? (float) $p->peso_kg : null]),
             'viajes'         => $viajes,
             'otrosGastos'    => $otros,
             'utilidad'       => $util,
@@ -157,6 +162,30 @@ class FlotaController extends Controller
                 'gastos'  => $user->tienePermiso('gastos', 'crear'),
             ],
         ]);
+    }
+
+    /** Unidades máximas por producto en este camión (límite por volumen). */
+    public function capacidades(Request $request, Vehiculo $vehiculo)
+    {
+        $user = $request->user();
+        Flota::exigir($user);
+        abort_if($vehiculo->empresa_id !== $user->empresa_id, 404);
+
+        $data = $request->validate([
+            'capacidades'                => ['array'],
+            'capacidades.*.producto_id'  => ['required', 'integer', 'distinct', \App\Support\EnEmpresa::existe('productos')],
+            'capacidades.*.max_unidades' => ['required', 'numeric', 'min:1', 'max:99999999'],
+        ], ['capacidades.*.producto_id.distinct' => 'Ese producto ya está en la lista.']);
+
+        DB::transaction(function () use ($vehiculo, $data) {
+            $vehiculo->capacidades()->delete();
+            foreach ($data['capacidades'] ?? [] as $c) {
+                $vehiculo->capacidades()->create(['producto_id' => $c['producto_id'], 'max_unidades' => round((float) $c['max_unidades'], 2)]);
+            }
+        });
+        AuditoriaService::log('vehiculo.capacidades', $vehiculo, ['productos' => count($data['capacidades'] ?? [])], $user);
+
+        return back()->with('success', "Capacidad por producto de {$vehiculo->placa} guardada.");
     }
 
     // ── Documentos ───────────────────────────────────────────────────────────

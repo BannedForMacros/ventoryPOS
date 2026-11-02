@@ -18,7 +18,7 @@ type Entrada =
 const PLANO: { titulo: string | null; items: Entrada[] }[] = [
     { titulo: null, items: ['dashboard'] },
     { titulo: 'Vender', items: ['pos', 'ventas', 'cotizaciones', 'clientes', 'devoluciones', 'turnos', 'agenda'] },
-    { titulo: 'Reparto', items: [{ grupo: 'flota', hijos: ['flota.resumen', 'viajes', 'flota.vehiculos', 'flota.conductores'] }] },
+    { titulo: 'Reparto', items: [{ grupo: 'flota', hijos: ['flota.resumen', 'viajes', 'flota.vehiculos', 'flota.conductores', 'flota.pagos'] }] },
     {
         titulo: 'Compras e inventario',
         items: [

@@ -81,9 +81,11 @@ interface Props {
     pulso?:             number;
     /** Símbolo de la moneda de la venta ("S/" o "US$"). */
     simbolo?:           string;
+    /** Precio sugerido por la zona del envío (costo + margen de la ruta). */
+    precioZona?:        number | null;
 }
 
-export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar, conDescripcion = false, onDescripcion, pulso, simbolo = 'S/' }: Props) {
+export default function CarritoItem({ item, conceptos, historial, autoFocusPrecio, onAutoFocusPrecio, onCantidad, onCantidadExacta, onPrecio, onDescuento, onEliminar, conDescripcion = false, onDescripcion, pulso, simbolo = 'S/', precioZona = null }: Props) {
     // Descripción de la línea: en las empresas que venden el mismo producto en
     // varias líneas, es lo que distingue cada una. Por eso el campo está SIEMPRE
     // a la vista desde que se agrega el producto (antes se escondía tras un
@@ -513,6 +515,18 @@ export default function CarritoItem({ item, conceptos, historial, autoFocusPreci
                 </div>
 
                 <div className="ml-auto flex items-center flex-shrink-0">
+                    {/* Precio por zona del envío: un toque lo aplica. Ámbar si se vende por debajo. */}
+                    {precioZona != null && simbolo === 'S/' && Math.abs(item.precio_unitario - precioZona) >= 0.01 && (
+                        <button type="button" onClick={() => onPrecio(item.key, precioZona)}
+                            title={item.precio_unitario < precioZona ? 'Está por debajo del precio de la zona: toca para usarlo' : 'Usar el precio de la zona'}
+                            className="mr-1 px-2 h-7 rounded-lg text-[11px] font-semibold tabular-nums whitespace-nowrap transition-colors hover:brightness-95"
+                            style={{
+                                backgroundColor: item.precio_unitario < precioZona ? 'color-mix(in srgb, var(--vp-amber) 22%, transparent)' : 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
+                                color: item.precio_unitario < precioZona ? 'var(--vp-amber-ink)' : 'var(--color-primary)',
+                            }}>
+                            Zona {simbolo} {precioZona.toFixed(2)}
+                        </button>
+                    )}
                     {/* Precios anteriores a ESTE cliente (solo si existen). */}
                     {historial && historial.historial.length > 0 && (
                         <div className="relative">

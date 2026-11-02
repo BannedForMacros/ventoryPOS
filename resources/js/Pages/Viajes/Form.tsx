@@ -24,6 +24,8 @@ interface VehiculoOpt {
     id: number; placa: string; descripcion: string; capacidad_kg: number | null;
     conductor_id: number | null; conductor: string | null;
     estado: 'disponible' | 'taller' | 'fuera_servicio'; en_ruta: string | null;
+    /** Límite por volumen: producto_id => unidades máximas. */
+    capacidades: Record<number, number>;
 }
 
 interface ConductorOpt {
@@ -45,7 +47,7 @@ interface PedidoDisp {
 
 interface VentaDisp {
     id: number; numero: string; cliente: string; direccion: string | null; total?: number;
-    items: { producto_nombre: string; unidad_nombre: string; cantidad: number; peso_kg: number | null }[];
+    items: { producto_id: number; factor: number; producto_nombre: string; unidad_nombre: string; cantidad: number; peso_kg: number | null }[];
 }
 
 type Parada =
@@ -117,25 +119,35 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
         if (!viaje && vehiculo?.conductor_id && !choferId) setChoferId(vehiculo.conductor_id);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const carga: Carga = useMemo(() => {
-        let peso = 0;
-        let sinPeso = false;
+    // Lo cargado, en unidades base con su peso: sirve para el camión elegido y
+    // para sugerir otro (el % que ocuparía en cada uno).
+    const lineas: LineaCarga[] = useMemo(() => {
+        const out: LineaCarga[] = [];
         for (const p of paradas) {
             if (p.modo === 'pendiente') {
                 for (const it of p.pedido.items) {
                     const c = num(p.cantidades[it.id]);
                     if (c <= 0) continue;
-                    if (it.peso_unitario == null) sinPeso = true; else peso += c * it.peso_unitario;
+                    out.push({ producto_id: it.producto_id, unidades: c * (it.factor_conversion || 1), peso_kg: it.peso_unitario == null ? null : c * it.peso_unitario });
                 }
             } else {
                 for (const it of p.venta.items) {
-                    if (it.peso_kg == null) sinPeso = true; else peso += it.peso_kg;
+                    out.push({ producto_id: it.producto_id, unidades: it.cantidad * (it.factor || 1), peso_kg: it.peso_kg });
                 }
             }
         }
-        const cap = vehiculo?.capacidad_kg ?? null;
-        return { peso_kg: Math.round(peso * 1000) / 1000, capacidad_kg: cap, porcentaje: cap ? Math.round(peso / cap * 1000) / 10 : null, sin_peso: sinPeso };
-    }, [paradas, vehiculo]);
+        return out;
+    }, [paradas]);
+
+    const carga: Carga = useMemo(() => usoDeCarga(lineas, vehiculo?.capacidad_kg ?? 0, vehiculo?.capacidades ?? {}), [lineas, vehiculo]);
+
+    // Camión sugerido: el que queda más lleno sin pasarse, entre los que pueden salir.
+    const usoPorVehiculo = useMemo(() => Object.fromEntries(vehiculos.map(v => [v.id, usoDeCarga(lineas, v.capacidad_kg ?? 0, v.capacidades ?? {}).porcentaje])), [lineas, vehiculos]);
+    const sugerido = useMemo(() => {
+        if (lineas.length === 0) return null;
+        const libres = vehiculos.filter(v => v.estado === 'disponible' && !v.en_ruta && usoPorVehiculo[v.id] != null && usoPorVehiculo[v.id]! <= 100);
+        return libres.sort((a, b) => usoPorVehiculo[b.id]! - usoPorVehiculo[a.id]!)[0]?.id ?? null;
+    }, [lineas, vehiculos, usoPorVehiculo]);
 
     const enUso = useMemo(() => new Set(paradas.filter(p => p.modo === 'pendiente').map(p => (p as Extract<Parada, { modo: 'pendiente' }>).pedido.id)), [paradas]);
     const ventasEnUso = useMemo(() => new Set(paradas.filter(p => p.modo === 'directa').map(p => (p as Extract<Parada, { modo: 'directa' }>).venta.id)), [paradas]);
@@ -251,9 +263,14 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
                                                 style={{ borderColor: 'var(--vp-navy)', color: 'var(--vp-navy)', backgroundColor: 'color-mix(in srgb, var(--vp-amber) 18%, var(--color-surface))' }}>
                                                 {v.placa}
                                             </span>
-                                            {v.capacidad_kg ? <span className="text-[13px] tabular-nums font-semibold" style={{ color: 'var(--color-text-muted)' }}>{fmtKg(v.capacidad_kg)}</span> : null}
+                                            {lineas.length > 0 && usoPorVehiculo[v.id] != null
+                                                ? <span className="text-[13px] tabular-nums font-bold" style={{ color: usoPorVehiculo[v.id]! > 100 ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>{usoPorVehiculo[v.id]}%</span>
+                                                : v.capacidad_kg ? <span className="text-[13px] tabular-nums font-semibold" style={{ color: 'var(--color-text-muted)' }}>{fmtKg(v.capacidad_kg)}</span> : null}
                                         </div>
-                                        <p className="text-[13px] mt-1 truncate" style={{ color: 'var(--color-text)' }}>{v.descripcion || '—'}</p>
+                                        <p className="text-[13px] mt-1 truncate" style={{ color: 'var(--color-text)' }}>
+                                            {sugerido === v.id && <span className="font-bold mr-1" style={{ color: 'var(--vp-mint-ink)' }}>Sugerido ·</span>}
+                                            {v.descripcion || '—'}
+                                        </p>
                                         <p className="text-[12px] truncate" style={{ color: noOperativo || v.en_ruta ? 'var(--vp-amber-ink)' : 'var(--color-text-muted)' }}>
                                             {v.estado === 'taller' ? <><Wrench size={11} className="inline mr-1" />En taller</>
                                                 : v.estado === 'fuera_servicio' ? 'Fuera de servicio'
@@ -642,4 +659,33 @@ function VentasEntregadas({ viajeId, enUso, onAgregar, destacado }: {
             </ul>
         </div>
     );
+}
+
+interface LineaCarga { producto_id: number; unidades: number; peso_kg: number | null }
+
+/**
+ * Misma regla que ViajeService::usoDeCarga: cada producto ocupa la fracción de
+ * su límite (el menor entre el de peso y el de volumen); el uso es la suma.
+ */
+function usoDeCarga(lineas: LineaCarga[], capacidadKg: number, maximos: Record<number, number>): Carga {
+    let peso = 0; let fraccion = 0; let sinPeso = false; let sinLimite = false; let porVolumen = false;
+    for (const l of lineas) {
+        if (l.unidades <= 0) continue;
+        if (l.peso_kg == null) sinPeso = true; else peso += l.peso_kg;
+        const pesoUnidad = l.peso_kg != null ? l.peso_kg / l.unidades : null;
+        const porPeso = capacidadKg > 0 && pesoUnidad && pesoUnidad > 0 ? capacidadKg / pesoUnidad : null;
+        const porVol = (maximos[l.producto_id] ?? 0) > 0 ? maximos[l.producto_id] : null;
+        if (porPeso == null && porVol == null) { sinLimite = true; continue; }
+        const limite = Math.min(porPeso ?? Infinity, porVol ?? Infinity);
+        if (porVol != null && porVol <= (porPeso ?? Infinity)) porVolumen = true;
+        fraccion += l.unidades / limite;
+    }
+    const hayLimite = capacidadKg > 0 || Object.keys(maximos).length > 0;
+    return {
+        peso_kg: Math.round(peso * 1000) / 1000,
+        capacidad_kg: capacidadKg > 0 ? capacidadKg : null,
+        porcentaje: hayLimite && !sinLimite && lineas.length ? Math.round(fraccion * 1000) / 10 : (capacidadKg > 0 ? Math.round(peso / capacidadKg * 1000) / 10 : null),
+        sin_peso: sinPeso,
+        por_volumen: porVolumen,
+    };
 }

@@ -268,6 +268,8 @@ class ViajeController extends Controller
             'direccion' => $v->cliente_direccion,
             'total'     => (float) $v->total,
             'items'     => $v->items->map(fn ($i) => [
+                'producto_id'     => $i->producto_id,
+                'factor'          => (float) $i->factor_conversion,
                 'producto_nombre' => $i->producto_nombre,
                 'unidad_nombre'   => $i->unidad_nombre,
                 'cantidad'        => (float) $i->cantidad,
@@ -321,7 +323,7 @@ class ViajeController extends Controller
 
         return [
             'viaje'      => $viaje ? $this->paraFormulario($viaje) : null,
-            'vehiculos'  => Vehiculo::deEmpresa($empresaId)->activo()->with('conductor:id,nombres,apellidos')->orderBy('placa')->get()
+            'vehiculos'  => Vehiculo::deEmpresa($empresaId)->activo()->with(['conductor:id,nombres,apellidos', 'capacidades'])->orderBy('placa')->get()
                 ->map(fn (Vehiculo $v) => [
                     'id'           => $v->id,
                     'placa'        => $v->placa,
@@ -331,6 +333,8 @@ class ViajeController extends Controller
                     'conductor'    => $v->conductor?->nombre_completo,
                     'estado'       => $v->estado,
                     'en_ruta'      => $enRuta[$v->id] ?? null,
+                    // Límite por volumen: producto_id => unidades máximas.
+                    'capacidades'  => (object) $v->capacidades->pluck('max_unidades', 'producto_id')->map(fn ($m) => (float) $m)->all(),
                 ]),
             'conductores' => Conductor::deEmpresa($empresaId)->activo()->orderBy('nombres')->get()
                 ->map(fn (Conductor $c) => [
@@ -419,6 +423,7 @@ class ViajeController extends Controller
                 ->map(fn ($p) => $p->modo === 'directa'
                     ? ['venta_id' => $p->venta_id, 'venta' => $p->venta?->numero, 'cliente' => ViajeService::nombreCliente($p->venta?->cliente),
                        'direccion' => $p->venta?->cliente_direccion, 'items' => $p->items->map(fn ($i) => [
+                           'producto_id' => $i->producto_id, 'factor' => (float) $i->factor_conversion,
                            'producto_nombre' => $i->producto_nombre, 'unidad_nombre' => $i->unidad_nombre,
                            'cantidad' => (float) $i->cantidad, 'peso_kg' => $i->peso_kg !== null ? (float) $i->peso_kg : null])]
                     : ['cliente_anticipo_id' => $p->cliente_anticipo_id, 'items' => $p->items->map(fn ($i) => [

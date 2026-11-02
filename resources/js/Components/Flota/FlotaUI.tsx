@@ -70,6 +70,8 @@ export interface Carga {
     capacidad_kg: number | null;
     porcentaje: number | null;
     sin_peso: boolean;
+    /** Algún producto llena el camión por volumen antes que por peso. */
+    por_volumen?: boolean;
 }
 
 /** Peso cargado contra la capacidad del camión. Ámbar desde 90 %, rojo al pasarse. */
@@ -97,6 +99,9 @@ export function BarraCarga({ carga, compacta = false }: { carga: Carga; compacta
                     <div className="h-full rounded-full origin-left transition-transform duration-300 ease-out"
                         style={{ backgroundColor: color, transform: `scaleX(${Math.min(pct, 100) / 100})` }} />
                 </div>
+            )}
+            {!compacta && carga.por_volumen && (
+                <p className="mt-1 text-[12px]" style={{ color: 'var(--color-text-muted)' }}>Algún producto llena el camión por volumen antes que por peso.</p>
             )}
             {!compacta && carga.sin_peso && (
                 <p className="mt-1 text-[12px]" style={{ color: 'var(--color-text-muted)' }}>

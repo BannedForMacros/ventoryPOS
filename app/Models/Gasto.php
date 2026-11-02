@@ -25,6 +25,8 @@ class Gasto extends Model
         'moneda', 'tipo_cambio', 'monto_moneda',
         // Flota: el gasto se carga a una placa (utilidad por camión).
         'vehiculo_id',
+        // Pago de una liquidación de choferes / ayudantes (Flota).
+        'flota_liquidacion_id',
     ];
 
     protected function casts(): array
