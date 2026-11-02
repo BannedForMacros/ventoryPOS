@@ -29,6 +29,8 @@ class EntregaConfigController extends Controller
                 ->get(['id', 'nombre', 'zona', 'orden', 'activo']),
             // El envío que sale al entregarse se apoya en la bandeja de despachos.
             'usaDespachoAlmacen' => (bool) $empresa->usa_despacho_almacen,
+            // Flota y viajes: vehículos, conductores y viajes de reparto.
+            'usaFlota'           => (bool) $empresa->usa_flota,
             'puedeEditar'        => $request->user()->tienePermiso('config.entregas', 'editar'),
         ]);
     }
@@ -68,6 +70,23 @@ class EntregaConfigController extends Controller
         AuditoriaService::log('entregas.configuracion_actualizada', $empresa, ['activo' => $data['activo']], $request->user());
 
         return back()->with('success', 'Configuración de entregas guardada.');
+    }
+
+    /**
+     * Activa o apaga Flota y viajes. Apagarla solo oculta las pantallas: los
+     * vehículos, conductores y viajes registrados se conservan.
+     */
+    public function flota(Request $request)
+    {
+        $data = $request->validate(['activo' => ['required', 'boolean']]);
+
+        $empresa = $request->user()->empresa;
+        $empresa->update(['usa_flota' => $data['activo']]);
+        AuditoriaService::log('flota.configuracion_actualizada', $empresa, ['activo' => $data['activo']], $request->user());
+
+        return back()->with('success', $data['activo']
+            ? 'Flota y viajes activados. Registra tus vehículos y conductores en el menú "Flota y reparto".'
+            : 'Flota y viajes apagados. Lo registrado se conserva.');
     }
 
     public function guardarRuta(Request $request, ?RutaEntrega $ruta = null)

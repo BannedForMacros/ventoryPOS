@@ -53,6 +53,9 @@ use App\Http\Controllers\Inventario\InventarioInicialController;
 use App\Http\Controllers\Inventario\CierreInventarioController;
 use App\Http\Controllers\GuiaRemisionController;
 use App\Http\Controllers\Inventario\DespachoController;
+use App\Http\Controllers\Flota\ConductorController;
+use App\Http\Controllers\Flota\VehiculoController;
+use App\Http\Controllers\Flota\ViajeController;
 use App\Http\Controllers\Inventario\EntradaController;
 use App\Http\Controllers\Inventario\SalidaController;
 use App\Http\Controllers\Inventario\StockController;
@@ -136,6 +139,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('permiso:config.entregas,editar')->post('entregas/rutas', [\App\Http\Controllers\Configuracion\EntregaConfigController::class, 'guardarRuta'])->name('entregas.rutas.store');
         Route::middleware('permiso:config.entregas,editar')->put('entregas/rutas/{ruta}', [\App\Http\Controllers\Configuracion\EntregaConfigController::class, 'guardarRuta'])->name('entregas.rutas.update');
         Route::middleware('permiso:config.entregas,editar')->delete('entregas/rutas/{ruta}', [\App\Http\Controllers\Configuracion\EntregaConfigController::class, 'eliminarRuta'])->name('entregas.rutas.destroy');
+        Route::middleware('permiso:config.entregas,editar')->put('entregas/flota', [\App\Http\Controllers\Configuracion\EntregaConfigController::class, 'flota'])->name('entregas.flota');
 
         // Plantilla del ticket impreso (secciones, orden, textos) con vista previa.
         Route::middleware('permiso:config.ticket,ver')->get('ticket', [\App\Http\Controllers\Configuracion\TicketPlantillaController::class, 'index'])->name('ticket.index');
@@ -299,6 +303,39 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('permiso:despachos,ver')->get('/despachos', [DespachoController::class, 'index'])->name('despachos.index');
     Route::middleware('permiso:despachos,editar')->post('/despachos/{anticipo}/confirmar', [DespachoController::class, 'confirmar'])->name('despachos.confirmar');
     Route::middleware('permiso:despachos,ver')->get('/despachos/entregas/{entrega}/ticket', [DespachoController::class, 'ticket'])->name('despachos.entrega.ticket');
+
+    // ── FLOTA Y VIAJES (opcional por empresa: empresas.usa_flota) ─────────
+    /*
+    | Un viaje es la hoja de ruta, no el movimiento: ninguna de estas rutas mueve
+    | stock por su cuenta. Entregar una parada usa la misma entrega de Despachos.
+    */
+    Route::prefix('flota')->name('flota.')->group(function () {
+        Route::middleware('permiso:flota.vehiculos,ver')->get('vehiculos', [VehiculoController::class, 'index'])->name('vehiculos.index');
+        Route::middleware('permiso:flota.vehiculos,crear')->post('vehiculos', [VehiculoController::class, 'store'])->name('vehiculos.store');
+        Route::middleware('permiso:flota.vehiculos,editar')->put('vehiculos/{vehiculo}', [VehiculoController::class, 'update'])->name('vehiculos.update');
+        Route::middleware('permiso:flota.vehiculos,eliminar')->delete('vehiculos/{vehiculo}', [VehiculoController::class, 'destroy'])->name('vehiculos.destroy');
+
+        Route::middleware('permiso:flota.conductores,ver')->get('conductores', [ConductorController::class, 'index'])->name('conductores.index');
+        Route::middleware('permiso:flota.conductores,crear')->post('conductores', [ConductorController::class, 'store'])->name('conductores.store');
+        Route::middleware('permiso:flota.conductores,editar')->put('conductores/{conductor}', [ConductorController::class, 'update'])->name('conductores.update');
+        Route::middleware('permiso:flota.conductores,eliminar')->delete('conductores/{conductor}', [ConductorController::class, 'destroy'])->name('conductores.destroy');
+    });
+
+    Route::prefix('viajes')->name('viajes.')->group(function () {
+        Route::middleware('permiso:viajes,ver')->get('/', [ViajeController::class, 'index'])->name('index');
+        Route::middleware('permiso:viajes,crear')->get('/nuevo', [ViajeController::class, 'create'])->name('create');
+        Route::middleware('permiso:viajes,crear')->post('/', [ViajeController::class, 'store'])->name('store');
+        Route::middleware('permiso:viajes,ver')->get('/buscar/pendientes', [ViajeController::class, 'pendientes'])->name('pendientes');
+        Route::middleware('permiso:viajes,ver')->get('/buscar/ventas', [ViajeController::class, 'ventas'])->name('ventas');
+        Route::middleware('permiso:viajes,ver')->get('/{viaje}', [ViajeController::class, 'show'])->name('show');
+        Route::middleware('permiso:viajes,editar')->get('/{viaje}/editar', [ViajeController::class, 'edit'])->name('edit');
+        Route::middleware('permiso:viajes,editar')->put('/{viaje}', [ViajeController::class, 'update'])->name('update');
+        Route::middleware('permiso:viajes,editar')->post('/{viaje}/salir', [ViajeController::class, 'iniciar'])->name('iniciar');
+        Route::middleware('permiso:viajes,editar')->post('/{viaje}/cerrar', [ViajeController::class, 'cerrar'])->name('cerrar');
+        Route::middleware('permiso:viajes,editar')->post('/{viaje}/anular', [ViajeController::class, 'anular'])->name('anular');
+        Route::middleware('permiso:viajes,editar')->post('/paradas/{parada}/entregar', [ViajeController::class, 'entregar'])->name('paradas.entregar');
+        Route::middleware('permiso:viajes,editar')->post('/paradas/{parada}/no-entregada', [ViajeController::class, 'noEntregada'])->name('paradas.no-entregada');
+    });
 
     // ── CLIENTES ─────────────────────────────────────────────────────────
     Route::prefix('clientes')->name('clientes.')->group(function () {

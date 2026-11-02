@@ -1,0 +1,645 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { router } from '@inertiajs/react';
+import axios from 'axios';
+import { AlertTriangle, MapPin, PackagePlus, Plus, Receipt, Search, Trash2, Truck, Users, Wrench } from 'lucide-react';
+import AppLayout from '@/Layouts/AppLayout';
+import PageHeader from '@/Components/UI/PageHeader';
+import Button from '@/Components/UI/Button';
+import Input from '@/Components/UI/Input';
+import Select from '@/Components/UI/Select';
+import SearchableSelect from '@/Components/UI/SearchableSelect';
+import Callout from '@/Components/UI/Callout';
+import {
+    BarraCarga, Pastilla, TIPOS_VIAJE, fmtCantidad, fmtKg,
+    type Carga, type EstadoLicencia, type TipoViaje,
+} from '@/Components/Flota/FlotaUI';
+import { hoyLocal } from '@/lib/fechas';
+import { soles } from '@/lib/dinero';
+import { avisoError } from '@/lib/avisoError';
+import type { PageProps } from '@/types';
+
+interface Opcion { value: number; label: string }
+
+interface VehiculoOpt {
+    id: number; placa: string; descripcion: string; capacidad_kg: number | null;
+    conductor_id: number | null; conductor: string | null;
+    estado: 'disponible' | 'taller' | 'fuera_servicio'; en_ruta: string | null;
+}
+
+interface ConductorOpt {
+    id: number; nombre: string; tipo: 'chofer' | 'ayudante'; licencia: string | null;
+    estado_licencia: EstadoLicencia; licencia_vence: string | null;
+}
+
+interface ItemDisp {
+    id: number; producto_id: number; producto_nombre: string; unidad_nombre: string;
+    factor_conversion: number; pendiente: number; en_viaje: number; disponible: number;
+    peso_unitario: number | null;
+}
+
+interface PedidoDisp {
+    id: number; venta_id: number; venta: string; cliente: string; direccion: string | null;
+    telefono: string | null; ruta: string | null; programada: string | null; saldo_venta: number;
+    items: ItemDisp[];
+}
+
+interface VentaDisp {
+    id: number; numero: string; cliente: string; direccion: string | null; total?: number;
+    items: { producto_nombre: string; unidad_nombre: string; cantidad: number; peso_kg: number | null }[];
+}
+
+type Parada =
+    | { modo: 'pendiente'; pedido: PedidoDisp; cantidades: Record<number, string> }
+    | { modo: 'directa'; venta: VentaDisp };
+
+interface ViajeEdit {
+    id: number; numero: string; estado: string; tipo: TipoViaje; fecha: string; hora_salida: string;
+    vehiculo_id: number; conductor_id: number | null; ayudantes: number[]; almacen_id: number | null;
+    ruta_entrega_id: number | null; origen: string; destino: string; proveedor_id: number | null;
+    entrada_id: number | null; observacion: string;
+    resueltas: { id: number; venta: string | null; cliente: string; estado: string }[];
+    paradas: (
+        | { cliente_anticipo_id: number; items: { cliente_anticipo_item_id: number; cantidad: number }[] }
+        | { venta_id: number; venta: string; cliente: string; direccion: string | null; items: VentaDisp['items'] }
+    )[];
+}
+
+interface Props extends PageProps {
+    viaje: ViajeEdit | null;
+    vehiculos: VehiculoOpt[];
+    conductores: ConductorOpt[];
+    almacenes: Opcion[];
+    rutas: Opcion[];
+    proveedores: Opcion[];
+    entradas: (Opcion & { proveedor_id: number | null })[];
+    pendientes: PedidoDisp[];
+    preseleccion: number | null;
+}
+
+const num = (v: string | number | undefined) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+};
+
+export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, rutas, proveedores, entradas, pendientes, preseleccion }: Props) {
+    const editando = !!viaje;
+
+    const [tipo, setTipo] = useState<TipoViaje>(viaje?.tipo ?? 'reparto');
+    const [fecha, setFecha] = useState(viaje?.fecha ?? hoyLocal());
+    const [hora, setHora] = useState(viaje?.hora_salida ?? '');
+    const [vehiculoId, setVehiculoId] = useState<number | null>(viaje?.vehiculo_id ?? (vehiculos.filter(v => v.estado === 'disponible' && !v.en_ruta).length === 1 ? vehiculos.find(v => v.estado === 'disponible' && !v.en_ruta)!.id : null));
+    const [choferId, setChoferId] = useState<number | null>(viaje?.conductor_id ?? null);
+    const [ayudantes, setAyudantes] = useState<number[]>(viaje?.ayudantes ?? []);
+    const [almacenId, setAlmacenId] = useState<number | null>(viaje?.almacen_id ?? (almacenes.length === 1 ? almacenes[0].value : null));
+    const [rutaId, setRutaId] = useState<number | null>(viaje?.ruta_entrega_id ?? null);
+    const [origen, setOrigen] = useState(viaje?.origen ?? '');
+    const [destino, setDestino] = useState(viaje?.destino ?? '');
+    const [proveedorId, setProveedorId] = useState<number | null>(viaje?.proveedor_id ?? null);
+    const [entradaId, setEntradaId] = useState<number | null>(viaje?.entrada_id ?? null);
+    const [observacion, setObservacion] = useState(viaje?.observacion ?? '');
+    const [paradas, setParadas] = useState<Parada[]>(() => paradasIniciales(viaje, pendientes, preseleccion));
+    const [errores, setErrores] = useState<Record<string, string>>({});
+    const [guardando, setGuardando] = useState(false);
+
+    const vehiculo = vehiculos.find(v => v.id === vehiculoId) ?? null;
+    const choferes = conductores.filter(c => c.tipo === 'chofer');
+    const chofer = conductores.find(c => c.id === choferId) ?? null;
+    const llevaEntregas = tipo !== 'abastecimiento';
+
+    // Elegir el vehículo propone a su chofer asignado (si no se eligió otro a mano).
+    const choferManual = useRef(!!viaje?.conductor_id);
+    function elegirVehiculo(id: number) {
+        setVehiculoId(id);
+        const v = vehiculos.find(x => x.id === id);
+        if (v?.conductor_id && !choferManual.current) setChoferId(v.conductor_id);
+    }
+    useEffect(() => {
+        if (!viaje && vehiculo?.conductor_id && !choferId) setChoferId(vehiculo.conductor_id);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const carga: Carga = useMemo(() => {
+        let peso = 0;
+        let sinPeso = false;
+        for (const p of paradas) {
+            if (p.modo === 'pendiente') {
+                for (const it of p.pedido.items) {
+                    const c = num(p.cantidades[it.id]);
+                    if (c <= 0) continue;
+                    if (it.peso_unitario == null) sinPeso = true; else peso += c * it.peso_unitario;
+                }
+            } else {
+                for (const it of p.venta.items) {
+                    if (it.peso_kg == null) sinPeso = true; else peso += it.peso_kg;
+                }
+            }
+        }
+        const cap = vehiculo?.capacidad_kg ?? null;
+        return { peso_kg: Math.round(peso * 1000) / 1000, capacidad_kg: cap, porcentaje: cap ? Math.round(peso / cap * 1000) / 10 : null, sin_peso: sinPeso };
+    }, [paradas, vehiculo]);
+
+    const enUso = useMemo(() => new Set(paradas.filter(p => p.modo === 'pendiente').map(p => (p as Extract<Parada, { modo: 'pendiente' }>).pedido.id)), [paradas]);
+    const ventasEnUso = useMemo(() => new Set(paradas.filter(p => p.modo === 'directa').map(p => (p as Extract<Parada, { modo: 'directa' }>).venta.id)), [paradas]);
+
+    function agregarPedido(p: PedidoDisp) {
+        if (enUso.has(p.id)) return;
+        setParadas(prev => [...prev, { modo: 'pendiente', pedido: p, cantidades: Object.fromEntries(p.items.map(i => [i.id, String(i.disponible)])) }]);
+    }
+    function agregarVenta(v: VentaDisp) {
+        if (ventasEnUso.has(v.id)) return;
+        setParadas(prev => [...prev, { modo: 'directa', venta: v }]);
+    }
+    const quitar = (idx: number) => setParadas(prev => prev.filter((_, i) => i !== idx));
+    const mover = (idx: number, dir: -1 | 1) => setParadas(prev => {
+        const j = idx + dir;
+        if (j < 0 || j >= prev.length) return prev;
+        const copia = [...prev];
+        [copia[idx], copia[j]] = [copia[j], copia[idx]];
+        return copia;
+    });
+    function cambiarCantidad(idx: number, itemId: number, valor: string) {
+        setParadas(prev => prev.map((p, i) => i === idx && p.modo === 'pendiente' ? { ...p, cantidades: { ...p.cantidades, [itemId]: valor } } : p));
+    }
+
+    function guardar() {
+        setGuardando(true);
+        setErrores({});
+        const payload = {
+            tipo, fecha, hora_salida: hora || null, vehiculo_id: vehiculoId, conductor_id: choferId,
+            ayudantes, almacen_id: almacenId, ruta_entrega_id: llevaEntregas ? rutaId : null,
+            origen, destino, proveedor_id: tipo === 'abastecimiento' ? proveedorId : null,
+            entrada_id: tipo === 'abastecimiento' ? entradaId : null, observacion,
+            paradas: llevaEntregas ? paradas.map(p => p.modo === 'pendiente'
+                ? { cliente_anticipo_id: p.pedido.id, items: p.pedido.items.map(i => ({ cliente_anticipo_item_id: i.id, cantidad: num(p.cantidades[i.id]) })) }
+                : { venta_id: p.venta.id }) : [],
+        };
+        const opts = {
+            preserveScroll: true,
+            onError: (e: Record<string, string>) => { setErrores(e); avisoError(Object.values(e)[0]); },
+            onFinish: () => setGuardando(false),
+        };
+        editando ? router.put(route('viajes.update', viaje!.id), payload, opts) : router.post(route('viajes.store'), payload, opts);
+    }
+
+    const errorParada = (idx: number) => Object.entries(errores).find(([k]) => k === `paradas.${idx}` || k.startsWith(`paradas.${idx}.`))?.[1];
+    const sinVehiculos = vehiculos.length === 0;
+    const pasado = carga.porcentaje !== null && carga.porcentaje > 100;
+
+    return (
+        <AppLayout title={editando ? `Editar ${viaje!.numero}` : 'Nuevo viaje'}>
+            <PageHeader
+                title={editando ? `Editar viaje ${viaje!.numero}` : 'Nuevo viaje'}
+                subtitle="Elige el camión y el chofer, y carga los pedidos que van. Nada sale del stock hasta marcar cada entrega."
+                backHref={editando ? route('viajes.show', viaje!.id) : route('viajes.index')}
+                icon={<Truck size={20} />}
+            />
+
+            {sinVehiculos && (
+                <Callout variant="warning" className="mb-4" title="Primero registra tus vehículos"
+                    accion={{ label: 'Ir a Vehículos', onClick: () => router.visit(route('flota.vehiculos.index')) }}>
+                    Para armar un viaje necesitas al menos un vehículo (y su chofer en Conductores).
+                </Callout>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-5 items-start">
+                {/* ── Datos del viaje ── */}
+                <section className="space-y-4">
+                    <Tarjeta titulo="Tipo de viaje">
+                        <div role="radiogroup" aria-label="Tipo de viaje" className="grid grid-cols-3 gap-2">
+                            {(Object.keys(TIPOS_VIAJE) as TipoViaje[]).map(t => {
+                                const T = TIPOS_VIAJE[t];
+                                const activo = tipo === t;
+                                return (
+                                    <button key={t} type="button" role="radio" aria-checked={activo} onClick={() => setTipo(t)} title={T.ayuda}
+                                        className="rounded-xl px-2 py-2.5 border flex flex-col items-center gap-1 text-center transition-colors duration-150"
+                                        style={{
+                                            borderColor: activo ? 'var(--vp-navy)' : 'var(--color-border)',
+                                            backgroundColor: activo ? 'color-mix(in srgb, var(--vp-navy) 7%, var(--color-surface))' : 'var(--color-surface)',
+                                            color: activo ? 'var(--vp-navy)' : 'var(--color-text-muted)',
+                                        }}>
+                                        <T.Icono size={18} />
+                                        <span className="text-[13px] font-semibold">{T.label}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <p className="text-[13px] mt-2" style={{ color: 'var(--color-text-muted)' }}>{TIPOS_VIAJE[tipo].ayuda}.</p>
+                    </Tarjeta>
+
+                    <Tarjeta titulo="Cuándo sale">
+                        <div className="grid grid-cols-2 gap-3">
+                            <Input label="Fecha" type="date" required value={fecha} onChange={e => setFecha(e.target.value)} error={errores.fecha} />
+                            <Input label="Hora de salida" type="time" value={hora} onChange={e => setHora(e.target.value)} error={errores.hora_salida} hint="Opcional" />
+                        </div>
+                    </Tarjeta>
+
+                    <Tarjeta titulo="Vehículo" error={errores.vehiculo_id}>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Vehículo">
+                            {vehiculos.map(v => {
+                                const noOperativo = v.estado !== 'disponible';
+                                const activo = vehiculoId === v.id;
+                                return (
+                                    <button key={v.id} type="button" role="radio" aria-checked={activo} disabled={noOperativo && !activo}
+                                        onClick={() => elegirVehiculo(v.id)}
+                                        className="rounded-xl p-2.5 border text-left transition-[transform,border-color] duration-150 ease-out enabled:hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        style={{
+                                            borderColor: activo ? 'var(--vp-navy)' : 'var(--color-border)',
+                                            backgroundColor: activo ? 'color-mix(in srgb, var(--vp-navy) 6%, var(--color-surface))' : 'var(--color-surface)',
+                                            boxShadow: activo ? '0 0 0 1px var(--vp-navy)' : undefined,
+                                        }}>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="font-mono text-[13px] font-bold tracking-wider px-1.5 py-0.5 rounded border-2"
+                                                style={{ borderColor: 'var(--vp-navy)', color: 'var(--vp-navy)', backgroundColor: 'color-mix(in srgb, var(--vp-amber) 18%, var(--color-surface))' }}>
+                                                {v.placa}
+                                            </span>
+                                            {v.capacidad_kg ? <span className="text-[13px] tabular-nums font-semibold" style={{ color: 'var(--color-text-muted)' }}>{fmtKg(v.capacidad_kg)}</span> : null}
+                                        </div>
+                                        <p className="text-[13px] mt-1 truncate" style={{ color: 'var(--color-text)' }}>{v.descripcion || '—'}</p>
+                                        <p className="text-[12px] truncate" style={{ color: noOperativo || v.en_ruta ? 'var(--vp-amber-ink)' : 'var(--color-text-muted)' }}>
+                                            {v.estado === 'taller' ? <><Wrench size={11} className="inline mr-1" />En taller</>
+                                                : v.estado === 'fuera_servicio' ? 'Fuera de servicio'
+                                                : v.en_ruta ? `En ruta con ${v.en_ruta}`
+                                                : v.conductor ?? 'Sin chofer asignado'}
+                                        </p>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </Tarjeta>
+
+                    <Tarjeta titulo="Quiénes van">
+                        <div className="space-y-3">
+                            <Select label="Chofer" value={choferId ?? ''} placeholder="Elegir chofer…" error={errores.conductor_id}
+                                onChange={v => { choferManual.current = true; setChoferId(v === '' ? null : Number(v)); setAyudantes(a => a.filter(x => x !== Number(v))); }}
+                                options={[{ value: '', label: 'Sin chofer todavía' }, ...choferes.map(c => ({ value: c.id, label: c.nombre }))]}
+                                hint="Hace falta para que el viaje salga" />
+                            {chofer && (chofer.estado_licencia === 'vencida' || chofer.estado_licencia === 'por_vencer') && (
+                                <p className="text-[13px] flex items-start gap-1.5" style={{ color: chofer.estado_licencia === 'vencida' ? 'var(--vp-coral-ink)' : 'var(--vp-amber-ink)' }}>
+                                    <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                                    {chofer.estado_licencia === 'vencida' ? 'La licencia de este chofer está vencida.' : 'La licencia de este chofer vence pronto.'}
+                                </p>
+                            )}
+                            {conductores.filter(c => c.id !== choferId).length > 0 && (
+                                <div>
+                                    <p className="text-sm font-medium mb-1.5 flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}><Users size={14} /> Ayudantes</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {conductores.filter(c => c.id !== choferId).map(c => {
+                                            const on = ayudantes.includes(c.id);
+                                            return (
+                                                <button key={c.id} type="button" aria-pressed={on}
+                                                    onClick={() => setAyudantes(a => on ? a.filter(x => x !== c.id) : [...a, c.id])}
+                                                    className="px-3 py-1.5 rounded-full text-[13px] font-semibold border transition-colors duration-150"
+                                                    style={{
+                                                        borderColor: on ? 'var(--vp-navy)' : 'var(--color-border)',
+                                                        backgroundColor: on ? 'var(--vp-navy)' : 'var(--color-surface)',
+                                                        color: on ? '#fff' : 'var(--color-text-muted)',
+                                                    }}>
+                                                    {c.nombre}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </Tarjeta>
+
+                    <Tarjeta titulo={tipo === 'abastecimiento' ? 'De dónde trae la carga' : 'Ruta'}>
+                        <div className="space-y-3">
+                            {tipo === 'abastecimiento' ? (
+                                <>
+                                    <SearchableSelect label="Proveedor o fábrica" value={proveedorId ?? ''} placeholder="Elegir proveedor…"
+                                        onChange={(v: string | number) => { setProveedorId(v === '' ? null : Number(v)); setEntradaId(null); }}
+                                        options={proveedores} />
+                                    <Input label="Origen" value={origen} onChange={e => setOrigen(e.target.value)} placeholder="Fábrica, cantera, dirección…" error={errores.origen} />
+                                    <Select label="Entrada (compra) que trae" value={entradaId ?? ''} placeholder="Opcional"
+                                        onChange={v => setEntradaId(v === '' ? null : Number(v))}
+                                        options={[{ value: '', label: 'Todavía no registrada' }, ...entradas.filter(e => !proveedorId || e.proveedor_id === proveedorId)]}
+                                        hint="El stock lo suma la entrada, no el viaje" />
+                                    {almacenes.length > 1 && (
+                                        <Select label="Almacén de llegada" value={almacenId ?? ''} onChange={v => setAlmacenId(v === '' ? null : Number(v))}
+                                            options={[{ value: '', label: 'Sin indicar' }, ...almacenes]} />
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    {rutas.length > 0 && (
+                                        <Select label="Ruta o zona" value={rutaId ?? ''} onChange={v => setRutaId(v === '' ? null : Number(v))}
+                                            options={[{ value: '', label: 'Sin ruta' }, ...rutas]} />
+                                    )}
+                                    {almacenes.length > 1 && (
+                                        <Select label="Almacén de carga" value={almacenId ?? ''} onChange={v => setAlmacenId(v === '' ? null : Number(v))}
+                                            options={[{ value: '', label: 'Sin indicar' }, ...almacenes]} />
+                                    )}
+                                    {tipo === 'flete' && (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <Input label="Origen" value={origen} onChange={e => setOrigen(e.target.value)} error={errores.origen} />
+                                            <Input label="Destino" value={destino} onChange={e => setDestino(e.target.value)} placeholder="Cuyumalca, obra…" error={errores.destino} />
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                            <Input label="Observación" value={observacion} onChange={e => setObservacion(e.target.value)} placeholder="Opcional" error={errores.observacion} />
+                        </div>
+                    </Tarjeta>
+                </section>
+
+                {/* ── Carga ── */}
+                <section className="space-y-4 lg:sticky lg:top-4">
+                    {llevaEntregas ? (
+                        <>
+                            <div className="rounded-2xl p-4" style={{ backgroundColor: 'var(--color-surface)', border: `1px solid ${pasado ? 'var(--color-danger)' : 'var(--color-border)'}` }}>
+                                <div className="flex items-center justify-between gap-3 mb-3">
+                                    <h2 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>
+                                        Lo que lleva <span className="font-normal tabular-nums" style={{ color: 'var(--color-text-muted)' }}>· {paradas.length} {paradas.length === 1 ? 'parada' : 'paradas'}</span>
+                                    </h2>
+                                    {vehiculo && <span className="font-mono text-[13px] font-bold" style={{ color: 'var(--vp-navy)' }}>{vehiculo.placa}</span>}
+                                </div>
+                                <BarraCarga carga={carga} />
+                                {pasado && (
+                                    <p className="mt-2 text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-danger)' }}>
+                                        <AlertTriangle size={14} /> Pasa la carga máxima de {vehiculo?.placa}: baja cantidades o reparte en otro viaje.
+                                    </p>
+                                )}
+
+                                {viaje && viaje.resueltas.length > 0 && (
+                                    <p className="mt-3 text-[13px]" style={{ color: 'var(--color-text-muted)' }}>
+                                        Ya resueltas (no se cambian): {viaje.resueltas.map(r => `${r.venta ?? '—'} ${r.estado === 'entregado' ? 'entregada' : 'no entregada'}`).join(', ')}.
+                                    </p>
+                                )}
+
+                                {paradas.length === 0 ? (
+                                    <div className="mt-4 rounded-xl border border-dashed py-8 text-center text-sm" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}>
+                                        Agrega abajo los pedidos que van en este viaje.
+                                    </div>
+                                ) : (
+                                    <ol className="mt-4 space-y-2.5">
+                                        {paradas.map((p, idx) => (
+                                            <ParadaFila key={p.modo === 'pendiente' ? `p${p.pedido.id}` : `v${p.venta.id}`}
+                                                parada={p} idx={idx} total={paradas.length} error={errorParada(idx)}
+                                                onCantidad={(itemId, v) => cambiarCantidad(idx, itemId, v)}
+                                                onQuitar={() => quitar(idx)} onMover={d => mover(idx, d)} />
+                                        ))}
+                                    </ol>
+                                )}
+                                {errores.paradas && <p className="mt-2 text-[13px]" style={{ color: 'var(--color-danger)' }}>{errores.paradas}</p>}
+                            </div>
+
+                            <PedidosDisponibles inicial={pendientes} viajeId={viaje?.id ?? null} enUso={enUso} onAgregar={agregarPedido} />
+                            <VentasEntregadas viajeId={viaje?.id ?? null} enUso={ventasEnUso} onAgregar={agregarVenta} destacado={tipo === 'flete'} />
+                        </>
+                    ) : (
+                        <Callout variant="info" title="Viaje de abastecimiento">
+                            Trae carga al almacén: no lleva entregas a clientes. Lo que llega se suma al stock con la entrada (compra) de siempre; el viaje solo deja constancia del camión, el chofer y la vuelta.
+                        </Callout>
+                    )}
+
+                    <div className="flex justify-end gap-2">
+                        <Button variant="ghost" onClick={() => router.visit(editando ? route('viajes.show', viaje!.id) : route('viajes.index'))} disabled={guardando}>Cancelar</Button>
+                        <Button onClick={guardar} loading={guardando} disabled={!vehiculoId}>
+                            {editando ? 'Guardar cambios' : 'Programar viaje'}
+                        </Button>
+                    </div>
+                </section>
+            </div>
+        </AppLayout>
+    );
+}
+
+function paradasIniciales(viaje: ViajeEdit | null, pendientes: PedidoDisp[], preseleccion: number | null): Parada[] {
+    if (!viaje) {
+        const p = preseleccion ? pendientes.find(x => x.id === preseleccion) : null;
+        return p ? [{ modo: 'pendiente', pedido: p, cantidades: Object.fromEntries(p.items.map(i => [i.id, String(i.disponible)])) }] : [];
+    }
+    const out: Parada[] = [];
+    for (const p of viaje.paradas) {
+        if ('venta_id' in p) {
+            out.push({ modo: 'directa', venta: { id: p.venta_id, numero: p.venta, cliente: p.cliente, direccion: p.direccion, items: p.items } });
+        } else {
+            const pedido = pendientes.find(x => x.id === p.cliente_anticipo_id);
+            if (!pedido) continue; // ya no tiene nada por entregar
+            out.push({ modo: 'pendiente', pedido, cantidades: Object.fromEntries(p.items.map(i => [i.cliente_anticipo_item_id, String(i.cantidad)])) });
+        }
+    }
+    return out;
+}
+
+function Tarjeta({ titulo, error, children }: { titulo: string; error?: string; children: React.ReactNode }) {
+    return (
+        <div className="rounded-2xl p-4" style={{ backgroundColor: 'var(--color-surface)', border: `1px solid ${error ? 'var(--color-danger)' : 'var(--color-border)'}` }}>
+            <h2 className="text-sm font-bold mb-3" style={{ color: 'var(--color-text)' }}>{titulo}</h2>
+            {children}
+            {error && <p className="mt-2 text-[13px]" style={{ color: 'var(--color-danger)' }}>{error}</p>}
+        </div>
+    );
+}
+
+function ParadaFila({ parada, idx, total, error, onCantidad, onQuitar, onMover }: {
+    parada: Parada; idx: number; total: number; error?: string;
+    onCantidad: (itemId: number, v: string) => void; onQuitar: () => void; onMover: (d: -1 | 1) => void;
+}) {
+    const esPedido = parada.modo === 'pendiente';
+    const cliente = esPedido ? parada.pedido.cliente : parada.venta.cliente;
+    const numero = esPedido ? parada.pedido.venta : parada.venta.numero;
+    const direccion = esPedido ? parada.pedido.direccion : parada.venta.direccion;
+
+    return (
+        <li className="vp-fade-up rounded-xl p-3" style={{ backgroundColor: 'var(--color-bg)', border: `1px solid ${error ? 'var(--color-danger)' : 'var(--color-border)'}` }}>
+            <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[13px] font-bold tabular-nums"
+                    style={{ backgroundColor: 'var(--vp-navy)', color: '#fff' }}>{idx + 1}</span>
+                <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-sm font-bold truncate" style={{ color: 'var(--color-text)' }}>{cliente}</p>
+                        <span className="text-[13px] font-semibold" style={{ color: 'var(--color-primary)' }}>{numero}</span>
+                        {!esPedido && <Pastilla color="var(--vp-mint-ink)">Ya entregada al vender</Pastilla>}
+                    </div>
+                    {direccion && <p className="text-[13px] flex items-center gap-1 truncate" style={{ color: 'var(--color-text-muted)' }}><MapPin size={12} className="flex-shrink-0" />{direccion}</p>}
+
+                    <div className="mt-2 space-y-1.5">
+                        {esPedido ? parada.pedido.items.map(it => {
+                            const v = parada.cantidades[it.id] ?? '0';
+                            const exceso = num(v) > it.disponible + 0.00009;
+                            return (
+                                <div key={it.id} className="flex items-center gap-3">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-[13px] font-medium truncate" style={{ color: 'var(--color-text)' }}>{it.producto_nombre}</p>
+                                        <p className="text-[12px]" style={{ color: exceso ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
+                                            Por cargar {fmtCantidad(it.disponible)} {it.unidad_nombre}
+                                            {it.en_viaje > 0 ? ` · ${fmtCantidad(it.en_viaje)} ya en otro viaje` : ''}
+                                            {it.peso_unitario != null && num(v) > 0 ? ` · ${fmtKg(num(v) * it.peso_unitario)}` : ''}
+                                        </p>
+                                    </div>
+                                    <input type="number" min={0} max={it.disponible} step="any" inputMode="decimal"
+                                        aria-label={`Cantidad que se carga de ${it.producto_nombre}`}
+                                        value={v} onChange={e => onCantidad(it.id, e.target.value)}
+                                        className="w-24 h-10 rounded-lg border px-2 text-right text-sm tabular-nums outline-none focus:ring-2"
+                                        style={{ borderColor: exceso ? 'var(--color-danger)' : 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                                </div>
+                            );
+                        }) : parada.venta.items.map((it, j) => (
+                            <p key={j} className="text-[13px] flex justify-between gap-3" style={{ color: 'var(--color-text)' }}>
+                                <span className="truncate">{it.producto_nombre}</span>
+                                <span className="tabular-nums flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>{fmtCantidad(it.cantidad)} {it.unidad_nombre}</span>
+                            </p>
+                        ))}
+                    </div>
+                    {error && <p className="mt-1.5 text-[13px]" style={{ color: 'var(--color-danger)' }}>{error}</p>}
+                </div>
+                <div className="flex flex-col gap-1 flex-shrink-0">
+                    <button type="button" onClick={onQuitar} aria-label="Quitar del viaje" title="Quitar del viaje"
+                        className="p-1.5 rounded-lg transition-colors hover:bg-black/5" style={{ color: 'var(--color-danger)' }}><Trash2 size={15} /></button>
+                    {total > 1 && (
+                        <>
+                            <button type="button" onClick={() => onMover(-1)} disabled={idx === 0} aria-label="Subir parada"
+                                className="p-1 rounded-lg text-xs disabled:opacity-30 hover:bg-black/5" style={{ color: 'var(--color-text-muted)' }}>▲</button>
+                            <button type="button" onClick={() => onMover(1)} disabled={idx === total - 1} aria-label="Bajar parada"
+                                className="p-1 rounded-lg text-xs disabled:opacity-30 hover:bg-black/5" style={{ color: 'var(--color-text-muted)' }}>▼</button>
+                        </>
+                    )}
+                </div>
+            </div>
+        </li>
+    );
+}
+
+function PedidosDisponibles({ inicial, viajeId, enUso, onAgregar }: {
+    inicial: PedidoDisp[]; viajeId: number | null; enUso: Set<number>; onAgregar: (p: PedidoDisp) => void;
+}) {
+    const [q, setQ] = useState('');
+    const [lista, setLista] = useState<PedidoDisp[]>(inicial);
+    const [cargando, setCargando] = useState(false);
+
+    useEffect(() => {
+        if (q.trim() === '') { setLista(inicial); return; }
+        const t = setTimeout(async () => {
+            setCargando(true);
+            try {
+                const { data } = await axios.get<PedidoDisp[]>(route('viajes.pendientes'), { params: { buscar: q.trim(), viaje: viajeId ?? undefined } });
+                setLista(data);
+            } finally { setCargando(false); }
+        }, 300);
+        return () => clearTimeout(t);
+    }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const visibles = lista.filter(p => !enUso.has(p.id));
+
+    return (
+        <div className="rounded-2xl" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            <div className="p-4 pb-3 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-sm font-bold flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}><PackagePlus size={16} /> Pedidos por entregar</h2>
+                <div className="relative w-full sm:w-64">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
+                    <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Cliente, venta, dirección o producto" aria-label="Buscar pedido"
+                        className="w-full h-10 text-sm rounded-xl pl-8 pr-3 border outline-none focus:ring-2"
+                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} />
+                </div>
+            </div>
+            <ul className="max-h-[420px] overflow-y-auto px-2 pb-2" aria-busy={cargando}>
+                {cargando && Array.from({ length: 3 }).map((_, i) => (
+                    <li key={`s${i}`} className="h-16 mx-2 my-1.5 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--color-bg)' }} />
+                ))}
+                {!cargando && visibles.length === 0 && (
+                    <li className="px-3 py-6 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                        {q ? 'Ningún pedido coincide.' : 'No hay pedidos por cargar: todo está entregado o ya va en un viaje.'}
+                    </li>
+                )}
+                {!cargando && visibles.map(p => {
+                    const peso = p.items.reduce((s, i) => s + (i.peso_unitario ?? 0) * i.disponible, 0);
+                    return (
+                        <li key={p.id}>
+                            <button type="button" onClick={() => onAgregar(p)}
+                                className="w-full text-left rounded-xl px-3 py-2.5 flex items-start gap-3 transition-colors duration-150 hover:bg-[color-mix(in_srgb,var(--vp-navy)_5%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>
+                                        {p.cliente} <span className="font-normal" style={{ color: 'var(--color-primary)' }}>{p.venta}</span>
+                                    </p>
+                                    <p className="text-[13px] truncate" style={{ color: 'var(--color-text-muted)' }}>
+                                        {p.items.map(i => `${fmtCantidad(i.disponible)} ${i.producto_nombre}`).join(' · ')}
+                                    </p>
+                                    {(p.direccion || p.ruta) && (
+                                        <p className="text-[12px] truncate" style={{ color: 'var(--color-text-muted)' }}>{[p.ruta, p.direccion].filter(Boolean).join(' · ')}</p>
+                                    )}
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                    {peso > 0 && <p className="text-[13px] tabular-nums font-semibold" style={{ color: 'var(--color-text)' }}>{fmtKg(peso)}</p>}
+                                    {p.saldo_venta > 0.009 && <p className="text-[12px] font-semibold" style={{ color: 'var(--vp-coral-ink)' }}>Cobrar {soles(p.saldo_venta)}</p>}
+                                    <span className="inline-flex items-center gap-1 text-[13px] font-semibold mt-0.5" style={{ color: 'var(--vp-navy)' }}><Plus size={13} /> Cargar</span>
+                                </div>
+                            </button>
+                        </li>
+                    );
+                })}
+            </ul>
+        </div>
+    );
+}
+
+function VentasEntregadas({ viajeId, enUso, onAgregar, destacado }: {
+    viajeId: number | null; enUso: Set<number>; onAgregar: (v: VentaDisp) => void; destacado: boolean;
+}) {
+    const [abierto, setAbierto] = useState(destacado);
+    const [q, setQ] = useState('');
+    const [lista, setLista] = useState<VentaDisp[] | null>(null);
+    const [cargando, setCargando] = useState(false);
+
+    useEffect(() => { if (destacado) setAbierto(true); }, [destacado]);
+
+    useEffect(() => {
+        if (!abierto) return;
+        const t = setTimeout(async () => {
+            setCargando(true);
+            try {
+                const { data } = await axios.get<VentaDisp[]>(route('viajes.ventas'), { params: { buscar: q.trim() || undefined, viaje: viajeId ?? undefined } });
+                setLista(data);
+            } finally { setCargando(false); }
+        }, q ? 300 : 0);
+        return () => clearTimeout(t);
+    }, [q, abierto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (!abierto) {
+        return (
+            <button type="button" onClick={() => setAbierto(true)}
+                className="w-full rounded-2xl px-4 py-3 text-left text-sm flex items-center gap-2 border border-dashed transition-colors hover:bg-black/[0.02]"
+                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}>
+                <Receipt size={15} /> ¿Lleva una venta ya entregada (flete o «puesto en obra»)? <span className="font-semibold" style={{ color: 'var(--color-primary)' }}>Agregarla</span>
+            </button>
+        );
+    }
+
+    const visibles = (lista ?? []).filter(v => !enUso.has(v.id));
+
+    return (
+        <div className="rounded-2xl" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            <div className="p-4 pb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 className="text-sm font-bold flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}><Receipt size={16} /> Ventas ya entregadas</h2>
+                    <p className="text-[12px]" style={{ color: 'var(--color-text-muted)' }}>Salieron del stock al venderse: el viaje solo las lleva. Últimos 15 días.</p>
+                </div>
+                <div className="relative w-full sm:w-56">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
+                    <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="N.º de venta o cliente" aria-label="Buscar venta"
+                        className="w-full h-10 text-sm rounded-xl pl-8 pr-3 border outline-none focus:ring-2"
+                        style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} />
+                </div>
+            </div>
+            <ul className="max-h-[300px] overflow-y-auto px-2 pb-2" aria-busy={cargando}>
+                {cargando && <li className="h-14 mx-2 my-1.5 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--color-bg)' }} />}
+                {!cargando && visibles.length === 0 && (
+                    <li className="px-3 py-5 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>{q ? 'Ninguna venta coincide.' : 'No hay ventas recientes para agregar.'}</li>
+                )}
+                {!cargando && visibles.map(v => (
+                    <li key={v.id}>
+                        <button type="button" onClick={() => onAgregar(v)}
+                            className="w-full text-left rounded-xl px-3 py-2 flex items-center gap-3 transition-colors duration-150 hover:bg-[color-mix(in_srgb,var(--vp-navy)_5%,transparent)]">
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>{v.cliente} <span className="font-normal" style={{ color: 'var(--color-primary)' }}>{v.numero}</span></p>
+                                <p className="text-[13px] truncate" style={{ color: 'var(--color-text-muted)' }}>{v.items.map(i => `${fmtCantidad(i.cantidad)} ${i.producto_nombre}`).join(' · ')}</p>
+                            </div>
+                            <span className="inline-flex items-center gap-1 text-[13px] font-semibold flex-shrink-0" style={{ color: 'var(--vp-navy)' }}><Plus size={13} /> Agregar</span>
+                        </button>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}

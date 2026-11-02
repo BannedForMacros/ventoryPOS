@@ -1,4 +1,4 @@
-import { useForm, router } from '@inertiajs/react';
+import { useForm, router, usePage } from '@inertiajs/react';
 import { Plus, Trash2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/UI/PageHeader';
@@ -37,6 +37,7 @@ interface ProductoData {
     activo: boolean;
     incluye_igv: boolean;
     controla_stock: boolean | null;
+    peso_kg?: string | number | null;
     unidades: ProductoUnidadData[];
 }
 
@@ -54,6 +55,7 @@ interface FormData {
     activo: boolean;
     incluye_igv: boolean;
     controla_stock: ControlaStockSel;
+    peso_kg: string;
     unidades: ProductoUnidadData[];
 }
 
@@ -69,6 +71,7 @@ const emptyUnidad = (): ProductoUnidadData => ({
 });
 
 export default function Edit({ producto, categorias, unidades }: Props) {
+    const usaFlota = !!(usePage<Props>().props.auth?.user as { empresa?: { usa_flota?: boolean } } | undefined)?.empresa?.usa_flota;
     const { data, setData, transform, put, processing, errors } = useForm<FormData>({
         categoria_id:  producto.categoria_id ?? '',
         codigo:        producto.codigo ?? '',
@@ -80,6 +83,7 @@ export default function Edit({ producto, categorias, unidades }: Props) {
         precio_venta:  producto.precio_venta,
         activo:        producto.activo,
         incluye_igv:   producto.incluye_igv,
+        peso_kg:       producto.peso_kg != null ? String(Number(producto.peso_kg)) : '',
         controla_stock: producto.controla_stock === null || producto.controla_stock === undefined
             ? 'heredar'
             : (producto.controla_stock ? 'si' : 'no'),
@@ -98,6 +102,8 @@ export default function Edit({ producto, categorias, unidades }: Props) {
         ...d,
         imagen: d.imagen.trim() || null,
         controla_stock: d.controla_stock === 'heredar' ? null : d.controla_stock === 'si',
+        // Sin flota el campo no se ve: no se manda, así no borra un peso ya cargado.
+        peso_kg: usaFlota ? (d.peso_kg.trim() === '' ? null : d.peso_kg) : undefined,
     }));
 
     function setUnidad(index: number, field: keyof ProductoUnidadData, value: unknown) {
@@ -251,6 +257,17 @@ export default function Edit({ producto, categorias, unidades }: Props) {
                                 { value: 'no',      label: 'No — nunca descontar' },
                             ]}
                             hint="Si se hereda, se aplica la configuración de la empresa o el local."
+                        />
+                    )}
+
+                    {usaFlota && data.tipo === 'producto' && (
+                        <Input
+                            label="Peso por unidad (kg)"
+                            type="number" inputMode="decimal" min={0} step="any"
+                            value={data.peso_kg}
+                            onChange={e => setData('peso_kg', e.target.value)}
+                            error={(errors as Record<string, string>).peso_kg}
+                            hint="De la unidad base. Sirve para la carga de los viajes y el peso de la guía."
                         />
                     )}
 

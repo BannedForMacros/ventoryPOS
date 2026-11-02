@@ -41,9 +41,15 @@ class StoreVentaRequest extends FormRequest
         $cfg = \App\Support\ConfigEntregas::de($this->user()?->empresa);
 
         if (!$cfg['activo']) {
-            $this->merge(['tipo_entrega' => null, 'ruta_entrega_id' => null, 'entrega_programada' => null]);
+            $this->merge(['tipo_entrega' => null, 'ruta_entrega_id' => null, 'entrega_programada' => null, 'vehiculo_id' => null]);
 
             return;
+        }
+
+        // El camión del envío solo vale con Flota activa y en un envío: un recojo
+        // no viaja en ningún camión.
+        if (!\App\Support\Flota::activa($this->user()?->empresa) || $this->input('tipo_entrega') !== \App\Support\ConfigEntregas::ENVIO) {
+            $this->merge(['vehiculo_id' => null]);
         }
 
         $tipo = $this->input('tipo_entrega') === \App\Support\ConfigEntregas::ENVIO
@@ -184,6 +190,9 @@ class StoreVentaRequest extends FormRequest
             'envio_entregado'        => ['nullable', 'boolean'],
             'ruta_entrega_id'        => ['nullable', 'integer', Rule::exists('rutas_entrega', 'id')->where('empresa_id', $empresaId)->where('activo', true)],
             'entrega_programada'     => ['nullable', 'date'],
+            // Flota (opcional): el camión que lleva este envío. La venta va al
+            // viaje abierto de ese camión en el día (ViajeService::vincularVenta).
+            'vehiculo_id'            => ['nullable', 'integer', Rule::exists('vehiculos', 'id')->where('empresa_id', $empresaId)->where('activo', true)],
             // Backdate de admin: registrar la venta en un turno REABIERTO ajeno
             // con la fecha real en que ocurrió. Solo se honran si el usuario es
             // admin (guardas en el controlador).

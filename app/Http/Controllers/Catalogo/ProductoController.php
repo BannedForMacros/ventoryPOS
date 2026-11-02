@@ -130,7 +130,7 @@ class ProductoController extends Controller
                 'incluye_igv'    => $data['incluye_igv'] ?? false,
                 'controla_stock' => $esProducto ? ($data['controla_stock'] ?? null) : false,
                 'es_retornable'  => $esProducto ? ($data['es_retornable'] ?? null) : false,
-            ]);
+            ] + (array_key_exists('peso_kg', $data) ? ['peso_kg' => $esProducto ? ($data['peso_kg'] ?? null) : null] : []));
 
             $unidades = $data['unidades'] ?? null;
 

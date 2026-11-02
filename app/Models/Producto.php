@@ -30,6 +30,8 @@ class Producto extends Model
         'incluye_igv',
         'controla_stock',
         'es_retornable',
+        // Peso por unidad base (kg): carga del viaje y peso de la guía.
+        'peso_kg',
     ];
 
     protected function casts(): array
@@ -41,6 +43,7 @@ class Producto extends Model
             'incluye_igv'    => 'boolean',
             'controla_stock' => 'boolean',
             'es_retornable'  => 'boolean',
+            'peso_kg'        => 'decimal:4',
         ];
     }
 

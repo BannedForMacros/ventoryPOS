@@ -190,6 +190,12 @@ class VentaService
 
             self::completarFichaCliente((int) $clienteId, $data);
 
+            // Envío con camión (Flota): la venta entra al viaje del día de esa
+            // placa. Dentro de la transacción: o queda la venta con su viaje, o nada.
+            if (!empty($data['vehiculo_id'])) {
+                app(ViajeService::class)->vincularVenta($venta, (int) $data['vehiculo_id'], $user);
+            }
+
             return $venta->fresh(['items', 'pagos', 'cliente']);
         });
     }

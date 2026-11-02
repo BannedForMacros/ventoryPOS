@@ -74,8 +74,24 @@ class DespachoController extends Controller
             ->select('cliente_anticipos.*')
             ->paginate(25)->withQueryString();
 
+        // Flota: en qué viaje abierto va cada pedido de esta página.
+        $usaFlota = \App\Support\Flota::activa($user->empresa);
+        $enViaje  = $usaFlota && $pendientes->isNotEmpty()
+            ? \Illuminate\Support\Facades\DB::table('viaje_paradas as vp')
+                ->join('viajes as v', 'v.id', '=', 'vp.viaje_id')
+                ->leftJoin('vehiculos as ve', 've.id', '=', 'v.vehiculo_id')
+                ->whereIn('vp.cliente_anticipo_id', collect($pendientes->items())->pluck('id'))
+                ->where('vp.estado', 'por_entregar')
+                ->whereIn('v.estado', \App\Models\Viaje::ABIERTOS)
+                ->get(['vp.cliente_anticipo_id', 'v.id', 'v.numero', 'v.estado', 've.placa'])
+                ->groupBy('cliente_anticipo_id')
+                ->map(fn ($filas) => $filas->map(fn ($f) => ['id' => $f->id, 'numero' => $f->numero, 'estado' => $f->estado, 'placa' => $f->placa])->values())
+            : collect();
+
         return Inertia::render('Despachos/Index', [
             'pendientes'  => $pendientes,
+            'usaFlota'    => $usaFlota,
+            'enViaje'     => $enViaje,
             'buscar'      => $buscar,
             'filtros'     => ['cuando' => $fecha ? 'fecha' : $cuando, 'fecha' => $fecha, 'ruta_id' => $rutaId],
             'usaEntregas' => $usaEntregas,

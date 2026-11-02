@@ -2501,6 +2501,12 @@ class VentaController extends Controller
             'texto_envio'            => $cfg['textos']['envio'],
             'rutas'                  => \App\Models\RutaEntrega::deEmpresa($empresa->id)->activa()
                 ->orderBy('orden')->orderBy('id')->get(['id', 'nombre', 'zona']),
+            // Flota: el camión que lleva el envío (solo los que pueden salir).
+            'vehiculos'              => \App\Support\Flota::activa($empresa)
+                ? \App\Models\Vehiculo::deEmpresa($empresa->id)->activo()->where('estado', 'disponible')
+                    ->with('conductor:id,nombres,apellidos')->orderBy('placa')->get()
+                    ->map(fn ($v) => ['id' => $v->id, 'placa' => $v->placa, 'conductor' => $v->conductor?->nombre_completo])
+                : [],
         ];
     }
 }

@@ -82,6 +82,10 @@ interface Props extends PageProps {
     franjas: FranjaEntrega[];
     conteos: Record<Exclude<Cuando, 'fecha'>, number> | null;
     rutas: { id: number; nombre: string; zona: string | null }[];
+    /** Flota activa: los pedidos se cargan en viajes. */
+    usaFlota?: boolean;
+    /** Viajes abiertos en que va cada pedido (por id de pedido). */
+    enViaje?: Record<number, { id: number; numero: string; estado: string; placa: string | null }[]>;
 }
 
 function nombreCliente(c?: ClienteLite | null): string {
@@ -99,11 +103,11 @@ const dia = (iso: string) => new Date(iso).toLocaleDateString('es-PE', { weekday
 const esHoy = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();
 const atrasado = (iso: string) => new Date(iso).getTime() < new Date().setHours(0, 0, 0, 0);
 
-export default function Despachos({ pendientes, buscar = '', filtros, usaEntregas, momento, franjas, conteos, rutas }: Props) {
+export default function Despachos({ pendientes, buscar = '', filtros, usaEntregas, momento, franjas, conteos, rutas, usaFlota = false, enViaje = {} }: Props) {
     const { flash } = usePage<Props>().props;
 
     // Tiempo real: un pedido nuevo o una entrega hecha en otra PC aparece sola.
-    useTiempoReal(['despachos'], () => router.reload({ only: ['pendientes', 'conteos'] }));
+    useTiempoReal(['despachos'], () => router.reload({ only: ['pendientes', 'conteos', 'enViaje'] }));
     const [q, setQ] = useState(buscar);
     const [despachando, setDespachando] = useState<Pendiente | null>(null);
     const [cantidades, setCantidades] = useState<Record<number, string>>({});
@@ -206,9 +210,16 @@ export default function Despachos({ pendientes, buscar = '', filtros, usaEntrega
                         Mercadería vendida que falta entregar{usaEntregas ? ', ordenada por la hora programada' : ''}. Al confirmar una entrega, sale del stock.
                     </p>
                 </div>
-                <p className="font-display text-lg font-bold tabular-nums" style={{ color: 'var(--vp-navy)' }}>
-                    {plural(pendientes.total, 'pendiente', 'pendientes')}
-                </p>
+                <div className="flex items-center gap-3">
+                    <p className="font-display text-lg font-bold tabular-nums" style={{ color: 'var(--vp-navy)' }}>
+                        {plural(pendientes.total, 'pendiente', 'pendientes')}
+                    </p>
+                    {usaFlota && (
+                        <Link href={route('viajes.index')}>
+                            <Button size="sm" variant="secondary" startContent={<Truck size={14} />}>Viajes</Button>
+                        </Link>
+                    )}
+                </div>
             </div>
 
             {/* ── Filtros ── */}
@@ -267,7 +278,7 @@ export default function Despachos({ pendientes, buscar = '', filtros, usaEntrega
                 </section>
             ) : (
                 <ul className="grid grid-cols-1 2xl:grid-cols-2 gap-3">
-                    {pendientes.data.map(p => <Tarjeta key={p.id} p={p} usaEntregas={usaEntregas} porFranja={momento === 'franja'} franjas={franjas} onDespachar={() => abrirDespacho(p)} />)}
+                    {pendientes.data.map(p => <Tarjeta key={p.id} p={p} usaEntregas={usaEntregas} porFranja={momento === 'franja'} franjas={franjas} usaFlota={usaFlota} viajes={enViaje[p.id] ?? []} onDespachar={() => abrirDespacho(p)} />)}
                 </ul>
             )}
 
@@ -355,7 +366,11 @@ export default function Despachos({ pendientes, buscar = '', filtros, usaEntrega
     );
 }
 
-function Tarjeta({ p, usaEntregas, porFranja, franjas, onDespachar }: { p: Pendiente; usaEntregas: boolean; porFranja: boolean; franjas: FranjaEntrega[]; onDespachar: () => void }) {
+function Tarjeta({ p, usaEntregas, porFranja, franjas, usaFlota = false, viajes = [], onDespachar }: {
+    p: Pendiente; usaEntregas: boolean; porFranja: boolean; franjas: FranjaEntrega[]; usaFlota?: boolean;
+    viajes?: { id: number; numero: string; estado: string; placa: string | null }[];
+    onDespachar: () => void;
+}) {
     const v = p.venta;
     const prog = v?.entrega_programada ?? null;
     const envio = v?.tipo_entrega === 'envio';
@@ -409,6 +424,11 @@ function Tarjeta({ p, usaEntregas, porFranja, franjas, onDespachar }: { p: Pendi
                         {v?.ruta_entrega && (
                             <Chip color="var(--vp-amber-ink)">{v.ruta_entrega.nombre}{v.ruta_entrega.zona ? `, ${v.ruta_entrega.zona}` : ''}</Chip>
                         )}
+                        {viajes.map(vj => (
+                            <Link key={vj.id} href={route('viajes.show', vj.id)} title={vj.estado === 'en_ruta' ? 'En camino' : 'Programado'}>
+                                <Chip color="var(--vp-navy)" icono={<Truck size={13} />}>{vj.numero}{vj.placa ? ` · ${vj.placa}` : ''}</Chip>
+                            </Link>
+                        ))}
                     </div>
                 </div>
 
@@ -446,6 +466,11 @@ function Tarjeta({ p, usaEntregas, porFranja, franjas, onDespachar }: { p: Pendi
                         {v?.id && (
                             <Link href={route('guias.create', { venta: v.id })} title="Emitir guía de remisión">
                                 <Button size="sm" variant="secondary" startContent={<Truck size={14} />}>Guía</Button>
+                            </Link>
+                        )}
+                        {usaFlota && (
+                            <Link href={route('viajes.create', { anticipo: p.id })} title="Armar un viaje con este pedido">
+                                <Button size="sm" variant="secondary" startContent={<Truck size={14} />}>{viajes.length ? 'Otro viaje' : 'Cargar en viaje'}</Button>
                             </Link>
                         )}
                         <Button size="sm" onClick={onDespachar} startContent={<PackageCheck size={14} />}>Entregar</Button>

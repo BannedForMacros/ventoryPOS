@@ -53,6 +53,8 @@ interface EntregasPos {
     texto_recojo:           string;
     texto_envio:            string;
     rutas:                  { id: number; nombre: string; zona: string | null }[];
+    /** Flota activa: camiones que pueden llevar el envío (vacío si no usa flota). */
+    vehiculos?:             { id: number; placa: string; conductor: string | null }[];
 }
 type TipoEntrega = 'recojo' | 'envio';
 
@@ -584,6 +586,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
     // Entregas: toda venta nueva empieza como recojo en tienda.
     const [tipoEntrega, setTipoEntrega]               = useState<TipoEntrega>(entregas && ventaEnEdicion?.tipo_entrega === 'envio' ? 'envio' : 'recojo');
     const [rutaEntregaId, setRutaEntregaId]           = useState<number | null>(ventaEnEdicion?.ruta_entrega_id ?? null);
+    // Flota: el camión que lleva el envío (la venta va al viaje del día de esa placa).
+    const [vehiculoId, setVehiculoId]                 = useState<number | null>(null);
     const [entregaProgramada, setEntregaProgramada]   = useState(ventaEnEdicion?.entrega_programada ?? '');
     const [avisoEnvio, setAvisoEnvio]                 = useState(false);
     // El aviso "¿recoge o es envío?" se pregunta una sola vez por venta.
@@ -1419,6 +1423,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         setTipoEntrega('recojo');
         setEnvioEntregado(false);
         setRutaEntregaId(null);
+        setVehiculoId(null);
         setEntregaProgramada('');
         avisoRespondido.current = false;
         modalidadPorEnvio.current = false;
@@ -1630,6 +1635,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 // Envío ya entregado: el servidor no lo convierte en pedido pendiente.
                 envio_entregado:    esEnvio && envioEntregado,
                 ruta_entrega_id:    esEnvio ? rutaEntregaId : null,
+                vehiculo_id:        esEnvio && !ventaEnEdicion ? vehiculoId : null,
                 entrega_programada: esEnvio && entregaProgramada ? entregaProgramada : null,
             } : {}),
             // Solo viajan si la empresa los pide: así editar una venta no los borra.
@@ -1796,6 +1802,7 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
         }
 
         setRutaEntregaId(null);
+        setVehiculoId(null);
         setEntregaProgramada('');
         if (modalidadPorEnvio.current) {
             modalidadPorEnvio.current = false;
@@ -1851,6 +1858,8 @@ export default function PosIndex({ turno, productos, productosHasMore, productos
                 onTipo={elegirTipoEntrega}
                 rutaId={rutaEntregaId}
                 onRuta={setRutaEntregaId}
+                vehiculoId={ventaEnEdicion ? null : vehiculoId}
+                onVehiculo={ventaEnEdicion ? undefined : setVehiculoId}
                 programada={entregaProgramada}
                 onProgramada={setEntregaProgramada}
                 datos={datosCliente}
@@ -3795,12 +3804,15 @@ function MomentoDelDia({ franjas, obligatoria, programada, onProgramada, campo, 
  * programadas; la dirección y el teléfono se piden aquí solo si la empresa no
  * los pide ya en la franja de datos del cliente.
  */
-function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onProgramada, datos, onDatos, pedirDatosAqui, entregado = false }: {
+function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, vehiculoId = null, onVehiculo, programada, onProgramada, datos, onDatos, pedirDatosAqui, entregado = false }: {
     entregas: EntregasPos;
     tipo: TipoEntrega;
     onTipo: (t: TipoEntrega) => void;
     rutaId: number | null;
     onRuta: (id: number | null) => void;
+    /** Flota: camión que lleva el envío. Sin onVehiculo (p. ej. al editar) no se ofrece. */
+    vehiculoId?: number | null;
+    onVehiculo?: (id: number | null) => void;
     programada: string;
     onProgramada: (v: string) => void;
     datos: DatosCliente;
@@ -3832,6 +3844,16 @@ function EntregaVenta({ entregas, tipo, onTipo, rutaId, onRuta, programada, onPr
                                     <option value="">Elegir ruta…</option>
                                     {entregas.rutas.map(r => <option key={r.id} value={r.id}>{r.nombre}{r.zona ? `, ${r.zona}` : ''}</option>)}
                                 </select>
+                            </label>
+                        )}
+                        {onVehiculo && (entregas.vehiculos?.length ?? 0) > 0 && (
+                            <label className="block">
+                                <span className="block text-xs font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Camión (opcional)</span>
+                                <select data-envio-vehiculo value={vehiculoId ?? ''} onChange={e => onVehiculo(e.target.value ? Number(e.target.value) : null)} className={campo} style={estilo}>
+                                    <option value="">Sin asignar todavía</option>
+                                    {entregas.vehiculos!.map(v => <option key={v.id} value={v.id}>{v.placa}{v.conductor ? ` · ${v.conductor}` : ''}</option>)}
+                                </select>
+                                {vehiculoId && <span className="block text-[11px] mt-1" style={{ color: 'var(--color-text-muted)' }}>Va al viaje de hoy de esa placa (se crea solo si no hay).</span>}
                             </label>
                         )}
                         {entregas.momento === 'franja' ? (

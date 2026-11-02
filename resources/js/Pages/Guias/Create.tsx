@@ -9,6 +9,7 @@ import Select from '@/Components/UI/Select';
 import Callout from '@/Components/UI/Callout';
 import Checkbox from '@/Components/UI/Checkbox';
 import SearchableSelect from '@/Components/UI/SearchableSelect';
+import { hoyLocal } from '@/lib/fechas';
 import type { PageProps } from '@/types';
 
 /**
@@ -58,11 +59,19 @@ interface Props extends PageProps {
         items: { descripcion: string; cantidad: number; unidad: string; codigo: string | null; peso: number | null }[];
     } | null;
     clientes?: { id: number; label: string }[];
+    /** Desde una parada de un viaje: placa, chofer, llegada y peso ya puestos. */
+    traslado?: {
+        viaje_parada_id: number; viaje: string; fecha: string; peso_total: number | null; llegada_direccion: string | null;
+        vehiculo: { placa: string; tarjeta_circulacion: string } | null;
+        conductor: { tipo_documento: string; numero_documento: string; nombres: string; apellidos: string; licencia: string } | null;
+    } | null;
 }
 
 type Linea = { descripcion: string; cantidad: string; unidad: string; codigo: string; peso: string };
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+// Fecha LOCAL: toISOString() es UTC y desde las 19:00 en Lima proponía mañana
+// como fecha de traslado de la guía.
+const hoy = () => hoyLocal();
 
 const UNIDADES = [
     { value: 'NIU', label: 'Unidad' },
@@ -74,7 +83,7 @@ const UNIDADES = [
 ];
 
 export default function GuiaCreate() {
-    const { catalogos, emision, venta, clientes = [] } = usePage<Props>().props as any;
+    const { catalogos, emision, venta, clientes = [], traslado = null } = usePage<Props>().props as any;
 
     const motivos: Motivo[] = catalogos.motivos ?? [];
     const empresa = catalogos.empresa ?? {};
@@ -82,18 +91,19 @@ export default function GuiaCreate() {
     const { data, setData, post, processing, errors } = useForm<any>({
         motivo: motivos[0]?.valor ?? 'VENTA',
         modalidad: 'PRIVADO',
-        fecha_inicio: hoy(),
-        peso_total: '',
+        // Del viaje, salvo que ya pasó: la guía no se emite con fecha de traslado vencida.
+        fecha_inicio: traslado?.fecha && traslado.fecha > hoy() ? traslado.fecha : hoy(),
+        peso_total: traslado?.peso_total ? String(traslado.peso_total) : '',
         unidad_peso: 'KGM',
         numero_bultos: '',
         descripcion_motivo: '',
         // La partida es casi siempre la dirección fiscal: viene rellenada para que
         // el caso corriente sea un formulario ya hecho.
         partida: { ubigeo: empresa.ubigeo ?? '', direccion: empresa.direccion ?? '', codigo_establecimiento: '' },
-        llegada: { ubigeo: '', direccion: '', codigo_establecimiento: '' },
-        vehiculo: { placa: '', tarjeta_circulacion: '' },
+        llegada: { ubigeo: '', direccion: traslado?.llegada_direccion ?? '', codigo_establecimiento: '' },
+        vehiculo: traslado?.vehiculo ?? { placa: '', tarjeta_circulacion: '' },
         vehiculo_menor: false,
-        conductor: { tipo_documento: 'DNI', numero_documento: '', nombres: '', apellidos: '', licencia: '' },
+        conductor: traslado?.conductor ?? { tipo_documento: 'DNI', numero_documento: '', nombres: '', apellidos: '', licencia: '' },
         transportista: { ruc: '', razon_social: '', registro_mtc: '' },
         retorno_vehiculo_vacio: false,
         retorno_envases_vacios: false,
@@ -101,6 +111,7 @@ export default function GuiaCreate() {
         cliente_id: venta?.cliente_id ?? '',
         comprador_id: '',
         venta_id: venta?.id ?? '',
+        viaje_parada_id: traslado?.viaje_parada_id ?? '',
         items: (venta?.items?.length
             ? venta.items.map((i: any) => ({
                 descripcion: i.descripcion, cantidad: String(i.cantidad),
@@ -156,7 +167,7 @@ export default function GuiaCreate() {
         <AppLayout title="Nueva guía">
             <PageHeader
                 title="Nueva guía de remisión"
-                subtitle={venta ? `Del despacho de la venta ${venta.numero}` : undefined}
+                subtitle={traslado ? `Del viaje ${traslado.viaje}, venta ${venta?.numero ?? ''}: placa, chofer y peso ya puestos` : venta ? `Del despacho de la venta ${venta.numero}` : undefined}
                 icon={<Truck size={20} />}
                 backHref={route('guias.index')}
             />

@@ -45,6 +45,7 @@ class Guia extends Model
         'payload', 'motivo', 'modalidad', 'fecha_traslado',
         'destinatario', 'llegada_direccion',
         'idempotency_key', 'referencia_externa', 'user_id',
+        'viaje_parada_id',
     ];
 
     protected function casts(): array

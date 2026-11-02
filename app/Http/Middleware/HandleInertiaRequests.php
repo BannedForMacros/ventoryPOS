@@ -113,6 +113,10 @@ class HandleInertiaRequests extends Middleware
     private const MODULOS_POR_FUNCION = [
         'agenda'          => 'usa_agenda',
         'reportes.agenda' => 'usa_agenda',
+        'flota'             => 'usa_flota',
+        'viajes'            => 'usa_flota',
+        'flota.vehiculos'   => 'usa_flota',
+        'flota.conductores' => 'usa_flota',
     ];
 
     private function formatModulo($modulo, $user): ?array

@@ -77,11 +77,13 @@ class GuiaRemisionController extends Controller
     public function create(Request $request): Response
     {
         $empresaId = (int) $request->user()->empresa_id;
+        $traslado  = $request->filled('parada') ? $this->desdeParadaDeViaje((int) $request->input('parada'), $empresaId) : null;
 
         return Inertia::render('Guias/Create', [
             'catalogos' => $this->catalogos($empresaId),
             'emision'   => $this->estadoDeLaEmision($empresaId),
-            'venta'     => $request->filled('venta') ? $this->ventaParaGuia($request, $empresaId) : null,
+            'venta'     => $traslado['venta'] ?? ($request->filled('venta') ? $this->ventaParaGuia($request, $empresaId) : null),
+            'traslado'  => $traslado['traslado'] ?? null,
             'clientes'  => \App\Models\Cliente::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 // El «cliente general» de mostrador no vale como destinatario: SUNAT
@@ -119,13 +121,21 @@ class GuiaRemisionController extends Controller
             'venta_id'            => ['nullable', 'integer', EnEmpresa::existe('ventas')],
             'cliente_id'          => ['nullable', 'integer', EnEmpresa::existe('clientes')],
             'transferencia_id'    => ['nullable', 'integer', EnEmpresa::existe('transferencias')],
+            'viaje_parada_id'     => ['nullable', 'integer'],
         ], [
             'venta_id.exists'         => 'La venta indicada no existe en tu empresa.',
             'cliente_id.exists'       => 'El cliente indicado no existe en tu empresa.',
             'transferencia_id.exists' => 'La transferencia indicada no existe en tu empresa.',
         ]);
 
+        // La parada del viaje se valida por su viaje: viaje_paradas no tiene empresa_id.
+        if (!empty($datos['viaje_parada_id'])) {
+            $datos['viaje_parada_id'] = \App\Models\ViajeParada::whereKey($datos['viaje_parada_id'])
+                ->whereHas('viaje', fn ($q) => $q->where('empresa_id', $empresaId))->value('id');
+        }
+
         $form = $request->all();
+        unset($form['viaje_parada_id']);
 
         // La clave la pone el servidor, nunca el navegador: es lo que impide que un
         // doble clic consuma dos números de SUNAT para el mismo despacho.
@@ -142,6 +152,7 @@ class GuiaRemisionController extends Controller
             'empresa_id'         => $empresaId,
             'venta_id'           => $datos['venta_id'] ?? null,
             'transferencia_id'   => $datos['transferencia_id'] ?? null,
+            'viaje_parada_id'    => $datos['viaje_parada_id'] ?? null,
             'cliente_id'         => $datos['cliente_id'] ?? null,
             'estado'             => 'pendiente',
             'puede_trasladar'    => false,
@@ -258,6 +269,62 @@ class GuiaRemisionController extends Controller
                 'codigo'      => null,
                 'peso'        => null,
             ])->all(),
+        ];
+    }
+
+    /**
+     * Una parada de un viaje traída al formulario: lo que lleva (con su peso),
+     * la placa, el chofer y la dirección de llegada. Así la guía del reparto sale
+     * sin volver a digitar lo que el viaje ya sabe.
+     *
+     * @return array{venta: array<string, mixed>, traslado: array<string, mixed>}|null
+     */
+    private function desdeParadaDeViaje(int $paradaId, int $empresaId): ?array
+    {
+        $parada = \App\Models\ViajeParada::with([
+            'items', 'viaje.vehiculo', 'viaje.conductor',
+            'venta.cliente', 'venta.comprobanteElectronico',
+        ])->whereHas('viaje', fn ($q) => $q->where('empresa_id', $empresaId))->find($paradaId);
+
+        if (!$parada || !$parada->venta) {
+            return null;
+        }
+
+        $venta    = $parada->venta;
+        $vehiculo = $parada->viaje->vehiculo;
+        $chofer   = $parada->viaje->conductor;
+        $peso     = $parada->items->every(fn ($i) => $i->peso_kg !== null) ? round((float) $parada->items->sum('peso_kg'), 3) : null;
+
+        return [
+            'venta' => [
+                'id'          => $venta->id,
+                'numero'      => $venta->numero,
+                'cliente_id'  => $venta->cliente_id,
+                'cliente'     => $venta->cliente?->razon_social ?: $venta->cliente?->nombre_completo,
+                'comprobante' => $venta->comprobanteElectronico?->numero,
+                'items'       => $parada->items->map(fn ($i) => [
+                    'descripcion' => $i->producto_nombre,
+                    'cantidad'    => (float) $i->cantidad,
+                    'unidad'      => 'NIU',
+                    'codigo'      => null,
+                    'peso'        => $i->peso_kg !== null ? (float) $i->peso_kg : null,
+                ])->all(),
+            ],
+            'traslado' => [
+                'viaje_parada_id'   => $parada->id,
+                'viaje'             => $parada->viaje->numero,
+                'fecha'             => $parada->viaje->fecha?->toDateString(),
+                'peso_total'        => $peso,
+                'llegada_direccion' => $venta->cliente_direccion ?? $venta->cliente?->direccion,
+                'vehiculo'          => $vehiculo ? ['placa' => $vehiculo->placa, 'tarjeta_circulacion' => $vehiculo->tarjeta_circulacion ?? ''] : null,
+                'conductor'         => $chofer ? [
+                    'tipo_documento'   => $chofer->tipo_documento ?: 'DNI',
+                    'numero_documento' => $chofer->numero_documento ?? '',
+                    'nombres'          => $chofer->nombres,
+                    'apellidos'        => $chofer->apellidos ?? '',
+                    'licencia'         => $chofer->licencia ?? '',
+                ] : null,
+            ],
         ];
     }
 

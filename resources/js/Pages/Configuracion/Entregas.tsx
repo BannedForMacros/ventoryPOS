@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
-import { ArrowDown, ArrowUp, BellRing, CalendarClock, Check, ListChecks, MapPinned, Pencil, Plus, Trash2, Truck, Type, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, BellRing, CalendarClock, Check, ListChecks, MapPinned, Pencil, Plus, Route, Trash2, Truck, Type, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import Button from '@/Components/UI/Button';
 import Switch from '@/Components/UI/Switch';
@@ -31,10 +31,11 @@ interface Props extends PageProps {
     catalogoTextos: DefTexto[];
     rutas: Ruta[];
     usaDespachoAlmacen: boolean;
+    usaFlota: boolean;
     puedeEditar: boolean;
 }
 
-export default function Entregas({ config, catalogoTextos, rutas, puedeEditar }: Props) {
+export default function Entregas({ config, catalogoTextos, rutas, usaFlota, puedeEditar }: Props) {
     const { flash } = usePage<Props>().props;
     useEffect(() => {
         if (flash?.success) toast.success(flash.success as string);
@@ -59,6 +60,16 @@ export default function Entregas({ config, catalogoTextos, rutas, puedeEditar }:
         || (form.aviso ? Number(form.monto) || 0 : null) !== config.aviso_monto
         || catalogoTextos.some(t => (form.textos[t.clave] ?? '').trim() !== (config.textos[t.clave] ?? '')),
     [form, config, catalogoTextos]);
+
+    const [cambiandoFlota, setCambiandoFlota] = useState(false);
+    function cambiarFlota(activo: boolean) {
+        setCambiandoFlota(true);
+        router.put(route('configuracion.entregas.flota'), { activo }, {
+            preserveScroll: true,
+            onError: e => avisoError(Object.values(e)[0], 'No se pudo guardar.'),
+            onFinish: () => setCambiandoFlota(false),
+        });
+    }
 
     function guardar() {
         setGuardando(true);
@@ -111,6 +122,24 @@ export default function Entregas({ config, catalogoTextos, rutas, puedeEditar }:
                 </div>
                 <Switch checked={form.activo} disabled={!puedeEditar} aria-label="Activar entregas"
                     onChange={v => setForm(f => ({ ...f, activo: v }))} />
+            </section>
+
+            {/* ── Flota y viajes (se guarda al instante, aparte del resto) ── */}
+            <section className="rounded-2xl p-4 mb-4 flex flex-wrap items-center justify-between gap-4"
+                style={{ backgroundColor: 'var(--color-surface)', border: `1px solid ${usaFlota ? 'var(--vp-navy)' : 'var(--color-border)'}` }}>
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl flex-shrink-0"
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 10%, transparent)', color: 'var(--vp-navy)' }}><Route size={20} /></span>
+                    <div className="min-w-0">
+                        <p className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Flota y viajes {usaFlota ? 'activados' : ''}</p>
+                        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                            {usaFlota
+                                ? <>Vehículos, conductores y viajes en el menú «Reparto». En el POS, un envío puede ir en un camión. <Link href={route('viajes.index')} className="font-semibold" style={{ color: 'var(--color-primary)' }}>Ir a Viajes</Link></>
+                                : 'Para negocios con camiones propios: registra vehículos y choferes, arma viajes con los pedidos por entregar y emite la guía con la placa ya puesta.'}
+                        </p>
+                    </div>
+                </div>
+                <Switch checked={usaFlota} disabled={!puedeEditar || cambiandoFlota} aria-label="Activar flota y viajes" onChange={cambiarFlota} />
             </section>
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start" style={{ opacity: form.activo ? 1 : 0.6 }}>
