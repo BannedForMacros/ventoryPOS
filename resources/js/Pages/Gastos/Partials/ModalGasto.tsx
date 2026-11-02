@@ -6,7 +6,9 @@ import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
-import type { Gasto, GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
+import type { FlotaGasto, Gasto, GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
+import Switch from '@/Components/UI/Switch';
+import { Fuel, Wrench } from 'lucide-react';
 import { hoyLocal, esFutura } from '@/lib/fechas';
 
 export interface GastoForm {
@@ -21,6 +23,22 @@ export interface GastoForm {
     // cuenta_metodo_pago_id es el id de la fila pivote, igual que en el POS.
     metodo_pago_id:        number | '';
     cuenta_metodo_pago_id: number | '';
+    // Flota (si la empresa la usa): placa y ficha de combustible / mantenimiento.
+    vehiculo_id:           number | '';
+    combustible:           { km: string; galones: string; tanque_lleno: boolean; conductor_id: number | ''; grifo: string };
+    mantenimiento:         { tipo: 'preventivo' | 'correctivo'; km: string; taller: string; detalle: string; dias_parado: string };
+}
+
+const fichaVacia = () => ({
+    combustible:   { km: '', galones: '', tanque_lleno: true, conductor_id: '' as number | '', grifo: '' },
+    mantenimiento: { tipo: 'preventivo' as 'preventivo' | 'correctivo', km: '', taller: '', detalle: '', dias_parado: '' },
+});
+
+/** Para abrir el modal ya con la placa (y el concepto) puestos, desde la ficha del vehículo. */
+export interface PresetGasto {
+    vehiculo_id?:       number;
+    gasto_tipo_id?:     number;
+    gasto_concepto_id?: number;
 }
 
 export const emptyGasto = (turnoId: number | null = null, metodoPagoId: number | '' = ''): GastoForm => ({
@@ -33,6 +51,8 @@ export const emptyGasto = (turnoId: number | null = null, metodoPagoId: number |
     local_id:              '',
     metodo_pago_id:        metodoPagoId,
     cuenta_metodo_pago_id: '',
+    vehiculo_id:           '',
+    ...fichaVacia(),
 });
 
 interface Props {
@@ -46,9 +66,11 @@ interface Props {
     metodosPago?:     MetodoPagoConCuentas[];
     // Si viene, el modal entra en modo EDICIÓN de ese gasto.
     gastoEditar?:     Gasto | null;
+    flota?:           FlotaGasto | null;
+    preset?:          PresetGasto | null;
 }
 
-export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos, metodosPago = [], gastoEditar = null }: Props) {
+export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locales, esAdmin, turnosAbiertos, metodosPago = [], gastoEditar = null, flota = null, preset = null }: Props) {
     const editando = !!gastoEditar;
     // Config: si la empresa apagó el módulo 'gastos', los gastos NO afectan caja
     // (ningún gasto lleva turno; el backend lo fuerza a null). Ocultamos los
@@ -79,9 +101,28 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                 // que el usuario elija otro método a propósito).
                 metodo_pago_id:        '',
                 cuenta_metodo_pago_id: '',
+                vehiculo_id:           gastoEditar.vehiculo_id ?? '',
+                combustible: gastoEditar.combustible ? {
+                    km: String(Number(gastoEditar.combustible.km)), galones: String(Number(gastoEditar.combustible.galones)),
+                    tanque_lleno: !!gastoEditar.combustible.tanque_lleno, conductor_id: gastoEditar.combustible.conductor_id ?? '',
+                    grifo: gastoEditar.combustible.grifo ?? '',
+                } : fichaVacia().combustible,
+                mantenimiento: gastoEditar.mantenimiento ? {
+                    tipo: gastoEditar.mantenimiento.tipo, km: gastoEditar.mantenimiento.km != null ? String(Number(gastoEditar.mantenimiento.km)) : '',
+                    taller: gastoEditar.mantenimiento.taller ?? '', detalle: gastoEditar.mantenimiento.detalle ?? '',
+                    dias_parado: gastoEditar.mantenimiento.dias_parado != null ? String(gastoEditar.mantenimiento.dias_parado) : '',
+                } : fichaVacia().mantenimiento,
             });
         } else {
-            setForm(emptyGasto(turnoInicial, metodoPorDefecto()));
+            const nuevo = emptyGasto(turnoInicial, metodoPorDefecto());
+            if (preset) {
+                nuevo.vehiculo_id = preset.vehiculo_id ?? '';
+                nuevo.gasto_tipo_id = preset.gasto_tipo_id ?? '';
+                nuevo.gasto_concepto_id = preset.gasto_concepto_id ?? '';
+                const v = flota?.vehiculos.find(x => x.id === preset.vehiculo_id);
+                if (v?.conductor_id) nuevo.combustible.conductor_id = v.conductor_id;
+            }
+            setForm(nuevo);
         }
         setErrors({});
         reiniciar();
@@ -130,6 +171,17 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
         .map(t => ({ value: t.id, label: `${t.nombre} (${t.categoria})` }));
 
     const opcionesConceptos = conceptosFiltrados.map(c => ({ value: c.id, label: c.nombre }));
+
+    // Flota: qué ficha pide el concepto elegido.
+    const conceptoSel = conceptosFiltrados.find(c => c.id === Number(form.gasto_concepto_id)) ?? null;
+    const usoFlota = flota ? (conceptoSel?.flota_uso ?? null) : null;
+    const setComb = (k: keyof GastoForm['combustible'], v: unknown) => setForm(f => ({ ...f, combustible: { ...f.combustible, [k]: v } }));
+    const setMant = (k: keyof GastoForm['mantenimiento'], v: unknown) => setForm(f => ({ ...f, mantenimiento: { ...f.mantenimiento, [k]: v } }));
+    function elegirVehiculo(v: number | string) {
+        const id = Number(v) || '';
+        const veh = flota?.vehiculos.find(x => x.id === id);
+        setForm(f => ({ ...f, vehiculo_id: id, combustible: { ...f.combustible, conductor_id: f.combustible.conductor_id || (veh?.conductor_id ?? '') } }));
+    }
     const opcionesLocales   = locales.map(l => ({ value: l.id, label: l.nombre }));
 
     function handleTipoChange(v: number | string) {
@@ -157,6 +209,10 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
         if (muestraTurno && !form.turno_id) return { texto: 'Elige el turno', campo: 'turno_id' };
         if (!form.gasto_tipo_id) return { texto: 'Elige el tipo de gasto', campo: 'gasto_tipo_id' };
         if (!form.gasto_concepto_id) return { texto: 'Elige el concepto', campo: 'gasto_concepto_id' };
+        if (usoFlota && !form.vehiculo_id) return { texto: 'Elige el vehículo', campo: 'vehiculo_id' };
+        if (usoFlota === 'combustible' && form.combustible.km.trim() === '') return { texto: 'Escribe el km del odómetro', campo: 'combustible.km' };
+        if (usoFlota === 'combustible' && !(Number(form.combustible.galones) > 0)) return { texto: 'Escribe los galones', campo: 'combustible.galones' };
+        if (usoFlota === 'mantenimiento' && form.mantenimiento.tipo === 'preventivo' && form.mantenimiento.km.trim() === '') return { texto: 'Escribe el km del preventivo', campo: 'mantenimiento.km' };
         if (form.monto.trim() === '') return { texto: 'Escribe el monto', campo: 'monto' };
         const monto = Number(form.monto);
         if (!Number.isFinite(monto) || monto < 0.01) return { texto: 'El monto debe ser mayor a S/ 0.00', campo: 'monto' };
@@ -176,10 +232,18 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
             onSuccess: () => { setSaving(false); handleClose(); },
             onError:   (errs: any) => { setErrors(errs); setSaving(false); },
         };
+        // Sin flota no se manda nada de flota; con flota, solo la ficha que pide el concepto.
+        const { vehiculo_id, combustible, mantenimiento, ...base } = form;
+        const payload: Record<string, unknown> = flota ? {
+            ...base,
+            vehiculo_id: vehiculo_id || null,
+            ...(usoFlota === 'combustible' ? { combustible: { ...combustible, conductor_id: combustible.conductor_id || null } } : {}),
+            ...(usoFlota === 'mantenimiento' ? { mantenimiento } : {}),
+        } : base;
         if (gastoEditar) {
-            router.put(route('gastos.update', gastoEditar.id), form as any, opts);
+            router.put(route('gastos.update', gastoEditar.id), payload as any, opts);
         } else {
-            router.post(route('gastos.store'), form as any, opts);
+            router.post(route('gastos.store'), payload as any, opts);
         }
     }
 
@@ -203,6 +267,9 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                 <ErroresSueltos errors={errors} visibles={[
                     ...(muestraTurno ? ['turno_id'] : []), 'gasto_tipo_id', 'gasto_concepto_id', 'monto', 'fecha',
                     ...(metodosPago.length > 0 ? ['metodo_pago_id'] : []),
+                    ...(flota ? ['vehiculo_id'] : []),
+                    ...(usoFlota === 'combustible' ? ['combustible.km', 'combustible.galones', 'combustible.grifo'] : []),
+                    ...(usoFlota === 'mantenimiento' ? ['mantenimiento.km', 'mantenimiento.taller', 'mantenimiento.detalle'] : []),
                     ...(cuentasDelMetodo.length > 0 ? ['cuenta_metodo_pago_id'] : []),
                     ...(!editando && !esTurnogasto && esAdmin ? ['local_id'] : []), 'comentario',
                 ]} />
@@ -293,6 +360,74 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                     error={err('fecha')}
                     disabled={saving}
                 />
+
+                {/* Flota: a qué camión se carga el gasto y, si el concepto es
+                    combustible o mantenimiento, su ficha técnica. */}
+                {flota && flota.vehiculos.length > 0 && (
+                    <div className="rounded-xl p-3 space-y-3" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                        <Select
+                            label={usoFlota ? 'Vehículo' : 'Vehículo (opcional)'}
+                            required={!!usoFlota}
+                            triggerAttrs={{ 'data-campo': 'vehiculo_id' }}
+                            value={form.vehiculo_id}
+                            onChange={elegirVehiculo}
+                            options={[...(usoFlota ? [] : [{ value: '', label: 'No es de un vehículo' }]),
+                                ...flota.vehiculos.map(v => ({ value: v.id, label: [v.placa, [v.marca, v.modelo].filter(Boolean).join(' ')].filter(Boolean).join(' · ') }))]}
+                            placeholder="Elegir placa"
+                            error={err('vehiculo_id')}
+                            hint={usoFlota ? undefined : 'Cárgalo a una placa para verlo en la utilidad por camión'}
+                            disabled={saving}
+                        />
+
+                        {usoFlota === 'combustible' && (
+                            <>
+                                <p className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}><Fuel size={14} /> Carga de combustible</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Input label="Km del odómetro" type="number" inputMode="decimal" min="0" required data-campo="combustible.km"
+                                        value={form.combustible.km} onChange={e => setComb('km', e.target.value)} error={err('combustible.km')} disabled={saving} />
+                                    <Input label="Galones" type="number" inputMode="decimal" min="0" step="0.001" required data-campo="combustible.galones"
+                                        value={form.combustible.galones} onChange={e => setComb('galones', e.target.value)} error={err('combustible.galones')} disabled={saving} />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Select label="Chofer" value={form.combustible.conductor_id} placeholder="Sin indicar"
+                                        onChange={v => setComb('conductor_id', Number(v) || '')}
+                                        options={[{ value: '', label: 'Sin indicar' }, ...flota.conductores.map(c => ({ value: c.id, label: c.nombre }))]} disabled={saving} />
+                                    <Input label="Grifo" value={form.combustible.grifo} onChange={e => setComb('grifo', e.target.value)} placeholder="Opcional" error={err('combustible.grifo')} disabled={saving} />
+                                </div>
+                                <Switch label="Tanque lleno" description="El rendimiento (km por galón) se calcula entre dos llenadas completas."
+                                    checked={form.combustible.tanque_lleno} onChange={v => setComb('tanque_lleno', v)} />
+                            </>
+                        )}
+
+                        {usoFlota === 'mantenimiento' && (
+                            <>
+                                <p className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}><Wrench size={14} /> Mantenimiento</p>
+                                <div role="radiogroup" aria-label="Tipo de mantenimiento" className="grid grid-cols-2 gap-2">
+                                    {(['preventivo', 'correctivo'] as const).map(t => (
+                                        <button key={t} type="button" role="radio" aria-checked={form.mantenimiento.tipo === t} onClick={() => setMant('tipo', t)}
+                                            className="rounded-lg px-3 py-2 text-left border transition-colors duration-150"
+                                            style={{
+                                                borderColor: form.mantenimiento.tipo === t ? 'var(--vp-navy)' : 'var(--color-border)',
+                                                backgroundColor: form.mantenimiento.tipo === t ? 'color-mix(in srgb, var(--vp-navy) 7%, var(--color-surface))' : 'var(--color-surface)',
+                                            }}>
+                                            <span className="block text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{t === 'preventivo' ? 'Preventivo' : 'Correctivo'}</span>
+                                            <span className="block text-[12px]" style={{ color: 'var(--color-text-muted)' }}>{t === 'preventivo' ? 'Aceite, filtros… programa el siguiente' : 'Una falla o reparación'}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <Input label="Km del camión" type="number" inputMode="decimal" min="0" required={form.mantenimiento.tipo === 'preventivo'} data-campo="mantenimiento.km"
+                                        value={form.mantenimiento.km} onChange={e => setMant('km', e.target.value)} error={err('mantenimiento.km')} disabled={saving} />
+                                    <Input label="Días parado" type="number" inputMode="numeric" min="0" value={form.mantenimiento.dias_parado}
+                                        onChange={e => setMant('dias_parado', e.target.value)} placeholder="0" disabled={saving} />
+                                </div>
+                                <Input label="Taller" value={form.mantenimiento.taller} onChange={e => setMant('taller', e.target.value)} placeholder="Opcional" error={err('mantenimiento.taller')} disabled={saving} />
+                                <Input label="Qué se hizo" value={form.mantenimiento.detalle} onChange={e => setMant('detalle', e.target.value)}
+                                    placeholder="Cambio de aceite y filtros, frenos…" error={err('mantenimiento.detalle')} disabled={saving} />
+                            </>
+                        )}
+                    </div>
+                )}
 
                 {/* Se paga con: método de pago y, si tiene cuentas, la cuenta.
                     Mismo patrón que el panel de pago del POS. */}

@@ -49,7 +49,7 @@ class StoreGastoRequest extends FormRequest
             'fecha'      => ['required', 'date', new \App\Rules\NoFutura],
             'comentario' => ['nullable', 'string', 'max:500'],
             'turno_id'   => ['nullable', 'integer', EnEmpresa::existe('turnos')],
-        ];
+        ] + \App\Support\Flota::reglasGasto();
     }
 
     public function withValidator($validator): void

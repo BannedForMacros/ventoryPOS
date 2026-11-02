@@ -23,6 +23,8 @@ class Gasto extends Model
         'gasto_tipo_id', 'gasto_concepto_id',
         'monto', 'cuenta_id', 'fecha', 'comentario',
         'moneda', 'tipo_cambio', 'monto_moneda',
+        // Flota: el gasto se carga a una placa (utilidad por camión).
+        'vehiculo_id',
     ];
 
     protected function casts(): array
@@ -41,6 +43,11 @@ class Gasto extends Model
     public function tipo(): BelongsTo     { return $this->belongsTo(GastoTipo::class, 'gasto_tipo_id'); }
     public function concepto(): BelongsTo { return $this->belongsTo(GastoConcepto::class, 'gasto_concepto_id'); }
     public function cuenta(): BelongsTo   { return $this->belongsTo(Cuenta::class); }
+    public function vehiculo(): BelongsTo { return $this->belongsTo(Vehiculo::class); }
+
+    /** Ficha técnica si el gasto es combustible o mantenimiento de un vehículo. */
+    public function combustible(): \Illuminate\Database\Eloquent\Relations\HasOne   { return $this->hasOne(VehiculoCombustible::class); }
+    public function mantenimiento(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(VehiculoMantenimiento::class); }
 
     public function scopeDelTurno($q, $turnoId) { return $q->where('turno_id', $turnoId); }
     public function scopeAdministrativos($q)    { return $q->whereNull('turno_id'); }

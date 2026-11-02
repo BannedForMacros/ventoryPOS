@@ -24,6 +24,7 @@ class Vehiculo extends Model
     protected $fillable = [
         'empresa_id', 'placa', 'marca', 'modelo', 'anio', 'tipo', 'capacidad_kg',
         'tarjeta_circulacion', 'conductor_id', 'estado', 'km_actual', 'observacion', 'activo',
+        'mant_intervalo_km', 'mant_base_km',
     ];
 
     protected function casts(): array
@@ -33,11 +34,17 @@ class Vehiculo extends Model
             'anio'         => 'integer',
             'capacidad_kg' => 'decimal:2',
             'km_actual'    => 'decimal:1',
+            'mant_intervalo_km' => 'integer',
+            'mant_base_km' => 'decimal:1',
         ];
     }
 
     public function conductor(): BelongsTo { return $this->belongsTo(Conductor::class); }
     public function viajes(): HasMany      { return $this->hasMany(Viaje::class); }
+    public function combustibles(): HasMany   { return $this->hasMany(VehiculoCombustible::class); }
+    public function mantenimientos(): HasMany { return $this->hasMany(VehiculoMantenimiento::class); }
+    public function documentos(): HasMany     { return $this->hasMany(VehiculoDocumento::class); }
+    public function gastos(): HasMany         { return $this->hasMany(Gasto::class); }
 
     public function scopeDeEmpresa(Builder $q, int $empresaId): Builder
     {

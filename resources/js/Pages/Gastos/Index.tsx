@@ -13,7 +13,7 @@ import Select from '@/Components/UI/Select';
 import FiltrosCard from '@/Components/UI/FiltrosCard';
 import Modal from '@/Components/UI/Modal';
 import ModalGasto from './Partials/ModalGasto';
-import type { Gasto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
+import type { FlotaGasto, Gasto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
 
 type Scope = 'turno' | 'administrativo';
 type Mostrar = 'activos' | 'eliminados' | 'todos';
@@ -33,6 +33,8 @@ interface Props extends PageProps {
     turnosAbiertos:  Turno[];
     esAdmin:         boolean;
     metodosPago:     MetodoPagoConCuentas[];
+    /** Flota: placas y choferes (null si la empresa no usa flota). */
+    flota?:          FlotaGasto | null;
 }
 
 const ALL_TABS = [
@@ -46,7 +48,7 @@ const MOSTRAR_OPCIONES = [
     { value: 'todos',      label: 'Todos' },
 ];
 
-export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, locales, turnosAbiertos, esAdmin, metodosPago }: Props) {
+export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, locales, turnosAbiertos, esAdmin, metodosPago, flota = null }: Props) {
     const { flash, turno_activo, auth } = usePage<Props>().props;
     const [tab, setTab]                 = useState<Scope>(scope);
     const [modalGasto, setModalGasto]   = useState(false);
@@ -119,6 +121,15 @@ export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, loc
             key: 'concepto', label: 'Concepto', sortKey: 'concepto.nombre',
             render: (g) => <span>{g.concepto?.nombre ?? '—'}</span>,
         },
+        ...(flota ? [{
+            key: 'vehiculo', label: 'Placa', sortKey: 'vehiculo.placa',
+            render: (g: Gasto) => g.vehiculo
+                ? <span className="font-mono text-[13px] font-semibold" style={{ color: 'var(--vp-navy)' }}>
+                    {g.vehiculo.placa}{g.combustible ? <span className="font-sans font-normal" style={{ color: 'var(--color-text-muted)' }}> · {Number(g.combustible.galones)} gal</span> : null}
+                  </span>
+                : <span style={{ color: 'var(--color-text-muted)' }}>—</span>,
+            exportValue: (g: Gasto) => g.vehiculo?.placa ?? '',
+        } as Column<Gasto>] : []),
         ...(tab === 'turno' ? [] : [{
             key: 'local', label: 'Local', sortKey: 'local.nombre',
             render: (g: Gasto) => <span>{g.local?.nombre ?? '—'}</span>,
@@ -236,6 +247,7 @@ export default function GastosIndex({ gastos, tipos, scope, mostrar, buscar, loc
                 turnosAbiertos={turnosAbiertos ?? []}
                 metodosPago={metodosPago ?? []}
                 gastoEditar={gastoEditar}
+                flota={flota}
             />
 
             {/* Confirmar eliminar */}

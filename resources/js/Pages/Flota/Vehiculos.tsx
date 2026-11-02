@@ -11,7 +11,7 @@ import Switch from '@/Components/UI/Switch';
 import Table, { Column } from '@/Components/UI/Table';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
-import { Pastilla, fmtKg } from '@/Components/Flota/FlotaUI';
+import { MantenimientoChip, Pastilla, fmtKg, type EstadoMantenimiento } from '@/Components/Flota/FlotaUI';
 import type { PageProps } from '@/types';
 
 type EstadoVehiculo = 'disponible' | 'taller' | 'fuera_servicio';
@@ -29,6 +29,10 @@ interface Vehiculo extends Record<string, unknown> {
     conductor: string | null;
     estado: EstadoVehiculo;
     km_actual: number | null;
+    km_ficha: number | null;
+    mant_intervalo_km: number;
+    mant_base_km: number | null;
+    mantenimiento: EstadoMantenimiento;
     observacion: string | null;
     activo: boolean;
     en_ruta: string | null;
@@ -45,11 +49,13 @@ interface Form {
     placa: string; marca: string; modelo: string; anio: string; tipo: string;
     capacidad_kg: string; tarjeta_circulacion: string; conductor_id: number | '';
     estado: EstadoVehiculo; km_actual: string; observacion: string; activo: boolean;
+    mant_intervalo_km: string; mant_base_km: string;
 }
 
 const vacio = (): Form => ({
     placa: '', marca: '', modelo: '', anio: '', tipo: '', capacidad_kg: '', tarjeta_circulacion: '',
     conductor_id: '', estado: 'disponible', km_actual: '', observacion: '', activo: true,
+    mant_intervalo_km: '8000', mant_base_km: '',
 });
 
 const ESTADOS: { value: EstadoVehiculo; label: string }[] = [
@@ -84,8 +90,9 @@ export default function Vehiculos({ vehiculos, choferes, puede }: Props) {
             placa: v.placa, marca: v.marca ?? '', modelo: v.modelo ?? '', anio: v.anio ? String(v.anio) : '',
             tipo: v.tipo ?? '', capacidad_kg: v.capacidad_kg != null ? String(v.capacidad_kg) : '',
             tarjeta_circulacion: v.tarjeta_circulacion ?? '', conductor_id: v.conductor_id ?? '',
-            estado: v.estado, km_actual: v.km_actual != null ? String(v.km_actual) : '',
+            estado: v.estado, km_actual: v.km_ficha != null ? String(v.km_ficha) : '',
             observacion: v.observacion ?? '', activo: v.activo,
+            mant_intervalo_km: String(v.mant_intervalo_km ?? 8000), mant_base_km: v.mant_base_km != null ? String(v.mant_base_km) : '',
         });
         setErrores({}); setAbierto(true);
     }
@@ -114,7 +121,7 @@ export default function Vehiculos({ vehiculos, choferes, puede }: Props) {
                         {v.placa}
                     </span>
                     <div className="min-w-0">
-                        <p className="font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                        <p className="font-medium truncate hover:underline" style={{ color: 'var(--color-text)' }}>
                             {[v.marca, v.modelo].filter(Boolean).join(' ') || '—'}{v.anio ? <span style={{ color: 'var(--color-text-muted)' }}> · {v.anio}</span> : null}
                         </p>
                         {v.tipo && <p className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>{v.tipo}</p>}
@@ -145,16 +152,24 @@ export default function Vehiculos({ vehiculos, choferes, puede }: Props) {
             render: v => <span className="tabular-nums">{v.km_actual != null ? Number(v.km_actual).toLocaleString('es-PE') : '—'}</span>,
         },
         {
+            key: 'mantenimiento', label: 'Preventivo', sortKey: 'mantenimiento.faltan',
+            render: v => <MantenimientoChip m={v.mantenimiento} />,
+            exportValue: v => v.mantenimiento.faltan ?? '',
+        },
+        {
             key: 'viajes_mes', label: 'Viajes del mes', align: 'right',
             render: v => <span className="tabular-nums font-semibold">{v.viajes_mes}</span>,
         },
         {
             key: 'acciones', label: '', sortable: false,
             render: v => (
-                <TableActions
-                    onEdit={puede.editar ? () => editar(v) : undefined}
-                    onDelete={puede.eliminar && v.activo ? () => setBorrar(v) : undefined}
-                />
+                // La fila abre la ficha: las acciones no deben abrirla también.
+                <span onClick={e => e.stopPropagation()}>
+                    <TableActions
+                        onEdit={puede.editar ? () => editar(v) : undefined}
+                        onDelete={puede.eliminar && v.activo ? () => setBorrar(v) : undefined}
+                    />
+                </span>
             ),
         },
     ];
@@ -173,7 +188,8 @@ export default function Vehiculos({ vehiculos, choferes, puede }: Props) {
                 columns={columnas}
                 searchPlaceholder="Buscar placa, marca o chofer…"
                 emptyMessage="Todavía no hay vehículos. Agrega el primero con «Nuevo vehículo»."
-                rowClassName={v => (v.activo ? '' : 'opacity-60')}
+                rowClassName={v => (v.activo ? 'cursor-pointer' : 'opacity-60 cursor-pointer')}
+                onRowClick={v => router.visit(route('flota.vehiculos.show', v.id))}
                 exportable
                 exportFilename="vehiculos"
             />
@@ -209,7 +225,14 @@ export default function Vehiculos({ vehiculos, choferes, puede }: Props) {
                         <Input label="Tarjeta de circulación / habilitación MTC" value={form.tarjeta_circulacion}
                             hint="Va en la guía de remisión si la piden" onChange={e => set('tarjeta_circulacion', e.target.value)} error={errores.tarjeta_circulacion} />
                         <Input label="Kilometraje actual" type="number" inputMode="decimal" min={0} value={form.km_actual}
-                            onChange={e => set('km_actual', e.target.value)} error={errores.km_actual} />
+                            hint="Después sube solo con cada carga de combustible" onChange={e => set('km_actual', e.target.value)} error={errores.km_actual} />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Input label="Preventivo cada (km)" type="number" inputMode="numeric" min={500} value={form.mant_intervalo_km}
+                            onChange={e => set('mant_intervalo_km', e.target.value)} error={errores.mant_intervalo_km} />
+                        <Input label="Km del último preventivo" type="number" inputMode="decimal" min={0} value={form.mant_base_km}
+                            hint="Solo para empezar: luego se toma del último mantenimiento registrado"
+                            onChange={e => set('mant_base_km', e.target.value)} error={errores.mant_base_km} />
                     </div>
                     <Input label="Observación" value={form.observacion} onChange={e => set('observacion', e.target.value)} error={errores.observacion} />
                     {editando && <Switch label="Activo" checked={form.activo} onChange={v => set('activo', v)} />}

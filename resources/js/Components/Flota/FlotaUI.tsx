@@ -135,3 +135,42 @@ export function fmtDia(ymd: string): string {
 }
 
 export const IconoEntregado = PackageCheck;
+
+export interface EstadoMantenimiento {
+    intervalo: number;
+    ultimo_km: number | null;
+    proximo_km: number | null;
+    faltan: number | null;
+    estado: 'ok' | 'pronto' | 'vencido' | 'sin_datos';
+}
+
+export function fmtKm(km: number | null | undefined): string {
+    return `${Math.round(Number(km ?? 0)).toLocaleString('es-PE')} km`;
+}
+
+/** "Faltan 1,250 km" / "Pasó 300 km". Verde, ámbar desde 500 km, rojo al pasarse. */
+export function MantenimientoChip({ m }: { m: EstadoMantenimiento }) {
+    if (m.estado === 'sin_datos' || m.faltan === null) {
+        return <span className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>Sin preventivo registrado</span>;
+    }
+    const color = m.estado === 'vencido' ? 'var(--vp-coral-ink)' : m.estado === 'pronto' ? 'var(--vp-amber-ink)' : 'var(--vp-mint-ink)';
+    return (
+        <Pastilla color={color}>
+            {m.estado === 'vencido' ? `Pasó ${fmtKm(Math.abs(m.faltan))}` : `Faltan ${fmtKm(m.faltan)}`}
+        </Pastilla>
+    );
+}
+
+export function EstadoDocumentoBadge({ estado, vence }: { estado: 'vigente' | 'por_vencer' | 'vencido' | null; vence?: string | null }) {
+    if (!estado) return <span className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>Sin vencimiento</span>;
+    const map = {
+        vigente:    { color: 'var(--vp-mint-ink)',  label: 'Vigente' },
+        por_vencer: { color: 'var(--vp-amber-ink)', label: 'Por vencer' },
+        vencido:    { color: 'var(--vp-coral-ink)', label: 'Vencido' },
+    }[estado];
+    return (
+        <Pastilla color={map.color}>
+            {map.label}{vence ? <span className="font-normal opacity-80 tabular-nums">· {fmtFechaCorta(vence)}</span> : null}
+        </Pastilla>
+    );
+}

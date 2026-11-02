@@ -22,7 +22,24 @@ class GastoController extends Controller
     public function __construct(
         private LocalScopeService $scope,
         private TesoreriaService $tesoreria,
+        private \App\Services\FlotaService $flota,
     ) {}
+
+    /**
+     * Flota (si la empresa la usa): placas y choferes para cargar un gasto a un
+     * camión y llenar la ficha de combustible / mantenimiento. null = sin flota.
+     */
+    public static function datosFlota(\App\Models\User $user): ?array
+    {
+        if (!\App\Support\Flota::activa($user->empresa)) return null;
+
+        return [
+            'vehiculos'   => \App\Models\Vehiculo::deEmpresa($user->empresa_id)->activo()->orderBy('placa')
+                ->get(['id', 'placa', 'marca', 'modelo', 'conductor_id']),
+            'conductores' => \App\Models\Conductor::deEmpresa($user->empresa_id)->activo()->where('tipo', 'chofer')
+                ->orderBy('nombres')->get(['id', 'nombres', 'apellidos'])->map(fn ($c) => ['id' => $c->id, 'nombre' => $c->nombre_completo]),
+        ];
+    }
 
     public function index(Request $request)
     {
@@ -36,7 +53,8 @@ class GastoController extends Controller
             // SoftDeletes ya oculta los eliminados.
             ->when($mostrar === 'eliminados', fn ($q) => $q->onlyTrashed())
             ->when($mostrar === 'todos', fn ($q) => $q->withTrashed())
-            ->with(['tipo', 'concepto', 'user', 'local', 'turno'])
+            ->with(['tipo', 'concepto', 'user', 'local', 'turno', 'vehiculo:id,placa', 'combustible', 'mantenimiento'])
+            ->when($request->input('vehiculo_id'), fn($q, $v) => $q->where('vehiculo_id', $v))
             ->when($request->input('tipo_id'), fn($q, $v) => $q->where('gasto_tipo_id', $v))
             ->when($request->input('concepto_id'), fn($q, $v) => $q->where('gasto_concepto_id', $v))
             ->when($request->input('fecha_desde'), fn($q, $v) => $q->where('fecha', '>=', $v))
@@ -67,40 +85,44 @@ class GastoController extends Controller
 
         $gastos = $query->orderByDesc('fecha')->orderByDesc('id')->paginate(25)->withQueryString();
 
-        $tipos = GastoTipo::deEmpresa($user->empresa_id)->activo()
-            ->with(['conceptos' => fn($q) => $q->activo()->orderBy('nombre')])
-            ->orderBy('nombre')->get();
-
-        $locales = $this->scope->localesVisibles($user);
-
-        $esAdmin = $user->rol->es_admin;
-
-        // Para admin: cargar turnos abiertos de la empresa para asignar gastos
-        $turnosAbiertos = [];
-        if ($esAdmin) {
-            $turnosAbiertos = Turno::deEmpresa($user->empresa_id)
-                ->abierto()
-                ->with(['caja', 'user'])
-                ->get();
-        }
+        $form = $this->datosFormulario($user);
 
         return Inertia::render('Gastos/Index', [
             'gastos'          => $gastos,
-            'tipos'           => $tipos,
             'scope'           => $scope,
             'mostrar'         => $mostrar,
             'buscar'          => $request->input('buscar', ''),
-            'locales'         => $locales,
-            'turnosAbiertos'  => $turnosAbiertos,
-            'esAdmin'         => $esAdmin,
+        ] + $form);
+    }
+
+    /**
+     * Lo que necesita el modal de gasto (tipos con conceptos, locales, turnos
+     * abiertos, métodos de pago con cuentas y la flota). Lo comparten Gastos y
+     * la ficha del vehículo, que abre el mismo modal ya con la placa puesta.
+     */
+    public function datosFormulario(User $user): array
+    {
+        $esAdmin = $user->rol->es_admin;
+
+        return [
+            'tipos'          => GastoTipo::deEmpresa($user->empresa_id)->activo()
+                ->with(['conceptos' => fn($q) => $q->activo()->orderBy('nombre')])
+                ->orderBy('nombre')->get(),
+            'locales'        => $this->scope->localesVisibles($user),
+            // Para admin: turnos abiertos de la empresa para asignar gastos.
+            'turnosAbiertos' => $esAdmin
+                ? Turno::deEmpresa($user->empresa_id)->abierto()->with(['caja', 'user'])->get()
+                : [],
+            'esAdmin'        => $esAdmin,
+            'flota'          => self::datosFlota($user),
             // Métodos de pago con sus cuentas (mismo patrón que el POS): el modal
             // muestra el método y, si tiene cuentas, un segundo select de cuenta.
             // La relación cuentas() usa withPivot('id') → cada cuenta trae pivot.id
             // (el cuenta_metodo_pago_id que el backend resuelve a una cuenta real).
-            'metodosPago'     => \App\Models\MetodoPago::deEmpresa($user->empresa_id)->activo()
+            'metodosPago'    => \App\Models\MetodoPago::deEmpresa($user->empresa_id)->activo()
                 ->with(['tipo:id,slug,nombre', 'cuentas' => fn($q) => $q->where('activo', true)])
                 ->orderBy('nombre')->get(),
-        ]);
+        ];
     }
 
     public function store(StoreGastoRequest $request)
@@ -164,6 +186,10 @@ class GastoController extends Controller
 
             // F7 — Tesorería: el gasto sale de la cuenta resuelta (efectivo por defecto).
             $gasto->load('concepto');
+            // Flota: placa y ficha de combustible / mantenimiento, en la misma
+            // transacción (un km inválido revierte también el gasto).
+            $this->flota->sincronizarGasto($gasto, $request->all());
+
             $this->tesoreria->registrar(
                 $user->empresa_id,
                 $gasto->cuenta_id, // null → efectivo
@@ -190,7 +216,11 @@ class GastoController extends Controller
         // entrega del efectivo (sin reabrirlo). El no-admin, con sus reglas.
         if ($user->rol?->es_admin && $this->soloCambiaComentario($request, $gasto)) {
             $antes = $gasto->comentario;
-            $gasto->update(['comentario' => $request->input('comentario')]);
+            DB::transaction(function () use ($gasto, $request) {
+                $gasto->update(['comentario' => $request->input('comentario')]);
+                // La ficha de flota (km, galones, placa) no mueve dinero.
+                $this->flota->sincronizarGasto($gasto, $request->all());
+            });
             AuditoriaService::log('gasto.editado', $gasto, [
                 'antes'   => ['comentario' => $antes],
                 'despues' => ['comentario' => $gasto->comentario],
@@ -234,6 +264,8 @@ class GastoController extends Controller
             // F7 — Reasentar tesorería: se revierte el egreso anterior y se
             // registra el nuevo con el monto/fecha/cuenta ya actualizados.
             $gasto->load('concepto');
+            $this->flota->sincronizarGasto($gasto, $request->all());
+
             $this->tesoreria->revertir('gasto', $gasto->id);
             $this->tesoreria->registrar(
                 $user->empresa_id,

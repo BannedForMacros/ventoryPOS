@@ -10,7 +10,10 @@ class GastoConcepto extends Model
 {
     protected $table = 'gasto_conceptos';
 
-    protected $fillable = ['empresa_id', 'gasto_tipo_id', 'nombre', 'activo'];
+    protected $fillable = ['empresa_id', 'gasto_tipo_id', 'nombre', 'activo', 'flota_uso'];
+
+    /** Flota: el gasto de este concepto es 'combustible' o 'mantenimiento' de un vehículo. */
+    public const FLOTA_USOS = ['combustible', 'mantenimiento'];
 
     protected function casts(): array
     {

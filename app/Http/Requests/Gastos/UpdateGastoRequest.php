@@ -48,7 +48,7 @@ class UpdateGastoRequest extends FormRequest
                     }
                 },
             ],
-        ];
+        ] + \App\Support\Flota::reglasGasto();
     }
 
     public function withValidator($validator): void

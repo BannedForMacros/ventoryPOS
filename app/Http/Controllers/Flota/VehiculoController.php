@@ -23,16 +23,26 @@ class VehiculoController extends Controller
         // El viaje en ruta de cada vehículo: de ahí sale "En ruta".
         $enRuta = Viaje::deEmpresa($empresaId)->where('estado', 'en_ruta')->pluck('numero', 'vehiculo_id');
 
+        $flota = app(\App\Services\FlotaService::class);
+
         $vehiculos = Vehiculo::deEmpresa($empresaId)
             ->with('conductor:id,nombres,apellidos')
             ->withCount(['viajes as viajes_mes' => fn ($q) => $q->where('estado', '<>', 'anulado')
                 ->where('fecha', '>=', now()->startOfMonth()->toDateString())])
             ->orderByDesc('activo')->orderBy('placa')
-            ->get()
+            ->get();
+        // El km real: el mayor entre la ficha y sus cargas / mantenimientos.
+        $km = $flota->kmActual($vehiculos->pluck('id')->all());
+
+        $vehiculos = $vehiculos
             ->map(fn (Vehiculo $v) => [
-                ...$v->only(['id', 'placa', 'marca', 'modelo', 'anio', 'tipo', 'tarjeta_circulacion', 'conductor_id', 'estado', 'observacion', 'activo']),
+                ...$v->only(['id', 'placa', 'marca', 'modelo', 'anio', 'tipo', 'tarjeta_circulacion', 'conductor_id', 'estado', 'observacion', 'activo', 'mant_intervalo_km']),
                 'capacidad_kg' => $v->capacidad_kg !== null ? (float) $v->capacidad_kg : null,
-                'km_actual'    => $v->km_actual !== null ? (float) $v->km_actual : null,
+                // En el formulario se edita el km escrito a mano; en la tabla se ve el real.
+                'km_ficha'     => $v->km_actual !== null ? (float) $v->km_actual : null,
+                'km_actual'    => (float) ($km[$v->id] ?? 0) ?: null,
+                'mant_base_km' => $v->mant_base_km !== null ? (float) $v->mant_base_km : null,
+                'mantenimiento' => $flota->mantenimiento($v, (float) ($km[$v->id] ?? 0)),
                 'conductor'    => $v->conductor?->nombre_completo,
                 'en_ruta'      => $enRuta[$v->id] ?? null,
                 'viajes_mes'   => $v->viajes_mes,
@@ -111,6 +121,9 @@ class VehiculoController extends Controller
                 ->where('empresa_id', $empresaId)->where('tipo', Conductor::CHOFER)],
             'estado'              => ['required', Rule::in(Vehiculo::ESTADOS)],
             'km_actual'           => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            // Preventivo cada X km; el km base es el último servicio antes de usar el sistema.
+            'mant_intervalo_km'   => ['nullable', 'integer', 'min:500', 'max:200000'],
+            'mant_base_km'        => ['nullable', 'numeric', 'min:0', 'max:99999999'],
             'observacion'         => ['nullable', 'string', 'max:255'],
             'activo'              => ['nullable', 'boolean'],
         ], [
@@ -124,6 +137,7 @@ class VehiculoController extends Controller
         ]);
 
         $data['activo'] = $data['activo'] ?? ($vehiculo?->activo ?? true);
+        $data['mant_intervalo_km'] = (int) ($data['mant_intervalo_km'] ?? null ?: ($vehiculo?->mant_intervalo_km ?? 8000));
         foreach (['marca', 'modelo', 'tipo', 'tarjeta_circulacion', 'observacion'] as $k) {
             $data[$k] = isset($data[$k]) && trim($data[$k]) !== '' ? trim($data[$k]) : null;
         }

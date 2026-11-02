@@ -54,6 +54,7 @@ use App\Http\Controllers\Inventario\CierreInventarioController;
 use App\Http\Controllers\GuiaRemisionController;
 use App\Http\Controllers\Inventario\DespachoController;
 use App\Http\Controllers\Flota\ConductorController;
+use App\Http\Controllers\Flota\FlotaController;
 use App\Http\Controllers\Flota\VehiculoController;
 use App\Http\Controllers\Flota\ViajeController;
 use App\Http\Controllers\Inventario\EntradaController;
@@ -310,6 +311,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     | stock por su cuenta. Entregar una parada usa la misma entrega de Despachos.
     */
     Route::prefix('flota')->name('flota.')->group(function () {
+        // Fase B: resumen (alertas y utilidad por placa), ficha del vehículo y
+        // documentos. El combustible y el mantenimiento son gastos (GastoController).
+        Route::middleware('permiso:flota.resumen,ver')->get('/', [FlotaController::class, 'resumen'])->name('resumen');
+        Route::middleware('permiso:flota.resumen,editar')->put('conceptos', [FlotaController::class, 'conceptos'])->name('conceptos');
+        Route::middleware('permiso:flota.vehiculos,ver')->get('vehiculos/{vehiculo}', [FlotaController::class, 'vehiculo'])->name('vehiculos.show');
+        Route::middleware('permiso:flota.vehiculos,editar')->post('vehiculos/{vehiculo}/documentos', [FlotaController::class, 'guardarDocumento'])->name('documentos.store');
+        Route::middleware('permiso:flota.vehiculos,editar')->post('vehiculos/{vehiculo}/documentos/{documento}', [FlotaController::class, 'guardarDocumento'])->name('documentos.update');
+        Route::middleware('permiso:flota.vehiculos,editar')->delete('documentos/{documento}', [FlotaController::class, 'eliminarDocumento'])->name('documentos.destroy');
+        Route::middleware('permiso:flota.vehiculos,ver')->get('documentos/{documento}/archivo', [FlotaController::class, 'archivoDocumento'])->name('documentos.archivo');
+
         Route::middleware('permiso:flota.vehiculos,ver')->get('vehiculos', [VehiculoController::class, 'index'])->name('vehiculos.index');
         Route::middleware('permiso:flota.vehiculos,crear')->post('vehiculos', [VehiculoController::class, 'store'])->name('vehiculos.store');
         Route::middleware('permiso:flota.vehiculos,editar')->put('vehiculos/{vehiculo}', [VehiculoController::class, 'update'])->name('vehiculos.update');

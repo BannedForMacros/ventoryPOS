@@ -280,6 +280,8 @@ export interface GastoConcepto extends Record<string, unknown> {
     gasto_tipo_id:  number;
     nombre:         string;
     activo:         boolean;
+    /** Flota: el gasto de este concepto pide su ficha de combustible o mantenimiento. */
+    flota_uso?:     'combustible' | 'mantenimiento' | null;
     created_at:     string;
     updated_at:     string;
 }
@@ -307,6 +309,11 @@ export interface Gasto extends Record<string, unknown> {
     cuenta_id?:         number | null;
     fecha:              string;
     comentario:         string | null;
+    /** Flota: placa a la que se carga el gasto y su ficha técnica. */
+    vehiculo_id?:       number | null;
+    vehiculo?:          { id: number; placa: string } | null;
+    combustible?:       { km: string; galones: string; tanque_lleno: boolean; conductor_id: number | null; grifo: string | null } | null;
+    mantenimiento?:     { tipo: 'preventivo' | 'correctivo'; km: string | null; taller: string | null; detalle: string | null; dias_parado: number | null } | null;
     tipo?:              GastoTipo;
     concepto?:          GastoConcepto;
     user?:              User;
@@ -688,3 +695,9 @@ export type PageProps<T extends Record<string, unknown> = Record<string, unknown
     turno_activo: (Turno & { caja: Caja }) | null;
     alertasCotizaciones?: AlertasCotizaciones | null;
 };
+
+/** Flota en el modal de gasto: placas y choferes (null si la empresa no usa flota). */
+export interface FlotaGasto {
+    vehiculos:   { id: number; placa: string; marca: string | null; modelo: string | null; conductor_id: number | null }[];
+    conductores: { id: number; nombre: string }[];
+}
