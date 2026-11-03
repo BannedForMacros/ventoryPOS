@@ -274,3 +274,43 @@ it('sin flota, el gasto ignora la placa y la ficha', function () {
     expect(Gasto::latest('id')->first()->vehiculo_id)->toBeNull()
         ->and(VehiculoCombustible::count())->toBe(0);
 });
+
+it('SOAT y revisión técnica desde la ficha del vehículo: renovar deja el anterior de historial', function () {
+    $this->withoutVite();
+    $hoy = now()->startOfDay();
+    $this->post(route('flota.vehiculos.store'), [
+        'placa' => 'ABC-123', 'estado' => 'disponible',
+        'soat_vence' => $hoy->copy()->addDays(10)->toDateString(), 'soat_numero' => 'P-1',
+        'revision_vence' => $hoy->copy()->addYear()->toDateString(),
+    ])->assertSessionHasNoErrors();
+    $v = Vehiculo::where('placa', 'ABC-123')->firstOrFail();
+    expect(VehiculoDocumento::where('vehiculo_id', $v->id)->pluck('tipo')->sort()->values()->all())->toBe(['Revisión técnica', 'SOAT']);
+
+    // Corregir el número con la misma fecha: no duplica.
+    $base = ['placa' => 'ABC-123', 'estado' => 'disponible', 'revision_vence' => $hoy->copy()->addYear()->toDateString()];
+    $this->put(route('flota.vehiculos.update', $v->id), $base + ['soat_vence' => $hoy->copy()->addDays(10)->toDateString(), 'soat_numero' => 'P-1b'])->assertSessionHasNoErrors();
+    expect(VehiculoDocumento::where('vehiculo_id', $v->id)->where('tipo', 'SOAT')->count())->toBe(1)
+        ->and(VehiculoDocumento::where('vehiculo_id', $v->id)->where('tipo', 'SOAT')->value('numero'))->toBe('P-1b');
+
+    // Renovar: fecha posterior = documento nuevo; el viejo queda.
+    $this->put(route('flota.vehiculos.update', $v->id), $base + ['soat_vence' => $hoy->copy()->addYear()->toDateString(), 'soat_numero' => 'P-2'])->assertSessionHasNoErrors();
+    expect(VehiculoDocumento::where('vehiculo_id', $v->id)->where('tipo', 'SOAT')->count())->toBe(2);
+
+    // La lista muestra el vigente, y las alertas ya no avisan del viejo.
+    $this->get(route('flota.vehiculos.index'))->assertInertia(fn ($p) => $p
+        ->where('vehiculos.0.soat.numero', 'P-2')->where('vehiculos.0.soat.estado', 'vigente')
+        ->where('vehiculos.0.revision.estado', 'vigente'));
+    expect(collect(app(FlotaService::class)->alertas($this->env->empresa->id))->where('tipo', 'documento')->where('vehiculo_id', $v->id))->toBeEmpty();
+});
+
+it('la referencia trae el último tanque lleno y las parciales de después, y el historial la cuenta', function () {
+    fbCarga($this, 1000, 10, 160, true, now()->subDays(4)->toDateString())->assertSessionHasNoErrors();
+    fbCarga($this, 1200, 5, 80, false, now()->subDays(3)->toDateString())->assertSessionHasNoErrors();
+
+    $r = $this->getJson(route('gastos.km-referencia', ['vehiculo_id' => $this->camion->id, 'fecha' => now()->toDateString()]))->json();
+    expect($r['lleno']['km'])->toEqual(1000)->and($r['lleno']['galones_despues'])->toEqual(5)->and($r['lleno']['monto_despues'])->toEqual(80);
+
+    fbCarga($this, 1400, 10, 160, true, now()->subDay()->toDateString())->assertSessionHasNoErrors();
+    $tramo = app(FlotaService::class)->rendimiento($this->camion->id)['cargas'][0]['tramo'];
+    expect($tramo)->toEqual(['km' => 400, 'galones' => 15, 'monto' => 240]);
+});

@@ -8,8 +8,8 @@ import Button from '@/Components/UI/Button';
 import Table, { Column } from '@/Components/UI/Table';
 import Modal from '@/Components/UI/Modal';
 import TableActions from '@/Components/UI/TableActions';
-import { MantenimientoChip, Pastilla, fmtKg, type EstadoMantenimiento } from '@/Components/Flota/FlotaUI';
-import ModalVehiculo, { ESTADOS_VEHICULO as ESTADOS, type EstadoVehiculo } from '@/Components/Flota/ModalVehiculo';
+import { EstadoDocumentoBadge, MantenimientoChip, Pastilla, fmtKg, type EstadoMantenimiento } from '@/Components/Flota/FlotaUI';
+import ModalVehiculo, { ESTADOS_VEHICULO as ESTADOS, type DocumentoClave, type EstadoVehiculo } from '@/Components/Flota/ModalVehiculo';
 import type { PageProps } from '@/types';
 
 interface Vehiculo extends Record<string, unknown> {
@@ -33,6 +33,8 @@ interface Vehiculo extends Record<string, unknown> {
     activo: boolean;
     en_ruta: string | null;
     viajes_mes: number;
+    soat: DocumentoClave | null;
+    revision: DocumentoClave | null;
 }
 
 interface Props extends PageProps {
@@ -99,6 +101,16 @@ export default function Vehiculos({ vehiculos, choferes, puede }: Props) {
             key: 'mantenimiento', label: 'Preventivo', sortKey: 'mantenimiento.faltan',
             render: v => <MantenimientoChip m={v.mantenimiento} />,
             exportValue: v => v.mantenimiento.faltan ?? '',
+        },
+        {
+            key: 'soat', label: 'SOAT', sortKey: 'soat.vence',
+            render: v => v.soat?.vence ? <EstadoDocumentoBadge estado={v.soat.estado} vence={v.soat.vence} /> : <span className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>Sin registrar</span>,
+            exportValue: v => v.soat?.vence ?? '',
+        },
+        {
+            key: 'revision', label: 'Revisión técnica', sortKey: 'revision.vence',
+            render: v => v.revision?.vence ? <EstadoDocumentoBadge estado={v.revision.estado} vence={v.revision.vence} /> : <span className="text-[13px]" style={{ color: 'var(--color-text-muted)' }}>Sin registrar</span>,
+            exportValue: v => v.revision?.vence ?? '',
         },
         {
             key: 'viajes_mes', label: 'Viajes del mes', align: 'right',

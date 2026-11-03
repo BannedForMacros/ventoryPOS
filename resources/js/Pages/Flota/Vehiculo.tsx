@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import toast from 'react-hot-toast';
 import { AlertTriangle, FileText, Fuel, Gauge, Paperclip, Plus, Receipt, Route as RutaIcono, Trash2, Truck, Wrench } from 'lucide-react';
@@ -19,6 +19,8 @@ import type { FlotaGasto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Tur
 interface Carga {
     id: number; gasto_id: number; fecha: string; km: number; km_recorridos: number | null; galones: number; monto: number;
     tanque_lleno: boolean; grifo: string | null; conductor: string | null; rendimiento: number | null; costo_km: number | null; anormal: boolean;
+    /** Km, galones y soles del tramo entre dos llenadas (la cuenta del rendimiento). */
+    tramo: { km: number; galones: number; monto: number } | null;
 }
 interface Mant { id: number; gasto_id: number; tipo: 'preventivo' | 'correctivo'; fecha: string; monto: number; km: number | null; taller: string | null; detalle: string | null; dias_parado: number | null }
 interface Documento { id: number; tipo: string; numero: string | null; emision: string | null; vence: string | null; estado: 'vigente' | 'por_vencer' | 'vencido' | null; archivo: boolean; archivo_nombre: string | null; observacion: string | null }
@@ -177,6 +179,7 @@ export default function FlotaVehiculo(props: Props) {
             </div>
 
             <section className="rounded-2xl overflow-hidden" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                {pestana === 'combustible' && <ComoSeCalcula cargas={combustible.cargas} />}
                 {pestana === 'combustible' && (
                     <Lista vacio="Todavía no hay cargas de combustible de esta placa." filas={combustible.cargas} render={c => (
                         <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
@@ -188,7 +191,12 @@ export default function FlotaVehiculo(props: Props) {
                             <Dato titulo="Galones" valor={`${c.galones}`} sub={c.tanque_lleno ? 'tanque lleno' : 'parcial'} />
                             <Dato titulo="Monto" valor={soles(c.monto)} />
                             <Dato titulo="Rendimiento" valor={c.rendimiento !== null ? `${c.rendimiento} km/gal` : '—'}
-                                sub={c.costo_km !== null ? `${soles(c.costo_km)}/km` : undefined} alerta={c.anormal} />
+                                sub={c.costo_km !== null ? `${soles(c.costo_km)}/km` : c.tanque_lleno ? 'primera llenada' : 'se suma a la próxima llenada'} alerta={c.anormal} />
+                            {c.tramo && (
+                                <span className="text-[12px] tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
+                                    {fmtKm(c.tramo.km)} ÷ {c.tramo.galones} gal · {soles(c.tramo.monto)} ÷ {fmtKm(c.tramo.km)}
+                                </span>
+                            )}
                             <span className="text-[13px] ml-auto" style={{ color: 'var(--color-text-muted)' }}>{c.conductor ?? ''}</span>
                             {c.anormal && <Pastilla color="var(--vp-coral-ink)" icono={<AlertTriangle size={12} />}>Consumo alto</Pastilla>}
                         </div>
@@ -390,6 +398,38 @@ function ModalDocumento({ vehiculoId, doc, tipos, onClose }: { vehiculoId: numbe
                 <Input label="Observación" value={form.observacion} onChange={e => setForm(f => ({ ...f, observacion: e.target.value }))} placeholder="Opcional" />
             </div>
         </Modal>
+    );
+}
+
+/**
+ * Cómo salen el rendimiento y el costo por km, con la última llenada como
+ * ejemplo. Sin esto el número «12 km/gal» no se entiende ni se confía en él.
+ */
+function ComoSeCalcula({ cargas }: { cargas: Carga[] }) {
+    const ej = cargas.find(c => c.tramo);
+    const pasos: [string, ReactNode][] = [
+        ['1. Cada vez que le echan', <>Registra el <b>km del tablero</b> y los <b>galones</b> del voucher, con lo pagado.</>],
+        ['2. Km por galón', ej?.tramo
+            ? <>De una llenada a la otra: <b className="tabular-nums">{fmtKm(ej.tramo.km)} ÷ {ej.tramo.galones} gal = {ej.rendimiento} km/gal</b></>
+            : <>De una llenada hasta el tope a la siguiente: km recorridos ÷ galones echados en ese tramo.</>],
+        ['3. Costo por km', ej?.tramo
+            ? <>Lo pagado en ese tramo: <b className="tabular-nums">{soles(ej.tramo.monto)} ÷ {fmtKm(ej.tramo.km)} = {soles(ej.costo_km)} por km</b></>
+            : <>Soles pagados en ese tramo ÷ km recorridos.</>],
+    ];
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-px" style={{ backgroundColor: 'var(--color-border)', borderBottom: '1px solid var(--color-border)' }}>
+            {pasos.map(([t, d]) => (
+                <div key={t} className="p-3" style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 4%, var(--color-surface))' }}>
+                    <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: 'var(--vp-navy)' }}>{t}</p>
+                    <p className="text-[13px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{d}</p>
+                </div>
+            ))}
+            {!ej && (
+                <p className="md:col-span-3 px-3 py-2 text-[12px]" style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
+                    Para medir hacen falta <b>dos llenadas hasta el tope</b>. Las cargas parciales de en medio se suman a la siguiente llenada.
+                </p>
+            )}
+        </div>
     );
 }
 

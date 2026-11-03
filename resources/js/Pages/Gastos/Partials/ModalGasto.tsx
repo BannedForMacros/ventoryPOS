@@ -7,10 +7,9 @@ import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
 import BotonGuardar, { ErroresSueltos, useProblema, type Problema } from '@/Components/UI/BotonGuardar';
 import type { FlotaGasto, Gasto, GastoConcepto, GastoTipo, Local, MetodoPagoConCuentas, PageProps, Turno } from '@/types';
-import Switch from '@/Components/UI/Switch';
 import { Fuel, Wrench } from 'lucide-react';
 import { hoyLocal, esFutura } from '@/lib/fechas';
-import { AvisosLectura, PistaKm, revisarLectura, useReferenciaKm } from '@/Components/Flota/RevisionKm';
+import { AvisosLectura, CalculoRendimiento, PistaKm, revisarLectura, useReferenciaKm } from '@/Components/Flota/RevisionKm';
 
 export interface GastoForm {
     gasto_tipo_id:         number | '';
@@ -225,8 +224,8 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
         if (!form.gasto_tipo_id) return { texto: 'Elige el tipo de gasto', campo: 'gasto_tipo_id' };
         if (!form.gasto_concepto_id) return { texto: 'Elige el concepto', campo: 'gasto_concepto_id' };
         if (usoFlota && !form.vehiculo_id) return { texto: 'Elige el vehículo', campo: 'vehiculo_id' };
-        if (usoFlota === 'combustible' && form.combustible.km.trim() === '') return { texto: 'Escribe el km del odómetro', campo: 'combustible.km' };
-        if (usoFlota === 'combustible' && !(Number(form.combustible.galones) > 0)) return { texto: 'Escribe los galones', campo: 'combustible.galones' };
+        if (usoFlota === 'combustible' && form.combustible.km.trim() === '') return { texto: 'Escribe el km que marca el tablero', campo: 'combustible.km' };
+        if (usoFlota === 'combustible' && !(Number(form.combustible.galones) > 0)) return { texto: 'Escribe los galones que le echaron', campo: 'combustible.galones' };
         if (usoFlota === 'mantenimiento' && form.mantenimiento.tipo === 'preventivo' && form.mantenimiento.km.trim() === '') return { texto: 'Escribe el km del preventivo', campo: 'mantenimiento.km' };
         if (form.monto.trim() === '') return { texto: 'Escribe el monto', campo: 'monto' };
         const monto = Number(form.monto);
@@ -354,7 +353,7 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                 />
 
                 <Input
-                    label="Monto (S/)"
+                    label={usoFlota === 'combustible' ? 'Monto pagado en el grifo (S/)' : 'Monto (S/)'}
                     type="number"
                     step="0.01"
                     min="0.01"
@@ -398,24 +397,48 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
 
                         {usoFlota === 'combustible' && (
                             <>
-                                <p className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}><Fuel size={14} /> Carga de combustible</p>
+                                <div>
+                                    <p className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}><Fuel size={14} /> Carga de combustible</p>
+                                    <p className="text-[13px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                                        Regístrala <b>cada vez que le echan combustible</b>, en el grifo: el km que marca el tablero en ese momento y los galones del voucher.
+                                    </p>
+                                </div>
                                 <div className="grid grid-cols-2 gap-3">
-                                    <Input label="Km del odómetro" type="number" inputMode="decimal" min="0" required data-campo="combustible.km"
-                                        placeholder={refKm?.previo ? `Más de ${Math.round(refKm.previo.km).toLocaleString('en-US')}` : undefined}
+                                    <Input label="Km que marca el tablero" type="number" inputMode="numeric" min="0" required data-campo="combustible.km"
+                                        placeholder={refKm?.previo ? `Más de ${Math.round(refKm.previo.km).toLocaleString('en-US')}` : 'Odómetro'}
                                         value={form.combustible.km} onChange={e => setComb('km', e.target.value)} error={errVivo('combustible.km')} disabled={saving} />
-                                    <Input label="Galones" type="number" inputMode="decimal" min="0" step="0.001" required data-campo="combustible.galones"
+                                    <Input label="Galones que le echaron" type="number" inputMode="decimal" min="0" step="0.001" required data-campo="combustible.galones"
+                                        placeholder="Del voucher"
                                         value={form.combustible.galones} onChange={e => setComb('galones', e.target.value)} error={errVivo('combustible.galones')} disabled={saving} />
                                 </div>
                                 <PistaKm referencia={refKm} notas={revision?.notas ?? []} />
                                 <AvisosLectura avisos={revision?.avisos ?? []} confirmado={avisosOk} onConfirmar={v => setAvisosConfirmados(v ? clavesAvisos : '')} />
+
+                                <div role="radiogroup" aria-label="¿Llenaron el tanque?" className="grid grid-cols-2 gap-2">
+                                    {([[true, 'Llenó el tanque', 'Hasta el tope: sirve para medir cuánto rinde'], [false, 'Solo una parte', 'Se suma a la próxima llenada']] as const).map(([v, t, d]) => {
+                                        const activo = form.combustible.tanque_lleno === v;
+                                        return (
+                                            <button key={t} type="button" role="radio" aria-checked={activo} onClick={() => setComb('tanque_lleno', v)} disabled={saving}
+                                                className="rounded-lg px-3 py-2 text-left border transition-colors duration-150"
+                                                style={{
+                                                    borderColor: activo ? 'var(--vp-navy)' : 'var(--color-border)',
+                                                    backgroundColor: activo ? 'color-mix(in srgb, var(--vp-navy) 7%, var(--color-surface))' : 'var(--color-surface)',
+                                                }}>
+                                                <span className="block text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{t}</span>
+                                                <span className="block text-[12px]" style={{ color: 'var(--color-text-muted)' }}>{d}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <CalculoRendimiento referencia={refKm} kmTexto={form.combustible.km} galonesTexto={form.combustible.galones}
+                                    montoTexto={form.monto} tanqueLleno={form.combustible.tanque_lleno} />
+
                                 <div className="grid grid-cols-2 gap-3">
                                     <Select label="Chofer" value={form.combustible.conductor_id} placeholder="Sin indicar"
                                         onChange={v => setComb('conductor_id', Number(v) || '')}
                                         options={[{ value: '', label: 'Sin indicar' }, ...flota.conductores.map(c => ({ value: c.id, label: c.nombre }))]} disabled={saving} />
                                     <Input label="Grifo" value={form.combustible.grifo} onChange={e => setComb('grifo', e.target.value)} placeholder="Opcional" error={err('combustible.grifo')} disabled={saving} />
                                 </div>
-                                <Switch label="Tanque lleno" description="El rendimiento (km por galón) se calcula entre dos llenadas completas."
-                                    checked={form.combustible.tanque_lleno} onChange={v => setComb('tanque_lleno', v)} />
                             </>
                         )}
 

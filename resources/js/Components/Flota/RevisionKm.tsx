@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import axios from 'axios';
-import { AlertTriangle, Gauge } from 'lucide-react';
+import { AlertTriangle, Calculator, Gauge } from 'lucide-react';
 import Checkbox from '@/Components/UI/Checkbox';
 import { soles } from '@/lib/dinero';
 
@@ -16,7 +16,9 @@ import { soles } from '@/lib/dinero';
  */
 
 export interface LecturaKm { km: number; fecha: string | null; origen: 'carga' | 'mantenimiento' | 'ficha' }
-export interface ReferenciaKm { previo: LecturaKm | null; siguiente: LecturaKm | null; precio_galon: number | null }
+/** Último tanque lleno antes de esta carga y lo cargado en parciales desde entonces. */
+export interface UltimoLleno { km: number; fecha: string; galones_despues: number; monto_despues: number }
+export interface ReferenciaKm { previo: LecturaKm | null; siguiente: LecturaKm | null; precio_galon: number | null; lleno: UltimoLleno | null }
 
 /** Mismos topes que FlotaService::PRECIO_GALON_MIN / MAX. */
 const PRECIO_MIN = 2;
@@ -157,3 +159,57 @@ export function AvisosLectura({ avisos, confirmado, onConfirmar }: { avisos: str
         </div>
     );
 }
+
+/**
+ * Cuánto rinde, con la cuenta a la vista. Igual que el historial
+ * (FlotaService::rendimiento): de un tanque lleno al siguiente, km recorridos
+ * ÷ galones echados en ese tramo, y soles pagados ÷ km recorridos.
+ */
+export function CalculoRendimiento({ referencia: ref, kmTexto, galonesTexto, montoTexto, tanqueLleno }: {
+    referencia: ReferenciaKm | null; kmTexto: string; galonesTexto: string; montoTexto: string; tanqueLleno: boolean;
+}) {
+    const kmNum = Number(kmTexto);
+    const gal = Number(galonesTexto);
+    const monto = Number(montoTexto);
+    const lleno = ref?.lleno ?? null;
+    const listo = kmTexto.trim() !== '' && gal > 0 && monto > 0;
+
+    let cuerpo: ReactNode;
+    if (!tanqueLleno) {
+        cuerpo = <>Carga parcial: no alcanza para medir. Sus galones y su monto se suman a la <b>próxima vez que llenen el tanque</b>, y ahí sale el rendimiento.</>;
+    } else if (!ref) {
+        cuerpo = <>Elige el vehículo y escribe el km para ver cuánto rinde.</>;
+    } else if (!lleno) {
+        cuerpo = <>Es la <b>primera llenada</b> registrada: desde aquí se empieza a medir. En la próxima llenada verás cuántos km rinde por galón y cuánto cuesta cada km.</>;
+    } else if (!listo || kmNum <= lleno.km) {
+        cuerpo = <>Se mide desde la última llenada ({km(lleno.km)} el {ddmm(lleno.fecha)}). Escribe km, galones y monto y aquí sale la cuenta.</>;
+    } else {
+        const tramo = kmNum - lleno.km;
+        const galTramo = gal + lleno.galones_despues;
+        const montoTramo = monto + lleno.monto_despues;
+        const parciales = lleno.galones_despues > 0;
+        cuerpo = (
+            <span className="block space-y-1 tabular-nums">
+                <span className="block">
+                    Recorrió <b>{km(tramo)}</b> desde la última llenada ({km(lleno.km)} el {ddmm(lleno.fecha)}).
+                </span>
+                <span className="block">
+                    <b>Rinde:</b> {km(tramo)} ÷ {fmtGal(galTramo)} gal{parciales ? ` (estos ${fmtGal(gal)} + ${fmtGal(lleno.galones_despues)} de cargas parciales)` : ''} = <b style={{ color: 'var(--vp-navy)' }}>{(tramo / galTramo).toFixed(1)} km por galón</b>
+                </span>
+                <span className="block">
+                    <b>Cuesta:</b> {soles(montoTramo)} ÷ {km(tramo)} = <b style={{ color: 'var(--vp-navy)' }}>{soles(montoTramo / tramo)} por km</b>
+                </span>
+            </span>
+        );
+    }
+
+    return (
+        <div className="rounded-lg p-3 text-[13px] flex items-start gap-2"
+            style={{ backgroundColor: 'color-mix(in srgb, var(--vp-navy) 5%, var(--color-surface))', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
+            <Calculator size={15} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--vp-navy)' }} />
+            <span className="min-w-0">{cuerpo}</span>
+        </div>
+    );
+}
+
+const fmtGal = (n: number) => Number(n.toFixed(3)).toLocaleString('en-US');

@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Flota;
 use App\Http\Controllers\Controller;
 use App\Models\Conductor;
 use App\Models\Vehiculo;
+use App\Models\VehiculoDocumento;
 use App\Models\Viaje;
 use App\Services\AuditoriaService;
 use App\Support\Flota;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -33,6 +36,7 @@ class VehiculoController extends Controller
             ->get();
         // El km real: el mayor entre la ficha y sus cargas / mantenimientos.
         $km = $flota->kmActual($vehiculos->pluck('id')->all());
+        $docs = $this->documentosClave($vehiculos->pluck('id')->all());
 
         $vehiculos = $vehiculos
             ->map(fn (Vehiculo $v) => [
@@ -46,6 +50,8 @@ class VehiculoController extends Controller
                 'conductor'    => $v->conductor?->nombre_completo,
                 'en_ruta'      => $enRuta[$v->id] ?? null,
                 'viajes_mes'   => $v->viajes_mes,
+                'soat'         => $docs[$v->id]['soat'] ?? null,
+                'revision'     => $docs[$v->id]['revision'] ?? null,
             ]);
 
         return Inertia::render('Flota/Vehiculos', [
@@ -64,7 +70,12 @@ class VehiculoController extends Controller
     public function store(Request $request)
     {
         Flota::exigir($request->user());
-        $vehiculo = Vehiculo::create($this->validar($request) + ['empresa_id' => $request->user()->empresa_id]);
+        $data = $this->validar($request);
+        $vehiculo = DB::transaction(function () use ($data, $request) {
+            $vehiculo = Vehiculo::create(Arr::except($data, array_keys(self::CAMPOS_DOC)) + ['empresa_id' => $request->user()->empresa_id]);
+            $this->guardarDocumentosClave($vehiculo, $data);
+            return $vehiculo;
+        });
         AuditoriaService::log('vehiculo.creado', $vehiculo, ['placa' => $vehiculo->placa], $request->user());
 
         return back()->with('success', "Vehículo {$vehiculo->placa} agregado.");
@@ -75,7 +86,11 @@ class VehiculoController extends Controller
         Flota::exigir($request->user());
         abort_if($vehiculo->empresa_id !== $request->user()->empresa_id, 404);
 
-        $vehiculo->update($this->validar($request, $vehiculo));
+        $data = $this->validar($request, $vehiculo);
+        DB::transaction(function () use ($vehiculo, $data) {
+            $vehiculo->update(Arr::except($data, array_keys(self::CAMPOS_DOC)));
+            $this->guardarDocumentosClave($vehiculo, $data);
+        });
         AuditoriaService::log('vehiculo.editado', $vehiculo, ['placa' => $vehiculo->placa, 'cambios' => $vehiculo->getChanges()], $request->user());
 
         return back()->with('success', "Vehículo {$vehiculo->placa} actualizado.");
@@ -103,6 +118,65 @@ class VehiculoController extends Controller
         return back()->with('success', 'Vehículo eliminado.');
     }
 
+    /** Campos del formulario => tipo de documento y si es la fecha o el número. */
+    private const CAMPOS_DOC = [
+        'soat_vence' => ['SOAT', 'vence'], 'soat_numero' => ['SOAT', 'numero'],
+        'revision_vence' => ['Revisión técnica', 'vence'], 'revision_numero' => ['Revisión técnica', 'numero'],
+    ];
+
+    /** Clave en la pantalla => tipo de documento. */
+    private const DOCS_CLAVE = ['soat' => 'SOAT', 'revision' => 'Revisión técnica'];
+
+    /**
+     * SOAT y revisión técnica vigentes (el de vencimiento más lejano de cada
+     * tipo, como en las alertas).
+     *
+     * @param int[] $ids
+     * @return array<int, array<string, array{vence: ?string, numero: ?string, estado: ?string}>>
+     */
+    private function documentosClave(array $ids): array
+    {
+        $hoy = now()->startOfDay();
+        $out = [];
+        VehiculoDocumento::whereIn('vehiculo_id', $ids)
+            ->whereIn(DB::raw('LOWER(tipo)'), array_map('mb_strtolower', self::DOCS_CLAVE))
+            ->orderByRaw('vence DESC NULLS LAST')->orderByDesc('id')
+            ->get()
+            ->each(function (VehiculoDocumento $d) use (&$out, $hoy) {
+                $clave = array_search(mb_strtolower($d->tipo), array_map('mb_strtolower', self::DOCS_CLAVE), true);
+                $out[$d->vehiculo_id][$clave] ??= ['vence' => $d->vence?->toDateString(), 'numero' => $d->numero, 'estado' => $d->estado($hoy)];
+            });
+
+        return $out;
+    }
+
+    /**
+     * Lo escrito en la ficha va a la pestaña Documentos. Una fecha posterior a
+     * la vigente es una RENOVACIÓN: se agrega un documento nuevo y el anterior
+     * queda de historial. La misma fecha o una anterior corrige el vigente.
+     * Dejar la casilla vacía no borra nada.
+     */
+    private function guardarDocumentosClave(Vehiculo $vehiculo, array $data): void
+    {
+        foreach (self::DOCS_CLAVE as $clave => $tipo) {
+            $vence = $data["{$clave}_vence"] ?? null;
+            $numero = trim((string) ($data["{$clave}_numero"] ?? '')) ?: null;
+            if (!$vence) continue;
+
+            $vigente = VehiculoDocumento::where('vehiculo_id', $vehiculo->id)->whereRaw('LOWER(tipo) = ?', [mb_strtolower($tipo)])
+                ->orderByRaw('vence DESC NULLS LAST')->orderByDesc('id')->first();
+
+            if ($vigente && (!$vigente->vence || $vigente->vence->toDateString() >= $vence)) {
+                $vigente->update(['vence' => $vence, 'numero' => $numero ?? $vigente->numero]);
+            } else {
+                VehiculoDocumento::create([
+                    'empresa_id' => $vehiculo->empresa_id, 'vehiculo_id' => $vehiculo->id, 'tipo' => $tipo,
+                    'vence' => $vence, 'numero' => $numero,
+                ]);
+            }
+        }
+    }
+
     private function validar(Request $request, ?Vehiculo $vehiculo = null): array
     {
         $empresaId = $request->user()->empresa_id;
@@ -126,7 +200,14 @@ class VehiculoController extends Controller
             'mant_base_km'        => ['nullable', 'numeric', 'min:0', 'max:99999999'],
             'observacion'         => ['nullable', 'string', 'max:255'],
             'activo'              => ['nullable', 'boolean'],
+            // SOAT y revisión técnica: se guardan como documentos del vehículo.
+            'soat_vence'          => ['nullable', 'date'],
+            'soat_numero'         => ['nullable', 'string', 'max:60'],
+            'revision_vence'      => ['nullable', 'date'],
+            'revision_numero'     => ['nullable', 'string', 'max:60'],
         ], [
+            'soat_vence.date'     => 'La fecha del SOAT no es válida.',
+            'revision_vence.date' => 'La fecha de la revisión técnica no es válida.',
             'placa.required'      => 'Escribe la placa.',
             'placa.min'           => 'La placa parece incompleta.',
             'placa.regex'         => 'La placa solo lleva letras, números y guion (p. ej. M9C-822).',

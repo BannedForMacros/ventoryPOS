@@ -186,7 +186,7 @@ class FlotaService
      * hoy" que escribió el usuario, no tiene fecha propia).
      * También devuelve el precio por galón habitual para avisar si no cuadra.
      *
-     * @return array{previo: ?array{km: float, fecha: ?string, origen: string}, siguiente: ?array{km: float, fecha: ?string, origen: string}, precio_galon: ?float}
+     * @return array{previo: ?array, siguiente: ?array, precio_galon: ?float, lleno: ?array{km: float, fecha: string, galones_despues: float, monto_despues: float}}
      */
     public function referenciaKm(int $vehiculoId, string $fecha, ?int $excluirGastoId = null): array
     {
@@ -220,7 +220,28 @@ class FlotaService
             ->map(fn ($c) => (float) $c->monto / (float) $c->galones)->sort()->values();
         $mediana = $precios->isEmpty() ? null : round((float) $precios[intdiv($precios->count(), 2)], 2);
 
-        return ['previo' => $previo, 'siguiente' => $siguiente, 'precio_galon' => $mediana];
+        // Último tanque lleno antes de esta carga y lo cargado después de él:
+        // con eso la pantalla muestra el rendimiento y el costo por km en vivo,
+        // con la misma cuenta que el historial (rendimiento()).
+        $anteriores = $this->combustiblesActivos($vehiculoId)
+            ->when($excluirGastoId, fn ($q, $id) => $q->where('vehiculo_combustibles.gasto_id', '<>', $id))
+            ->where('gastos.fecha', '<=', $fecha)
+            ->orderByDesc('vehiculo_combustibles.km')->orderByDesc('gastos.fecha')
+            ->get(['vehiculo_combustibles.km', 'vehiculo_combustibles.galones', 'vehiculo_combustibles.tanque_lleno', 'gastos.monto', 'gastos.fecha']);
+        $lleno = null;
+        $galDespues = 0.0;
+        $montoDespues = 0.0;
+        foreach ($anteriores as $c) {
+            if ($c->tanque_lleno) {
+                $lleno = ['km' => (float) $c->km, 'fecha' => substr((string) $c->fecha, 0, 10),
+                    'galones_despues' => round($galDespues, 3), 'monto_despues' => round($montoDespues, 2)];
+                break;
+            }
+            $galDespues += (float) $c->galones;
+            $montoDespues += (float) $c->monto;
+        }
+
+        return ['previo' => $previo, 'siguiente' => $siguiente, 'precio_galon' => $mediana, 'lleno' => $lleno];
     }
 
     // ── Lecturas por vehículo ────────────────────────────────────────────────
@@ -309,11 +330,14 @@ class FlotaService
 
             $rend = null;
             $costoKm = null;
+            $cuenta = null;
             if ($f->tanque_lleno) {
                 if ($ultimoLlenoKm !== null && $km > $ultimoLlenoKm && $galDesdeLleno > 0) {
                     $tramo   = $km - $ultimoLlenoKm;
                     $rend    = round($tramo / $galDesdeLleno, 2);
                     $costoKm = round($montoDesdeLleno / $tramo, 3);
+                    // La cuenta a la vista: km del tramo, galones y soles de ese tramo.
+                    $cuenta  = ['km' => round($tramo, 1), 'galones' => round($galDesdeLleno, 3), 'monto' => round($montoDesdeLleno, 2)];
                 }
                 $ultimoLlenoKm = $km;
                 $galDesdeLleno = 0.0;
@@ -333,6 +357,7 @@ class FlotaService
                 'conductor'      => $f->conductor ?: null,
                 'rendimiento'    => $rend,
                 'costo_km'       => $costoKm,
+                'tramo'          => $cuenta,
             ];
             $prevKm = $km;
         }
