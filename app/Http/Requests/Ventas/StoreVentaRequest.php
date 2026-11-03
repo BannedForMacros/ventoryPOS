@@ -356,14 +356,14 @@ class StoreVentaRequest extends FormRequest
         $elegida = $this->input('fecha_emision');
 
         if ($elegida) {
-            if ($tipo !== 'factura') {
-                $validator->errors()->add('fecha_emision', 'La fecha de emisión solo se elige en una factura.');
+            if (! in_array($tipo, ['factura', 'boleta'], true)) {
+                $validator->errors()->add('fecha_emision', 'La fecha de emisión solo se elige en una factura o una boleta.');
 
                 return;
             }
 
             if (! $this->user()->empresa?->pos_fecha_emision_factura) {
-                $validator->errors()->add('fecha_emision', 'Esta empresa no tiene activo el selector de fecha de la factura.');
+                $validator->errors()->add('fecha_emision', 'Esta empresa no tiene activo el selector de fecha del comprobante.');
 
                 return;
             }

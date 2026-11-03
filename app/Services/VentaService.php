@@ -156,10 +156,10 @@ class VentaService
                         'ruta_entrega_id'       => $data['ruta_entrega_id'] ?? null,
                         'entrega_programada'    => $data['entrega_programada'] ?? null,
                         'fecha_venta'           => $fechaVenta,
-                        // Fecha elegida para la FACTURA (selector opcional por empresa).
-                        // La venta sigue siendo de hoy; solo el comprobante lleva esta
-                        // fecha. StoreVentaRequest ya validó la ventana de SUNAT.
-                        'fecha_emision'         => ($data['tipo_comprobante'] ?? null) === 'factura'
+                        // Fecha elegida para la FACTURA o BOLETA (selector opcional por
+                        // empresa). La venta sigue siendo de hoy; solo el comprobante
+                        // lleva esta fecha. StoreVentaRequest ya validó la ventana de SUNAT.
+                        'fecha_emision'         => in_array($data['tipo_comprobante'] ?? null, ['factura', 'boleta'], true)
                             ? ($data['fecha_emision'] ?? null)
                             : null,
                     ]));

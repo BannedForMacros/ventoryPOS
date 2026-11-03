@@ -554,9 +554,9 @@ export default function Empresas({ empresas }: Props) {
                                 onChange={e => setData('pos_fecha_emision_factura', e.target.checked)}
                             />
                             <span>
-                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Elegir la fecha de emisión de la factura</span>
+                                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Elegir la fecha de emisión de la factura y la boleta</span>
                                 <span className="block text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-                                    Al elegir Factura en el POS aparece un selector de fecha (por defecto hoy) para emitirla con fecha de hoy o de hasta 3 días atrás, el máximo que acepta SUNAT. La venta se sigue registrando hoy en la caja; solo la factura lleva la fecha elegida.
+                                    Al elegir Factura o Boleta en el POS aparece un selector de fecha (por defecto hoy) para emitirla con fecha de hoy o de hasta 3 días atrás, el máximo que acepta SUNAT. La venta se sigue registrando hoy en la caja; solo el comprobante lleva la fecha elegida.
                                 </span>
                             </span>
                         </label>

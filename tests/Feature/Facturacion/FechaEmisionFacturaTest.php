@@ -15,7 +15,7 @@ use Tests\Support\TestEnv;
  *     la fecha elegida;
  *   · SUNAT acepta hasta 3 días atrás: fuera de eso no se cobra, porque FacturaMac
  *     no lo emitiría y la venta quedaría sin comprobante;
- *   · el selector solo existe si la empresa lo activó, y solo para facturas;
+ *   · el selector solo existe si la empresa lo activó, y solo para facturas y boletas;
  *   · el turno reabierto de un admin hereda la misma ventana.
  */
 beforeEach(function () {
@@ -108,14 +108,43 @@ it('sin el selector activo en la empresa la fecha no se acepta', function () {
         ->assertSessionHasErrors('fecha_emision');
 });
 
-it('la fecha solo se elige en una factura, no en una boleta', function () {
+it('una boleta también se emite con la fecha elegida, y la venta sigue siendo de hoy', function () {
+    $this->env->abrirTurno($this->env->admin);
+    $ayer = now()->subDay()->toDateString();
+
+    $this->post(route('ventas.store'), ventaFactura([
+        'tipo_comprobante' => 'boleta',
+        'cliente_id'       => $this->env->clienteGeneral->id,
+        'fecha_emision'    => $ayer,
+    ]))->assertSessionHasNoErrors();
+
+    $venta = ventaDelEntorno();
+    expect($venta->fecha_emision->toDateString())->toBe($ayer)
+        ->and($venta->fecha_venta->toDateString())->toBe(now()->toDateString())
+        ->and(app(VentaAContrato::class)->mapear($venta->fresh())->aArray()['fecha_emision'])->toBe($ayer);
+});
+
+it('la boleta respeta la misma ventana de SUNAT', function () {
     $this->env->abrirTurno($this->env->admin);
 
     $this->post(route('ventas.store'), ventaFactura([
         'tipo_comprobante' => 'boleta',
         'cliente_id'       => $this->env->clienteGeneral->id,
-        'fecha_emision'    => now()->subDay()->toDateString(),
+        'fecha_emision'    => now()->subDays(5)->toDateString(),
     ]))->assertSessionHasErrors('fecha_emision');
+});
+
+it('un ticket (nota de venta) no lleva fecha de emisión', function () {
+    $this->env->abrirTurno($this->env->admin);
+
+    $this->post(route('ventas.store'), ventaFactura([
+        'tipo_comprobante' => 'ticket',
+        'cliente_id'       => $this->env->clienteGeneral->id,
+        'fecha_emision'    => now()->subDay()->toDateString(),
+    ]));
+
+    $venta = Venta::withoutGlobalScopes()->where('empresa_id', $this->env->empresa->id)->latest('id')->first();
+    expect($venta?->fecha_emision)->toBeNull();
 });
 
 it('sin fecha elegida la factura sale con la fecha de la venta, como siempre', function () {
