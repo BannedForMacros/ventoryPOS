@@ -236,7 +236,7 @@
             <div class="box">
                 <div class="label">Datos de la venta</div>
                 <table class="kv">
-                    <tr><td class="k">Fecha</td><td class="b">{{ $fecha($venta->fecha_venta, 'd/m/Y h:i A') }}</td></tr>
+                    <tr><td class="k">Fecha</td><td class="b">{{ $fecha($venta->fechaComprobante(), 'd/m/Y h:i A') }}</td></tr>
                     <tr><td class="k">Vendedor</td><td>{{ $venta->user?->name ?? '—' }}</td></tr>
                     @if ($caja)<tr><td class="k">Caja</td><td>{{ $caja->nombre }}</td></tr>@endif
                     @if ($venta->local)<tr><td class="k">Local</td><td>{{ $venta->local->nombre }}</td></tr>@endif

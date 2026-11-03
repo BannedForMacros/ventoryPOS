@@ -192,3 +192,21 @@ it('la empresa activa el selector desde Configuración → Empresas', function (
     expect($this->env->empresa->fresh()->pos_fecha_emision_factura)->toBeFalse();
     expect((new \App\Http\Requests\Configuracion\EmpresaRequest())->rules())->toHaveKey('pos_fecha_emision_factura');
 });
+
+it('el ticket impreso y el PDF dicen la fecha de emisión elegida, no la de la venta', function () {
+    $this->env->abrirTurno($this->env->admin);
+    $ayer = now()->subDay();
+
+    $this->post(route('ventas.store'), ventaFactura([
+        'tipo_comprobante' => 'boleta',
+        'cliente_id'       => $this->env->clienteGeneral->id,
+        'fecha_emision'    => $ayer->toDateString(),
+    ]))->assertSessionHasNoErrors();
+
+    $venta = ventaDelEntorno()->fresh();
+    $ticket = app(\App\Services\TicketPrintService::class)->payloadDeVenta($venta);
+    expect($ticket['documento']['fecha'])->toStartWith($ayer->format('d/m/Y'))
+        ->and($venta->fechaComprobante()->toDateString())->toBe($ayer->toDateString())
+        // La hora es la de la venta.
+        ->and($venta->fechaComprobante()->format('H:i'))->toBe($venta->fecha_venta->format('H:i'));
+});

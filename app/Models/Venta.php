@@ -54,6 +54,19 @@ class Venta extends Model
         ];
     }
 
+    /**
+     * Fecha que va IMPRESA en el comprobante (ticket, PDF): la de emisión
+     * elegida en el POS si la hay, con la hora de la venta; si no, la de la
+     * venta. Tiene que coincidir con la que recibió SUNAT (VentaAContrato).
+     */
+    public function fechaComprobante(): ?\Illuminate\Support\Carbon
+    {
+        if (!$this->fecha_emision) return $this->fecha_venta;
+        $hora = $this->fecha_venta ?? $this->created_at;
+
+        return $this->fecha_emision->copy()->setTime((int) $hora?->format('H'), (int) $hora?->format('i'), (int) $hora?->format('s'));
+    }
+
     public function empresa(): BelongsTo         { return $this->belongsTo(Empresa::class); }
     public function local(): BelongsTo           { return $this->belongsTo(Local::class); }
     public function turno(): BelongsTo           { return $this->belongsTo(Turno::class); }

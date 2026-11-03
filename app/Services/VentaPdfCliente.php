@@ -108,8 +108,8 @@ class VentaPdfCliente
 
             'doc_tipo'   => $tipos[$venta->tipo_comprobante] ?? 'NOTA DE VENTA',
             'doc_numero' => $venta->numero_comprobante ?: $venta->numero,
-            'fecha'      => $venta->fecha_venta?->format('d/m/Y'),
-            'hora'       => $venta->fecha_venta?->format('h:i A'),
+            'fecha'      => $venta->fechaComprobante()?->format('d/m/Y'),
+            'hora'       => $venta->fechaComprobante()?->format('h:i A'),
             'atendido'   => ($cfg['mostrar_cajero'] ?? true) ? $venta->user?->name : null,
             'anulada'    => $venta->estado === 'anulada' || $venta->anulada_nc_devolucion_id,
 

@@ -263,7 +263,9 @@ class TicketPrintService
                 // completo y `numero` del CPE viene con la serie ("B002-00000123").
                 'serie'    => null,
                 'numero'   => $cpe && $cpe->numero ? (string) $cpe->numero : $venta->numero,
-                'fecha'    => $venta->fecha_venta?->format('d/m/Y h:i A'),
+                // La del comprobante: si en el POS se eligió otra fecha de
+                // emisión, el ticket debe decir la misma que SUNAT.
+                'fecha'    => $venta->fechaComprobante()?->format('d/m/Y h:i A'),
                 // null = el agente no imprime la línea; la plantilla decide.
                 'vendedor' => ($cfg['mostrar_cajero'] ?? true) ? $venta->user?->name : null,
                 'caja'     => ($cfg['mostrar_caja'] ?? true) ? $caja?->nombre : null,
