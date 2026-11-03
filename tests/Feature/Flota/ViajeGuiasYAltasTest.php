@@ -178,3 +178,63 @@ it('la ficha del viaje lista las paradas que aún necesitan guía', function () 
     $this->get(route('viajes.show', $viaje))->assertOk()
         ->assertInertia(fn ($page) => $page->where('sin_guia', $ids));
 });
+
+it('quien da de alta choferes puede traer el nombre desde RENIEC con el DNI', function () {
+    config(['services.decolecta.token' => 'token-prueba']);
+    \Illuminate\Support\Facades\Http::fake(['*/v1/reniec/dni*' => \Illuminate\Support\Facades\Http::response([
+        'first_name' => 'JONATHAN', 'first_last_name' => 'SAAVEDRA', 'second_last_name' => 'RUIZ',
+    ])]);
+
+    $nuevoUsuario = function (?string $modulo) {
+        $rol = \App\Models\Rol::create(['empresa_id' => $this->env->empresa->id, 'nombre' => 'R' . uniqid(), 'descripcion' => 'x', 'es_admin' => false, 'activo' => true]);
+        if ($modulo) {
+            \App\Models\Permiso::create(['rol_id' => $rol->id, 'modulo_id' => Modulo::where('slug', $modulo)->value('id'), 'ver' => true, 'crear' => true, 'editar' => true, 'eliminar' => false]);
+        }
+
+        return \App\Models\User::create([
+            'empresa_id' => $this->env->empresa->id, 'local_id' => $this->env->local->id, 'rol_id' => $rol->id,
+            'name' => 'Flota', 'email' => 'fl+' . uniqid() . '@test.com', 'password' => bcrypt('x'), 'email_verified_at' => now(), 'activo' => true,
+        ]);
+    };
+
+    $this->actingAs($nuevoUsuario('flota.conductores'))->postJson(route('decolecta.dni'), ['dni' => '44556677'])
+        ->assertOk()->assertJson(['nombres' => 'JONATHAN', 'apellidos' => 'SAAVEDRA RUIZ']);
+
+    // Sin permiso sobre clientes, proveedores ni conductores sigue cerrado.
+    $this->actingAs($nuevoUsuario(null))->postJson(route('decolecta.dni'), ['dni' => '44556677'])->assertForbidden();
+});
+
+it('los kg se pueden escribir a mano: mandan sobre el catálogo y suplen al que no tiene peso', function () {
+    $this->ladrillo->update(['peso_kg' => 2.8]);
+    $sinPeso = $this->env->crearProducto(['nombre' => 'Arena', 'precio_venta' => 50, 'stock_inicial' => 100]);
+    $a = vgPedido($this, 10);
+
+    // Pedido de un producto sin peso.
+    $this->post(route('ventas.store'), [
+        'tipo_comprobante' => 'ticket', 'cliente_id' => $this->cliente->id, 'tipo_entrega' => 'envio', 'cliente_direccion' => 'Av. Obra 123',
+        'items' => [['producto_id' => $sinPeso->id, 'producto_unidad_id' => $sinPeso->unidadBase->id, 'cantidad' => 2, 'precio_unitario' => 50]],
+        'pagos' => [['metodo_pago_id' => $this->env->metodo('efectivo')->id, 'monto' => 100]],
+    ])->assertSessionHasNoErrors();
+    $b = ClienteAnticipo::where('venta_id', Venta::where('empresa_id', $this->env->empresa->id)->latest('id')->value('id'))->with('items')->firstOrFail();
+
+    $this->post(route('viajes.store'), [
+        'tipo' => 'reparto', 'fecha' => now()->toDateString(), 'vehiculo_id' => $this->camion->id, 'conductor_id' => $this->chofer->id,
+        'paradas' => [
+            ['cliente_anticipo_id' => $a->id, 'items' => [['cliente_anticipo_item_id' => $a->items[0]->id, 'cantidad' => 10, 'peso_kg' => null]]],
+            ['cliente_anticipo_id' => $b->id, 'items' => [['cliente_anticipo_item_id' => $b->items[0]->id, 'cantidad' => 2, 'peso_kg' => 2500]]],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    $viaje = Viaje::where('empresa_id', $this->env->empresa->id)->firstOrFail();
+    $pesos = $viaje->paradas()->orderBy('orden')->with('items')->get()->map(fn ($p) => (float) $p->items[0]->peso_kg)->all();
+    expect($pesos)->toBe([28.0, 2500.0]);
+
+    // Al editar, el escrito a mano vuelve como tal y el del catálogo no.
+    $this->get(route('viajes.edit', $viaje))->assertInertia(fn ($page) => $page
+        ->where('viaje.paradas.0.items.0.peso_kg', null)
+        ->where('viaje.paradas.1.items.0.peso_kg', 2500));
+
+    // Y la guía de esa parada sale con ese peso.
+    $parada = $viaje->paradas()->orderBy('orden')->skip(1)->first();
+    $this->get(route('guias.create', ['parada' => $parada->id]))->assertInertia(fn ($page) => $page->where('traslado.peso_total', 2500));
+});

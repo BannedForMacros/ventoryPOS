@@ -80,7 +80,10 @@ class DecolectaController extends Controller
               || $user->tienePermiso('proveedores', 'crear')
               // Configuración → Empresas: completar razón social y dirección
               // del emisor desde SUNAT (lo que sale en boletas y facturas).
-              || $user->tienePermiso('config.empresas', 'editar');
+              || $user->tienePermiso('config.empresas', 'editar')
+              // Flota → choferes y ayudantes: nombre desde RENIEC con el DNI.
+              || $user->tienePermiso('flota.conductores', 'crear')
+              || $user->tienePermiso('flota.conductores', 'editar');
 
         if (!$puede) {
             abort(403, 'No tienes permiso para consultar datos de DNI/RUC.');

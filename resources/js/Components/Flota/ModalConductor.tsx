@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { router } from '@inertiajs/react';
+import axios from 'axios';
+import { CheckCircle2, Loader2, Search } from 'lucide-react';
 import Button from '@/Components/UI/Button';
 import Input from '@/Components/UI/Input';
 import Select from '@/Components/UI/Select';
@@ -56,12 +58,49 @@ export default function ModalConductor({ isOpen, onClose, editando = null, tipoI
     const [form, setForm] = useState<Form>(vacio(tipoInicial));
     const [errores, setErrores] = useState<Record<string, string>>({});
     const [guardando, setGuardando] = useState(false);
+    // RENIEC: con el DNI completo se traen nombres y apellidos solos.
+    const [consultando, setConsultando] = useState(false);
+    const [deReniec, setDeReniec] = useState(false);
+    const [avisoReniec, setAvisoReniec] = useState<string | null>(null);
+    const consultaRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         if (!isOpen) return;
         setForm(editando ? deConductor(editando) : vacio(tipoInicial));
         setErrores({});
+        setDeReniec(false);
+        setAvisoReniec(null);
     }, [isOpen, editando, tipoInicial]);
+
+    async function consultarDni(dni: string) {
+        if (dni.length !== 8) return;
+        consultaRef.current?.abort();
+        consultaRef.current = new AbortController();
+        setConsultando(true);
+        setAvisoReniec(null);
+        try {
+            const { data } = await axios.post(route('decolecta.dni'), { dni }, { signal: consultaRef.current.signal });
+            setForm(f => f.numero_documento === dni ? { ...f, nombres: data.nombres ?? f.nombres, apellidos: data.apellidos ?? f.apellidos } : f);
+            setErrores(e => ({ ...e, nombres: '', numero_documento: '' }));
+            setDeReniec(true);
+        } catch (err: any) {
+            if (axios.isCancel(err)) return;
+            // No es un error del formulario: el DNI puede estar bien y RENIEC no responder.
+            setAvisoReniec(err.response?.data?.message ?? 'No se pudo consultar RENIEC: escribe el nombre a mano.');
+        } finally {
+            setConsultando(false);
+        }
+    }
+
+    function cambiarDocumento(valor: string) {
+        const esDni = form.tipo_documento === 'DNI';
+        const limpio = esDni ? valor.replace(/\D/g, '').slice(0, 8) : valor;
+        set('numero_documento', limpio);
+        setDeReniec(false);
+        setAvisoReniec(null);
+        // Al completar los 8 dígitos se consulta solo, sin tener que pulsar nada.
+        if (esDni && limpio.length === 8 && limpio !== form.numero_documento) consultarDni(limpio);
+    }
 
     const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm(f => ({ ...f, [k]: v }));
     const esChofer = form.tipo === 'chofer';
@@ -111,18 +150,42 @@ export default function ModalConductor({ isOpen, onClose, editando = null, tipoI
                     })}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Input label="Nombres" required value={form.nombres} onChange={e => set('nombres', e.target.value)} error={errores.nombres} autoFocus />
-                    <Input label="Apellidos" value={form.apellidos} onChange={e => set('apellidos', e.target.value)} error={errores.apellidos} />
-                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <Select label="Documento" value={form.tipo_documento} onChange={v => set('tipo_documento', String(v))}
+                    <Select label="Documento" value={form.tipo_documento} onChange={v => { set('tipo_documento', String(v)); setDeReniec(false); }}
                         options={[{ value: 'DNI', label: 'DNI' }, { value: 'CE', label: 'Carné de extranjería' }, { value: 'PASAPORTE', label: 'Pasaporte' }]} />
-                    <Input label="Número" required={esChofer} inputMode={form.tipo_documento === 'DNI' ? 'numeric' : undefined}
-                        value={form.numero_documento} error={errores.numero_documento}
-                        onChange={e => set('numero_documento', form.tipo_documento === 'DNI' ? e.target.value.replace(/\D/g, '').slice(0, 8) : e.target.value)} />
+                    <div className="flex items-end gap-2">
+                        <div className="flex-1 min-w-0">
+                            <Input label="Número" required={esChofer} inputMode={form.tipo_documento === 'DNI' ? 'numeric' : undefined}
+                                value={form.numero_documento} error={errores.numero_documento || undefined} autoFocus={!editando}
+                                placeholder={form.tipo_documento === 'DNI' ? '8 dígitos' : undefined}
+                                onChange={e => cambiarDocumento(e.target.value)} />
+                        </div>
+                        {form.tipo_documento === 'DNI' && (
+                            <button type="button" onClick={() => consultarDni(form.numero_documento)}
+                                disabled={consultando || form.numero_documento.length !== 8}
+                                title="Consultar en RENIEC" aria-label="Consultar el DNI en RENIEC"
+                                className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-xl border-2 transition-opacity duration-150 hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                                style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)', marginBottom: errores.numero_documento ? '1.25rem' : 0 }}>
+                                {consultando ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                            </button>
+                        )}
+                    </div>
                     <Input label="Teléfono" type="tel" inputMode="tel" value={form.telefono} onChange={e => set('telefono', e.target.value)} error={errores.telefono} />
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Input label="Nombres" required value={form.nombres} onChange={e => { set('nombres', e.target.value); setDeReniec(false); }}
+                        error={errores.nombres || undefined} placeholder={consultando ? 'Consultando RENIEC…' : undefined} />
+                    <Input label="Apellidos" value={form.apellidos} onChange={e => { set('apellidos', e.target.value); setDeReniec(false); }}
+                        error={errores.apellidos || undefined} placeholder={consultando ? 'Consultando RENIEC…' : undefined} />
+                </div>
+                {avisoReniec && (
+                    <p className="-mt-2 text-[13px] vp-fade-up" style={{ color: 'var(--vp-amber-ink)' }}>{avisoReniec}</p>
+                )}
+                {deReniec && (
+                    <p className="-mt-2 text-[13px] flex items-center gap-1.5 vp-fade-up" style={{ color: 'var(--vp-mint-ink)' }}>
+                        <CheckCircle2 size={14} /> Nombre traído de RENIEC
+                    </p>
+                )}
 
                 {esChofer && (
                     <div className="rounded-xl p-3 space-y-3" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>

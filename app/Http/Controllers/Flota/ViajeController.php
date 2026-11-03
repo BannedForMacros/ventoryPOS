@@ -287,6 +287,7 @@ class ViajeController extends Controller
             'direccion' => $v->cliente_direccion,
             'total'     => (float) $v->total,
             'items'     => $v->items->map(fn ($i) => [
+                'id'              => $i->id,
                 'producto_id'     => $i->producto_id,
                 'factor'          => (float) $i->factor_conversion,
                 'producto_nombre' => $i->producto_nombre,
@@ -323,6 +324,11 @@ class ViajeController extends Controller
             'paradas.*.items'                   => ['nullable', 'array'],
             'paradas.*.items.*.cliente_anticipo_item_id' => ['required', 'integer'],
             'paradas.*.items.*.cantidad'        => ['required', 'numeric', 'min:0'],
+            // Kg escritos a mano: mandan sobre el peso del catálogo (o lo suplen si no hay).
+            'paradas.*.items.*.peso_kg'         => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'paradas.*.pesos'                   => ['nullable', 'array'],
+            'paradas.*.pesos.*.venta_item_id'   => ['required', 'integer'],
+            'paradas.*.pesos.*.peso_kg'         => ['nullable', 'numeric', 'min:0', 'max:999999'],
         ], [
             'vehiculo_id.required' => 'Elige el vehículo.',
             'vehiculo_id.exists'   => 'Elige un vehículo de tu empresa.',
@@ -330,6 +336,8 @@ class ViajeController extends Controller
             'hora_salida.date_format' => 'La hora de salida no es válida.',
             'paradas.max'          => 'Un viaje lleva como máximo 60 paradas.',
             'paradas.*.items.*.cantidad.min' => 'La cantidad no puede ser negativa.',
+            'paradas.*.items.*.peso_kg.min'  => 'El peso no puede ser negativo.',
+            'paradas.*.pesos.*.peso_kg.min'  => 'El peso no puede ser negativo.',
         ]);
     }
 
@@ -417,7 +425,7 @@ class ViajeController extends Controller
 
     private function paraFormulario(Viaje $viaje): array
     {
-        $viaje->load(['ayudantes:id', 'paradas.items', 'paradas.venta:id,numero,cliente_id,cliente_direccion', 'paradas.venta.cliente:id,nombres,apellidos,razon_social,es_cliente_general']);
+        $viaje->load(['ayudantes:id', 'paradas.items.producto:id,peso_kg', 'paradas.venta:id,numero,cliente_id,cliente_direccion', 'paradas.venta.cliente:id,nombres,apellidos,razon_social,es_cliente_general']);
 
         return [
             'id'              => $viaje->id,
@@ -448,11 +456,13 @@ class ViajeController extends Controller
                 ->map(fn ($p) => $p->modo === 'directa'
                     ? ['venta_id' => $p->venta_id, 'venta' => $p->venta?->numero, 'cliente' => ViajeService::nombreCliente($p->venta?->cliente),
                        'direccion' => $p->venta?->cliente_direccion, 'items' => $p->items->map(fn ($i) => [
-                           'producto_id' => $i->producto_id, 'factor' => (float) $i->factor_conversion,
+                           'id' => $i->venta_item_id, 'producto_id' => $i->producto_id, 'factor' => (float) $i->factor_conversion,
                            'producto_nombre' => $i->producto_nombre, 'unidad_nombre' => $i->unidad_nombre,
-                           'cantidad' => (float) $i->cantidad, 'peso_kg' => $i->peso_kg !== null ? (float) $i->peso_kg : null])]
+                           'cantidad' => (float) $i->cantidad, 'peso_kg' => ViajeService::pesoAuto($i),
+                           'peso_manual' => ViajeService::pesoManual($i)])]
                     : ['cliente_anticipo_id' => $p->cliente_anticipo_id, 'items' => $p->items->map(fn ($i) => [
-                           'cliente_anticipo_item_id' => $i->cliente_anticipo_item_id, 'cantidad' => (float) $i->cantidad])])
+                           'cliente_anticipo_item_id' => $i->cliente_anticipo_item_id, 'cantidad' => (float) $i->cantidad,
+                           'peso_kg' => ViajeService::pesoManual($i)])])
                 ->values(),
         ];
     }

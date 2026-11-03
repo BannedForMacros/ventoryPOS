@@ -16,6 +16,19 @@ class DecolectaService
     }
 
     /**
+     * Sin conexión, el mensaje es para el usuario, no el error de cURL con la URL
+     * y el documento consultado.
+     */
+    private function pedir(string $ruta, string $numero, string $fuente): \Illuminate\Http\Client\Response
+    {
+        try {
+            return Http::withToken($this->token)->timeout(8)->get("{$this->baseUrl}{$ruta}", ['numero' => $numero]);
+        } catch (\Illuminate\Http\Client\ConnectionException) {
+            throw new \Exception("{$fuente} no responde ahora: escribe los datos a mano.");
+        }
+    }
+
+    /**
      * Consulta DNI en RENIEC vía Decolecta.
      * GET /v1/reniec/dni?numero={dni}
      * Retorna: ['nombres' => '', 'apellidos' => '']
@@ -24,9 +37,7 @@ class DecolectaService
      */
     public function consultarDni(string $dni): array
     {
-        $response = Http::withToken($this->token)
-            ->timeout(8)
-            ->get("{$this->baseUrl}/v1/reniec/dni", ['numero' => $dni]);
+        $response = $this->pedir('/v1/reniec/dni', $dni, 'RENIEC');
 
         if (!$response->successful()) {
             throw new \Exception('No se encontró el DNI o el servicio RENIEC no está disponible.');
@@ -52,9 +63,7 @@ class DecolectaService
      */
     public function consultarRuc(string $ruc): array
     {
-        $response = Http::withToken($this->token)
-            ->timeout(8)
-            ->get("{$this->baseUrl}/v1/sunat/ruc", ['numero' => $ruc]);
+        $response = $this->pedir('/v1/sunat/ruc', $ruc, 'SUNAT');
 
         if (!$response->successful()) {
             throw new \Exception('No se encontró el RUC o el servicio SUNAT no está disponible.');

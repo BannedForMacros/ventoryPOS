@@ -50,12 +50,14 @@ interface PedidoDisp {
 
 interface VentaDisp {
     id: number; numero: string; cliente: string; direccion: string | null; total?: number;
-    items: { producto_id: number; factor: number; producto_nombre: string; unidad_nombre: string; cantidad: number; peso_kg: number | null }[];
+    /** `id` = línea de la venta; `peso_kg` = peso del catálogo; `peso_manual` = kg ya escritos (al editar). */
+    items: { id: number; producto_id: number; factor: number; producto_nombre: string; unidad_nombre: string; cantidad: number; peso_kg: number | null; peso_manual?: number | null }[];
 }
 
+/** `pesos`: kg escritos a mano por línea; vacío = se calcula del catálogo. */
 type Parada =
-    | { modo: 'pendiente'; pedido: PedidoDisp; cantidades: Record<number, string> }
-    | { modo: 'directa'; venta: VentaDisp };
+    | { modo: 'pendiente'; pedido: PedidoDisp; cantidades: Record<number, string>; pesos: Record<number, string> }
+    | { modo: 'directa'; venta: VentaDisp; pesos: Record<number, string> };
 
 interface ViajeEdit {
     id: number; numero: string; estado: string; tipo: TipoViaje; fecha: string; hora_salida: string;
@@ -64,7 +66,7 @@ interface ViajeEdit {
     entrada_id: number | null; observacion: string;
     resueltas: { id: number; venta: string | null; cliente: string; estado: string }[];
     paradas: (
-        | { cliente_anticipo_id: number; items: { cliente_anticipo_item_id: number; cantidad: number }[] }
+        | { cliente_anticipo_id: number; items: { cliente_anticipo_item_id: number; cantidad: number; peso_kg: number | null }[] }
         | { venta_id: number; venta: string; cliente: string; direccion: string | null; items: VentaDisp['items'] }
     )[];
 }
@@ -86,6 +88,13 @@ const num = (v: string | number | undefined) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
 };
+
+/** Kg escritos a mano, o null si el campo está vacío. */
+const kgEscrito = (v: string | undefined): number | null => (v === undefined || v.trim() === '' ? null : num(v));
+
+/** Peso de una línea de pedido: el escrito a mano o el del catálogo por la cantidad. */
+const pesoLineaPedido = (it: ItemDisp, cantidad: number, escrito: string | undefined) =>
+    kgEscrito(escrito) ?? (it.peso_unitario == null ? null : cantidad * it.peso_unitario);
 
 export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, rutas, proveedores, entradas, pendientes, preseleccion, puede }: Props) {
     const editando = !!viaje;
@@ -135,11 +144,11 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
                 for (const it of p.pedido.items) {
                     const c = num(p.cantidades[it.id]);
                     if (c <= 0) continue;
-                    out.push({ producto_id: it.producto_id, unidades: c * (it.factor_conversion || 1), peso_kg: it.peso_unitario == null ? null : c * it.peso_unitario });
+                    out.push({ producto_id: it.producto_id, unidades: c * (it.factor_conversion || 1), peso_kg: pesoLineaPedido(it, c, p.pesos[it.id]) });
                 }
             } else {
                 for (const it of p.venta.items) {
-                    out.push({ producto_id: it.producto_id, unidades: it.cantidad * (it.factor || 1), peso_kg: it.peso_kg });
+                    out.push({ producto_id: it.producto_id, unidades: it.cantidad * (it.factor || 1), peso_kg: kgEscrito(p.pesos[it.id]) ?? it.peso_kg });
                 }
             }
         }
@@ -161,11 +170,11 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
 
     function agregarPedido(p: PedidoDisp) {
         if (enUso.has(p.id)) return;
-        setParadas(prev => [...prev, { modo: 'pendiente', pedido: p, cantidades: Object.fromEntries(p.items.map(i => [i.id, String(i.disponible)])) }]);
+        setParadas(prev => [...prev, { modo: 'pendiente', pedido: p, cantidades: Object.fromEntries(p.items.map(i => [i.id, String(i.disponible)])), pesos: {} }]);
     }
     function agregarVenta(v: VentaDisp) {
         if (ventasEnUso.has(v.id)) return;
-        setParadas(prev => [...prev, { modo: 'directa', venta: v }]);
+        setParadas(prev => [...prev, { modo: 'directa', venta: v, pesos: {} }]);
     }
     const quitar = (idx: number) => setParadas(prev => prev.filter((_, i) => i !== idx));
     const mover = (idx: number, dir: -1 | 1) => setParadas(prev => {
@@ -177,6 +186,9 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
     });
     function cambiarCantidad(idx: number, itemId: number, valor: string) {
         setParadas(prev => prev.map((p, i) => i === idx && p.modo === 'pendiente' ? { ...p, cantidades: { ...p.cantidades, [itemId]: valor } } : p));
+    }
+    function cambiarPeso(idx: number, itemId: number, valor: string) {
+        setParadas(prev => prev.map((p, i) => i === idx ? { ...p, pesos: { ...p.pesos, [itemId]: valor } } : p));
     }
 
     /** Lo recién creado es el id que no estaba antes de guardar. */
@@ -214,8 +226,8 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
             origen, destino, proveedor_id: tipo === 'abastecimiento' ? proveedorId : null,
             entrada_id: tipo === 'abastecimiento' ? entradaId : null, observacion,
             paradas: llevaEntregas ? paradas.map(p => p.modo === 'pendiente'
-                ? { cliente_anticipo_id: p.pedido.id, items: p.pedido.items.map(i => ({ cliente_anticipo_item_id: i.id, cantidad: num(p.cantidades[i.id]) })) }
-                : { venta_id: p.venta.id }) : [],
+                ? { cliente_anticipo_id: p.pedido.id, items: p.pedido.items.map(i => ({ cliente_anticipo_item_id: i.id, cantidad: num(p.cantidades[i.id]), peso_kg: kgEscrito(p.pesos[i.id]) })) }
+                : { venta_id: p.venta.id, pesos: p.venta.items.map(i => ({ venta_item_id: i.id, peso_kg: kgEscrito(p.pesos[i.id]) })) }) : [],
             hacer_guias: hacerGuias,
         };
         const opts = {
@@ -448,6 +460,7 @@ export default function ViajeForm({ viaje, vehiculos, conductores, almacenes, ru
                                             <ParadaFila key={p.modo === 'pendiente' ? `p${p.pedido.id}` : `v${p.venta.id}`}
                                                 parada={p} idx={idx} total={paradas.length} error={errorParada(idx)}
                                                 onCantidad={(itemId, v) => cambiarCantidad(idx, itemId, v)}
+                                                onPeso={(itemId, v) => cambiarPeso(idx, itemId, v)}
                                                 onQuitar={() => quitar(idx)} onMover={d => mover(idx, d)} />
                                         ))}
                                     </ol>
@@ -515,16 +528,18 @@ function BotonNuevo({ onClick, titulo, ayuda, destacado = false }: { onClick: ()
 function paradasIniciales(viaje: ViajeEdit | null, pendientes: PedidoDisp[], preseleccion: number | null): Parada[] {
     if (!viaje) {
         const p = preseleccion ? pendientes.find(x => x.id === preseleccion) : null;
-        return p ? [{ modo: 'pendiente', pedido: p, cantidades: Object.fromEntries(p.items.map(i => [i.id, String(i.disponible)])) }] : [];
+        return p ? [{ modo: 'pendiente', pedido: p, cantidades: Object.fromEntries(p.items.map(i => [i.id, String(i.disponible)])), pesos: {} }] : [];
     }
     const out: Parada[] = [];
     for (const p of viaje.paradas) {
         if ('venta_id' in p) {
-            out.push({ modo: 'directa', venta: { id: p.venta_id, numero: p.venta, cliente: p.cliente, direccion: p.direccion, items: p.items } });
+            out.push({ modo: 'directa', venta: { id: p.venta_id, numero: p.venta, cliente: p.cliente, direccion: p.direccion, items: p.items },
+                pesos: Object.fromEntries(p.items.filter(i => i.peso_manual != null).map(i => [i.id, String(i.peso_manual)])) });
         } else {
             const pedido = pendientes.find(x => x.id === p.cliente_anticipo_id);
             if (!pedido) continue; // ya no tiene nada por entregar
-            out.push({ modo: 'pendiente', pedido, cantidades: Object.fromEntries(p.items.map(i => [i.cliente_anticipo_item_id, String(i.cantidad)])) });
+            out.push({ modo: 'pendiente', pedido, cantidades: Object.fromEntries(p.items.map(i => [i.cliente_anticipo_item_id, String(i.cantidad)])),
+                pesos: Object.fromEntries(p.items.filter(i => i.peso_kg != null).map(i => [i.cliente_anticipo_item_id, String(i.peso_kg)])) });
         }
     }
     return out;
@@ -540,9 +555,10 @@ function Tarjeta({ titulo, error, children }: { titulo: string; error?: string; 
     );
 }
 
-function ParadaFila({ parada, idx, total, error, onCantidad, onQuitar, onMover }: {
+function ParadaFila({ parada, idx, total, error, onCantidad, onPeso, onQuitar, onMover }: {
     parada: Parada; idx: number; total: number; error?: string;
-    onCantidad: (itemId: number, v: string) => void; onQuitar: () => void; onMover: (d: -1 | 1) => void;
+    onCantidad: (itemId: number, v: string) => void; onPeso: (itemId: number, v: string) => void;
+    onQuitar: () => void; onMover: (d: -1 | 1) => void;
 }) {
     const esPedido = parada.modo === 'pendiente';
     const cliente = esPedido ? parada.pedido.cliente : parada.venta.cliente;
@@ -573,21 +589,25 @@ function ParadaFila({ parada, idx, total, error, onCantidad, onQuitar, onMover }
                                         <p className="text-[12px]" style={{ color: exceso ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
                                             Por cargar {fmtCantidad(it.disponible)} {it.unidad_nombre}
                                             {it.en_viaje > 0 ? ` · ${fmtCantidad(it.en_viaje)} ya en otro viaje` : ''}
-                                            {it.peso_unitario != null && num(v) > 0 ? ` · ${fmtKg(num(v) * it.peso_unitario)}` : ''}
                                         </p>
                                     </div>
                                     <input type="number" min={0} max={it.disponible} step="any" inputMode="decimal"
                                         aria-label={`Cantidad que se carga de ${it.producto_nombre}`}
                                         value={v} onChange={e => onCantidad(it.id, e.target.value)}
-                                        className="w-24 h-10 rounded-lg border px-2 text-right text-sm tabular-nums outline-none focus:ring-2"
+                                        className="w-20 h-10 rounded-lg border px-2 text-right text-sm tabular-nums outline-none focus:ring-2"
                                         style={{ borderColor: exceso ? 'var(--color-danger)' : 'var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }} />
+                                    <InputKg producto={it.producto_nombre} valor={parada.pesos[it.id] ?? ''} onChange={x => onPeso(it.id, x)}
+                                        auto={it.peso_unitario != null ? num(v) * it.peso_unitario : null} />
                                 </div>
                             );
-                        }) : parada.venta.items.map((it, j) => (
-                            <p key={j} className="text-[13px] flex justify-between gap-3" style={{ color: 'var(--color-text)' }}>
-                                <span className="truncate">{it.producto_nombre}</span>
-                                <span className="tabular-nums flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>{fmtCantidad(it.cantidad)} {it.unidad_nombre}</span>
-                            </p>
+                        }) : parada.venta.items.map(it => (
+                            <div key={it.id} className="flex items-center gap-3">
+                                <p className="flex-1 min-w-0 text-[13px] flex justify-between gap-3" style={{ color: 'var(--color-text)' }}>
+                                    <span className="truncate">{it.producto_nombre}</span>
+                                    <span className="tabular-nums flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>{fmtCantidad(it.cantidad)} {it.unidad_nombre}</span>
+                                </p>
+                                <InputKg producto={it.producto_nombre} valor={parada.pesos[it.id] ?? ''} onChange={x => onPeso(it.id, x)} auto={it.peso_kg} />
+                            </div>
                         ))}
                     </div>
                     {error && <p className="mt-1.5 text-[13px]" style={{ color: 'var(--color-danger)' }}>{error}</p>}
@@ -606,6 +626,30 @@ function ParadaFila({ parada, idx, total, error, onCantidad, onQuitar, onMover }
                 </div>
             </div>
         </li>
+    );
+}
+
+/**
+ * Kg de la línea. Vacío = el del catálogo (se ve de guía en gris); lo escrito
+ * manda, y sirve también para los productos que no tienen peso cargado.
+ */
+function InputKg({ producto, valor, auto, onChange }: { producto: string; valor: string; auto: number | null; onChange: (v: string) => void }) {
+    const manual = valor.trim() !== '';
+    const sinPeso = auto == null && !manual;
+    return (
+        <label className="relative flex-shrink-0" title={manual ? 'Peso escrito a mano: borra para volver al del catálogo' : auto != null ? 'Peso del catálogo: escribe para cambiarlo' : 'Este producto no tiene peso: escríbelo aquí'}>
+            <input type="number" min={0} step="any" inputMode="decimal" aria-label={`Kilos de ${producto}`}
+                value={valor} onChange={e => onChange(e.target.value)}
+                placeholder={auto != null ? String(Math.round(auto * 10) / 10) : '¿kg?'}
+                className="w-24 h-10 rounded-lg border pl-2 pr-7 text-right text-sm tabular-nums outline-none focus:ring-2 placeholder:opacity-70"
+                style={{
+                    borderColor: sinPeso ? 'var(--vp-amber)' : manual ? 'var(--vp-navy)' : 'var(--color-border)',
+                    borderStyle: sinPeso ? 'dashed' : 'solid',
+                    backgroundColor: manual ? 'color-mix(in srgb, var(--vp-navy) 5%, var(--color-surface))' : 'var(--color-surface)',
+                    color: 'var(--color-text)',
+                }} />
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[12px] pointer-events-none" style={{ color: 'var(--color-text-muted)' }}>kg</span>
+        </label>
     );
 }
 

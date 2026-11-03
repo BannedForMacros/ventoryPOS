@@ -476,6 +476,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // ── GASTOS ───────────────────────────────────────────────────────────
     Route::middleware('permiso:gastos')->group(function () {
+        Route::get('gastos/km-referencia', [GastoController::class, 'kmReferencia'])->name('gastos.km-referencia');
         Route::apiResource('gastos', GastoController::class)->except(['show']);
         // Reactivar un gasto eliminado (soft delete). Id explícito porque el
         // binding por defecto no resuelve filas borradas.

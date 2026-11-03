@@ -40,6 +40,10 @@ class FlotaService
     /** Una carga que rinde menos que esto del promedio de la placa se marca. */
     private const FACTOR_CONSUMO_ANORMAL = 0.8;
 
+    /** Fuera de esto el monto y los galones están cruzados o mal escritos (S/ por galón). */
+    public const PRECIO_GALON_MIN = 2;
+    public const PRECIO_GALON_MAX = 100;
+
     // ── Ficha técnica del gasto ──────────────────────────────────────────────
 
     /**
@@ -64,6 +68,10 @@ class FlotaService
             throw ValidationException::withMessages(['vehiculo_id' => $uso === 'combustible'
                 ? 'Elige a qué vehículo se le cargó el combustible.'
                 : 'Elige a qué vehículo se le hizo el mantenimiento.']);
+        }
+
+        if ($vehiculoId && !Vehiculo::deEmpresa($gasto->empresa_id)->whereKey($vehiculoId)->exists()) {
+            throw ValidationException::withMessages(['vehiculo_id' => 'Ese vehículo no existe.']);
         }
 
         if ((int) $gasto->vehiculo_id !== (int) $vehiculoId) {
@@ -93,28 +101,15 @@ class FlotaService
         if ($galones === null || $galones <= 0) $errores['combustible.galones'] = 'Escribe los galones cargados.';
         if ($errores) throw ValidationException::withMessages($errores);
 
-        // El km no puede retroceder: evita errores de digitación (lo pide JH).
-        $fecha = $gasto->fecha->toDateString();
-        // Tope: el mayor km registrado hasta ese día (el mismo día incluido).
-        $previo = $this->combustiblesActivos($vehiculoId)
-            ->where('vehiculo_combustibles.gasto_id', '<>', $gasto->id)
-            ->where('gastos.fecha', '<=', $fecha)
-            ->orderByDesc('vehiculo_combustibles.km')
-            ->first(['vehiculo_combustibles.km', 'gastos.fecha']);
-        if ($previo && $km < (float) $previo->km) {
-            throw ValidationException::withMessages(['combustible.km' =>
-                'El km no puede ser menor al de la carga anterior de este vehículo (' . number_format((float) $previo->km, 0, '.', ',')
-                . ' km el ' . Carbon::parse($previo->fecha)->format('d/m') . '). Revisa el odómetro.']);
-        }
-        $siguiente = $this->combustiblesActivos($vehiculoId)
-            ->where('vehiculo_combustibles.gasto_id', '<>', $gasto->id)
-            ->where('gastos.fecha', '>', $fecha)
-            ->orderBy('gastos.fecha')->orderBy('vehiculo_combustibles.km')
-            ->first(['vehiculo_combustibles.km', 'gastos.fecha']);
-        if ($siguiente && $km > (float) $siguiente->km) {
-            throw ValidationException::withMessages(['combustible.km' =>
-                'El km no puede ser mayor al de una carga posterior (' . number_format((float) $siguiente->km, 0, '.', ',')
-                . ' km el ' . Carbon::parse($siguiente->fecha)->format('d/m') . ').']);
+        $this->validarKm($gasto, $vehiculoId, $km, 'combustible.km');
+
+        // Monto y galones cruzados (S/ 30 por 450 galones) o un cero de más: un
+        // precio por galón imposible no es una carga real.
+        $precio = (float) $gasto->monto / $galones;
+        if ($precio < self::PRECIO_GALON_MIN || $precio > self::PRECIO_GALON_MAX) {
+            throw ValidationException::withMessages(['combustible.galones' =>
+                'S/ ' . number_format($precio, 2) . ' por galón no cuadra: revisa el monto (S/ ' . number_format((float) $gasto->monto, 2)
+                . ') y los galones (' . rtrim(rtrim(number_format($galones, 3, '.', ''), '0'), '.') . '). ¿Están cruzados?']);
         }
 
         $conductorId = !empty($c['conductor_id'])
@@ -141,6 +136,10 @@ class FlotaService
         if ($tipo === 'preventivo' && $km === null) {
             throw ValidationException::withMessages(['mantenimiento.km' => 'Escribe el km en que se hizo el preventivo: desde ahí se cuenta el siguiente.']);
         }
+        if ($km !== null) {
+            if ($km < 0) throw ValidationException::withMessages(['mantenimiento.km' => 'El km no puede ser negativo.']);
+            $this->validarKm($gasto, $vehiculoId, $km, 'mantenimiento.km');
+        }
 
         VehiculoMantenimiento::updateOrCreate(['gasto_id' => $gasto->id], [
             'empresa_id'  => $gasto->empresa_id,
@@ -151,6 +150,77 @@ class FlotaService
             'detalle'     => self::texto($m['detalle'] ?? null, 500),
             'dias_parado' => isset($m['dias_parado']) && $m['dias_parado'] !== '' && $m['dias_parado'] !== null ? max(0, (int) $m['dias_parado']) : null,
         ]);
+    }
+
+    /**
+     * El odómetro no retrocede: el km de una carga o un mantenimiento tiene que
+     * quedar entre la lectura anterior y la siguiente de ese vehículo (cargas,
+     * mantenimientos y el km de su ficha). Atrapa el monto escrito en el km, un
+     * dígito de menos o el km de otro camión.
+     */
+    private function validarKm(Gasto $gasto, int $vehiculoId, float $km, string $campo): void
+    {
+        $ref = $this->referenciaKm($vehiculoId, $gasto->fecha->toDateString(), $gasto->id);
+
+        if ($ref['previo'] && $km < $ref['previo']['km']) {
+            throw ValidationException::withMessages([$campo =>
+                'El km no puede ser menor al último registrado de este vehículo: ' . self::lectura($ref['previo']) . '. Revisa el odómetro.']);
+        }
+        if ($ref['siguiente'] && $km > $ref['siguiente']['km']) {
+            throw ValidationException::withMessages([$campo =>
+                'El km no puede ser mayor al de un registro posterior: ' . self::lectura($ref['siguiente']) . '.']);
+        }
+    }
+
+    /** "125,300 km (carga del 01/11)" */
+    private static function lectura(array $l): string
+    {
+        $origen = ['carga' => 'carga', 'mantenimiento' => 'mantenimiento', 'ficha' => 'ficha del vehículo'][$l['origen']];
+        return number_format($l['km'], 0, '.', ',') . ' km (' . $origen . ($l['fecha'] ? ' del ' . Carbon::parse($l['fecha'])->format('d/m') : '') . ')';
+    }
+
+    /**
+     * Entre qué km tiene que caer una lectura del vehículo en esa fecha: el
+     * mayor registrado hasta ese día y el menor de los días siguientes. El km
+     * de la ficha cuenta como piso solo si no hay nada después (es el km "de
+     * hoy" que escribió el usuario, no tiene fecha propia).
+     * También devuelve el precio por galón habitual para avisar si no cuadra.
+     *
+     * @return array{previo: ?array{km: float, fecha: ?string, origen: string}, siguiente: ?array{km: float, fecha: ?string, origen: string}, precio_galon: ?float}
+     */
+    public function referenciaKm(int $vehiculoId, string $fecha, ?int $excluirGastoId = null): array
+    {
+        $lecturas = fn () => DB::query()
+            ->fromSub(
+                DB::table('vehiculo_combustibles')->where('vehiculo_id', $vehiculoId)
+                    ->select('km', 'gasto_id', DB::raw("'carga' as origen"))
+                    ->unionAll(DB::table('vehiculo_mantenimientos')->where('vehiculo_id', $vehiculoId)->whereNotNull('km')
+                        ->select('km', 'gasto_id', DB::raw("'mantenimiento' as origen"))),
+                'l')
+            ->join('gastos as g', 'g.id', '=', 'l.gasto_id')
+            ->whereNull('g.deleted_at')
+            ->when($excluirGastoId, fn ($q, $id) => $q->where('l.gasto_id', '<>', $id))
+            ->select('l.km', 'l.origen', 'g.fecha');
+
+        $fila = fn ($f) => $f ? ['km' => (float) $f->km, 'fecha' => substr((string) $f->fecha, 0, 10), 'origen' => $f->origen] : null;
+        $previo    = $fila($lecturas()->where('g.fecha', '<=', $fecha)->orderByDesc('l.km')->first());
+        $siguiente = $fila($lecturas()->where('g.fecha', '>', $fecha)->orderBy('l.km')->first());
+
+        $ficha = (float) DB::table('vehiculos')->where('id', $vehiculoId)->value('km_actual');
+        if (!$siguiente && $ficha > 0 && (!$previo || $ficha > $previo['km'])) {
+            $previo = ['km' => $ficha, 'fecha' => null, 'origen' => 'ficha'];
+        }
+
+        // Precio por galón de las últimas cargas (mediana: una rara no lo mueve).
+        $precios = $this->combustiblesActivos($vehiculoId)
+            ->when($excluirGastoId, fn ($q, $id) => $q->where('vehiculo_combustibles.gasto_id', '<>', $id))
+            ->where('vehiculo_combustibles.galones', '>', 0)
+            ->orderByDesc('gastos.fecha')->limit(5)
+            ->get(['gastos.monto', 'vehiculo_combustibles.galones'])
+            ->map(fn ($c) => (float) $c->monto / (float) $c->galones)->sort()->values();
+        $mediana = $precios->isEmpty() ? null : round((float) $precios[intdiv($precios->count(), 2)], 2);
+
+        return ['previo' => $previo, 'siguiente' => $siguiente, 'precio_galon' => $mediana];
     }
 
     // ── Lecturas por vehículo ────────────────────────────────────────────────

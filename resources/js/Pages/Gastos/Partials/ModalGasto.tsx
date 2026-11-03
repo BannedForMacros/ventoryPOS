@@ -10,6 +10,7 @@ import type { FlotaGasto, Gasto, GastoConcepto, GastoTipo, Local, MetodoPagoConC
 import Switch from '@/Components/UI/Switch';
 import { Fuel, Wrench } from 'lucide-react';
 import { hoyLocal, esFutura } from '@/lib/fechas';
+import { AvisosLectura, PistaKm, revisarLectura, useReferenciaKm } from '@/Components/Flota/RevisionKm';
 
 export interface GastoForm {
     gasto_tipo_id:         number | '';
@@ -184,6 +185,20 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
     }
     const opcionesLocales   = locales.map(l => ({ value: l.id, label: l.nombre }));
 
+    // Revisión del km y del combustible contra lo ya registrado de esa placa.
+    const refKm = useReferenciaKm(form.vehiculo_id, form.fecha, gastoEditar?.id ?? null, isOpen && !!usoFlota);
+    const revision = usoFlota === 'combustible'
+        ? revisarLectura({ ref: refKm, campoKm: 'combustible.km', kmTexto: form.combustible.km, fecha: form.fecha, monto: form.monto, galones: form.combustible.galones })
+        : usoFlota === 'mantenimiento'
+            ? revisarLectura({ ref: refKm, campoKm: 'mantenimiento.km', kmTexto: form.mantenimiento.km, fecha: form.fecha })
+            : null;
+    // Lo confirmado vale para ESOS avisos: si cambian los números, se vuelve a preguntar.
+    const [avisosConfirmados, setAvisosConfirmados] = useState('');
+    const clavesAvisos = revision?.avisos.join('|') ?? '';
+    const avisosOk = clavesAvisos === '' || avisosConfirmados === clavesAvisos;
+    /** Error de la revisión en vivo (sin esperar a pulsar Guardar). */
+    const errVivo = (campo: string) => err(campo) ?? (revision?.error?.campo === campo ? revision.error.texto : undefined);
+
     function handleTipoChange(v: number | string) {
         setForm(f => ({ ...f, gasto_tipo_id: Number(v) || '', gasto_concepto_id: '' }));
     }
@@ -218,6 +233,8 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
         if (!Number.isFinite(monto) || monto < 0.01) return { texto: 'El monto debe ser mayor a S/ 0.00', campo: 'monto' };
         if (!form.fecha) return { texto: 'Elige la fecha del gasto', campo: 'fecha' };
         if (esFutura(form.fecha)) return { texto: 'La fecha no puede ser posterior a hoy', campo: 'fecha' };
+        if (revision?.error) return { texto: revision.error.campo.endsWith('.km') ? 'Revisa el km' : 'Revisa el monto y los galones', campo: revision.error.campo };
+        if (!avisosOk) return { texto: 'Confirma que los datos del vehículo están bien', campo: 'flota.confirmar' };
         if (!editando && metodosPago.length > 0 && !form.metodo_pago_id) return { texto: 'Elige con qué se paga', campo: 'metodo_pago_id' };
         if (faltaCuenta) return { texto: `Elige la cuenta de ${metodoSel?.nombre ?? 'este método'}`, campo: 'cuenta_metodo_pago_id' };
         return null;
@@ -384,10 +401,13 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                                 <p className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}><Fuel size={14} /> Carga de combustible</p>
                                 <div className="grid grid-cols-2 gap-3">
                                     <Input label="Km del odómetro" type="number" inputMode="decimal" min="0" required data-campo="combustible.km"
-                                        value={form.combustible.km} onChange={e => setComb('km', e.target.value)} error={err('combustible.km')} disabled={saving} />
+                                        placeholder={refKm?.previo ? `Más de ${Math.round(refKm.previo.km).toLocaleString('en-US')}` : undefined}
+                                        value={form.combustible.km} onChange={e => setComb('km', e.target.value)} error={errVivo('combustible.km')} disabled={saving} />
                                     <Input label="Galones" type="number" inputMode="decimal" min="0" step="0.001" required data-campo="combustible.galones"
-                                        value={form.combustible.galones} onChange={e => setComb('galones', e.target.value)} error={err('combustible.galones')} disabled={saving} />
+                                        value={form.combustible.galones} onChange={e => setComb('galones', e.target.value)} error={errVivo('combustible.galones')} disabled={saving} />
                                 </div>
+                                <PistaKm referencia={refKm} notas={revision?.notas ?? []} />
+                                <AvisosLectura avisos={revision?.avisos ?? []} confirmado={avisosOk} onConfirmar={v => setAvisosConfirmados(v ? clavesAvisos : '')} />
                                 <div className="grid grid-cols-2 gap-3">
                                     <Select label="Chofer" value={form.combustible.conductor_id} placeholder="Sin indicar"
                                         onChange={v => setComb('conductor_id', Number(v) || '')}
@@ -417,10 +437,12 @@ export default function ModalGasto({ isOpen, onClose, tipos, turnoActivo, locale
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
                                     <Input label="Km del camión" type="number" inputMode="decimal" min="0" required={form.mantenimiento.tipo === 'preventivo'} data-campo="mantenimiento.km"
-                                        value={form.mantenimiento.km} onChange={e => setMant('km', e.target.value)} error={err('mantenimiento.km')} disabled={saving} />
+                                        value={form.mantenimiento.km} onChange={e => setMant('km', e.target.value)} error={errVivo('mantenimiento.km')} disabled={saving} />
                                     <Input label="Días parado" type="number" inputMode="numeric" min="0" value={form.mantenimiento.dias_parado}
                                         onChange={e => setMant('dias_parado', e.target.value)} placeholder="0" disabled={saving} />
                                 </div>
+                                <PistaKm referencia={refKm} notas={revision?.notas ?? []} />
+                                <AvisosLectura avisos={revision?.avisos ?? []} confirmado={avisosOk} onConfirmar={v => setAvisosConfirmados(v ? clavesAvisos : '')} />
                                 <Input label="Taller" value={form.mantenimiento.taller} onChange={e => setMant('taller', e.target.value)} placeholder="Opcional" error={err('mantenimiento.taller')} disabled={saving} />
                                 <Input label="Qué se hizo" value={form.mantenimiento.detalle} onChange={e => setMant('detalle', e.target.value)}
                                     placeholder="Cambio de aceite y filtros, frenos…" error={err('mantenimiento.detalle')} disabled={saving} />

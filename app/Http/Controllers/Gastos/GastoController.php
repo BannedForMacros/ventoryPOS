@@ -42,6 +42,27 @@ class GastoController extends Controller
         ];
     }
 
+    /**
+     * Para revisar el km mientras se escribe la carga: entre qué lecturas debe
+     * caer en esa fecha y el precio por galón habitual del vehículo.
+     */
+    public function kmReferencia(Request $request)
+    {
+        $user = $request->user();
+        abort_unless(\App\Support\Flota::activa($user->empresa), 404);
+        $data = $request->validate([
+            'vehiculo_id' => ['required', 'integer'],
+            'fecha'       => ['required', 'date'],
+            'gasto_id'    => ['nullable', 'integer'],
+        ]);
+        $vehiculo = \App\Models\Vehiculo::deEmpresa($user->empresa_id)->findOrFail($data['vehiculo_id']);
+        $gastoId = !empty($data['gasto_id'])
+            ? Gasto::withTrashed()->where('empresa_id', $user->empresa_id)->whereKey($data['gasto_id'])->value('id')
+            : null;
+
+        return response()->json($this->flota->referenciaKm($vehiculo->id, \Illuminate\Support\Carbon::parse($data['fecha'])->toDateString(), $gastoId));
+    }
+
     public function index(Request $request)
     {
         $user    = $request->user();

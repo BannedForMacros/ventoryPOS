@@ -11,6 +11,7 @@ use App\Models\Vehiculo;
 use App\Models\Venta;
 use App\Models\Viaje;
 use App\Models\ViajeParada;
+use App\Models\ViajeParadaItem;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -321,7 +322,8 @@ class ViajeService
                 $ventaId = (int) $p['venta_id'];
                 if (isset($ventasVistas[$ventaId])) continue;
                 $ventasVistas[$ventaId] = true;
-                $this->crearParadaDirecta($viaje, $ventaId, $siguiente, $idx);
+                $pesos = collect((array) ($p['pesos'] ?? []))->pluck('peso_kg', 'venta_item_id')->all();
+                $this->crearParadaDirecta($viaje, $ventaId, $siguiente, $idx, $pesos);
                 continue;
             }
 
@@ -379,7 +381,8 @@ class ViajeService
                 'unidad_nombre'            => $item->unidad_nombre,
                 'cantidad'                 => $cantidad,
                 'factor_conversion'        => $item->factor_conversion,
-                'peso_kg'                  => self::peso($item->producto, $cantidad, (float) $item->factor_conversion),
+                'peso_kg'                  => self::pesoEscrito($l['peso_kg'] ?? null)
+                    ?? self::peso($item->producto, $cantidad, (float) $item->factor_conversion),
             ]);
             $cargado++;
         }
@@ -391,7 +394,8 @@ class ViajeService
         return $parada;
     }
 
-    private function crearParadaDirecta(Viaje $viaje, int $ventaId, int $orden, int $idx): ViajeParada
+    /** @param array<int, mixed> $pesos venta_item_id => kg escritos a mano */
+    private function crearParadaDirecta(Viaje $viaje, int $ventaId, int $orden, int $idx, array $pesos = []): ViajeParada
     {
         $venta = Venta::with('items.producto:id,peso_kg')->find($ventaId);
 
@@ -426,7 +430,8 @@ class ViajeService
                 'unidad_nombre'     => $vi->unidad_nombre,
                 'cantidad'          => $vi->cantidad,
                 'factor_conversion' => $vi->factor_conversion,
-                'peso_kg'           => self::peso($vi->producto, (float) $vi->cantidad, (float) $vi->factor_conversion),
+                'peso_kg'           => self::pesoEscrito($pesos[$vi->id] ?? null)
+                    ?? self::peso($vi->producto, (float) $vi->cantidad, (float) $vi->factor_conversion),
             ]);
         }
 
@@ -723,6 +728,27 @@ class ViajeService
     private function etiquetaEstado(string $estado): string
     {
         return ['programado' => 'programado', 'en_ruta' => 'en ruta', 'cerrado' => 'cerrado', 'anulado' => 'anulado'][$estado] ?? $estado;
+    }
+
+    /** Kg escritos a mano en el viaje; vacío = se calcula del catálogo. */
+    private static function pesoEscrito(mixed $kg): ?float
+    {
+        return $kg === null || $kg === '' ? null : round(max(0, (float) $kg), 3);
+    }
+
+    /** El peso que saldría del catálogo para esa línea (null si el producto no tiene peso). */
+    public static function pesoAuto(ViajeParadaItem $i): ?float
+    {
+        return self::peso($i->producto, (float) $i->cantidad, (float) $i->factor_conversion);
+    }
+
+    /** El peso de la línea si se escribió a mano (distinto del catálogo); si no, null. */
+    public static function pesoManual(ViajeParadaItem $i): ?float
+    {
+        if ($i->peso_kg === null) return null;
+        $auto = self::pesoAuto($i);
+
+        return $auto !== null && abs($auto - (float) $i->peso_kg) < 0.001 ? null : (float) $i->peso_kg;
     }
 
     private static function peso(?Producto $producto, float $cantidad, float $factor): ?float

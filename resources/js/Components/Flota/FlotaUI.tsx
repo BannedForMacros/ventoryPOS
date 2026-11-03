@@ -105,7 +105,7 @@ export function BarraCarga({ carga, compacta = false }: { carga: Carga; compacta
             )}
             {!compacta && carga.sin_peso && (
                 <p className="mt-1 text-[12px]" style={{ color: 'var(--color-text-muted)' }}>
-                    Algunos productos no tienen peso: cárgalo en Catálogo → Productos para que la carga sea exacta.
+                    Algunos productos no tienen peso: escríbelo en la casilla «kg» del viaje o cárgalo en Catálogo → Productos.
                 </p>
             )}
         </div>

@@ -92,6 +92,44 @@ it('el km no puede retroceder respecto a la carga anterior', function () {
     expect([Gasto::count(), CuentaMovimiento::where('ref_tipo', 'gasto')->count()])->toBe($antes);
 });
 
+it('el km tampoco baja del último mantenimiento ni de la ficha del vehículo', function () {
+    $this->camion->update(['km_actual' => 50000]);
+    // Primera carga: el piso es el km de la ficha (450 era el monto, mal puesto).
+    fbCarga($this, 450, 30, 450)->assertSessionHasErrors('combustible.km');
+    fbCarga($this, 50200, 30, 480)->assertSessionHasNoErrors();
+
+    fbGasto($this, $this->mant, 600, ['mantenimiento' => ['tipo' => 'correctivo', 'km' => 50900]])->assertSessionHasNoErrors();
+    fbCarga($this, 50500, 20, 320)->assertSessionHasErrors('combustible.km');
+    // El mantenimiento también respeta el odómetro.
+    fbGasto($this, $this->mant, 300, ['mantenimiento' => ['tipo' => 'correctivo', 'km' => 5090]])->assertSessionHasErrors('mantenimiento.km');
+    fbCarga($this, 51300, 20, 320)->assertSessionHasNoErrors();
+});
+
+it('monto y galones cruzados no se guardan', function () {
+    $antes = Gasto::count();
+    // S/ 30 por 450 galones = S/ 0.07 el galón: están al revés.
+    fbCarga($this, 1000, 450, 30)->assertSessionHasErrors('combustible.galones');
+    expect(Gasto::count())->toBe($antes);
+    fbCarga($this, 1000, 30, 450)->assertSessionHasNoErrors();
+});
+
+it('la referencia de km para la pantalla: lectura anterior, posterior y precio habitual', function () {
+    fbCarga($this, 1000, 10, 160, true, now()->subDays(5)->toDateString())->assertSessionHasNoErrors();
+    fbCarga($this, 1800, 10, 170, true, now()->subDays(1)->toDateString())->assertSessionHasNoErrors();
+
+    $r = $this->getJson(route('gastos.km-referencia', ['vehiculo_id' => $this->camion->id, 'fecha' => now()->subDays(3)->toDateString()]))
+        ->assertOk()->json();
+    expect($r['previo']['km'])->toEqual(1000)->and($r['previo']['origen'])->toBe('carga')
+        ->and($r['siguiente']['km'])->toEqual(1800)
+        ->and($r['precio_galon'])->toEqual(17);
+
+    // Un vehículo de otra empresa no se consulta.
+    $otro = TestEnv::crear();
+    $ajeno = Vehiculo::create(['empresa_id' => $otro->empresa->id, 'placa' => 'X1X-111', 'estado' => 'disponible']);
+    $this->getJson(route('gastos.km-referencia', ['vehiculo_id' => $ajeno->id, 'fecha' => now()->toDateString()]))->assertNotFound();
+    fbGasto($this, $this->peaje, 20, ['vehiculo_id' => $ajeno->id])->assertSessionHasErrors('vehiculo_id');
+});
+
 it('el rendimiento se calcula entre tanques llenos', function () {
     fbCarga($this, 1000, 10, 150, true, now()->subDays(3)->toDateString())->assertSessionHasNoErrors();
     fbCarga($this, 1200, 5, 75, false, now()->subDays(2)->toDateString())->assertSessionHasNoErrors();
